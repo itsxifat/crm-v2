@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Image from 'next/image'
 import { signIn } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useForm } from 'react-hook-form'
@@ -78,7 +79,7 @@ export default function LoginPage() {
         {/* Logo / Brand */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center mb-4 bg-white rounded-2xl px-6 py-3">
-            <img src="/en-logo.png" alt="Enfinito" className="h-10 w-auto object-contain" />
+            <Image src="/en-logo.png" alt="Enfinito" width={120} height={40} className="h-10 w-auto object-contain" />
           </div>
           <p className="text-slate-400 mt-1 text-sm">Agency Management Platform</p>
         </div>

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef } from 'react'
+import Image from 'next/image'
 import { Upload, X, FileText, Loader2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -45,7 +46,7 @@ export default function FileUpload({ value, onUploaded, label = 'Receipt / Invoi
         <div className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg bg-gray-50">
           {isPdf
             ? <FileText className="w-4 h-4 text-red-500 shrink-0" />
-            : <img src={value} alt="receipt" className="w-8 h-8 object-cover rounded" />
+            : <Image src={value} alt="receipt" width={32} height={32} className="w-8 h-8 object-cover rounded" />
           }
           <a href={value} target="_blank" rel="noopener noreferrer"
             className="flex-1 text-xs text-blue-600 hover:underline truncate">

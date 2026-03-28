@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
+import Image from 'next/image'
 import { useParams } from 'next/navigation'
 import { Upload, X, FileText, Loader2, CheckCircle, AlertCircle, ChevronRight, ChevronLeft } from 'lucide-react'
 import toast, { Toaster } from 'react-hot-toast'
@@ -307,7 +308,7 @@ export default function OnboardingPage() {
               <p className="text-xs text-gray-400 mb-2">Clear face photo, plain background, no sunglasses. Used for your employee ID card.</p>
               {form.photo ? (
                 <div className="flex items-center gap-3 p-3 border border-green-200 rounded-xl bg-green-50">
-                  <img src={form.photo} alt="photo" className="w-16 h-16 object-cover rounded-lg border border-green-200" />
+                  <Image src={form.photo} alt="photo" width={64} height={64} className="w-16 h-16 object-cover rounded-lg border border-green-200" />
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-medium text-green-700">Photo uploaded</p>
                     <p className="text-xs text-gray-500 truncate mt-0.5">{form.photo.split('/').pop()}</p>

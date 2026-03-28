@@ -1,3 +1,4 @@
+import Image from 'next/image'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { redirect } from 'next/navigation'
@@ -23,7 +24,7 @@ export default async function FreelancerLayout({ children }) {
               <p className="text-xs text-gray-400">Freelancer</p>
             </div>
             {session.user.avatar ? (
-              <img src={session.user.avatar} alt="" className="w-8 h-8 rounded-full object-cover" />
+              <Image src={session.user.avatar} alt="" width={32} height={32} className="w-8 h-8 rounded-full object-cover" />
             ) : (
               <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs font-medium text-gray-600">
                 {session.user.name?.[0]?.toUpperCase() ?? 'F'}

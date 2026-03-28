@@ -78,7 +78,7 @@ function DocCard({ doc, onRemove }) {
   return (
     <div className="flex items-center gap-3 p-3 border border-gray-100 rounded-xl bg-gray-50 hover:bg-white hover:shadow-sm transition-all group">
       <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${meta.bg}`}>
-        {isImage(doc.url) ? <Image className={`w-4 h-4 ${meta.color}`} /> : <FileText className={`w-4 h-4 ${meta.color}`} />}
+        {isImage(doc.url) ? <Image alt="" className={`w-4 h-4 ${meta.color}`} /> : <FileText className={`w-4 h-4 ${meta.color}`} />}
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-gray-800 truncate">{name}</p>

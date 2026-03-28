@@ -11,6 +11,7 @@ import {
   ChevronRight, MoreHorizontal, Check, AlertTriangle, FileText
 } from 'lucide-react'
 import { VENTURE_META, STATUS_META, EXPENSE_CATEGORIES } from '@/lib/ventures'
+import Image from 'next/image'
 import FileUpload from '@/components/ui/FileUpload'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -1108,7 +1109,7 @@ export default function ProjectDetailPage() {
                           <td className="px-5 py-3.5">
                             <div className="flex items-center gap-2.5">
                               {avatar ? (
-                                <img src={avatar} alt="" className="w-7 h-7 rounded-full object-cover shrink-0" />
+                                <Image src={avatar} alt="" width={28} height={28} className="w-7 h-7 rounded-full object-cover shrink-0" />
                               ) : (
                                 <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-xs font-medium text-gray-600 shrink-0">
                                   {name[0]?.toUpperCase()}

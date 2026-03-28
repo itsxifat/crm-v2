@@ -9,6 +9,7 @@ import {
   X, DollarSign, FileText, Clock, AlertTriangle, XCircle,
   PlusCircle, ExternalLink, CreditCard,
 } from 'lucide-react'
+import Image from 'next/image'
 import FileUpload from '@/components/ui/FileUpload'
 import TkAmt from '@/components/ui/TkAmt'
 
@@ -305,7 +306,7 @@ function InvoicePrintView({ invoice, payments = [] }) {
       {/* ── HEADER ── */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
         <div>
-          <img src="/en-logo.png" alt="Enfinito" style={{ height: 38, objectFit: 'contain', display: 'block', marginBottom: 7 }} />
+          <Image src="/en-logo.png" alt="Enfinito" width={120} height={38} style={{ objectFit: 'contain', display: 'block', marginBottom: 7 }} />
           <p style={{ margin: '0 0 2px', fontSize: 13, fontWeight: 700, color: '#0f172a' }}>Enfinito Bangladesh</p>
           <p style={{ margin: '0 0 2px', fontSize: 11, color: '#64748b' }}>Savar, Dhaka, Bangladesh</p>
           <p style={{ margin: '0 0 2px', fontSize: 11, color: '#64748b' }}>+8801540110050 - info@enfinito.com</p>

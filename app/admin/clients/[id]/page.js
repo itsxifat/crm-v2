@@ -72,6 +72,7 @@ export default function ClientDetailPage() {
     }
   }
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load() }, [id])
 
   function handleSaved() {

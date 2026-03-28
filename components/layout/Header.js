@@ -12,6 +12,7 @@ import {
   Settings,
   ChevronDown,
 } from 'lucide-react'
+import Image from 'next/image'
 import { cn, getInitials, getRoleLabel } from '@/lib/utils'
 
 export default function Header() {
@@ -75,7 +76,7 @@ export default function Header() {
             {/* Avatar */}
             <div className="w-8 h-8 rounded-full bg-primary flex-center text-white text-sm font-semibold shrink-0">
               {user?.avatar ? (
-                <img src={user.avatar} alt={user.name} className="w-8 h-8 rounded-full object-cover" />
+                <Image src={user.avatar} alt={user.name} width={32} height={32} className="w-8 h-8 rounded-full object-cover" />
               ) : (
                 getInitials(user?.name ?? 'U')
               )}

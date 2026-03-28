@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import Image from 'next/image'
 import {
   Plus, Search, MoreHorizontal, Eye, Pencil, Trash2, Users,
   Briefcase, Clock, Building2, Shield, ShieldCheck, Download,
@@ -411,7 +412,7 @@ function OnboardingReviewModal({ open, record, onClose, onDone, customRoles = []
             <div className="space-y-4">
               {sd.photo && (
                 <div className="flex items-center gap-3">
-                  <img src={sd.photo} alt="photo" className="w-16 h-16 rounded-xl object-cover border border-gray-200" />
+                  <Image src={sd.photo} alt="photo" width={64} height={64} className="w-16 h-16 rounded-xl object-cover border border-gray-200" />
                   <div>
                     <p className="text-sm font-semibold text-gray-800">{sd.name}</p>
                     <p className="text-xs text-gray-400">{sd.email}</p>

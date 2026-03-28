@@ -12,6 +12,7 @@ import {
   ArrowRightLeft, ArrowDownLeft, ArrowUpRight as ArrowUpRightIcon,
   CheckCircle, Inbox, ChevronDown, ShieldCheck,
 } from 'lucide-react'
+import Image from 'next/image'
 import { useState } from 'react'
 
 // ─── Role definitions ─────────────────────────────────────────────────────────
@@ -276,7 +277,7 @@ export default function Sidebar() {
       <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200 shrink-0">
         {!collapsed && (
           <div className="flex items-center min-w-0">
-            <img
+            <Image
               src="/en-logo.png"
               alt="Enfinito"
               width={120}
@@ -288,7 +289,7 @@ export default function Sidebar() {
         )}
         {collapsed && (
           <div className="mx-auto flex items-center justify-center">
-            <img
+            <Image
               src="/en-logo.png"
               alt="Enfinito"
               width={28}

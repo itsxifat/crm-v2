@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Image from 'next/image'
 import { cn, getInitials } from '@/lib/utils'
 
 const sizeStyles = {
@@ -40,9 +41,11 @@ export default function Avatar({ src, name = '', size = 'md', className }) {
   if (src && !imgError) {
     return (
       <div className={cn('relative rounded-full overflow-hidden shrink-0', sizeClass, className)}>
-        <img
+        <Image
           src={src}
           alt={name}
+          width={40}
+          height={40}
           onError={() => setImgError(true)}
           className="w-full h-full object-cover"
         />

@@ -32,6 +32,7 @@ export default function TaskDetailModal({ taskId, onClose, onUpdate }) {
   useEffect(() => {
     if (!taskId) return
     loadTask()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId])
 
   useEffect(() => {
