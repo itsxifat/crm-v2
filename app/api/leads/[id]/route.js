@@ -1,0 +1,95 @@
+import { NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
+import connectDB from '@/lib/mongodb'
+import Lead, { LeadActivity } from '@/models/Lead'
+import Attachment from '@/models/Attachment'
+import Employee from '@/models/Employee'
+import { z } from 'zod'
+
+const updateLeadSchema = z.object({
+  name:         z.string().min(1).optional(),
+  email:        z.string().email().optional().nullable(),
+  phone:        z.string().optional().nullable(),
+  company:      z.string().optional().nullable(),
+  industry:     z.string().optional().nullable(),
+  source:       z.string().optional().nullable(),
+  status:       z.enum(['NEW','CONTACTED','PROPOSAL_SENT','NEGOTIATION','WON','LOST']).optional(),
+  value:        z.number().positive().optional().nullable(),
+  notes:        z.string().optional().nullable(),
+  assignedToId: z.string().optional().nullable(),
+  followUpDate: z.string().datetime().optional().nullable(),
+  lostReason:   z.string().optional().nullable(),
+})
+
+// GET /api/leads/[id]
+export async function GET(request, { params }) {
+  try {
+    const session = await getServerSession(authOptions)
+    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+
+    await connectDB()
+
+    const lead = await Lead.findById(params.id)
+      .populate({ path: 'assignedToId', populate: { path: 'userId', select: 'id name avatar email' } })
+
+    if (!lead) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
+
+    const [activities, attachments] = await Promise.all([
+      LeadActivity.find({ leadId: params.id }).sort({ createdAt: -1 }),
+      Attachment.find({ leadId: params.id }).sort({ createdAt: -1 }),
+    ])
+
+    return NextResponse.json({ data: { ...lead.toJSON(), activities, attachments } })
+  } catch (err) {
+    console.error('[GET /api/leads/[id]]', err)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
+// PUT /api/leads/[id]
+export async function PUT(request, { params }) {
+  try {
+    const session = await getServerSession(authOptions)
+    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+
+    await connectDB()
+
+    const body   = await request.json()
+    const parsed = updateLeadSchema.safeParse(body)
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'Validation failed', details: parsed.error.flatten() }, { status: 422 })
+    }
+
+    const data = { ...parsed.data }
+    if (data.followUpDate) data.followUpDate = new Date(data.followUpDate)
+
+    const lead = await Lead.findByIdAndUpdate(params.id, data, { new: true })
+      .populate({ path: 'assignedToId', populate: { path: 'userId', select: 'name avatar' } })
+
+    return NextResponse.json({ data: lead })
+  } catch (err) {
+    console.error('[PUT /api/leads/[id]]', err)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
+// DELETE /api/leads/[id]
+export async function DELETE(request, { params }) {
+  try {
+    const session = await getServerSession(authOptions)
+    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+
+    const allowedRoles = ['SUPER_ADMIN', 'MANAGER']
+    if (!allowedRoles.includes(session.user.role)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    await connectDB()
+    await Lead.findByIdAndDelete(params.id)
+    return NextResponse.json({ success: true })
+  } catch (err) {
+    console.error('[DELETE /api/leads/[id]]', err)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
