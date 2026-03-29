@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Invoice } from '@/models'
+import { logActivity } from '@/lib/logActivity'
 
 async function getPopulated(id) {
   return Invoice.findById(id)
@@ -62,6 +63,17 @@ export async function PUT(request, { params }) {
       { path: 'clientId',  populate: { path: 'userId', select: 'name email avatar' } },
       { path: 'projectId', select: 'name projectCode venture category' },
     ])
+
+    logActivity({
+      userId:   session.user.id,
+      userRole: session.user.role,
+      action:   'UPDATE',
+      entity:   'INVOICE',
+      entityId: params.id,
+      changes:  JSON.stringify({ total: invoice.total, status: invoice.status }),
+      request,
+    })
+
     return NextResponse.json({ data: invoice.toJSON() })
   } catch (err) {
     console.error('[PUT /api/invoices/:id]', err)
@@ -78,6 +90,17 @@ export async function DELETE(_, { params }) {
     await connectDB()
     const invoice = await Invoice.findByIdAndDelete(params.id)
     if (!invoice) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+    logActivity({
+      userId:   session.user.id,
+      userRole: session.user.role,
+      action:   'DELETE',
+      entity:   'INVOICE',
+      entityId: params.id,
+      changes:  JSON.stringify({ invoiceNumber: invoice.invoiceNumber }),
+      request,
+    })
+
     return NextResponse.json({ success: true })
   } catch (err) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

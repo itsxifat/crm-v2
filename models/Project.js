@@ -47,6 +47,11 @@ const ProjectSchema = new mongoose.Schema(
     paidAmount:       { type: Number, default: 0 },   // synced from confirmed ProjectPayments
     currency:         { type: String, default: 'BDT' },
 
+    // Brief — written by project manager, visible to all assigned members
+    brief: { type: String, default: null },
+    briefUpdatedAt: { type: Date, default: null },
+    briefUpdatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+
     // Meta
     tags:       { type: String, default: null },
     cancelledAt: { type: Date, default: null },

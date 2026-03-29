@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
-import { Invoice, InvoiceItem, AuditLog } from '@/models'
+import { Invoice, InvoiceItem } from '@/models'
+import { logActivity } from '@/lib/logActivity'
 
 // POST /api/invoices/[id]/send
 export async function POST(request, { params }) {
@@ -32,14 +33,15 @@ export async function POST(request, { params }) {
       { new: true }
     )
 
-    // Log audit (non-fatal)
-    new AuditLog({
+    logActivity({
       userId:   session.user.id,
+      userRole: session.user.role,
       action:   'SEND',
-      entity:   'Invoice',
+      entity:   'INVOICE',
       entityId: params.id,
-      changes:  JSON.stringify({ status: 'SENT', sentAt: updated.sentAt }),
-    }).save().catch(() => {})
+      changes:  JSON.stringify({ invoiceNumber: invoice.invoiceNumber, status: 'SENT', sentAt: updated.sentAt }),
+      request,
+    })
 
     return NextResponse.json({
       message: `Invoice ${invoice.invoiceNumber} marked as sent`,

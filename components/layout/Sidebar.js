@@ -10,7 +10,7 @@ import {
   Calendar, Clock, FolderOpen, FileSignature,
   BarChart3, UserCog, Building2, ChevronLeft, ChevronRight,
   ArrowRightLeft, ArrowDownLeft, ArrowUpRight as ArrowUpRightIcon,
-  CheckCircle, Inbox, ChevronDown, ShieldCheck,
+  CheckCircle, Inbox, ChevronDown, ShieldCheck, Activity,
 } from 'lucide-react'
 import Image from 'next/image'
 import { useState } from 'react'
@@ -141,10 +141,11 @@ const NAV_SECTIONS = [
   },
   {
     label: 'System',
-    roles: ['SUPER_ADMIN'],
+    roles: ['SUPER_ADMIN', 'MANAGER'],
     items: [
-      { href: '/admin/config',   label: 'Configuration', icon: Settings2, roles: ['SUPER_ADMIN'] },
-      { href: '/admin/settings', label: 'Settings',      icon: Settings,  roles: ['SUPER_ADMIN'] },
+      { href: '/admin/activity-logs', label: 'Activity Logs',  icon: Activity,  roles: ['SUPER_ADMIN', 'MANAGER'] },
+      { href: '/admin/config',        label: 'Configuration',  icon: Settings2, roles: ['SUPER_ADMIN'] },
+      { href: '/admin/settings',      label: 'Settings',       icon: Settings,  roles: ['SUPER_ADMIN'] },
     ],
   },
 ]

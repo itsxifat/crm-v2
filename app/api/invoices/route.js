@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Invoice, Client } from '@/models'
+import { logActivity } from '@/lib/logActivity'
 import mongoose from 'mongoose'
 
 // Helper: build a filter that matches a projectId in EITHER the new singular
@@ -125,6 +126,16 @@ export async function POST(request) {
       { path: 'clientId',  populate: { path: 'userId', select: 'name email avatar' } },
       { path: 'projectId', select: 'name projectCode venture' },
     ])
+
+    logActivity({
+      userId:   session.user.id,
+      userRole: session.user.role,
+      action:   'CREATE',
+      entity:   'INVOICE',
+      entityId: invoice._id.toString(),
+      changes:  JSON.stringify({ invoiceNumber: invoice.invoiceNumber, total: invoice.total, currency: invoice.currency }),
+      request,
+    })
 
     return NextResponse.json({ data: invoice.toJSON() }, { status: 201 })
   } catch (err) {

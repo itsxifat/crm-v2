@@ -1,14 +1,16 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import { useSession } from 'next-auth/react'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
 import {
   ArrowLeft, Pencil, Trash2, Plus, CheckCircle2, Circle,
   DollarSign, TrendingUp, TrendingDown, Loader2, X, Paperclip,
   CreditCard, Clock, Calendar, Users, Tag, Flag, BarChart2,
-  ChevronRight, MoreHorizontal, Check, AlertTriangle, FileText
+  ChevronRight, MoreHorizontal, Check, AlertTriangle, FileText,
+  BookOpen, MessageSquare, Send, Pencil as PencilIcon,
 } from 'lucide-react'
 import { VENTURE_META, STATUS_META, EXPENSE_CATEGORIES } from '@/lib/ventures'
 import Image from 'next/image'
@@ -383,12 +385,13 @@ function PaymentModal({ projectId, onClose, onSaved }) {
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
-const TABS = ['overview', 'tasks', 'expenses', 'payments', 'renewals', 'freelancers']
-const TAB_LABELS = { overview: 'Overview', tasks: 'Tasks', expenses: 'Expenses', payments: 'Payments', renewals: 'Renewals', freelancers: 'Freelancers' }
+const TABS = ['overview', 'brief', 'discussion', 'tasks', 'expenses', 'payments', 'renewals', 'freelancers']
+const TAB_LABELS = { overview: 'Overview', brief: 'Brief', discussion: 'Discussion', tasks: 'Tasks', expenses: 'Expenses', payments: 'Payments', renewals: 'Renewals', freelancers: 'Freelancers' }
 
 export default function ProjectDetailPage() {
   const { id }  = useParams()
   const router  = useRouter()
+  const { data: session } = useSession()
   const [project,        setProject]        = useState(null)
   const [loading,        setLoading]        = useState(true)
   const [tab,            setTab]            = useState('overview')
@@ -406,6 +409,22 @@ export default function ProjectDetailPage() {
   const [assignSaving,        setAssignSaving]        = useState(false)
   const [approvingAssign,     setApprovingAssign]     = useState(null)
   const [processingExpense,   setProcessingExpense]   = useState(null)
+
+  // Brief state
+  const [brief,            setBrief]            = useState(null)
+  const [briefMeta,        setBriefMeta]        = useState(null) // { briefUpdatedAt, briefUpdatedBy }
+  const [briefEditing,     setBriefEditing]     = useState(false)
+  const [briefDraft,       setBriefDraft]       = useState('')
+  const [briefSaving,      setBriefSaving]      = useState(false)
+  const [briefLoaded,      setBriefLoaded]      = useState(false)
+
+  // Discussion state
+  const [messages,         setMessages]         = useState([])
+  const [msgInput,         setMsgInput]         = useState('')
+  const [msgSending,       setMsgSending]       = useState(false)
+  const [discussionLoaded, setDiscussionLoaded] = useState(false)
+  const [deletingMsg,      setDeletingMsg]      = useState(null)
+  const chatBottomRef = useRef(null)
 
   const load = useCallback(async () => {
     try {
@@ -446,6 +465,79 @@ export default function ProjectDetailPage() {
       fetch('/api/freelancers?limit=200').then(r => r.json()).then(j => setFreelancerList(j.data ?? []))
     }
   }, [tab, loadFreelancerAssignments])
+
+  // Load brief once when tab is opened
+  useEffect(() => {
+    if (tab !== 'brief' || briefLoaded) return
+    fetch(`/api/projects/${id}/brief`)
+      .then(r => r.json())
+      .then(d => {
+        setBrief(d.brief ?? null)
+        setBriefMeta({ briefUpdatedAt: d.briefUpdatedAt, briefUpdatedBy: d.briefUpdatedBy })
+        setBriefLoaded(true)
+      })
+      .catch(() => setBriefLoaded(true))
+  }, [tab, id, briefLoaded])
+
+  // Load discussion once when tab is opened; scroll to bottom on new messages
+  useEffect(() => {
+    if (tab !== 'discussion' || discussionLoaded) return
+    fetch(`/api/projects/${id}/discussion`)
+      .then(r => r.json())
+      .then(d => { setMessages(d.data ?? []); setDiscussionLoaded(true) })
+      .catch(() => setDiscussionLoaded(true))
+  }, [tab, id, discussionLoaded])
+
+  useEffect(() => {
+    if (tab === 'discussion') chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages, tab])
+
+  async function handleSaveBrief() {
+    setBriefSaving(true)
+    try {
+      const res  = await fetch(`/api/projects/${id}/brief`, {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ brief: briefDraft }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error)
+      setBrief(json.brief ?? null)
+      setBriefMeta({ briefUpdatedAt: json.briefUpdatedAt, briefUpdatedBy: json.briefUpdatedBy })
+      setBriefEditing(false)
+      toast.success('Brief saved')
+    } catch (err) { toast.error(err.message) }
+    finally { setBriefSaving(false) }
+  }
+
+  async function handleSendMessage(e) {
+    e.preventDefault()
+    if (!msgInput.trim() || msgSending) return
+    setMsgSending(true)
+    try {
+      const res  = await fetch(`/api/projects/${id}/discussion`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ content: msgInput }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error)
+      setMessages(prev => [...prev, json.data])
+      setMsgInput('')
+    } catch (err) { toast.error(err.message) }
+    finally { setMsgSending(false) }
+  }
+
+  async function handleDeleteMessage(msgId) {
+    setDeletingMsg(msgId)
+    try {
+      const res  = await fetch(`/api/projects/${id}/discussion/${msgId}`, { method: 'DELETE' })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error)
+      setMessages(prev => prev.filter(m => m.id !== msgId))
+    } catch (err) { toast.error(err.message) }
+    finally { setDeletingMsg(null) }
+  }
 
   async function handleAssignFreelancer(e) {
     e.preventDefault()
@@ -1213,6 +1305,221 @@ export default function ProjectDetailPage() {
                 </div>
               </div>
             )}
+          </div>
+        )
+      })()}
+
+      {/* ── BRIEF ── */}
+      {tab === 'brief' && (() => {
+        const canEditBrief = session && (
+          ['SUPER_ADMIN', 'MANAGER'].includes(session.user.role) ||
+          (project.projectManagerId?.id ?? project.projectManagerId) === session.user.id
+        )
+        const fmtBriefDate = (d) => d ? new Date(d).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : null
+
+        return (
+          <div className="max-w-3xl space-y-4">
+            <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+              {/* Header */}
+              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+                <div className="flex items-center gap-2">
+                  <BookOpen className="w-4 h-4 text-gray-400" />
+                  <h3 className="text-sm font-semibold text-gray-800">Project Brief</h3>
+                </div>
+                {canEditBrief && !briefEditing && (
+                  <button
+                    onClick={() => { setBriefDraft(brief ?? ''); setBriefEditing(true) }}
+                    className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-900 px-2.5 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                    {brief ? 'Edit' : 'Add Brief'}
+                  </button>
+                )}
+              </div>
+
+              {/* Content */}
+              <div className="px-6 py-5">
+                {briefEditing ? (
+                  <div className="space-y-3">
+                    <textarea
+                      value={briefDraft}
+                      onChange={e => setBriefDraft(e.target.value)}
+                      rows={12}
+                      placeholder="Write the project brief here — scope, objectives, deliverables, special instructions…"
+                      className="w-full text-sm text-gray-800 border border-gray-200 rounded-lg px-3.5 py-3 resize-y focus:outline-none focus:ring-2 focus:ring-gray-900/10 leading-relaxed"
+                      autoFocus
+                    />
+                    <div className="flex items-center gap-2 justify-end">
+                      <button
+                        onClick={() => setBriefEditing(false)}
+                        className="px-3.5 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleSaveBrief}
+                        disabled={briefSaving}
+                        className="flex items-center gap-1.5 px-3.5 py-1.5 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 disabled:opacity-40 transition-colors"
+                      >
+                        {briefSaving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                        Save Brief
+                      </button>
+                    </div>
+                  </div>
+                ) : !briefLoaded ? (
+                  <div className="flex justify-center py-10">
+                    <div className="w-5 h-5 border-2 border-gray-200 border-t-gray-600 rounded-full animate-spin" />
+                  </div>
+                ) : brief ? (
+                  <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{brief}</p>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-12 text-gray-400 gap-2">
+                    <BookOpen className="w-8 h-8 opacity-30" />
+                    <p className="text-sm">No brief has been written yet.</p>
+                    {canEditBrief && (
+                      <button
+                        onClick={() => { setBriefDraft(''); setBriefEditing(true) }}
+                        className="mt-1 text-sm text-gray-600 underline underline-offset-2 hover:text-gray-900"
+                      >
+                        Write the brief
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Footer: last edited */}
+              {!briefEditing && briefMeta?.briefUpdatedAt && (
+                <div className="px-6 py-3 border-t border-gray-50 flex items-center gap-1.5 text-xs text-gray-400">
+                  <Clock className="w-3 h-3" />
+                  Last updated {fmtBriefDate(briefMeta.briefUpdatedAt)}
+                  {briefMeta.briefUpdatedBy?.name && ` by ${briefMeta.briefUpdatedBy.name}`}
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* ── DISCUSSION ── */}
+      {tab === 'discussion' && (() => {
+        const uid = session?.user?.id
+        const canPost = session && (
+          ['SUPER_ADMIN', 'MANAGER'].includes(session.user.role) ||
+          (project.projectManagerId?.id ?? project.projectManagerId) === uid ||
+          project.teamMembers?.some(m => (m.id ?? m._id ?? m) === uid)
+        )
+        const ROLE_DOT = {
+          SUPER_ADMIN: 'bg-violet-500', MANAGER: 'bg-blue-500',
+          EMPLOYEE: 'bg-emerald-500', FREELANCER: 'bg-orange-500',
+          CLIENT: 'bg-cyan-500', VENDOR: 'bg-slate-400',
+        }
+
+        return (
+          <div className="max-w-3xl flex flex-col gap-0 bg-white border border-gray-100 rounded-xl overflow-hidden" style={{ height: '70vh' }}>
+            {/* Header */}
+            <div className="flex items-center gap-2 px-5 py-3.5 border-b border-gray-100 shrink-0">
+              <MessageSquare className="w-4 h-4 text-gray-400" />
+              <h3 className="text-sm font-semibold text-gray-800">Discussion</h3>
+              {messages.length > 0 && (
+                <span className="ml-1 text-xs text-gray-400">{messages.length} message{messages.length !== 1 ? 's' : ''}</span>
+              )}
+            </div>
+
+            {/* Messages */}
+            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+              {!discussionLoaded ? (
+                <div className="flex justify-center py-10">
+                  <div className="w-5 h-5 border-2 border-gray-200 border-t-gray-600 rounded-full animate-spin" />
+                </div>
+              ) : messages.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full gap-2 text-gray-400 py-10">
+                  <MessageSquare className="w-8 h-8 opacity-30" />
+                  <p className="text-sm">No messages yet. Start the conversation.</p>
+                </div>
+              ) : (
+                messages.map(msg => {
+                  const isOwn  = msg.user.id === uid
+                  const canDel = isOwn || ['SUPER_ADMIN', 'MANAGER'].includes(session?.user?.role)
+                  const dot    = ROLE_DOT[msg.user.role] ?? 'bg-gray-400'
+
+                  return (
+                    <div key={msg.id} className={`flex gap-3 group ${isOwn ? 'flex-row-reverse' : ''}`}>
+                      {/* Avatar */}
+                      <div className={`w-8 h-8 rounded-full shrink-0 flex items-center justify-center text-xs font-bold text-white ${dot}`}>
+                        {msg.user.avatar
+                          ? <img src={msg.user.avatar} alt="" className="w-8 h-8 rounded-full object-cover" />
+                          : msg.user.name.charAt(0).toUpperCase()
+                        }
+                      </div>
+
+                      {/* Bubble */}
+                      <div className={`flex flex-col gap-0.5 max-w-[75%] ${isOwn ? 'items-end' : 'items-start'}`}>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-xs font-medium text-gray-500 ${isOwn ? 'order-last' : ''}`}>
+                            {isOwn ? 'You' : msg.user.name}
+                          </span>
+                          <span className="text-xs text-gray-300">{fmtDateTime(msg.createdAt)}</span>
+                        </div>
+                        <div className={`flex items-start gap-1.5 ${isOwn ? 'flex-row-reverse' : ''}`}>
+                          <div className={`px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap break-words ${
+                            isOwn
+                              ? 'bg-gray-900 text-white rounded-tr-sm'
+                              : 'bg-gray-100 text-gray-800 rounded-tl-sm'
+                          }`}>
+                            {msg.content}
+                          </div>
+                          {canDel && (
+                            <button
+                              onClick={() => handleDeleteMessage(msg.id)}
+                              disabled={deletingMsg === msg.id}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-md text-gray-300 hover:text-red-400 hover:bg-red-50 shrink-0 mt-0.5"
+                            >
+                              {deletingMsg === msg.id
+                                ? <Loader2 className="w-3 h-3 animate-spin" />
+                                : <Trash2 className="w-3 h-3" />
+                              }
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })
+              )}
+              <div ref={chatBottomRef} />
+            </div>
+
+            {/* Input */}
+            <div className="shrink-0 border-t border-gray-100 px-4 py-3">
+              {canPost ? (
+                <form onSubmit={handleSendMessage} className="flex items-end gap-2">
+                  <textarea
+                    value={msgInput}
+                    onChange={e => setMsgInput(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(e) }
+                    }}
+                    placeholder="Write a message… (Enter to send, Shift+Enter for new line)"
+                    rows={1}
+                    className="flex-1 resize-none text-sm border border-gray-200 rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-gray-900/10 leading-relaxed"
+                    style={{ maxHeight: '120px', overflowY: 'auto' }}
+                  />
+                  <button
+                    type="submit"
+                    disabled={!msgInput.trim() || msgSending}
+                    className="p-2.5 rounded-xl bg-gray-900 text-white hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
+                  >
+                    {msgSending
+                      ? <Loader2 className="w-4 h-4 animate-spin" />
+                      : <Send className="w-4 h-4" />
+                    }
+                  </button>
+                </form>
+              ) : (
+                <p className="text-xs text-gray-400 text-center py-1">Only project members can post in the discussion.</p>
+              )}
+            </div>
           </div>
         )
       })()}

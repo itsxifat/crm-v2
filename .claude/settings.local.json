@@ -13,7 +13,12 @@
       "Bash(mkdir -p \"e:/En-Tech/internel/en-crm/src/app/api/freelancers/invite/[token]\")",
       "Bash(mkdir -p \"e:/En-Tech/internel/en-crm/src/app/api/freelancers/[id]/payment\")",
       "Bash(mkdir -p \"e:/En-Tech/internel/en-crm/src/app/api/freelancers/[id]/pricing\")",
-      "Bash(mkdir -p \"e:/En-Tech/internel/en-crm/src/app/freelancer/invite/[token]\")"
+      "Bash(mkdir -p \"e:/En-Tech/internel/en-crm/src/app/freelancer/invite/[token]\")",
+      "Bash(node scripts/create-super-admin.js)",
+      "Bash(find /e/En-Tech/internel/en-crm/models -type f -name *.js)",
+      "Bash(find /e/En-Tech/internel/en-crm -type f -path */components/* \\\\\\(-name *task* -o -name *attendance* -o -name *leave* \\\\\\) -iname *.js -o -iname *.jsx -o -iname *.tsx)",
+      "Bash(mkdir -p \"e:/En-Tech/internel/en-crm/app/api/attendance/[id]\")",
+      "Bash(mkdir -p \"e:/En-Tech/internel/en-crm/app/api/leaves/[id]\")"
     ]
   }
 }

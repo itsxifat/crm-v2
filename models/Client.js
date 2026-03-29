@@ -77,9 +77,18 @@ const ClientSchema = new mongoose.Schema(
 
 ClientSchema.pre('save', async function () {
   if (this.clientCode) return
-  const count = await mongoose.model('Client').countDocuments()
-  const b36   = (count + 1).toString(36).toUpperCase().padStart(5, '0')
-  this.clientCode = `CL-${b36}`
+  const now = new Date()
+  const yy  = String(now.getFullYear()).slice(-2)
+  const mm  = String(now.getMonth() + 1).padStart(2, '0')
+  const prefix = `ENCL-${yy}${mm}`
+
+  // Count existing codes for this YYMM to determine next sequence
+  const count     = await mongoose.model('Client').countDocuments({ clientCode: { $regex: `^${prefix}` } })
+  const seq       = count + 1
+  const letterIdx = Math.floor((seq - 1) / 999)           // A=0..998, B=999..1997, …
+  const letter    = String.fromCharCode(65 + letterIdx)   // 65 = 'A'
+  const num       = ((seq - 1) % 999) + 1
+  this.clientCode = `${prefix}${letter}${String(num).padStart(3, '0')}`
 })
 
 if (mongoose.models.Client) delete mongoose.models.Client
