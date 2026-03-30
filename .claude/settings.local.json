@@ -19,7 +19,11 @@
       "Bash(find /e/En-Tech/internel/en-crm -type f -path */components/* \\\\\\(-name *task* -o -name *attendance* -o -name *leave* \\\\\\) -iname *.js -o -iname *.jsx -o -iname *.tsx)",
       "Bash(mkdir -p \"e:/En-Tech/internel/en-crm/app/api/attendance/[id]\")",
       "Bash(mkdir -p \"e:/En-Tech/internel/en-crm/app/api/leaves/[id]\")",
-      "Bash(node scripts/seed-clients.js)"
+      "Bash(node scripts/seed-clients.js)",
+      "Bash(node -e \":*)",
+      "Bash(grep -n \"EN-Tech\\\\|EN-CRM\\\\|EnTech\\\\|Entech Agency\\\\|en-crm\\\\b\" e:/En-Tech/internel/en-crm/app/client/ClientNav.js e:/En-Tech/internel/en-crm/app/layout.js \"e:/En-Tech/internel/en-crm/app/\\(auth\\)/login/page.js\" e:/En-Tech/internel/en-crm/app/freelancer/invite/[token]/page.js e:/En-Tech/internel/en-crm/app/freelancer/setup/page.js)",
+      "Bash(grep -rn 'Client Panel' e:/En-Tech/internel/en-crm --include=*.js --include=*.jsx --include=*.ts --include=*.tsx)",
+      "Bash(grep -c \"EN-Tech Agency\" e:/En-Tech/internel/en-crm/lib/mailer.js e:/En-Tech/internel/en-crm/app/freelancer/invite/[token]/page.js)"
     ]
   }
 }

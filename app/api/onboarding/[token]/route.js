@@ -42,8 +42,12 @@ export async function PATCH(request, { params }) {
     const {
       name, email, phone, secondaryPhone, homePhone,
       dateOfBirth, nidNumber, address, emergencyContact,
-      bloodGroup, photo, documents,
+      bloodGroup, photo, documents, password,
     } = body
+
+    if (!password || password.length < 8) {
+      return NextResponse.json({ error: 'Password must be at least 8 characters' }, { status: 422 })
+    }
 
     record.selfData = {
       name:             name             || null,
@@ -63,18 +67,11 @@ export async function PATCH(request, { params }) {
     // ── Auto-create User + Employee account immediately ──────────────────────
     const bcrypt = (await import('bcryptjs')).default
 
-    // Generate a random 10-char password: letters + numbers
-    const rawPassword = Array.from({ length: 10 }, () =>
-      'abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789'[
-        Math.floor(Math.random() * 55)
-      ]
-    ).join('')
-
     const user = await new User({
       name:     name  || 'Employee',
       email:    email || record.email,
       phone:    phone || null,
-      password: await bcrypt.hash(rawPassword, 10),
+      password: await bcrypt.hash(password, 10),
       role:     'EMPLOYEE',
       avatar:   photo || null,
       isActive: true,
@@ -102,10 +99,9 @@ export async function PATCH(request, { params }) {
     await record.save()
 
     return NextResponse.json({
-      success:     true,
-      email:       email || record.email,
-      password:    rawPassword,   // shown once on success screen
-      employeeId:  employee.id,
+      success:    true,
+      email:      email || record.email,
+      employeeId: employee.id,
     })
   } catch (err) {
     console.error('[PATCH /api/onboarding/[token]]', err)

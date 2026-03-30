@@ -73,7 +73,7 @@ export default function FreelancerInvitePage() {
         <Toaster position="top-center" />
         <div className="bg-white rounded-2xl shadow-xl overflow-hidden w-full max-w-md">
           <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-8 py-8 text-center">
-            <p className="text-white font-bold text-xl">EN-Tech Agency</p>
+            <p className="text-white font-bold text-xl">Enfinito</p>
             <p className="text-blue-200 text-sm mt-1">Panel Invitation</p>
           </div>
           <div className="px-8 py-10 text-center">
@@ -98,7 +98,7 @@ export default function FreelancerInvitePage() {
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center px-4">
         <div className="bg-white rounded-2xl shadow-xl overflow-hidden w-full max-w-md">
           <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-8 py-8 text-center">
-            <p className="text-white font-bold text-xl">EN-Tech Agency</p>
+            <p className="text-white font-bold text-xl">Enfinito</p>
             <p className="text-blue-200 text-sm mt-1">Account Activated</p>
           </div>
           <div className="px-8 py-10 text-center">
@@ -109,7 +109,7 @@ export default function FreelancerInvitePage() {
             </div>
             <h2 className="text-xl font-bold text-gray-900 mb-2">Account Activated!</h2>
             <p className="text-gray-500 text-sm leading-relaxed mb-6">
-              Your account has been activated. You can now log in and access the EN-Tech Agency Panel.
+              Your account has been activated. You can now log in and access the Enfinito Panel.
             </p>
             <Link
               href="/login"
@@ -129,7 +129,7 @@ export default function FreelancerInvitePage() {
       <div className="bg-white rounded-2xl shadow-xl overflow-hidden w-full max-w-md">
         {/* Header */}
         <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-8 py-8 text-center">
-          <p className="text-white font-bold text-xl">EN-Tech Agency</p>
+          <p className="text-white font-bold text-xl">Enfinito</p>
           <p className="text-blue-200 text-sm mt-1">
             {info?.type === 'AGENCY' ? 'Agency Partner' : 'Freelancer'} Panel
           </p>
@@ -137,7 +137,7 @@ export default function FreelancerInvitePage() {
 
         {/* Form */}
         <div className="px-8 py-8">
-          <h1 className="text-2xl font-bold text-gray-900 mb-1">Welcome to EN-Tech Agency Panel</h1>
+          <h1 className="text-2xl font-bold text-gray-900 mb-1">Welcome to Enfinito Panel</h1>
           <p className="text-gray-500 text-sm mb-6">
             Hi <strong>{info?.name}</strong>, set your password to activate your account.
           </p>

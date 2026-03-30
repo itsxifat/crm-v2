@@ -12,13 +12,13 @@ const inter = Inter({
 
 export const metadata = {
   title: {
-    default:  process.env.NEXT_PUBLIC_APP_NAME ?? 'EN-CRM',
-    template: `%s | ${process.env.NEXT_PUBLIC_APP_NAME ?? 'EN-CRM'}`,
+    default:  process.env.NEXT_PUBLIC_APP_NAME ?? 'Enfinito',
+    template: `%s | ${process.env.NEXT_PUBLIC_APP_NAME ?? 'Enfinito'}`,
   },
-  description: 'Agency CRM – Manage clients, projects, freelancers, invoices and more.',
+  description: 'Enfinito CRM – Manage clients, projects, freelancers, invoices and more.',
   keywords:    ['CRM', 'Agency', 'Project Management', 'Invoicing', 'Freelancer'],
-  authors:     [{ name: 'En-Tech' }],
-  creator:     'En-Tech',
+  authors:     [{ name: 'Enfinito' }],
+  creator:     'Enfinito',
   icons: {
     icon: '/en-icon.png',
     apple: '/en-icon.png',

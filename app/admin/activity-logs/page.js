@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
+import Image from 'next/image'
 import {
   Activity, Users, UserCheck, UserCog, Building2, ShieldCheck,
   Briefcase, Clock, ChevronRight, X, Search, RefreshCw,
@@ -191,7 +192,7 @@ function ActiveUsersPanel({ role, onClose }) {
               {/* Avatar */}
               <div className={cn('w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold text-white shrink-0', cfg.dot)}>
                 {u.avatar
-                  ? <img src={u.avatar} alt="" className="w-8 h-8 rounded-full object-cover" />
+                  ? <Image src={u.avatar} alt="" width={32} height={32} className="w-8 h-8 rounded-full object-cover" />
                   : u.name.charAt(0).toUpperCase()
                 }
               </div>
@@ -290,7 +291,7 @@ function UsersTable({ search, roleFilter }) {
                         ROLE_CONFIG[u.role]?.dot ?? 'bg-gray-400',
                       )}>
                         {u.avatar
-                          ? <img src={u.avatar} alt="" className="w-7 h-7 rounded-full object-cover" />
+                          ? <Image src={u.avatar} alt="" width={28} height={28} className="w-7 h-7 rounded-full object-cover" />
                           : (u.name ?? '?').charAt(0).toUpperCase()
                         }
                       </div>

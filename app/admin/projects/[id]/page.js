@@ -1448,7 +1448,7 @@ export default function ProjectDetailPage() {
                       {/* Avatar */}
                       <div className={`w-8 h-8 rounded-full shrink-0 flex items-center justify-center text-xs font-bold text-white ${dot}`}>
                         {msg.user.avatar
-                          ? <img src={msg.user.avatar} alt="" className="w-8 h-8 rounded-full object-cover" />
+                          ? <Image src={msg.user.avatar} alt="" width={32} height={32} className="w-8 h-8 rounded-full object-cover" />
                           : msg.user.name.charAt(0).toUpperCase()
                         }
                       </div>

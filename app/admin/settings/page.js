@@ -129,7 +129,7 @@ function AccountForm({ initial, onSave, onCancel, isSaving }) {
           <input
             value={form.fromName}
             onChange={e => set('fromName', e.target.value)}
-            placeholder="e.g. EN-Tech Agency"
+            placeholder="e.g. Enfinito"
             className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-400"
           />
         </div>

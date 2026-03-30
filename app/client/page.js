@@ -1,10 +1,10 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
-import { Client, Project, Invoice, Milestone, Task, Message } from '@/models'
+import { Client, Project, Invoice, Milestone, Task } from '@/models'
 import Link from 'next/link'
 import {
-  FolderOpen, FileText, DollarSign, MessageSquare,
+  FolderOpen, FileText, DollarSign,
   ArrowRight, Clock, CheckCircle, AlertCircle, TrendingUp
 } from 'lucide-react'
 import ProgressBar from '@/components/portals/ProgressBar'
@@ -61,7 +61,7 @@ export default async function ClientDashboard() {
 
   const clientId = client._id
 
-  const [activeProjects, invoices, allProjects, pendingInvoicesCount, paidAgg, unreadMessages] = await Promise.all([
+  const [activeProjects, invoices, allProjects, pendingInvoicesCount, paidAgg] = await Promise.all([
     Project.find({ clientId, status: { $in: ['PLANNING', 'IN_PROGRESS', 'ON_HOLD'] } })
       .sort({ updatedAt: -1 })
       .limit(4)
@@ -73,7 +73,6 @@ export default async function ClientDashboard() {
     Project.countDocuments({ clientId, status: { $in: ['PLANNING', 'IN_PROGRESS', 'ON_HOLD'] } }),
     Invoice.countDocuments({ clientId, status: { $in: ['SENT', 'OVERDUE', 'PARTIALLY_PAID'] } }),
     Invoice.aggregate([{ $match: { clientId, status: 'PAID' } }, { $group: { _id: null, total: { $sum: '$total' } } }]),
-    Message.countDocuments({ receiverId: session.user.id, isRead: false }),
   ])
 
   // Enrich projects with task statuses and milestones
@@ -97,13 +96,12 @@ export default async function ClientDashboard() {
     { label: 'Active Projects',   value: allProjects,                              icon: FolderOpen,    color: 'blue' },
     { label: 'Pending Invoices',  value: pendingInvoices,                          icon: FileText,      color: 'yellow' },
     { label: 'Total Paid',        value: `$${paidTotal.toLocaleString()}`,          icon: DollarSign,    color: 'green' },
-    { label: 'Unread Messages',   value: unreadMessages,                           icon: MessageSquare, color: 'purple' },
+
   ]
 
   const colorMap = {
     blue:   { bg: 'bg-blue-50',   icon: 'text-blue-600',   ring: 'ring-blue-100' },
     green:  { bg: 'bg-green-50',  icon: 'text-green-600',  ring: 'ring-green-100' },
-    purple: { bg: 'bg-purple-50', icon: 'text-purple-600', ring: 'ring-purple-100' },
     yellow: { bg: 'bg-yellow-50', icon: 'text-yellow-600', ring: 'ring-yellow-100' },
   }
 
@@ -273,28 +271,7 @@ export default async function ClientDashboard() {
         )}
       </div>
 
-      {/* Messages preview */}
-      <div>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-bold text-gray-900">Messages</h2>
-          <Link href="/client/messages" className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 font-medium">
-            Open chat <ArrowRight className="w-4 h-4" />
-          </Link>
-        </div>
-        <div className="bg-white rounded-2xl border border-gray-100 p-6 text-center">
-          <MessageSquare className="w-10 h-10 text-gray-200 mx-auto mb-3" />
-          <p className="text-gray-500 text-sm">
-            {unreadMessages > 0
-              ? `You have ${unreadMessages} unread message${unreadMessages > 1 ? 's' : ''}`
-              : 'No new messages'}
-          </p>
-          <Link href="/client/messages">
-            <button className="mt-3 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors">
-              Go to Messages
-            </button>
-          </Link>
-        </div>
-      </div>
+</div>
     </div>
   )
 }

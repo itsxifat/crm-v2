@@ -6,8 +6,8 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { signOut } from 'next-auth/react'
 import {
-  LayoutDashboard, FolderOpen, FileText, Files, MessageSquare,
-  ChevronDown, LogOut, User, Settings, Menu, X, Building2
+  LayoutDashboard, FolderOpen, FileText, Files,
+  ChevronDown, LogOut, User, Menu, X,
 } from 'lucide-react'
 import NotificationBell from '@/components/shared/NotificationBell'
 
@@ -16,7 +16,6 @@ const navLinks = [
   { href: '/client/projects',  label: 'My Projects', icon: FolderOpen },
   { href: '/client/invoices',  label: 'Invoices',    icon: FileText },
   { href: '/client/documents', label: 'Documents',   icon: Files },
-  { href: '/client/messages',  label: 'Messages',    icon: MessageSquare },
 ]
 
 export default function ClientNav({ user }) {
@@ -35,10 +34,7 @@ export default function ClientNav({ user }) {
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-              <Building2 className="w-5 h-5 text-white" />
-            </div>
-            <span className="text-lg font-bold text-gray-900">EN-CRM</span>
+            <Image src="/en-logo.png" alt="Enfinito" width={100} height={28} className="h-7 w-auto object-contain" />
             <span className="hidden sm:block text-xs text-gray-400 border-l border-gray-200 pl-3 ml-1">
               Client Portal
             </span>

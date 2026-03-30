@@ -4,6 +4,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { User, Employee, Task, Leave, Attendance } from '@/models'
+import { generateEmployeeId } from '@/models/Employee'
 import { z } from 'zod'
 
 const updateEmployeeSchema = z.object({
@@ -97,6 +98,20 @@ export async function PUT(request, { params }) {
     if (password) {
       const bcrypt = (await import('bcryptjs')).default
       userUpdate.password = await bcrypt.hash(password, 10)
+    }
+
+    // Auto-generate employeeId if not yet set and we now have department + phone
+    if (!current.employeeId && !empData.employeeId) {
+      const dept  = empData.department  ?? current.department
+      const ph    = empData.phone ?? phone ?? current.phone
+      const hd    = hireDate            ? new Date(hireDate) : current.hireDate
+      if (dept && ph) {
+        try {
+          empData.employeeId = await generateEmployeeId({ department: dept, hireDate: hd, phone: ph })
+        } catch (e) {
+          console.warn('[PUT /api/employees] employeeId generation skipped:', e.message)
+        }
+      }
     }
 
     await Promise.all([

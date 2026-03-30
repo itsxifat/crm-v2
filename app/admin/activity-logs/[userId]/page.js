@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
+import Image from 'next/image'
 import {
   ArrowLeft, LogIn, Clock, Monitor, Globe, Activity,
   ChevronLeft, ChevronRight, AlertCircle, Filter,
@@ -96,7 +97,7 @@ function UserCard({ user }) {
     <div className="bg-white rounded-xl border border-gray-100 p-5 flex items-center gap-4">
       <div className={cn('w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold text-white shrink-0', dotCls)}>
         {user.avatar
-          ? <img src={user.avatar} alt="" className="w-12 h-12 rounded-full object-cover" />
+          ? <Image src={user.avatar} alt="" width={48} height={48} className="w-12 h-12 rounded-full object-cover" />
           : (user.name ?? '?').charAt(0).toUpperCase()
         }
       </div>
