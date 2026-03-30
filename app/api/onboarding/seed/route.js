@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic'
 // DEV-ONLY — seeds 10 dummy onboarding records (5 original + 5 new)
 // GET /api/onboarding/seed
 import { NextResponse } from 'next/server'

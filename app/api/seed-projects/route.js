@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic'
 // DEV-ONLY — seeds 5 dummy projects with real client references
 // GET /api/seed-projects
 import { NextResponse } from 'next/server'

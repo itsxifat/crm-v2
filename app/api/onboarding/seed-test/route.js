@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic'
 // DEV-ONLY — creates a dummy PENDING_SUBMISSION onboarding record for testing
 // Access: GET /api/onboarding/seed-test
 import { NextResponse } from 'next/server'
