@@ -7,7 +7,7 @@ import toast from 'react-hot-toast'
 import {
   ArrowLeft, Mail, Phone, Globe, MapPin, Building2,
   FolderOpen, FileText, FileCheck, DollarSign, Calendar,
-  Pencil, CheckCircle, Clock, ShieldCheck, ExternalLink
+  Pencil, CheckCircle, Clock, ShieldCheck, ExternalLink, Link2
 } from 'lucide-react'
 import Avatar from '@/components/ui/Avatar'
 import Badge from '@/components/ui/Badge'
@@ -97,7 +97,7 @@ export default function ClientDetailPage() {
     )
   }
 
-  const { userId: user, projects = [], invoices = [], documents = [], agreements = [], totalRevenue, outstandingBalance, activeProjectCount, kyc } = data
+  const { userId: user, projects = [], invoices = [], documents = [], agreements = [], linkedClients = [], totalRevenue, outstandingBalance, activeProjectCount, kyc } = data
   const kycStatus = kyc?.status ?? 'NOT_SUBMITTED'
   const kycMeta = KYC_STATUS_META[kycStatus] ?? KYC_STATUS_META.NOT_SUBMITTED
 
@@ -122,9 +122,24 @@ export default function ClientDetailPage() {
                 </span>
               </div>
               {data.company && <p className="text-sm text-gray-500">{data.company}</p>}
-              <p className="text-xs text-gray-400 mt-0.5">
-                Client since {user?.createdAt ? new Date(user.createdAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : '—'}
-              </p>
+              <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                <p className="text-xs text-gray-400">
+                  Client since {user?.createdAt ? new Date(user.createdAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : '—'}
+                </p>
+                {data.parentClientId && (
+                  <Link href={`/admin/clients/${data.parentClientId._id ?? data.parentClientId.id}`}
+                    className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline">
+                    <Link2 className="w-3 h-3" />
+                    Linked to {data.parentClientId.company || data.parentClientId.userId?.name || 'parent'}
+                  </Link>
+                )}
+                {linkedClients.length > 0 && (
+                  <span className="inline-flex items-center gap-1 text-xs text-violet-600 bg-violet-50 px-2 py-0.5 rounded-full">
+                    <Link2 className="w-3 h-3" />
+                    {linkedClients.length} linked {linkedClients.length === 1 ? 'company' : 'companies'}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -181,6 +196,30 @@ export default function ClientDetailPage() {
                 </div>
               </div>
               <div className="space-y-5">
+                {/* Portfolio / Linked companies */}
+                {linkedClients.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3">
+                      Portfolio — {linkedClients.length} linked {linkedClients.length === 1 ? 'company' : 'companies'}
+                    </h3>
+                    <div className="space-y-2">
+                      {linkedClients.map(lc => (
+                        <Link key={lc.id ?? lc._id} href={`/admin/clients/${lc.id ?? lc._id}`}
+                          className="flex items-center gap-3 p-3 rounded-lg border border-gray-100 hover:border-violet-200 hover:bg-violet-50/40 transition-all group">
+                          <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${lc.clientType === 'COMPANY' ? 'bg-violet-500' : 'bg-blue-500'}`} />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-gray-800 truncate group-hover:text-violet-700">
+                              {lc.company || '(Individual)'}
+                            </p>
+                            <p className="text-xs text-gray-400">{lc.clientCode} · {lc.industry || lc.clientType}</p>
+                          </div>
+                          <ExternalLink className="w-3.5 h-3.5 text-gray-300 group-hover:text-violet-500 shrink-0" />
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Recent Activity</h3>
                 {projects.slice(0, 3).map((p) => (
                   <Link key={p.id ?? p._id} href={`/admin/projects/${p.id ?? p._id}`} className="flex items-center gap-3 p-3 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors">

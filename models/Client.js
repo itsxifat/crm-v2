@@ -14,7 +14,7 @@ const KycDocSchema = new mongoose.Schema({
 
 const ClientSchema = new mongoose.Schema(
   {
-    userId:     { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
+    userId:     { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     clientCode: { type: String, unique: true, sparse: true },
 
     // Client type
@@ -53,6 +53,11 @@ const ClientSchema = new mongoose.Schema(
     // Internal notes
     notes: { type: String, default: null },
 
+    // Portfolio grouping — multiple companies owned by the same contact person
+    // Set this to the _id of the "primary" individual Client record.
+    // All companies under the same owner share the same userId (User account).
+    parentClientId: { type: mongoose.Schema.Types.ObjectId, ref: 'Client', default: null },
+
     // KYC
     kyc: {
       status:         { type: String, enum: ['NOT_SUBMITTED', 'PENDING', 'VERIFIED', 'REJECTED'], default: 'NOT_SUBMITTED' },
@@ -74,6 +79,10 @@ const ClientSchema = new mongoose.Schema(
     },
   }
 )
+
+// Index for fast lookup by user (non-unique — one person can own multiple company clients)
+ClientSchema.index({ userId: 1 })
+ClientSchema.index({ parentClientId: 1 })
 
 ClientSchema.pre('save', async function () {
   if (this.clientCode) return

@@ -18,7 +18,8 @@
       "Bash(find /e/En-Tech/internel/en-crm/models -type f -name *.js)",
       "Bash(find /e/En-Tech/internel/en-crm -type f -path */components/* \\\\\\(-name *task* -o -name *attendance* -o -name *leave* \\\\\\) -iname *.js -o -iname *.jsx -o -iname *.tsx)",
       "Bash(mkdir -p \"e:/En-Tech/internel/en-crm/app/api/attendance/[id]\")",
-      "Bash(mkdir -p \"e:/En-Tech/internel/en-crm/app/api/leaves/[id]\")"
+      "Bash(mkdir -p \"e:/En-Tech/internel/en-crm/app/api/leaves/[id]\")",
+      "Bash(node scripts/seed-clients.js)"
     ]
   }
 }

@@ -13,9 +13,16 @@ export async function GET(request, { params }) {
 
     const client = await Client.findById(params.id)
       .populate({ path: 'userId', select: 'id name email avatar phone isActive lastLogin createdAt' })
+      .populate({ path: 'parentClientId', select: 'id clientCode company clientType', populate: { path: 'userId', select: 'name' } })
       .populate('kyc.reviewedBy', 'name')
 
     if (!client) return NextResponse.json({ error: 'Client not found' }, { status: 404 })
+
+    // Linked companies — all other Client records sharing the same userId
+    const linkedClients = await Client.find({
+      userId:  client.userId._id,
+      _id:     { $ne: client._id },
+    }).select('id clientCode clientType company industry priority createdAt').lean()
 
     const [projects, invoices, documents, agreements] = await Promise.all([
       Project.find({ clientId: params.id }).sort({ createdAt: -1 }),
@@ -31,9 +38,10 @@ export async function GET(request, { params }) {
     return NextResponse.json({
       data: {
         ...client.toJSON(),
-        projects: projects.map(p => p.toJSON()),
-        invoices:  invoices.map(i => i.toJSON()),
-        documents: documents.map(d => d.toJSON()),
+        linkedClients,
+        projects:   projects.map(p => p.toJSON()),
+        invoices:   invoices.map(i => i.toJSON()),
+        documents:  documents.map(d => d.toJSON()),
         agreements: agreements.map(a => a.toJSON()),
         totalRevenue,
         outstandingBalance,

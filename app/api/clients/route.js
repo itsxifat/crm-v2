@@ -45,7 +45,8 @@ export async function GET(request) {
     const [clients, total] = await Promise.all([
       Client.find(filter)
         .skip(skip).limit(limit).sort({ createdAt: -1 })
-        .populate({ path: 'userId', select: 'id name email avatar phone isActive lastLogin' }),
+        .populate({ path: 'userId', select: 'id name email avatar phone isActive lastLogin' })
+        .populate({ path: 'parentClientId', select: 'id clientCode company clientType', populate: { path: 'userId', select: 'name' } }),
       Client.countDocuments(filter),
     ])
 
@@ -107,63 +108,83 @@ export async function POST(request) {
       industry, priority, altPhone, timezone,
       address, city, country, vatNumber, website,
       socialLinks, logo, notes,
+      parentClientId,   // ← set when adding a linked company under an existing contact
     } = body
 
     if (!name?.trim()) return NextResponse.json({ error: 'Name is required' }, { status: 422 })
     if (!email?.trim()) return NextResponse.json({ error: 'Email is required' }, { status: 422 })
 
-    const existing = await User.findOne({ email }).lean()
-    if (existing) return NextResponse.json({ error: 'A user with this email already exists' }, { status: 409 })
+    let user       = await User.findOne({ email: email.trim().toLowerCase() }).lean()
+    let rawPw      = null
+    let isNewUser  = false
 
-    // Auto-generate a secure password — never shown to admin
-    const chars    = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'
-    const rawPw    = Array.from({ length: 10 }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
-    const hashedPw = await bcrypt.hash(rawPw, 12)
+    if (user) {
+      // Existing contact person — only allowed when explicitly linking a new company (parentClientId provided)
+      if (!parentClientId) {
+        return NextResponse.json({ error: 'A user with this email already exists. To add a linked company, select the parent client.' }, { status: 409 })
+      }
+      // Verify the parent client belongs to this user
+      const parentClient = await Client.findById(parentClientId).lean()
+      if (!parentClient) return NextResponse.json({ error: 'Parent client not found' }, { status: 404 })
+      if (parentClient.userId.toString() !== user._id.toString()) {
+        return NextResponse.json({ error: 'Parent client does not match this contact email' }, { status: 422 })
+      }
+    } else {
+      // New contact person — create User account
+      const chars    = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'
+      rawPw          = Array.from({ length: 10 }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
+      const hashedPw = await bcrypt.hash(rawPw, 12)
+      user           = await new User({ email: email.trim().toLowerCase(), password: hashedPw, name: name.trim(), role: 'CLIENT', phone, isActive: true }).save()
+      isNewUser      = true
+    }
 
-    const user   = await new User({ email, password: hashedPw, name: name.trim(), role: 'CLIENT', phone, isActive: true }).save()
     const client = await new Client({
-      userId: user._id,
-      clientType: clientType || 'INDIVIDUAL',
-      company: company || null,
-      companyPhone: companyPhone || null,
-      companyEmail: companyEmail || null,
-      contactPerson: contactPerson || null,
-      designation: designation || null,
-      businessType: businessType || null,
-      industry: industry || null,
-      priority: priority || 'MEDIUM',
-      altPhone: altPhone || null,
-      timezone: timezone || null,
-      address: address || null,
-      city: city || null,
-      country: country || 'Bangladesh',
-      vatNumber: vatNumber || null,
-      website: website || null,
-      socialLinks: socialLinks ?? [],
-      logo: logo || null,
-      notes: notes || null,
+      userId:         user._id,
+      parentClientId: parentClientId || null,
+      clientType:     clientType     || 'INDIVIDUAL',
+      company:        company        || null,
+      companyPhone:   companyPhone   || null,
+      companyEmail:   companyEmail   || null,
+      contactPerson:  contactPerson  || null,
+      designation:    designation    || null,
+      businessType:   businessType   || null,
+      industry:       industry       || null,
+      priority:       priority       || 'MEDIUM',
+      altPhone:       altPhone       || null,
+      timezone:       timezone       || null,
+      address:        address        || null,
+      city:           city           || null,
+      country:        country        || 'Bangladesh',
+      vatNumber:      vatNumber      || null,
+      website:        website        || null,
+      socialLinks:    socialLinks    ?? [],
+      logo:           logo           || null,
+      notes:          notes          || null,
     }).save()
 
     await client.populate({ path: 'userId', select: 'id name email avatar phone' })
 
-    // Send welcome email with credentials
+    // Send welcome email only for brand-new users
     let emailSent = false
-    try {
-      await sendClientWelcomeEmail({
-        to:         email,
-        name:       name.trim(),
-        clientCode: client.clientCode,
-        password:   rawPw,
-        phone:      phone || null,
-      })
-      emailSent = true
-    } catch (mailErr) {
-      console.warn('[POST /api/clients] Email failed:', mailErr.message)
+    if (isNewUser) {
+      try {
+        await sendClientWelcomeEmail({
+          to:         email.trim().toLowerCase(),
+          name:       name.trim(),
+          clientCode: client.clientCode,
+          password:   rawPw,
+          phone:      phone || null,
+        })
+        emailSent = true
+      } catch (mailErr) {
+        console.warn('[POST /api/clients] Email failed:', mailErr.message)
+      }
     }
 
     return NextResponse.json({
-      data: client.toJSON(),
+      data:        client.toJSON(),
       emailSent,
+      linkedToExisting: !isNewUser,
       credentials: { clientCode: client.clientCode, email },
     }, { status: 201 })
   } catch (err) {
