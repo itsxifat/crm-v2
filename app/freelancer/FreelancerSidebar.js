@@ -2,13 +2,14 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, FolderOpen, Wallet, LogOut } from 'lucide-react'
+import { LayoutDashboard, FolderOpen, Wallet, LogOut, UserCircle } from 'lucide-react'
 import { signOut } from 'next-auth/react'
 
 const NAV = [
-  { href: '/freelancer',          label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/freelancer',          label: 'Dashboard',  icon: LayoutDashboard },
   { href: '/freelancer/projects', label: 'My Projects', icon: FolderOpen },
   { href: '/freelancer/wallet',   label: 'Wallet',      icon: Wallet },
+  { href: '/freelancer/account',  label: 'My Account',  icon: UserCircle },
 ]
 
 export default function FreelancerSidebar({ user }) {

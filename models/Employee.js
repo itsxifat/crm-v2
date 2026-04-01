@@ -9,7 +9,7 @@ const EmployeeSchema = new mongoose.Schema(
     designation:     { type: String, default: null },   // official designation
     salary:          { type: Number, default: null },
     hireDate:        { type: Date,   default: null },
-    employeeId:      { type: String, default: null, unique: true, sparse: true },
+    employeeId:      { type: String },
 
     // Personal details (populated from onboarding selfData)
     phone:            { type: String, default: null },
@@ -75,8 +75,9 @@ function _ph4(phone) {
 }
 
 export async function generateEmployeeId({ department, hireDate, phone }) {
-  const dept = (department || '').toUpperCase()
-  if (!DEPT_CODES.includes(dept)) throw new Error(`Invalid department code: ${dept}. Allowed: ${DEPT_CODES.join(', ')}`)
+  // Normalize: take first 3 uppercase letters, so "Development" → "DEV", "Human Resources" → "HUM"
+  const dept = (department || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3)
+  if (!dept) throw new Error('Department is required to generate employee ID')
 
   const yymm = _yymm(hireDate || new Date())
   if (!yymm) throw new Error('Invalid hireDate — cannot generate employee ID')
@@ -92,6 +93,12 @@ export async function generateEmployeeId({ department, hireDate, phone }) {
 
   return `${prefix}${serial}-${ph4}`
 }
+
+// Only enforce uniqueness on actual string values — null/absent documents are excluded
+EmployeeSchema.index(
+  { employeeId: 1 },
+  { unique: true, partialFilterExpression: { employeeId: { $type: 'string' } } }
+)
 
 EmployeeSchema.pre('save', async function () {
   if (this.employeeId) return

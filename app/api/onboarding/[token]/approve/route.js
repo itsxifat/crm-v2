@@ -32,11 +32,11 @@ export async function POST(request, { params }) {
     if (!employee) return NextResponse.json({ error: 'Employee record not found' }, { status: 404 })
 
     let newEmployeeId = employee.employeeId
-    if (!newEmployeeId && department && (hireDate || employee.hireDate) && (employee.phone || companyPhone)) {
+    if (!newEmployeeId && department && (employee.phone || companyPhone)) {
       try {
         newEmployeeId = await generateEmployeeId({
           department,
-          hireDate: hireDate ? new Date(hireDate) : employee.hireDate,
+          hireDate: hireDate ? new Date(hireDate) : (employee.hireDate ?? null),
           phone:    employee.phone || companyPhone,
         })
       } catch (err) {
@@ -62,6 +62,7 @@ export async function POST(request, { params }) {
     })
 
     if (hrNote !== undefined) record.hrNote = hrNote
+    record.status = 'COMPLETED'
     record.hrData = {
       venture, department, position, designation,
       salary:    salary    ?? null,

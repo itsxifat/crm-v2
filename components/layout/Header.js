@@ -106,12 +106,12 @@ export default function Header() {
 
               <div className="py-1">
                 <Link
-                  href="/profile"
+                  href="/admin/account"
                   onClick={() => setProfileOpen(false)}
                   className="flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                 >
                   <User className="w-4 h-4 text-gray-400" />
-                  My Profile
+                  My Account
                 </Link>
                 <Link
                   href="/settings"

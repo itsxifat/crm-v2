@@ -92,7 +92,7 @@ export async function PUT(request, { params }) {
     const userUpdate = {}
     if (name     !== undefined) userUpdate.name     = name
     if (email    !== undefined) userUpdate.email    = email
-    if (phone    !== undefined) userUpdate.phone    = phone
+    if (phone    !== undefined) { userUpdate.phone  = phone; empData.phone = phone }
     if (isActive !== undefined) userUpdate.isActive = isActive
     if (role     !== undefined) userUpdate.role     = role
     if (password) {
@@ -103,7 +103,7 @@ export async function PUT(request, { params }) {
     // Auto-generate employeeId if not yet set and we now have department + phone
     if (!current.employeeId && !empData.employeeId) {
       const dept  = empData.department  ?? current.department
-      const ph    = empData.phone ?? phone ?? current.phone
+      const ph    = empData.phone       ?? current.phone
       const hd    = hireDate            ? new Date(hireDate) : current.hireDate
       if (dept && ph) {
         try {

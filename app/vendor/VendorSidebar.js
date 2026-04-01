@@ -2,11 +2,12 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, LogOut } from 'lucide-react'
+import { LayoutDashboard, LogOut, UserCircle } from 'lucide-react'
 import { signOut } from 'next-auth/react'
 
 const NAV = [
-  { href: '/vendor', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/vendor',         label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/vendor/account', label: 'My Account', icon: UserCircle },
 ]
 
 export default function VendorSidebar({ user }) {

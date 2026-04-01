@@ -17,7 +17,7 @@ const EmployeeOnboardingSchema = new mongoose.Schema(
   {
     token:     { type: String, unique: true, default: () => crypto.randomBytes(24).toString('hex') },
     email:     { type: String, default: null },   // optional pre-fill
-    status:    { type: String, enum: ['PENDING_SUBMISSION', 'SUBMITTED', 'APPROVED', 'REJECTED'], default: 'PENDING_SUBMISSION' },
+    status:    { type: String, enum: ['PENDING_SUBMISSION', 'SUBMITTED', 'APPROVED', 'COMPLETED', 'REJECTED'], default: 'PENDING_SUBMISSION' },
     expiresAt: { type: Date, default: () => new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) }, // 7 days
 
     // ── Employee fills ─────────────────────────────────────────────────────────

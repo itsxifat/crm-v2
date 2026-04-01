@@ -66,30 +66,37 @@ export async function PATCH(request, { params }) {
 
     // ── Auto-create User + Employee account immediately ──────────────────────
     const bcrypt = (await import('bcryptjs')).default
+    const userEmail = email || record.email
 
-    const user = await new User({
-      name:     name  || 'Employee',
-      email:    email || record.email,
-      phone:    phone || null,
-      password: await bcrypt.hash(password, 10),
-      role:     'EMPLOYEE',
-      avatar:   photo || null,
-      isActive: true,
-    }).save()
+    let user = await User.findOne({ email: userEmail })
+    if (!user) {
+      user = await new User({
+        name:     name  || 'Employee',
+        email:    userEmail,
+        phone:    phone || null,
+        password: await bcrypt.hash(password, 10),
+        role:     'EMPLOYEE',
+        avatar:   photo || null,
+        isActive: true,
+      }).save()
+    }
 
-    const employee = await new Employee({
-      userId:           user._id,
-      phone:            phone            || null,
-      secondaryPhone:   secondaryPhone   || null,
-      homePhone:        homePhone        || null,
-      dateOfBirth:      dateOfBirth      ? new Date(dateOfBirth) : null,
-      bloodGroup:       bloodGroup       || null,
-      emergencyContact: emergencyContact || null,
-      address:          address          || null,
-      nidNumber:        nidNumber        || null,
-      photo:            photo            || null,
-      panelAccessGranted: true,
-    }).save()
+    let employee = await Employee.findOne({ userId: user._id })
+    if (!employee) {
+      employee = await new Employee({
+        userId:           user._id,
+        phone:            phone            || null,
+        secondaryPhone:   secondaryPhone   || null,
+        homePhone:        homePhone        || null,
+        dateOfBirth:      dateOfBirth      ? new Date(dateOfBirth) : null,
+        bloodGroup:       bloodGroup       || null,
+        emergencyContact: emergencyContact || null,
+        address:          address          || null,
+        nidNumber:        nidNumber        || null,
+        photo:            photo            || null,
+        panelAccessGranted: true,
+      }).save()
+    }
 
     // Mark as approved immediately — HR still fills employment details later
     record.status      = 'APPROVED'
@@ -100,7 +107,7 @@ export async function PATCH(request, { params }) {
 
     return NextResponse.json({
       success:    true,
-      email:      email || record.email,
+      email:      userEmail,
       employeeId: employee.id,
     })
   } catch (err) {

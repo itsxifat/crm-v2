@@ -148,6 +148,13 @@ const NAV_SECTIONS = [
       { href: '/admin/settings',      label: 'Settings',       icon: Settings,  roles: ['SUPER_ADMIN'] },
     ],
   },
+  {
+    label: 'Account',
+    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
+    items: [
+      { href: '/admin/account', label: 'My Account', icon: UserCog, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'] },
+    ],
+  },
 ]
 
 // ─── Nav Item (leaf) ──────────────────────────────────────────────────────────
