@@ -119,6 +119,7 @@ function ImageLightbox({ url, onClose }) {
         style={{ cursor: dragging ? 'grabbing' : zoom > 1 ? 'grab' : 'default' }}
         onMouseDown={onMouseDown} onMouseMove={onMouseMove}
         onMouseUp={onMouseUp} onMouseLeave={onMouseUp}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={url} alt="Document" draggable={false}
           style={{
@@ -206,10 +207,10 @@ function PdfViewer({ url, onClose }) {
  * DocPreview — inline thumbnail that opens a fullscreen viewer on click.
  *
  * Props:
- *   url       string  — document URL (image or PDF)
- *   label     string  — optional section label
- *   className string
- *   compact   boolean — show only a small chip instead of a thumbnail card
+ * url       string  — document URL (image or PDF)
+ * label     string  — optional section label
+ * className string
+ * compact   boolean — show only a small chip instead of a thumbnail card
  */
 export default function DocPreview({ url, label, className, compact = false }) {
   const [viewer,  setViewer]  = useState(false)
@@ -243,7 +244,7 @@ export default function DocPreview({ url, label, className, compact = false }) {
         {mounted && viewer && isImage && <ImageLightbox url={url} onClose={() => setViewer(false)} />}
         {mounted && viewer && isPdf   && <PdfViewer     url={url} onClose={() => setViewer(false)} />}
         {mounted && viewer && !isImage && !isPdf && (
-          <_OpenInTab url={url} onDone={() => setViewer(false)} />
+          <OpenInTab url={url} onDone={() => setViewer(false)} />
         )}
       </>
     )
@@ -265,6 +266,7 @@ export default function DocPreview({ url, label, className, compact = false }) {
       >
         {isImage ? (
           <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={url} alt={filename} className="w-full object-cover" style={{ maxHeight: 200 }} />
             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
               <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-white/90 rounded-full p-2.5 shadow">
@@ -313,14 +315,14 @@ export default function DocPreview({ url, label, className, compact = false }) {
       {mounted && viewer && isImage  && <ImageLightbox url={url} onClose={() => setViewer(false)} />}
       {mounted && viewer && isPdf    && <PdfViewer     url={url} onClose={() => setViewer(false)} />}
       {mounted && viewer && !isImage && !isPdf && (
-        <_OpenInTab url={url} onDone={() => setViewer(false)} />
+        <OpenInTab url={url} onDone={() => setViewer(false)} />
       )}
     </div>
   )
 }
 
 // Helper: open unknown file type in new tab without breaking render
-function _OpenInTab({ url, onDone }) {
+function OpenInTab({ url, onDone }) {
   useEffect(() => {
     window.open(url, '_blank', 'noopener,noreferrer')
     onDone()
