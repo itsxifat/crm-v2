@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation'
 import { Plus, Trash2, Loader2, ArrowLeft, AlertCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import ClientSearch from '@/components/ui/ClientSearch'
+import Select from '@/components/ui/Select'
+import DatePicker from '@/components/ui/DatePicker'
 
 const ic = 'w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
 const lc = 'block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5'
@@ -178,18 +180,15 @@ export default function InvoiceForm({ invoice, defaultProjectId, defaultClientId
               {clientProjects.length === 0 ? (
                 <p className="text-xs text-gray-400">No projects found for this client.</p>
               ) : (
-                <select value={projectId}
-                  onChange={e => setProjectId(e.target.value)}
-                  className={ic}
-                  disabled={isEdit}>
-                  <option value="">— No project (standalone invoice) —</option>
-                  {clientProjects.map(p => (
-                    <option key={p.id ?? p._id} value={p.id ?? p._id}>
-                      {p.projectCode} — {p.name}
-                      {p.budget > 0 ? ` (৳${((p.budget||0)-(p.discount||0)).toLocaleString()})` : ''}
-                    </option>
-                  ))}
-                </select>
+                <Select value={projectId}
+                  onChange={v => setProjectId(v ?? '')}
+                  options={clientProjects.map(p => ({
+                    value: p.id ?? p._id,
+                    label: `${p.projectCode} — ${p.name}${p.budget > 0 ? ` (৳${((p.budget||0)-(p.discount||0)).toLocaleString()})` : ''}`,
+                  }))}
+                  placeholder="— No project (standalone invoice) —"
+                  disabled={isEdit}
+                />
               )}
               {!isEdit && projectId && (
                 <p className="text-xs text-gray-400 mt-1.5 flex items-center gap-1">
@@ -207,11 +206,11 @@ export default function InvoiceForm({ invoice, defaultProjectId, defaultClientId
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className={lc}>Issue Date *</label>
-              <input type="date" value={issueDate} onChange={e => setIssueDate(e.target.value)} className={ic} required />
+              <DatePicker value={issueDate || null} onChange={v => setIssueDate(v ?? '')} />
             </div>
             <div>
               <label className={lc}>Due Date</label>
-              <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className={ic} />
+              <DatePicker value={dueDate || null} onChange={v => setDueDate(v ?? '')} />
             </div>
           </div>
         </div>

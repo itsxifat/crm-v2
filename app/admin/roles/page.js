@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Plus, Pencil, Trash2, Check, X, Loader2, ShieldCheck, ToggleLeft, ToggleRight } from 'lucide-react'
 import toast from 'react-hot-toast'
+import Select from '@/components/ui/Select'
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -100,9 +101,10 @@ function RoleModal({ open, onClose, role, onSaved }) {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className={lc}>Venture</label>
-              <select value={form.venture} onChange={e => set('venture', e.target.value)} className={ic}>
-                {VENTURES.map(v => <option key={v.value} value={v.value}>{v.label}</option>)}
-              </select>
+              <Select value={form.venture} onChange={v => set('venture', v ?? '')}
+                options={VENTURES.filter(v => v.value !== '').map(v => ({ value: v.value, label: v.label }))}
+                placeholder="All Ventures"
+              />
             </div>
             <div>
               <label className={lc}>Color</label>

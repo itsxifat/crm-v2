@@ -8,6 +8,8 @@ import {
   ArrowLeft, LogIn, Clock, Monitor, Globe, Activity,
   ChevronLeft, ChevronRight, AlertCircle, Filter,
 } from 'lucide-react'
+import Select from '@/components/ui/Select'
+import DatePicker from '@/components/ui/DatePicker'
 import { cn } from '@/lib/utils'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -265,30 +267,17 @@ export default function UserActivityLogPage() {
           <Filter className="w-3.5 h-3.5" />
           Filters:
         </div>
-        <select
+        <Select
           value={actionFilter}
-          onChange={e => setActionFilter(e.target.value)}
-          className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-gray-900/10"
-        >
-          <option value="">All Actions</option>
-          {Object.entries(ACTION_CONFIG).map(([action, cfg]) => (
-            <option key={action} value={action}>{cfg.label}</option>
-          ))}
-        </select>
+          onChange={v => setActionFilter(v ?? '')}
+          options={Object.entries(ACTION_CONFIG).map(([action, cfg]) => ({ value: action, label: cfg.label }))}
+          placeholder="All Actions"
+          size="sm"
+        />
         <div className="flex items-center gap-1.5">
-          <input
-            type="date"
-            value={fromDate}
-            onChange={e => setFromDate(e.target.value)}
-            className="text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-gray-900/10"
-          />
+          <DatePicker value={fromDate || null} onChange={v => setFromDate(v ?? '')} />
           <span className="text-gray-400 text-xs">to</span>
-          <input
-            type="date"
-            value={toDate}
-            onChange={e => setToDate(e.target.value)}
-            className="text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-gray-900/10"
-          />
+          <DatePicker value={toDate || null} onChange={v => setToDate(v ?? '')} />
         </div>
         {(actionFilter || fromDate || toDate) && (
           <button

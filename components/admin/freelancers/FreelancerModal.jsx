@@ -1,11 +1,12 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Loader2, Info } from 'lucide-react'
 import Modal, { ModalFooter } from '@/components/ui/Modal'
+import Select from '@/components/ui/Select'
 
 const RATE_TYPES    = ['Hourly', 'Daily', 'Fixed', 'Monthly']
 const AGENCY_TYPES  = ['Production House', 'Design Studio', 'Marketing Agency', 'IT Company', 'Other']
@@ -66,7 +67,7 @@ export default function FreelancerModal({ open, onOpenChange, freelancer, onSave
   const type   = isEdit ? (freelancer.type ?? defaultType) : defaultType
 
   const schema  = type === 'AGENCY' ? agencySchema : freelancerSchema
-  const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm({
+  const { register, control, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm({
     resolver: zodResolver(schema),
   })
 
@@ -179,10 +180,12 @@ export default function FreelancerModal({ open, onOpenChange, freelancer, onSave
                   <Input register={register} name="agencyPhone" placeholder="+880 1XXX XXXXXX" errors={errors} />
                 </Field>
                 <Field label="Agency Type" error={errors.agencyType?.message}>
-                  <select {...register('agencyType')} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition">
-                    <option value="">Select…</option>
-                    {AGENCY_TYPES.map(t => <option key={t}>{t}</option>)}
-                  </select>
+                  <Controller name="agencyType" control={control} render={({ field }) => (
+                    <Select value={field.value} onChange={v => field.onChange(v ?? '')}
+                      options={AGENCY_TYPES.map(t => ({ value: t, label: t }))}
+                      placeholder="Select…"
+                    />
+                  )} />
                 </Field>
                 <div className="col-span-2">
                   <Field label="Address" error={errors.agencyAddress?.message}>
@@ -258,10 +261,12 @@ export default function FreelancerModal({ open, onOpenChange, freelancer, onSave
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition" />
             </Field>
             <Field label="Rate Type" error={errors.rateType?.message}>
-              <select {...register('rateType')} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition">
-                <option value="">Select…</option>
-                {RATE_TYPES.map(r => <option key={r}>{r}</option>)}
-              </select>
+              <Controller name="rateType" control={control} render={({ field }) => (
+                <Select value={field.value} onChange={v => field.onChange(v ?? '')}
+                  options={RATE_TYPES.map(r => ({ value: r, label: r }))}
+                  placeholder="Select…"
+                />
+              )} />
             </Field>
           </div>
         </div>

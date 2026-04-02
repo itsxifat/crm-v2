@@ -13,7 +13,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, PieChart, Pie, Cell, Legend
 } from 'recharts'
-import { useForm } from 'react-hook-form'
+import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import Modal, { ModalFooter } from '@/components/ui/Modal'
@@ -21,6 +21,9 @@ import Pagination from '@/components/ui/Pagination'
 import FileUpload from '@/components/ui/FileUpload'
 import Link from 'next/link'
 import TkAmt from '@/components/ui/TkAmt'
+import Select from '@/components/ui/Select'
+import DatePicker from '@/components/ui/DatePicker'
+import DocPreview from '@/components/ui/DocPreview'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -99,7 +102,7 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
   const [vendors,     setVendors]     = useState([])
   const [txnIdVal,    setTxnIdVal]    = useState('')
 
-  const { register, handleSubmit, watch, reset, setValue, formState: { errors, isSubmitting } } = useForm({
+  const { register, control, handleSubmit, watch, reset, setValue, formState: { errors, isSubmitting } } = useForm({
     resolver: zodResolver(txSchema),
     defaultValues: { type: 'INCOME', currency: 'USD', date: new Date().toISOString().slice(0,10) },
   })
@@ -179,10 +182,12 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className={lc}>Category *</label>
-            <select {...register('category')} className={ic}>
-              <option value="">Select…</option>
-              {categories.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
+            <Controller name="category" control={control} render={({ field }) => (
+              <Select value={field.value} onChange={v => field.onChange(v ?? '')}
+                options={categories.map(c => ({ value: c, label: c }))}
+                placeholder="Select…"
+              />
+            )} />
             {errors.category && <p className="mt-1 text-xs text-red-500">{errors.category.message}</p>}
           </div>
           <div>
@@ -205,15 +210,19 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className={lc}>Date *</label>
-            <input type="date" {...register('date')} className={ic} />
+            <Controller name="date" control={control} render={({ field }) => (
+              <DatePicker value={field.value || null} onChange={v => field.onChange(v ?? '')} />
+            )} />
             {errors.date && <p className="mt-1 text-xs text-red-500">{errors.date.message}</p>}
           </div>
           <div>
             <label className={lc}>Payment Method</label>
-            <select {...register('paymentMethod')} className={ic}>
-              <option value="">Select…</option>
-              {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m.replace('_',' ')}</option>)}
-            </select>
+            <Controller name="paymentMethod" control={control} render={({ field }) => (
+              <Select value={field.value} onChange={v => field.onChange(v ?? '')}
+                options={PAYMENT_METHODS.map(m => ({ value: m, label: m.replace('_', ' ') }))}
+                placeholder="Select…"
+              />
+            )} />
           </div>
         </div>
 
@@ -221,41 +230,34 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
         {isFreelancerPayment && (
           <div>
             <label className={lc}>Freelancer *</label>
-            <select {...register('freelancerId')} className={ic}>
-              <option value="">Select freelancer…</option>
-              {freelancers.map(f => (
-                <option key={f.id} value={f.id}>
-                  {f.userId?.name ?? f.id}{f.userId?.email ? ` — ${f.userId.email}` : ''}
-                </option>
-              ))}
-            </select>
+            <Controller name="freelancerId" control={control} render={({ field }) => (
+              <Select value={field.value} onChange={v => field.onChange(v ?? '')}
+                options={freelancers.map(f => ({ value: f.id, label: `${f.userId?.name ?? f.id}${f.userId?.email ? ` — ${f.userId.email}` : ''}` }))}
+                placeholder="Select freelancer…"
+              />
+            )} />
           </div>
         )}
         {isPayroll && (
           <div>
             <label className={lc}>Employee *</label>
-            <select {...register('paidTo')} className={ic}>
-              <option value="">Select employee…</option>
-              {employees.map(e => (
-                <option key={e.id} value={e.id}>
-                  {e.userId?.name ?? e.id}{e.designation ? ` — ${e.designation}` : e.position ? ` — ${e.position}` : ''}
-                  {e.salary ? ` (BDT ${Number(e.salary).toLocaleString()}/mo)` : ''}
-                </option>
-              ))}
-            </select>
+            <Controller name="paidTo" control={control} render={({ field }) => (
+              <Select value={field.value} onChange={v => field.onChange(v ?? '')}
+                options={employees.map(e => ({ value: e.id, label: `${e.userId?.name ?? e.id}${e.designation ? ` — ${e.designation}` : e.position ? ` — ${e.position}` : ''}${e.salary ? ` (BDT ${Number(e.salary).toLocaleString()}/mo)` : ''}` }))}
+                placeholder="Select employee…"
+              />
+            )} />
           </div>
         )}
         {isVendorPayment && (
           <div>
             <label className={lc}>Vendor *</label>
-            <select {...register('vendorId')} className={ic}>
-              <option value="">Select vendor…</option>
-              {vendors.map(v => (
-                <option key={v.id} value={v.id}>
-                  {v.name}{v.category ? ` — ${v.category}` : ''}
-                </option>
-              ))}
-            </select>
+            <Controller name="vendorId" control={control} render={({ field }) => (
+              <Select value={field.value} onChange={v => field.onChange(v ?? '')}
+                options={vendors.map(v => ({ value: v.id, label: `${v.name}${v.category ? ` — ${v.category}` : ''}` }))}
+                placeholder="Select vendor…"
+              />
+            )} />
           </div>
         )}
 
@@ -266,10 +268,12 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
           </div>
           <div>
             <label className={lc}>Paid By</label>
-            <select {...register('paidBy')} className={ic}>
-              <option value="">Select person…</option>
-              {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-            </select>
+            <Controller name="paidBy" control={control} render={({ field }) => (
+              <Select value={field.value} onChange={v => field.onChange(v ?? '')}
+                options={users.map(u => ({ value: u.id, label: u.name }))}
+                placeholder="Select person…"
+              />
+            )} />
           </div>
         </div>
 
@@ -308,10 +312,12 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className={lc}>Related Project</label>
-            <select {...register('projectId')} className={ic}>
-              <option value="">None</option>
-              {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
+            <Controller name="projectId" control={control} render={({ field }) => (
+              <Select value={field.value} onChange={v => field.onChange(v ?? '')}
+                options={projects.map(p => ({ value: p.id, label: p.name }))}
+                placeholder="None"
+              />
+            )} />
           </div>
           <div>
             <label className={lc}>Reference</label>
@@ -347,7 +353,7 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
 
 // ─── Approve Modal ────────────────────────────────────────────────────────────
 
-function ApproveModal({ expense, onClose, onDone }) {
+function ApproveModal({ expense, onClose, onDone, currentUser }) {
   const [receiptUrl,      setReceiptUrl]      = useState(expense.invoiceUrl ?? '')
   const [note,            setNote]            = useState('')
   const [txnId,           setTxnId]           = useState('')
@@ -400,77 +406,99 @@ function ApproveModal({ expense, onClose, onDone }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-xl border border-gray-200 w-full max-w-md p-6 space-y-4">
-        <div className="flex items-center justify-between">
+      <div className="bg-white rounded-xl border border-gray-200 w-full max-w-2xl max-h-[90vh] flex flex-col">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
           <h3 className="text-base font-semibold text-gray-900">Review Payment Request</h3>
-          <button onClick={onClose}><X className="w-5 h-5 text-gray-400" /></button>
+          <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100">
+            <X className="w-5 h-5 text-gray-400" />
+          </button>
         </div>
 
-        {/* Summary */}
-        <div className="rounded-lg bg-gray-50 border border-gray-100 px-4 py-3 space-y-1.5">
-          <p className="text-sm font-semibold text-gray-900">{expense.title}</p>
-          <p className="text-xs text-gray-500">{expense.category} · {fmtDate(expense.date)}</p>
-          <p className="text-lg font-bold text-gray-900"><TkAmt value={expense.amount} decimals={2} /></p>
-          {expense.submittedBy?.name && (
-            <p className="text-xs text-gray-500">Submitted by: {expense.submittedBy.name}</p>
-          )}
-          {expense.invoiceUrl && (
-            <a href={expense.invoiceUrl} target="_blank" rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline">
-              <Paperclip className="w-3 h-3" /> View submitted invoice
-            </a>
-          )}
-        </div>
+        {/* Scrollable body */}
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
 
-        {/* Receipt / Invoice */}
-        <FileUpload
-          label={
-            hasSubmittedInvoice
-              ? 'Receipt / Invoice — pre-filled from submission (replace if needed)'
-              : 'Upload Receipt (required to approve)'
-          }
-          value={receiptUrl}
-          onUploaded={url => setReceiptUrl(url)}
-        />
-        {hasSubmittedInvoice && !receiptUrl && (
-          <p className="text-xs text-amber-600">Invoice was cleared — re-upload or keep the original.</p>
-        )}
+          {/* Two-column layout: summary + invoice preview */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 
-        {/* Account Manager + TxnId */}
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Account Manager</label>
-            <div className={`${ic} bg-gray-50 cursor-not-allowed flex items-center`}>
-              <span className="text-gray-700">
-                {currentUser?.name ?? '—'}
-                {currentUser?.role && (
-                  <span className="ml-1.5 text-xs text-gray-400 font-normal">
-                    {currentUser.role.replace('_', ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase())}
-                  </span>
-                )}
-              </span>
+            {/* Left: expense summary */}
+            <div className="rounded-xl bg-gray-50 border border-gray-100 px-4 py-4 space-y-2">
+              <p className="text-sm font-semibold text-gray-900">{expense.title}</p>
+              <p className="text-xs text-gray-500">{expense.category} · {fmtDate(expense.date)}</p>
+              <p className="text-xl font-bold text-gray-900"><TkAmt value={expense.amount} decimals={2} /></p>
+              {expense.submittedBy?.name && (
+                <p className="text-xs text-gray-500">Submitted by: <span className="font-medium text-gray-700">{expense.submittedBy.name}</span></p>
+              )}
+              {expense.notes && (
+                <p className="text-xs text-gray-500 border-t border-gray-200 pt-2 mt-2">{expense.notes}</p>
+              )}
+            </div>
+
+            {/* Right: submitted invoice preview */}
+            {expense.invoiceUrl ? (
+              <DocPreview
+                url={expense.invoiceUrl}
+                label="Submitted Invoice / Receipt"
+              />
+            ) : (
+              <div className="rounded-xl bg-gray-50 border border-dashed border-gray-200 flex items-center justify-center py-8">
+                <p className="text-xs text-gray-400">No invoice submitted</p>
+              </div>
+            )}
+          </div>
+
+          {/* Upload your receipt */}
+          <FileUpload
+            label={
+              hasSubmittedInvoice
+                ? 'Your Receipt (pre-filled — replace if needed)'
+                : 'Upload Receipt (required to approve)'
+            }
+            value={receiptUrl}
+            onUploaded={url => setReceiptUrl(url)}
+          />
+          {hasSubmittedInvoice && !receiptUrl && (
+            <p className="text-xs text-amber-600">Invoice was cleared — re-upload or keep the original.</p>
+          )}
+
+          {/* Account Manager + TxnId */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Account Manager</label>
+              <div className={`${ic} bg-gray-50 cursor-not-allowed flex items-center`}>
+                <span className="text-gray-700">
+                  {currentUser?.name ?? '—'}
+                  {currentUser?.role && (
+                    <span className="ml-1.5 text-xs text-gray-400 font-normal">
+                      {currentUser.role.replace('_', ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase())}
+                    </span>
+                  )}
+                </span>
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Transaction ID {!receiptUrl && <span className="text-red-500">*</span>}
+                {receiptUrl && <span className="text-gray-400 text-xs ml-1">(optional)</span>}
+              </label>
+              <input value={txnId} onChange={e => setTxnId(e.target.value)}
+                placeholder="e.g. TXN-REF-001"
+                className={ic} />
             </div>
           </div>
+
+          {/* Note */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Transaction ID {!receiptUrl && <span className="text-red-500">*</span>}
-              {receiptUrl && <span className="text-gray-400 text-xs ml-1">(optional)</span>}
-            </label>
-            <input value={txnId} onChange={e => setTxnId(e.target.value)}
-              placeholder="e.g. TXN-REF-001"
-              className={ic} />
+            <label className="block text-sm font-medium text-gray-700 mb-1">Note (optional)</label>
+            <textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
+              placeholder="Add a note for the requester…"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 resize-none" />
           </div>
         </div>
 
-        {/* Note */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Note (optional)</label>
-          <textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
-            placeholder="Add a note for the requester…"
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 resize-none" />
-        </div>
-
-        <div className="flex gap-2 justify-end">
+        {/* Footer */}
+        <div className="flex gap-2 justify-end px-6 py-4 border-t border-gray-100 shrink-0">
           <button onClick={onClose} disabled={saving}
             className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">
             Cancel
@@ -570,10 +598,7 @@ function ConfirmPaymentModal({ payment, currentUser, onClose, onDone }) {
             <p className="text-xs text-gray-500 italic">{payment.notes}</p>
           )}
           {payment.receiptUrl && (
-            <a href={payment.receiptUrl} target="_blank" rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline">
-              <Paperclip className="w-3 h-3" /> View payment proof
-            </a>
+            <DocPreview url={payment.receiptUrl} compact />
           )}
         </div>
 
@@ -1258,11 +1283,9 @@ export default function AccountsPage() {
       {/* Date range selector */}
       <div className="flex items-center gap-3 flex-wrap">
         <span className="text-sm text-gray-500 font-medium">Period</span>
-        <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)}
-          className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500" />
+        <DatePicker value={startDate || null} onChange={v => setStartDate(v ?? '')} />
         <span className="text-gray-400 text-sm">to</span>
-        <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)}
-          className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500" />
+        <DatePicker value={endDate || null} onChange={v => setEndDate(v ?? '')} />
         {(startDate || endDate) && (
           <button
             onClick={() => { setStartDate(''); setEndDate('') }}
@@ -1561,12 +1584,7 @@ export default function AccountsPage() {
                           {tx.paymentMethod && (
                             <p className="text-xs text-gray-500">{tx.paymentMethod.replace('_',' ')}</p>
                           )}
-                          {tx.receiptUrl && (
-                            <a href={tx.receiptUrl} target="_blank" rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline mt-0.5">
-                              <Paperclip className="w-3 h-3" /> Receipt
-                            </a>
-                          )}
+                          {tx.receiptUrl && <DocPreview url={tx.receiptUrl} compact />}
                         </td>
                         <td className={`px-4 py-3 text-sm font-bold text-right whitespace-nowrap ${tx.type === 'INCOME' ? 'text-green-600' : 'text-red-500'}`}>
                           {tx.type === 'INCOME' ? '+' : '-'}<TkAmt value={tx.amount} decimals={2} />
@@ -1840,18 +1858,8 @@ export default function AccountsPage() {
                         <td className="px-5 py-3 text-sm font-semibold text-gray-900 text-right"><TkAmt value={e.amount} decimals={2} /></td>
                         <td className="px-5 py-3">
                           <div className="flex items-center gap-1.5">
-                            {e.invoiceUrl && (
-                              <a href={e.invoiceUrl} target="_blank" rel="noopener noreferrer"
-                                className="flex items-center gap-1 text-xs text-blue-600 hover:underline">
-                                <Paperclip className="w-3 h-3" /> Invoice
-                              </a>
-                            )}
-                            {e.receiptUrl && (
-                              <a href={e.receiptUrl} target="_blank" rel="noopener noreferrer"
-                                className="flex items-center gap-1 text-xs text-blue-600 hover:underline">
-                                <Paperclip className="w-3 h-3" /> Receipt
-                              </a>
-                            )}
+                            {e.invoiceUrl && <DocPreview url={e.invoiceUrl} compact />}
+                            {e.receiptUrl && <DocPreview url={e.receiptUrl} compact />}
                             {!e.invoiceUrl && !e.receiptUrl && <span className="text-xs text-gray-300">—</span>}
                           </div>
                         </td>
@@ -1911,13 +1919,15 @@ export default function AccountsPage() {
             {/* Filter */}
             <div className="flex items-center gap-3">
               <span className="text-sm text-gray-500">Filter by status</span>
-              <select value={wdStatus} onChange={e => setWdStatus(e.target.value)}
-                className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500">
-                <option value="">All</option>
-                <option value="PENDING">Pending</option>
-                <option value="APPROVED">Approved</option>
-                <option value="REJECTED">Rejected</option>
-              </select>
+              <Select value={wdStatus} onChange={v => setWdStatus(v ?? '')}
+                options={[
+                  { value: 'PENDING',  label: 'Pending' },
+                  { value: 'APPROVED', label: 'Approved' },
+                  { value: 'REJECTED', label: 'Rejected' },
+                ]}
+                placeholder="All"
+                size="sm"
+              />
             </div>
 
             <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
@@ -2052,11 +2062,9 @@ export default function AccountsPage() {
         <div className="space-y-6">
           <div className="bg-white rounded-xl border border-gray-100 p-4 flex items-center gap-3 flex-wrap">
             <span className="text-sm text-gray-700">Report period:</span>
-            <input type="date" value={plStart} onChange={(e) => setPlStart(e.target.value)}
-              className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900" />
+            <DatePicker value={plStart || null} onChange={v => setPlStart(v ?? '')} />
             <span className="text-gray-400">to</span>
-            <input type="date" value={plEnd} onChange={(e) => setPlEnd(e.target.value)}
-              className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900" />
+            <DatePicker value={plEnd || null} onChange={v => setPlEnd(v ?? '')} />
             <button onClick={loadPL} disabled={plLoading}
               className="px-4 py-1.5 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 disabled:opacity-60 transition-colors">
               {plLoading ? 'Loading…' : 'Generate'}
@@ -2155,6 +2163,7 @@ export default function AccountsPage() {
       {approvingPr && (
         <ApproveModal
           expense={approvingPr}
+          currentUser={session?.user}
           onClose={() => setApprovingPr(null)}
           onDone={() => { loadPaymentRequests(); loadSummary() }}
         />

@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import toast from 'react-hot-toast'
 import TkAmt from '@/components/ui/TkAmt'
+import DatePicker from '@/components/ui/DatePicker'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -211,11 +212,9 @@ export default function InvoicesPage() {
         </div>
         {/* Date range */}
         <div className="flex items-center gap-2 shrink-0">
-          <input type="date" value={startDate} onChange={e => { setStartDate(e.target.value); setPage(1) }}
-            className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" />
+          <DatePicker value={startDate || null} onChange={v => { setStartDate(v ?? ''); setPage(1) }} />
           <span className="text-xs text-gray-400">to</span>
-          <input type="date" value={endDate} onChange={e => { setEndDate(e.target.value); setPage(1) }}
-            className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" />
+          <DatePicker value={endDate || null} onChange={v => { setEndDate(v ?? ''); setPage(1) }} />
           {(startDate || endDate) && (
             <button onClick={() => { setStartDate(''); setEndDate(''); setPage(1) }}
               className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1.5 rounded hover:bg-gray-100">

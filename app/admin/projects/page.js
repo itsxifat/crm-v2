@@ -7,6 +7,8 @@ import { useRouter } from 'next/navigation'
 import toast from 'react-hot-toast'
 import { VENTURES, VENTURE_META, STATUS_META } from '@/lib/ventures'
 import TkAmt from '@/components/ui/TkAmt'
+import Select from '@/components/ui/Select'
+import DatePicker from '@/components/ui/DatePicker'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -358,19 +360,20 @@ export default function ProjectsPage() {
             className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 placeholder-gray-400"
           />
         </div>
-        <select value={type} onChange={e => { setType(e.target.value); setPage(1) }}
-          className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500">
-          <option value="">All Types</option>
-          <option value="FIXED">Fixed</option>
-          <option value="MONTHLY">Monthly</option>
-        </select>
+        <Select value={type} onChange={v => { setType(v ?? ''); setPage(1) }}
+          options={[
+            { value: 'FIXED',   label: 'Fixed' },
+            { value: 'MONTHLY', label: 'Monthly' },
+          ]}
+          placeholder="All Types"
+          size="sm"
+          className="w-36"
+        />
         {/* Date range */}
         <div className="flex items-center gap-1.5">
-          <input type="date" value={startDate} onChange={e => { setStartDate(e.target.value); setPage(1) }}
-            className="px-2.5 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" />
+          <DatePicker value={startDate || null} onChange={v => { setStartDate(v ?? ''); setPage(1) }} />
           <span className="text-xs text-gray-400">—</span>
-          <input type="date" value={endDate} onChange={e => { setEndDate(e.target.value); setPage(1) }}
-            className="px-2.5 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" />
+          <DatePicker value={endDate || null} onChange={v => { setEndDate(v ?? ''); setPage(1) }} />
         </div>
         {hasFilters && (
           <button

@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { X, Loader2, Plus, Trash2, Globe, Facebook, Instagram, Linkedin, Twitter, Youtube, Link2, Search } from 'lucide-react'
 import toast from 'react-hot-toast'
 import FileUpload from '@/components/ui/FileUpload'
+import Select from '@/components/ui/Select'
 
 const SOCIAL_PLATFORMS = [
   { value: 'facebook',  label: 'Facebook',  Icon: Facebook },
@@ -370,17 +371,17 @@ export default function ClientModal({ open, onOpenChange, client, onSaved }) {
                     </div>
                     <div>
                       <label className={lc}>Business Type</label>
-                      <select value={form.businessType} onChange={e => set('businessType', e.target.value)} className={ic}>
-                        <option value="">— Select type —</option>
-                        {BUSINESS_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                      </select>
+                      <Select value={form.businessType} onChange={v => set('businessType', v ?? '')}
+                        options={BUSINESS_TYPES.map(t => ({ value: t, label: t }))}
+                        placeholder="— Select type —"
+                      />
                     </div>
                     <div>
                       <label className={lc}>Industry</label>
-                      <select value={form.industry} onChange={e => set('industry', e.target.value)} className={ic}>
-                        <option value="">— Select industry —</option>
-                        {INDUSTRIES.map(i => <option key={i} value={i}>{i}</option>)}
-                      </select>
+                      <Select value={form.industry} onChange={v => set('industry', v ?? '')}
+                        options={INDUSTRIES.map(i => ({ value: i, label: i }))}
+                        placeholder="— Select industry —"
+                      />
                     </div>
                     <div>
                       <label className={lc}>VAT / Tax Number</label>
@@ -389,12 +390,15 @@ export default function ClientModal({ open, onOpenChange, client, onSaved }) {
                     </div>
                     <div>
                       <label className={lc}>Priority</label>
-                      <select value={form.priority} onChange={e => set('priority', e.target.value)} className={ic}>
-                        <option value="LOW">Low</option>
-                        <option value="MEDIUM">Medium</option>
-                        <option value="HIGH">High</option>
-                        <option value="VIP">VIP</option>
-                      </select>
+                      <Select value={form.priority} onChange={v => set('priority', v ?? 'MEDIUM')}
+                        options={[
+                          { value: 'LOW',    label: 'Low' },
+                          { value: 'MEDIUM', label: 'Medium' },
+                          { value: 'HIGH',   label: 'High' },
+                          { value: 'VIP',    label: 'VIP' },
+                        ]}
+                        placeholder="Select priority…"
+                      />
                     </div>
                     <div className="col-span-2">
                       <label className={lc}>Logo</label>
@@ -463,19 +467,22 @@ export default function ClientModal({ open, onOpenChange, client, onSaved }) {
                   <div className="grid grid-cols-2 gap-4 mt-1">
                     <div>
                       <label className={lc}>Industry</label>
-                      <select value={form.industry} onChange={e => set('industry', e.target.value)} className={ic}>
-                        <option value="">— Select industry —</option>
-                        {INDUSTRIES.map(i => <option key={i} value={i}>{i}</option>)}
-                      </select>
+                      <Select value={form.industry} onChange={v => set('industry', v ?? '')}
+                        options={INDUSTRIES.map(i => ({ value: i, label: i }))}
+                        placeholder="— Select industry —"
+                      />
                     </div>
                     <div>
                       <label className={lc}>Priority</label>
-                      <select value={form.priority} onChange={e => set('priority', e.target.value)} className={ic}>
-                        <option value="LOW">Low</option>
-                        <option value="MEDIUM">Medium</option>
-                        <option value="HIGH">High</option>
-                        <option value="VIP">VIP</option>
-                      </select>
+                      <Select value={form.priority} onChange={v => set('priority', v ?? 'MEDIUM')}
+                        options={[
+                          { value: 'LOW',    label: 'Low' },
+                          { value: 'MEDIUM', label: 'Medium' },
+                          { value: 'HIGH',   label: 'High' },
+                          { value: 'VIP',    label: 'VIP' },
+                        ]}
+                        placeholder="Select priority…"
+                      />
                     </div>
                   </div>
                 )}
@@ -497,9 +504,10 @@ export default function ClientModal({ open, onOpenChange, client, onSaved }) {
               </div>
               <div>
                 <label className={lc}>Country</label>
-                <select value={form.country} onChange={e => set('country', e.target.value)} className={ic}>
-                  {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
+                <Select value={form.country} onChange={v => set('country', v ?? 'Bangladesh')}
+                  options={COUNTRIES.map(c => ({ value: c, label: c }))}
+                  placeholder="Select country…"
+                />
               </div>
               <div>
                 <label className={lc}>Alt. Phone</label>
@@ -508,23 +516,26 @@ export default function ClientModal({ open, onOpenChange, client, onSaved }) {
               </div>
               <div>
                 <label className={lc}>Timezone</label>
-                <select value={form.timezone} onChange={e => set('timezone', e.target.value)} className={ic}>
-                  <option value="Asia/Dhaka">Asia/Dhaka (GMT+6)</option>
-                  <option value="Asia/Kolkata">Asia/Kolkata (GMT+5:30)</option>
-                  <option value="Asia/Karachi">Asia/Karachi (GMT+5)</option>
-                  <option value="Asia/Dubai">Asia/Dubai (GMT+4)</option>
-                  <option value="Asia/Singapore">Asia/Singapore (GMT+8)</option>
-                  <option value="Asia/Tokyo">Asia/Tokyo (GMT+9)</option>
-                  <option value="Asia/Shanghai">Asia/Shanghai (GMT+8)</option>
-                  <option value="Europe/London">Europe/London (GMT+0)</option>
-                  <option value="Europe/Berlin">Europe/Berlin (GMT+1)</option>
-                  <option value="America/New_York">America/New_York (GMT-5)</option>
-                  <option value="America/Los_Angeles">America/Los_Angeles (GMT-8)</option>
-                  <option value="America/Chicago">America/Chicago (GMT-6)</option>
-                  <option value="Australia/Sydney">Australia/Sydney (GMT+11)</option>
-                  <option value="Pacific/Auckland">Pacific/Auckland (GMT+13)</option>
-                  <option value="UTC">UTC (GMT+0)</option>
-                </select>
+                <Select value={form.timezone} onChange={v => set('timezone', v ?? 'Asia/Dhaka')}
+                  options={[
+                    { value: 'Asia/Dhaka',          label: 'Asia/Dhaka (GMT+6)' },
+                    { value: 'Asia/Kolkata',         label: 'Asia/Kolkata (GMT+5:30)' },
+                    { value: 'Asia/Karachi',         label: 'Asia/Karachi (GMT+5)' },
+                    { value: 'Asia/Dubai',           label: 'Asia/Dubai (GMT+4)' },
+                    { value: 'Asia/Singapore',       label: 'Asia/Singapore (GMT+8)' },
+                    { value: 'Asia/Tokyo',           label: 'Asia/Tokyo (GMT+9)' },
+                    { value: 'Asia/Shanghai',        label: 'Asia/Shanghai (GMT+8)' },
+                    { value: 'Europe/London',        label: 'Europe/London (GMT+0)' },
+                    { value: 'Europe/Berlin',        label: 'Europe/Berlin (GMT+1)' },
+                    { value: 'America/New_York',     label: 'America/New_York (GMT-5)' },
+                    { value: 'America/Los_Angeles',  label: 'America/Los_Angeles (GMT-8)' },
+                    { value: 'America/Chicago',      label: 'America/Chicago (GMT-6)' },
+                    { value: 'Australia/Sydney',     label: 'Australia/Sydney (GMT+11)' },
+                    { value: 'Pacific/Auckland',     label: 'Pacific/Auckland (GMT+13)' },
+                    { value: 'UTC',                  label: 'UTC (GMT+0)' },
+                  ]}
+                  placeholder="Select timezone…"
+                />
               </div>
               <div className="col-span-2">
                 <label className={lc}>Website</label>
@@ -542,10 +553,13 @@ export default function ClientModal({ open, onOpenChange, client, onSaved }) {
               )}
               {form.socialLinks.map((link, i) => (
                 <div key={i} className="flex items-center gap-2">
-                  <select value={link.platform} onChange={e => updateSocialLink(i, 'platform', e.target.value)}
-                    className="border border-gray-200 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 w-36 shrink-0">
-                    {SOCIAL_PLATFORMS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
-                  </select>
+                  <div className="w-36 shrink-0">
+                    <Select value={link.platform} onChange={v => updateSocialLink(i, 'platform', v ?? 'facebook')}
+                      options={SOCIAL_PLATFORMS.map(p => ({ value: p.value, label: p.label }))}
+                      placeholder="Platform"
+                      size="sm"
+                    />
+                  </div>
                   <input value={link.url} onChange={e => updateSocialLink(i, 'url', e.target.value)}
                     placeholder="https://…" className={`${ic} flex-1`} />
                   <button type="button" onClick={() => removeSocialLink(i)}

@@ -15,6 +15,7 @@ import {
 import { VENTURE_META, STATUS_META, EXPENSE_CATEGORIES } from '@/lib/ventures'
 import Image from 'next/image'
 import FileUpload from '@/components/ui/FileUpload'
+import DocPreview from '@/components/ui/DocPreview'
 import Select from '@/components/ui/Select'
 import DatePicker from '@/components/ui/DatePicker'
 
@@ -1039,12 +1040,7 @@ export default function ProjectDetailPage() {
                     </td>
                     <td className="px-5 py-3">
                       <div className="flex items-center gap-2">
-                        {e.invoiceUrl && (
-                          <a href={e.invoiceUrl} target="_blank" rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-gray-700 underline">
-                            <Paperclip className="w-3 h-3" /> Receipt
-                          </a>
-                        )}
+                        {e.invoiceUrl && <DocPreview url={e.invoiceUrl} compact />}
                         {e.status === 'PENDING' && (
                           <>
                             <button onClick={() => handleExpenseAction(e.id ?? e._id, 'approve')}
@@ -1114,12 +1110,7 @@ export default function ProjectDetailPage() {
                       </div>
                     </td>
                     <td className="px-5 py-3">
-                      {p.receiptUrl ? (
-                        <a href={p.receiptUrl} target="_blank" rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-gray-700 underline">
-                          <Paperclip className="w-3 h-3" /> View
-                        </a>
-                      ) : '—'}
+                      {p.receiptUrl ? <DocPreview url={p.receiptUrl} compact /> : '—'}
                     </td>
                   </tr>
                 ))}

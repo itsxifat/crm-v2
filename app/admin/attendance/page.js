@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { ChevronLeft, ChevronRight, Plus, X, Loader2, Search, UserCheck, Users } from 'lucide-react'
+import Select from '@/components/ui/Select'
+import DatePicker from '@/components/ui/DatePicker'
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -98,28 +100,24 @@ function AttendanceModal({ employees, prefill, onClose, onSaved }) {
           {!isEdit && (
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">Employee</label>
-              <select required value={form.employeeId} onChange={e => set('employeeId', e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-500">
-                <option value="">Select employee…</option>
-                {employees.map(emp => (
-                  <option key={emp._id} value={emp._id}>{emp.userId?.name ?? 'Unknown'}</option>
-                ))}
-              </select>
+              <Select value={form.employeeId} onChange={v => set('employeeId', v ?? '')}
+                options={employees.map(emp => ({ value: emp._id, label: emp.userId?.name ?? 'Unknown' }))}
+                placeholder="Select employee…"
+              />
             </div>
           )}
 
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Date</label>
-            <input type="date" required value={form.date} onChange={e => set('date', e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" />
+            <DatePicker value={form.date || null} onChange={v => set('date', v ?? '')} />
           </div>
 
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Status</label>
-            <select value={form.status} onChange={e => set('status', e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-500">
-              {Object.entries(STATUS_CFG).map(([k, c]) => <option key={k} value={k}>{c.label}</option>)}
-            </select>
+            <Select value={form.status} onChange={v => set('status', v ?? 'PRESENT')}
+              options={Object.entries(STATUS_CFG).map(([k, c]) => ({ value: k, label: c.label }))}
+              placeholder="Select status…"
+            />
           </div>
 
           {['PRESENT', 'LATE', 'HALF_DAY'].includes(form.status) && (
@@ -278,13 +276,11 @@ export default function AttendancePage() {
             placeholder="Search by employee…"
             className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" />
         </div>
-        <select value={empFilter} onChange={e => setEmpFilter(e.target.value)}
-          className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500">
-          <option value="">All employees</option>
-          {employees.map(emp => (
-            <option key={emp._id} value={emp._id}>{emp.userId?.name ?? 'Unknown'}</option>
-          ))}
-        </select>
+        <Select value={empFilter} onChange={v => setEmpFilter(v ?? '')}
+          options={employees.map(emp => ({ value: emp._id, label: emp.userId?.name ?? 'Unknown' }))}
+          placeholder="All employees"
+          size="sm"
+        />
         {statusFilter && (
           <button onClick={() => setStatusFilter('')}
             className="flex items-center gap-1 px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors">

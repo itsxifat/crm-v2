@@ -8,6 +8,7 @@ import {
   Loader2, Flag, AlertTriangle, Clock, MoreHorizontal, Trash2,
   ExternalLink, Filter,
 } from 'lucide-react'
+import Select from '@/components/ui/Select'
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -217,14 +218,17 @@ export default function TasksPage() {
         </div>
         <div className="flex items-center gap-1.5">
           <Filter className="w-3.5 h-3.5 text-gray-400" />
-          <select value={priority} onChange={e => { setPriority(e.target.value); setPage(1) }}
-            className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500">
-            <option value="">All priorities</option>
-            <option value="LOW">Low</option>
-            <option value="MEDIUM">Medium</option>
-            <option value="HIGH">High</option>
-            <option value="URGENT">Urgent</option>
-          </select>
+          <Select value={priority} onChange={v => { setPriority(v ?? ''); setPage(1) }}
+            options={[
+              { value: 'LOW',    label: 'Low' },
+              { value: 'MEDIUM', label: 'Medium' },
+              { value: 'HIGH',   label: 'High' },
+              { value: 'URGENT', label: 'Urgent' },
+            ]}
+            placeholder="All priorities"
+            size="sm"
+            className="w-36"
+          />
         </div>
       </div>
 

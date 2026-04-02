@@ -1,11 +1,13 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { X, Loader2, Briefcase } from 'lucide-react'
 import toast from 'react-hot-toast'
+import Select from '@/components/ui/Select'
+import DatePicker from '@/components/ui/DatePicker'
 
 const schema = z.object({
   name:        z.string().min(1, 'Project name is required'),
@@ -28,6 +30,7 @@ export default function ProjectModal({ project, onClose, onSave }) {
 
   const {
     register,
+    control,
     handleSubmit,
     formState: { errors, isSubmitting },
     reset,
@@ -153,17 +156,12 @@ export default function ProjectModal({ project, onClose, onSave }) {
                 Loading clients...
               </div>
             ) : (
-              <select
-                {...register('clientId')}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
-              >
-                <option value="">Select client...</option>
-                {clients.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.user?.name} {c.company ? `(${c.company})` : ''}
-                  </option>
-                ))}
-              </select>
+              <Controller name="clientId" control={control} render={({ field }) => (
+                <Select value={field.value} onChange={v => field.onChange(v ?? '')}
+                  options={clients.map(c => ({ value: c.id, label: `${c.user?.name}${c.company ? ` (${c.company})` : ''}` }))}
+                  placeholder="Select client..."
+                />
+              )} />
             )}
             {errors.clientId && <p className="text-xs text-red-500 mt-1">{errors.clientId.message}</p>}
           </div>
@@ -172,28 +170,32 @@ export default function ProjectModal({ project, onClose, onSave }) {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-              <select
-                {...register('status')}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
-              >
-                <option value="PLANNING">Planning</option>
-                <option value="IN_PROGRESS">In Progress</option>
-                <option value="ON_HOLD">On Hold</option>
-                <option value="COMPLETED">Completed</option>
-                <option value="CANCELLED">Cancelled</option>
-              </select>
+              <Controller name="status" control={control} render={({ field }) => (
+                <Select value={field.value} onChange={v => field.onChange(v ?? 'PLANNING')}
+                  options={[
+                    { value: 'PLANNING',    label: 'Planning' },
+                    { value: 'IN_PROGRESS', label: 'In Progress' },
+                    { value: 'ON_HOLD',     label: 'On Hold' },
+                    { value: 'COMPLETED',   label: 'Completed' },
+                    { value: 'CANCELLED',   label: 'Cancelled' },
+                  ]}
+                  placeholder="Select status…"
+                />
+              )} />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
-              <select
-                {...register('priority')}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
-              >
-                <option value="LOW">Low</option>
-                <option value="MEDIUM">Medium</option>
-                <option value="HIGH">High</option>
-                <option value="URGENT">Urgent</option>
-              </select>
+              <Controller name="priority" control={control} render={({ field }) => (
+                <Select value={field.value} onChange={v => field.onChange(v ?? 'MEDIUM')}
+                  options={[
+                    { value: 'LOW',    label: 'Low' },
+                    { value: 'MEDIUM', label: 'Medium' },
+                    { value: 'HIGH',   label: 'High' },
+                    { value: 'URGENT', label: 'Urgent' },
+                  ]}
+                  placeholder="Select priority…"
+                />
+              )} />
             </div>
           </div>
 
@@ -201,19 +203,15 @@ export default function ProjectModal({ project, onClose, onSave }) {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
-              <input
-                type="date"
-                {...register('startDate')}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
-              />
+              <Controller name="startDate" control={control} render={({ field }) => (
+                <DatePicker value={field.value || null} onChange={v => field.onChange(v ?? '')} />
+              )} />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
-              <input
-                type="date"
-                {...register('endDate')}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
-              />
+              <Controller name="endDate" control={control} render={({ field }) => (
+                <DatePicker value={field.value || null} onChange={v => field.onChange(v ?? '')} />
+              )} />
             </div>
           </div>
 
@@ -231,18 +229,20 @@ export default function ProjectModal({ project, onClose, onSave }) {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Currency</label>
-              <select
-                {...register('currency')}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
-              >
-                <option value="USD">USD</option>
-                <option value="EUR">EUR</option>
-                <option value="GBP">GBP</option>
-                <option value="BDT">BDT</option>
-                <option value="INR">INR</option>
-                <option value="CAD">CAD</option>
-                <option value="AUD">AUD</option>
-              </select>
+              <Controller name="currency" control={control} render={({ field }) => (
+                <Select value={field.value} onChange={v => field.onChange(v ?? 'USD')}
+                  options={[
+                    { value: 'USD', label: 'USD' },
+                    { value: 'EUR', label: 'EUR' },
+                    { value: 'GBP', label: 'GBP' },
+                    { value: 'BDT', label: 'BDT' },
+                    { value: 'INR', label: 'INR' },
+                    { value: 'CAD', label: 'CAD' },
+                    { value: 'AUD', label: 'AUD' },
+                  ]}
+                  placeholder="Select currency…"
+                />
+              )} />
             </div>
           </div>
 

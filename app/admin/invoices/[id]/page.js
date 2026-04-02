@@ -12,6 +12,8 @@ import {
 import Image from 'next/image'
 import FileUpload from '@/components/ui/FileUpload'
 import TkAmt from '@/components/ui/TkAmt'
+import Select from '@/components/ui/Select'
+import DatePicker from '@/components/ui/DatePicker'
 
 const fmt     = (n) => `৳ ${(n ?? 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })}`
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
@@ -157,13 +159,14 @@ function RecordPaymentModal({ invoice, onClose, onSaved }) {
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Method</label>
-            <select value={form.paymentMethod} onChange={e => setForm(f => ({ ...f, paymentMethod: e.target.value }))} className={ic}>
-              {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m.replace('_', ' ')}</option>)}
-            </select>
+            <Select value={form.paymentMethod} onChange={v => setForm(f => ({ ...f, paymentMethod: v ?? 'BANK_TRANSFER' }))}
+              options={PAYMENT_METHODS.map(m => ({ value: m, label: m.replace('_', ' ') }))}
+              placeholder="Select method…"
+            />
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Payment Date</label>
-            <input type="date" value={form.paymentDate} onChange={e => setForm(f => ({ ...f, paymentDate: e.target.value }))} className={ic} />
+            <DatePicker value={form.paymentDate || null} onChange={v => setForm(f => ({ ...f, paymentDate: v ?? '' }))} />
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Description</label>

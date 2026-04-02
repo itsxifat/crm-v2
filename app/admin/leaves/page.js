@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { Plus, X, Loader2, Check, Ban, Search, CalendarDays } from 'lucide-react'
+import Select from '@/components/ui/Select'
+import DatePicker from '@/components/ui/DatePicker'
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -92,33 +94,28 @@ function NewLeaveModal({ employees, onClose, onCreated }) {
 
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Employee</label>
-            <select required value={form.employeeId} onChange={e => set('employeeId', e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-500">
-              <option value="">Select employee…</option>
-              {employees.map(emp => (
-                <option key={emp._id} value={emp._id}>{emp.userId?.name ?? 'Unknown'}</option>
-              ))}
-            </select>
+            <Select value={form.employeeId} onChange={v => set('employeeId', v ?? '')}
+              options={employees.map(emp => ({ value: emp._id, label: emp.userId?.name ?? 'Unknown' }))}
+              placeholder="Select employee…"
+            />
           </div>
 
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Leave Type</label>
-            <select value={form.type} onChange={e => set('type', e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-500">
-              {LEAVE_TYPES.map(t => <option key={t} value={t}>{TYPE_CFG[t]?.label ?? t}</option>)}
-            </select>
+            <Select value={form.type} onChange={v => set('type', v ?? 'ANNUAL')}
+              options={LEAVE_TYPES.map(t => ({ value: t, label: TYPE_CFG[t]?.label ?? t }))}
+              placeholder="Select type…"
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">From</label>
-              <input required type="date" value={form.startDate} onChange={e => set('startDate', e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" />
+              <DatePicker value={form.startDate || null} onChange={v => set('startDate', v ?? '')} />
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">To</label>
-              <input required type="date" value={form.endDate} min={form.startDate} onChange={e => set('endDate', e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" />
+              <DatePicker value={form.endDate || null} onChange={v => set('endDate', v ?? '')} />
             </div>
           </div>
 
@@ -271,18 +268,16 @@ export default function LeavesPage() {
             placeholder="Search by employee…"
             className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" />
         </div>
-        <select value={empFilter} onChange={e => setEmpFilter(e.target.value)}
-          className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500">
-          <option value="">All employees</option>
-          {employees.map(emp => (
-            <option key={emp._id} value={emp._id}>{emp.userId?.name ?? 'Unknown'}</option>
-          ))}
-        </select>
-        <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)}
-          className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500">
-          <option value="">All types</option>
-          {LEAVE_TYPES.map(t => <option key={t} value={t}>{TYPE_CFG[t]?.label ?? t}</option>)}
-        </select>
+        <Select value={empFilter} onChange={v => setEmpFilter(v ?? '')}
+          options={employees.map(emp => ({ value: emp._id, label: emp.userId?.name ?? 'Unknown' }))}
+          placeholder="All employees"
+          size="sm"
+        />
+        <Select value={typeFilter} onChange={v => setTypeFilter(v ?? '')}
+          options={LEAVE_TYPES.map(t => ({ value: t, label: TYPE_CFG[t]?.label ?? t }))}
+          placeholder="All types"
+          size="sm"
+        />
       </div>
 
       {/* Table */}

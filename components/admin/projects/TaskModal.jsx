@@ -193,11 +193,9 @@ export default function TaskModal({ task, projectId, defaultStatus, onClose, onS
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Due Date</label>
-              <input
-                type="date"
-                {...register('dueDate')}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
-              />
+              <Controller name="dueDate" control={control} render={({ field }) => (
+                <DatePicker value={field.value || null} onChange={v => field.onChange(v ?? '')} />
+              )} />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Estimated Hours</label>
@@ -229,31 +227,21 @@ export default function TaskModal({ task, projectId, defaultStatus, onClose, onS
             </div>
 
             {assigneeType === 'employee' && (
-              <select
-                {...register('assignedEmployeeId')}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
-              >
-                <option value="">Select employee...</option>
-                {employees.map((e) => (
-                  <option key={e.id} value={e.employee?.id ?? e.id}>
-                    {e.name}
-                  </option>
-                ))}
-              </select>
+              <Controller name="assignedEmployeeId" control={control} render={({ field }) => (
+                <Select value={field.value} onChange={v => field.onChange(v ?? '')}
+                  options={employees.map(e => ({ value: e.employee?.id ?? e.id, label: e.name }))}
+                  placeholder="Select employee..."
+                />
+              )} />
             )}
 
             {assigneeType === 'freelancer' && (
-              <select
-                {...register('assignedFreelancerId')}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
-              >
-                <option value="">Select freelancer...</option>
-                {freelancers.map((f) => (
-                  <option key={f.id} value={f.id}>
-                    {f.user?.name}
-                  </option>
-                ))}
-              </select>
+              <Controller name="assignedFreelancerId" control={control} render={({ field }) => (
+                <Select value={field.value} onChange={v => field.onChange(v ?? '')}
+                  options={freelancers.map(f => ({ value: f.id, label: f.user?.name }))}
+                  placeholder="Select freelancer..."
+                />
+              )} />
             )}
           </div>
 
