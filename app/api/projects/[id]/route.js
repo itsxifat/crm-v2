@@ -3,7 +3,19 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
-import { Project, ProjectExpense, ProjectRenewal, Task, Milestone } from '@/models'
+import { Project, ProjectExpense, ProjectRenewal, Task, Milestone, Employee } from '@/models'
+
+// Resolve whether the current session user can view project financials.
+// SUPER_ADMIN and MANAGER always can. EMPLOYEE requires the customRole
+// to have permissions.projects.viewFinancials === true.
+async function resolveCanViewFinancials(session) {
+  if (['SUPER_ADMIN', 'MANAGER'].includes(session.user.role)) return true
+  if (session.user.role !== 'EMPLOYEE') return false
+  const emp = await Employee.findOne({ userId: session.user.id })
+    .populate({ path: 'customRoleId', select: 'permissions' })
+    .lean()
+  return emp?.customRoleId?.permissions?.projects?.viewFinancials === true
+}
 
 // GET /api/projects/:id
 export async function GET(_, { params }) {
@@ -19,24 +31,40 @@ export async function GET(_, { params }) {
 
     if (!project) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
+    const canViewFinancials = await resolveCanViewFinancials(session)
+
     const [expenses, renewals, tasks, milestones] = await Promise.all([
-      ProjectExpense.find({ projectId: params.id }).sort({ createdAt: -1 })
-        .populate('submittedBy', 'name avatar')
-        .populate('reviewedBy', 'name'),
+      canViewFinancials
+        ? ProjectExpense.find({ projectId: params.id }).sort({ createdAt: -1 })
+            .populate('submittedBy', 'name avatar')
+            .populate('reviewedBy', 'name')
+        : Promise.resolve([]),
       ProjectRenewal.find({ projectId: params.id }).sort({ periodStart: -1 }),
       Task.find({ projectId: params.id }).sort({ createdAt: -1 }),
       Milestone.find({ projectId: params.id }).sort({ dueDate: 1 }),
     ])
 
     const data = project.toJSON()
-    data.profit     = (data.paidAmount ?? 0) - (data.approvedExpenses ?? 0)
-    data.dueAmount  = Math.max(0, (data.budget ?? 0) - (data.discount ?? 0) - (data.paidAmount ?? 0))
-    data.expenses   = expenses.map(e => e.toJSON())
-    data.renewals   = renewals.map(r => r.toJSON())
     data.tasks      = tasks.map(t => t.toJSON())
+    data.renewals   = renewals.map(r => r.toJSON())
     data.milestones = milestones.map(m => m.toJSON())
 
-    return NextResponse.json({ data })
+    if (canViewFinancials) {
+      data.profit    = (data.paidAmount ?? 0) - (data.approvedExpenses ?? 0)
+      data.dueAmount = Math.max(0, (data.budget ?? 0) - (data.discount ?? 0) - (data.paidAmount ?? 0))
+      data.expenses  = expenses.map(e => e.toJSON())
+    } else {
+      // Strip all financial fields — never expose pricing to unpermitted users
+      delete data.budget
+      delete data.discount
+      delete data.paidAmount
+      delete data.approvedExpenses
+      delete data.profit
+      delete data.dueAmount
+      data.expenses = []
+    }
+
+    return NextResponse.json({ data, meta: { canViewFinancials } })
   } catch (err) {
     console.error('[GET /api/projects/:id]', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

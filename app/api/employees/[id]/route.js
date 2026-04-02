@@ -100,14 +100,13 @@ export async function PUT(request, { params }) {
       userUpdate.password = await bcrypt.hash(password, 10)
     }
 
-    // Auto-generate employeeId if not yet set and we now have department + phone
+    // Auto-generate employeeId if not yet set and we now have a department
     if (!current.employeeId && !empData.employeeId) {
-      const dept  = empData.department  ?? current.department
-      const ph    = empData.phone       ?? current.phone
-      const hd    = hireDate            ? new Date(hireDate) : current.hireDate
-      if (dept && ph) {
+      const dept = empData.department ?? current.department
+      const hd   = hireDate ? new Date(hireDate) : current.hireDate
+      if (dept) {
         try {
-          empData.employeeId = await generateEmployeeId({ department: dept, hireDate: hd, phone: ph })
+          empData.employeeId = await generateEmployeeId({ department: dept, hireDate: hd })
         } catch (e) {
           console.warn('[PUT /api/employees] employeeId generation skipped:', e.message)
         }

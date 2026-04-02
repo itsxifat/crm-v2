@@ -20,7 +20,7 @@ const EmployeeSchema = new mongoose.Schema(
     emergencyContact: { type: String, default: null },
     address:          { type: String, default: null },
     nidNumber:        { type: String, default: null },
-    photo:            { type: String, default: null },  // formal photo URL
+    photo:            { type: String, default: null },
 
     // Company-provided items
     companyPhone:    { type: String, default: null },
@@ -36,7 +36,7 @@ const EmployeeSchema = new mongoose.Schema(
     appointmentLetterUrl: { type: String, default: null },
     agreementUrl:         { type: String, default: null },
 
-    // Organisational role (links to CustomRole for permissions)
+    // Organisational role
     customRoleId: { type: mongoose.Schema.Types.ObjectId, ref: 'CustomRole', default: null },
 
     // Panel access
@@ -56,59 +56,114 @@ const EmployeeSchema = new mongoose.Schema(
   }
 )
 
-// ── Employee ID generation ────────────────────────────────────────────────────
-// Format: ENF-[DEPT][YYMM]-[###]-[PH4]
-// Example: ENF-DEV2603-001-4821
+// ── Employee ID System ────────────────────────────────────────────────────────
+// Format : ENF-[DEPT]-[YY]-[SERIAL]-[ALPHA]
+// Example: ENF-DEV-24-001-KX
+//
+//  ENF    — fixed company prefix
+//  DEPT   — 3-letter department code  (DEV | MKT | HR | SLS | ACC | OPS | SUP)
+//  YY     — last 2 digits of joining year, auto-derived from hireDate
+//  SERIAL — 3-digit counter, resets per department per year, starts at 001
+//  ALPHA  — 2 random uppercase letters for uniqueness guarantee
 
-export const DEPT_CODES = ['DEV', 'HRM', 'ACC', 'MKT', 'OPS', 'SLS', 'DSN', 'ITF', 'CST']
-
-function _yymm(date) {
-  const d = date instanceof Date ? date : new Date(date)
-  if (isNaN(d)) return null
-  return `${String(d.getFullYear()).slice(-2)}${String(d.getMonth() + 1).padStart(2, '0')}`
+export const DEPT_CODES = {
+  DEV: 'Development',
+  MKT: 'Marketing',
+  HR:  'Human Resources',
+  SLS: 'Sales',
+  ACC: 'Accounting',
+  OPS: 'Operations',
+  SUP: 'Support',
 }
 
-function _ph4(phone) {
-  if (!phone) return null
-  const digits = phone.replace(/\D/g, '')
-  return digits.length >= 4 ? digits.slice(-4) : null
+// Normalize free-text department into a known code
+// "Development" → "DEV", "dev" → "DEV", "DEV" → "DEV"
+export function normalizeDeptCode(dept) {
+  if (!dept) return null
+  const upper = dept.trim().toUpperCase()
+  // Direct code hit
+  if (DEPT_CODES[upper]) return upper
+  // Full-label match (case-insensitive)
+  for (const [code, label] of Object.entries(DEPT_CODES)) {
+    if (label.toUpperCase() === upper) return code
+  }
+  // Prefix match: "DEVELOPMENT" starts with "DEV"
+  for (const code of Object.keys(DEPT_CODES)) {
+    if (upper.startsWith(code)) return code
+  }
+  return null
 }
 
-export async function generateEmployeeId({ department, hireDate, phone }) {
-  // Normalize: take first 3 uppercase letters, so "Development" → "DEV", "Human Resources" → "HUM"
-  const dept = (department || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3)
-  if (!dept) throw new Error('Department is required to generate employee ID')
-
-  const yymm = _yymm(hireDate || new Date())
-  if (!yymm) throw new Error('Invalid hireDate — cannot generate employee ID')
-
-  const ph4 = _ph4(phone)
-  if (!ph4) throw new Error('Valid phone number with at least 4 digits is required to generate employee ID')
-
-  const prefix = `ENF-${dept}${yymm}-`
-  const count = await mongoose.model('Employee').countDocuments({
-    employeeId: { $regex: `^${prefix}` },
-  })
-  const serial = String(count + 1).padStart(3, '0')
-
-  return `${prefix}${serial}-${ph4}`
+function _randomAlpha2() {
+  return Array.from({ length: 2 }, () =>
+    String.fromCharCode(65 + Math.floor(Math.random() * 26))
+  ).join('')
 }
 
-// Only enforce uniqueness on actual string values — null/absent documents are excluded
+// Generate the next employee ID for the given department + year.
+// Serial resets per dept per year; ALPHA adds collision safety.
+export async function generateEmployeeId({ department, hireDate }) {
+  const code = normalizeDeptCode(department)
+  if (!code) {
+    throw new Error(
+      `Unknown department "${department}". Valid codes: ${Object.keys(DEPT_CODES).join(', ')}`
+    )
+  }
+
+  const date = hireDate ? new Date(hireDate) : new Date()
+  const yy   = String(date.getFullYear()).slice(-2)
+  const prefix = `ENF-${code}-${yy}-`
+
+  // Find all existing IDs for this dept+year to determine max serial
+  const existing = await mongoose.model('Employee')
+    .find({ employeeId: { $regex: `^${prefix}`, $options: 'i' } }, { employeeId: 1 })
+    .lean()
+
+  let maxSerial = 0
+  for (const emp of existing) {
+    // Format: ENF-DEV-24-001-KX  → parts[3] = "001"
+    const parts  = (emp.employeeId ?? '').split('-')
+    const serial = parseInt(parts[3], 10)
+    if (!isNaN(serial) && serial > maxSerial) maxSerial = serial
+  }
+
+  const serial = String(maxSerial + 1).padStart(3, '0')
+  const alpha  = _randomAlpha2()
+
+  return `${prefix}${serial}-${alpha}`
+}
+
+// Parse a structured employeeId into its components (for sorting/filtering)
+export function parseEmployeeId(id) {
+  if (!id) return null
+  const parts = id.split('-')
+  if (parts.length !== 5 || parts[0] !== 'ENF') return null
+  return {
+    prefix: parts[0],                       // ENF
+    dept:   parts[1],                       // DEV
+    year:   `20${parts[2]}`,               // 2024
+    serial: parseInt(parts[3], 10),         // 1
+    alpha:  parts[4],                       // KX
+  }
+}
+
+// Only index actual string values — null/absent are excluded
 EmployeeSchema.index(
   { employeeId: 1 },
   { unique: true, partialFilterExpression: { employeeId: { $type: 'string' } } }
 )
 
+// Also index dept + hireDate for fast serial lookups
+EmployeeSchema.index({ department: 1, hireDate: 1 })
+
+// Auto-generate ID on save if department is set and ID is not yet assigned
 EmployeeSchema.pre('save', async function () {
   if (this.employeeId) return
-  // Only generate if we have enough data; otherwise leave null (HR will assign later)
-  if (!this.department || !this.phone) return
+  if (!this.department) return
   try {
     this.employeeId = await generateEmployeeId({
       department: this.department,
       hireDate:   this.hireDate,
-      phone:      this.phone,
     })
   } catch (err) {
     console.warn('[Employee] Could not auto-generate employeeId:', err.message)

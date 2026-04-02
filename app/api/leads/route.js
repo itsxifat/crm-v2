@@ -7,17 +7,26 @@ import { Lead, Employee } from '@/models'
 import { z } from 'zod'
 
 const createLeadSchema = z.object({
-  name:         z.string().min(1, 'Name is required'),
-  email:        z.string().email().optional().nullable(),
-  phone:        z.string().optional().nullable(),
-  company:      z.string().optional().nullable(),
-  industry:     z.string().optional().nullable(),
-  source:       z.string().optional().nullable(),
-  status:       z.enum(['NEW','CONTACTED','PROPOSAL_SENT','NEGOTIATION','WON','LOST']).default('NEW'),
-  value:        z.number().positive().optional().nullable(),
-  notes:        z.string().optional().nullable(),
-  assignedToId: z.string().optional().nullable(),
-  followUpDate: z.string().datetime().optional().nullable(),
+  name:             z.string().min(1, 'Name is required'),
+  designation:      z.string().optional().nullable(),
+  email:            z.string().email().optional().nullable(),
+  phone:            z.string().optional().nullable(),
+  alternativePhone: z.string().optional().nullable(),
+  company:          z.string().optional().nullable(),
+  location:         z.string().optional().nullable(),
+  status:           z.enum(['NEW','CONTACTED','PROPOSAL_SENT','NEGOTIATION','WON','LOST']).default('NEW'),
+  priority:         z.enum(['LOW','NORMAL','HIGH','URGENT']).default('NORMAL'),
+  category:         z.string().optional().nullable(),
+  service:          z.string().optional().nullable(),
+  source:           z.string().optional().nullable(),
+  platform:         z.string().optional().nullable(),
+  reference:        z.string().optional().nullable(),
+  links:            z.array(z.string().url()).optional().default([]),
+  sendingDate:      z.string().optional().nullable(),
+  followUpDate:     z.string().optional().nullable(),
+  value:            z.number().positive().optional().nullable(),
+  notes:            z.string().optional().nullable(),
+  assignedToId:     z.string().optional().nullable(),
 })
 
 // GET /api/leads
@@ -29,19 +38,37 @@ export async function GET(request) {
     await connectDB()
 
     const { searchParams } = new URL(request.url)
-    const page   = parseInt(searchParams.get('page')  ?? '1',  10)
-    const limit  = parseInt(searchParams.get('limit') ?? '20', 10)
-    const status = searchParams.get('status')
-    const search = searchParams.get('search')
-    const skip   = (page - 1) * limit
+    const page     = parseInt(searchParams.get('page')  ?? '1',  10)
+    const limit    = parseInt(searchParams.get('limit') ?? '20', 10)
+    const status   = searchParams.get('status')
+    const priority = searchParams.get('priority')
+    const platform = searchParams.get('platform')
+    const source   = searchParams.get('source')
+    const search   = searchParams.get('search')
+    const dateFrom = searchParams.get('dateFrom')
+    const dateTo   = searchParams.get('dateTo')
+    const skip     = (page - 1) * limit
 
     const filter = {}
-    if (status) filter.status = status
+    if (status)   filter.status   = status
+    if (priority) filter.priority = priority
+    if (platform) filter.platform = platform
+    if (source)   filter.source   = source
+
+    if (dateFrom || dateTo) {
+      filter.createdAt = {}
+      if (dateFrom) filter.createdAt.$gte = new Date(dateFrom)
+      if (dateTo)   filter.createdAt.$lte = new Date(dateTo + 'T23:59:59.999Z')
+    }
+
     if (search) {
       filter.$or = [
-        { name:    { $regex: search, $options: 'i' } },
-        { email:   { $regex: search, $options: 'i' } },
-        { company: { $regex: search, $options: 'i' } },
+        { name:      { $regex: search, $options: 'i' } },
+        { email:     { $regex: search, $options: 'i' } },
+        { company:   { $regex: search, $options: 'i' } },
+        { phone:     { $regex: search, $options: 'i' } },
+        { reference: { $regex: search, $options: 'i' } },
+        { location:  { $regex: search, $options: 'i' } },
       ]
     }
 
@@ -91,6 +118,7 @@ export async function POST(request) {
 
     const data = { ...parsed.data }
     if (data.followUpDate) data.followUpDate = new Date(data.followUpDate)
+    if (data.sendingDate)  data.sendingDate  = new Date(data.sendingDate)
 
     const lead = await new Lead(data).save()
     return NextResponse.json({ data: lead }, { status: 201 })

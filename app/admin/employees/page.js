@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import Image from 'next/image'
+import Select from '@/components/ui/Select'
+import DatePicker from '@/components/ui/DatePicker'
 import {
   Plus, Search, MoreHorizontal, Eye, Pencil, Trash2, Users,
   Briefcase, Clock, Building2, Shield, ShieldCheck, Download,
@@ -17,6 +19,16 @@ import TkAmt from '@/components/ui/TkAmt'
 
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 const fmt = (n) => n != null ? `৳ ${Number(n).toLocaleString('en-BD')}` : '—'
+
+const DEPT_CODES = {
+  DEV: 'Development',
+  MKT: 'Marketing',
+  HR:  'Human Resources',
+  SLS: 'Sales',
+  ACC: 'Accounting',
+  OPS: 'Operations',
+  SUP: 'Support',
+}
 
 const ROLE_META = {
   SUPER_ADMIN: { label: 'Super Admin', bg: 'bg-red-50',     text: 'text-red-700'    },
@@ -38,7 +50,7 @@ function RoleBadge({ role }) {
 
 // ─── Employee Modal ───────────────────────────────────────────────────────────
 
-function EmployeeModal({ open, onClose, employee, onSaved, customRoles = [] }) {
+function EmployeeModal({ open, onClose, employee, onSaved, customRoles = [], ventures = [] }) {
   const isEdit = !!employee
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({
@@ -168,10 +180,10 @@ function EmployeeModal({ open, onClose, employee, onSaved, customRoles = [] }) {
               </div>
               <div>
                 <label className={lc}>Blood Group</label>
-                <select value={form.bloodGroup} onChange={e => set('bloodGroup', e.target.value)} className={ic}>
-                  <option value="">Select…</option>
-                  {['A+','A-','B+','B-','AB+','AB-','O+','O-'].map(g => <option key={g} value={g}>{g}</option>)}
-                </select>
+                <Select value={form.bloodGroup} onChange={v => set('bloodGroup', v ?? '')}
+                  options={['A+','A-','B+','B-','AB+','AB-','O+','O-'].map(g => ({ value: g, label: g }))}
+                  placeholder="Select…"
+                />
               </div>
               <div className="col-span-2">
                 <label className={lc}>Address</label>
@@ -194,16 +206,17 @@ function EmployeeModal({ open, onClose, employee, onSaved, customRoles = [] }) {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className={lc}>Venture</label>
-                <select value={form.venture} onChange={e => set('venture', e.target.value)} className={ic}>
-                  <option value="">— All / Not assigned —</option>
-                  <option value="ENSTUDIO">Enstudio</option>
-                  <option value="ENTECH">Entech</option>
-                  <option value="ENMARK">Enmark</option>
-                </select>
+                <Select value={form.venture} onChange={v => set('venture', v ?? '')}
+                  options={ventures.map(v => ({ value: v.id, label: v.label }))}
+                  placeholder="— All / Not assigned —"
+                />
               </div>
               <div>
                 <label className={lc}>Department</label>
-                <input value={form.department} onChange={e => set('department', e.target.value)} placeholder="Design, Tech, Marketing…" className={ic} />
+                <Select value={form.department} onChange={v => set('department', v ?? '')}
+                  options={Object.entries(DEPT_CODES).map(([code, label]) => ({ value: code, label: `${label} (${code})` }))}
+                  placeholder="— Not assigned —"
+                />
               </div>
               <div>
                 <label className={lc}>Position / Job Title</label>
@@ -215,12 +228,10 @@ function EmployeeModal({ open, onClose, employee, onSaved, customRoles = [] }) {
               </div>
               <div>
                 <label className={lc}>Org Role & Permissions</label>
-                <select value={form.customRoleId} onChange={e => set('customRoleId', e.target.value)} className={ic}>
-                  <option value="">— No role assigned —</option>
-                  {customRoles.map(r => (
-                    <option key={r.id} value={r.id}>{r.title} · {r.department}</option>
-                  ))}
-                </select>
+                <Select value={form.customRoleId} onChange={v => set('customRoleId', v ?? '')}
+                  options={customRoles.map(r => ({ value: r.id, label: `${r.title} · ${r.department}` }))}
+                  placeholder="— No role assigned —"
+                />
                 {form.customRoleId && (() => {
                   const cr = customRoles.find(r => r.id === form.customRoleId)
                   return cr ? (
@@ -237,7 +248,7 @@ function EmployeeModal({ open, onClose, employee, onSaved, customRoles = [] }) {
               </div>
               <div>
                 <label className={lc}>Hire Date</label>
-                <input type="date" value={form.hireDate} onChange={e => set('hireDate', e.target.value)} className={ic} />
+                <DatePicker value={form.hireDate || null} onChange={v => set('hireDate', v ?? '')} />
               </div>
             </div>
           </div>
@@ -290,7 +301,7 @@ function EmployeeModal({ open, onClose, employee, onSaved, customRoles = [] }) {
 
 // ─── Onboarding Review Modal ──────────────────────────────────────────────────
 
-function OnboardingReviewModal({ open, record, onClose, onDone, customRoles = [] }) {
+function OnboardingReviewModal({ open, record, onClose, onDone, customRoles = [], ventures = [] }) {
   const [saving, setSaving]     = useState(false)
   const [tab, setTab]           = useState('self')   // 'self' | 'hr'
   const [form, setForm]         = useState({
@@ -463,16 +474,17 @@ function OnboardingReviewModal({ open, record, onClose, onDone, customRoles = []
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className={lc}>Venture</label>
-                    <select className={ic} value={form.venture} onChange={e => set('venture', e.target.value)}>
-                      <option value="">— Not assigned —</option>
-                      <option value="ENSTUDIO">Enstudio</option>
-                      <option value="ENTECH">Entech</option>
-                      <option value="ENMARK">Enmark</option>
-                    </select>
+                    <Select value={form.venture} onChange={v => set('venture', v ?? '')}
+                      options={ventures.map(v => ({ value: v.id, label: v.label }))}
+                      placeholder="— Not assigned —"
+                    />
                   </div>
                   <div>
                     <label className={lc}>Department</label>
-                    <input className={ic} value={form.department} onChange={e => set('department', e.target.value)} placeholder="Design, Tech…" />
+                    <Select value={form.department} onChange={v => set('department', v ?? '')}
+                      options={Object.entries(DEPT_CODES).map(([code, label]) => ({ value: code, label: `${label} (${code})` }))}
+                      placeholder="— Not assigned —"
+                    />
                   </div>
                   <div>
                     <label className={lc}>Position / Job Title</label>
@@ -488,14 +500,14 @@ function OnboardingReviewModal({ open, record, onClose, onDone, customRoles = []
                   </div>
                   <div>
                     <label className={lc}>Hire Date</label>
-                    <input className={ic} type="date" value={form.hireDate} onChange={e => set('hireDate', e.target.value)} />
+                    <DatePicker value={form.hireDate || null} onChange={v => set('hireDate', v ?? '')} />
                   </div>
                   <div>
                     <label className={lc}>Org Role & Permissions</label>
-                    <select className={ic} value={form.customRoleId} onChange={e => set('customRoleId', e.target.value)}>
-                      <option value="">— No role —</option>
-                      {customRoles.map(r => <option key={r.id} value={r.id}>{r.title} · {r.department}</option>)}
-                    </select>
+                    <Select value={form.customRoleId} onChange={v => set('customRoleId', v ?? '')}
+                      options={customRoles.map(r => ({ value: r.id, label: `${r.title} · ${r.department}` }))}
+                      placeholder="— No role —"
+                    />
                   </div>
                 </div>
               </div>
@@ -690,10 +702,13 @@ export default function EmployeesPage() {
   const [loading,    setLoading]    = useState(true)
   const [search,     setSearch]     = useState('')
   const [department, setDepartment] = useState('')
+  const [year,       setYear]       = useState('')
+  const [sortBy,     setSortBy]     = useState('')
   const [page,       setPage]       = useState(1)
   const [modalOpen,    setModalOpen]    = useState(false)
   const [editing,      setEditing]      = useState(null)
   const [customRoles,  setCustomRoles]  = useState([])
+  const [ventures,     setVentures]     = useState([])
   const [obPanel,      setObPanel]      = useState(false)   // onboarding submissions panel
   const [obRecords,    setObRecords]    = useState([])
   const [obLoading,    setObLoading]    = useState(false)
@@ -710,6 +725,8 @@ export default function EmployeesPage() {
       const p = new URLSearchParams({ page, limit: 20 })
       if (search)     p.set('search',     search)
       if (department) p.set('department', department)
+      if (year)       p.set('year',       year)
+      if (sortBy)     p.set('sortBy',     sortBy)
       const res  = await fetch(`/api/employees?${p}`)
       const json = await res.json()
       if (!res.ok) throw new Error(json.error)
@@ -721,7 +738,7 @@ export default function EmployeesPage() {
     } finally {
       setLoading(false)
     }
-  }, [page, search, department])
+  }, [page, search, department, year, sortBy])
 
   useEffect(() => { load() }, [load])
 
@@ -736,6 +753,13 @@ export default function EmployeesPage() {
     fetch('/api/custom-roles')
       .then(r => r.json())
       .then(j => setCustomRoles(j.data ?? []))
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    fetch('/api/config')
+      .then(r => r.json())
+      .then(j => setVentures((j.data?.ventures ?? []).filter(v => v.active !== false)))
       .catch(() => {})
   }, [])
 
@@ -855,17 +879,28 @@ export default function EmployeesPage() {
           <input
             value={search}
             onChange={e => { setSearch(e.target.value); setPage(1) }}
-            placeholder="Search by name, email, position…"
+            placeholder="Search by name, email, ID…"
             className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 placeholder-gray-400"
           />
         </div>
-        {stats?.departments?.length > 0 && (
-          <select value={department} onChange={e => { setDepartment(e.target.value); setPage(1) }}
-            className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500">
-            <option value="">All Departments</option>
-            {stats.departments.map(d => <option key={d} value={d}>{d}</option>)}
-          </select>
-        )}
+        <Select value={department} onChange={v => { setDepartment(v ?? ''); setPage(1) }}
+          options={Object.entries(DEPT_CODES).map(([code, label]) => ({ value: code, label }))}
+          placeholder="All Departments"
+          className="w-44"
+          size="sm"
+        />
+        <Select value={year} onChange={v => { setYear(v ?? ''); setPage(1) }}
+          options={Array.from({ length: 6 }, (_, i) => new Date().getFullYear() - i).map(y => ({ value: String(y), label: String(y) }))}
+          placeholder="All Years"
+          className="w-28"
+          size="sm"
+        />
+        <Select value={sortBy} onChange={v => { setSortBy(v ?? ''); setPage(1) }}
+          options={[{ value: 'employeeId', label: 'Sort: Employee ID' }]}
+          placeholder="Sort: Newest First"
+          className="w-40"
+          size="sm"
+        />
         <span className="text-xs text-gray-400 ml-auto">{meta.total} employee{meta.total !== 1 ? 's' : ''}</span>
       </div>
 
@@ -1008,6 +1043,7 @@ export default function EmployeesPage() {
         employee={editing}
         onSaved={handleSaved}
         customRoles={customRoles}
+        ventures={ventures}
       />
 
       {/* Onboarding submissions panel */}
@@ -1122,6 +1158,7 @@ export default function EmployeesPage() {
         onClose={() => setObReviewOpen(false)}
         onDone={() => { loadOnboarding(); load() }}
         customRoles={customRoles}
+        ventures={ventures}
       />
     </div>
   )

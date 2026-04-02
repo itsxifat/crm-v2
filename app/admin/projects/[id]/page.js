@@ -15,6 +15,8 @@ import {
 import { VENTURE_META, STATUS_META, EXPENSE_CATEGORIES } from '@/lib/ventures'
 import Image from 'next/image'
 import FileUpload from '@/components/ui/FileUpload'
+import Select from '@/components/ui/Select'
+import DatePicker from '@/components/ui/DatePicker'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -203,26 +205,28 @@ function TaskModal({ projectId, task, onClose, onSaved }) {
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
-            <select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))} className={ic}>
-              {['TODO','IN_PROGRESS','IN_REVIEW','COMPLETED','CANCELLED'].map(s => <option key={s} value={s}>{s.replace('_',' ')}</option>)}
-            </select>
+            <Select value={form.status} onChange={v => setForm(f => ({ ...f, status: v ?? 'TODO' }))}
+              options={['TODO','IN_PROGRESS','IN_REVIEW','COMPLETED','CANCELLED'].map(s => ({ value: s, label: s.replace(/_/g,' ') }))}
+              placeholder="Select status…"
+            />
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Priority</label>
-            <select value={form.priority} onChange={e => setForm(f => ({ ...f, priority: e.target.value }))} className={ic}>
-              {['LOW','MEDIUM','HIGH','URGENT'].map(p => <option key={p}>{p}</option>)}
-            </select>
+            <Select value={form.priority} onChange={v => setForm(f => ({ ...f, priority: v ?? 'MEDIUM' }))}
+              options={['LOW','MEDIUM','HIGH','URGENT'].map(p => ({ value: p, label: p }))}
+              placeholder="Select priority…"
+            />
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Assigned To</label>
-            <select value={form.assignedTo} onChange={e => setForm(f => ({ ...f, assignedTo: e.target.value }))} className={ic}>
-              <option value="">Unassigned</option>
-              {members.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-            </select>
+            <Select value={form.assignedTo} onChange={v => setForm(f => ({ ...f, assignedTo: v ?? '' }))}
+              options={members.map(m => ({ value: m.id, label: m.name }))}
+              placeholder="Unassigned"
+            />
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Due Date</label>
-            <input type="date" value={form.dueDate} onChange={e => setForm(f => ({ ...f, dueDate: e.target.value }))} className={ic} />
+            <DatePicker value={form.dueDate || null} onChange={v => setForm(f => ({ ...f, dueDate: v ?? '' }))} />
           </div>
         </div>
         <div className="flex gap-2 justify-end">
@@ -281,13 +285,14 @@ function ExpenseModal({ projectId, onClose, onSaved }) {
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Date</label>
-            <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} className={ic} />
+            <DatePicker value={form.date || null} onChange={v => setForm(f => ({ ...f, date: v ?? '' }))} />
           </div>
           <div className="col-span-2">
             <label className="block text-xs font-medium text-gray-500 mb-1">Category</label>
-            <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} className={ic}>
-              {EXPENSE_CATEGORIES.map(c => <option key={c}>{c}</option>)}
-            </select>
+            <Select value={form.category} onChange={v => setForm(f => ({ ...f, category: v ?? EXPENSE_CATEGORIES[0] }))}
+              options={EXPENSE_CATEGORIES.map(c => ({ value: c, label: c }))}
+              placeholder="Select category…"
+            />
           </div>
           <div className="col-span-2">
             <label className="block text-xs font-medium text-gray-500 mb-1">Notes</label>
@@ -354,13 +359,14 @@ function PaymentModal({ projectId, onClose, onSaved }) {
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Method</label>
-            <select value={form.paymentMethod} onChange={e => setForm(f => ({ ...f, paymentMethod: e.target.value }))} className={ic}>
-              {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m.replace('_',' ')}</option>)}
-            </select>
+            <Select value={form.paymentMethod} onChange={v => setForm(f => ({ ...f, paymentMethod: v ?? 'BANK_TRANSFER' }))}
+              options={PAYMENT_METHODS.map(m => ({ value: m, label: m.replace(/_/g,' ') }))}
+              placeholder="Select method…"
+            />
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Payment Date</label>
-            <input type="date" value={form.paymentDate} onChange={e => setForm(f => ({ ...f, paymentDate: e.target.value }))} className={ic} />
+            <DatePicker value={form.paymentDate || null} onChange={v => setForm(f => ({ ...f, paymentDate: v ?? '' }))} />
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Description</label>
@@ -385,16 +391,18 @@ function PaymentModal({ projectId, onClose, onSaved }) {
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
-const TABS = ['overview', 'brief', 'discussion', 'tasks', 'expenses', 'payments', 'renewals', 'freelancers']
+const ALL_TABS = ['overview', 'brief', 'discussion', 'tasks', 'expenses', 'payments', 'renewals', 'freelancers']
+const FINANCIAL_TABS = new Set(['expenses', 'payments'])
 const TAB_LABELS = { overview: 'Overview', brief: 'Brief', discussion: 'Discussion', tasks: 'Tasks', expenses: 'Expenses', payments: 'Payments', renewals: 'Renewals', freelancers: 'Freelancers' }
 
 export default function ProjectDetailPage() {
   const { id }  = useParams()
   const router  = useRouter()
   const { data: session } = useSession()
-  const [project,        setProject]        = useState(null)
-  const [loading,        setLoading]        = useState(true)
-  const [tab,            setTab]            = useState('overview')
+  const [project,           setProject]           = useState(null)
+  const [loading,           setLoading]           = useState(true)
+  const [canViewFinancials, setCanViewFinancials] = useState(true)
+  const [tab,               setTab]               = useState('overview')
   const [statusModal,    setStatusModal]    = useState(false)
   const [expenseModal,   setExpenseModal]   = useState(false)
   const [paymentModal,   setPaymentModal]   = useState(false)
@@ -432,6 +440,7 @@ export default function ProjectDetailPage() {
       const json = await res.json()
       if (!res.ok) throw new Error(json.error)
       setProject(json.data)
+      setCanViewFinancials(json.meta?.canViewFinancials ?? true)
     } catch (err) { toast.error(err.message) }
     finally { setLoading(false) }
   }, [id])
@@ -652,6 +661,7 @@ export default function ProjectDetailPage() {
     </div>
   )
 
+  const TABS        = canViewFinancials ? ALL_TABS : ALL_TABS.filter(t => !FINANCIAL_TABS.has(t))
   const paidAmount  = project.paidAmount ?? 0
   const dueAmount   = project.dueAmount  ?? Math.max(0, (project.budget ?? 0) - (project.discount ?? 0) - paidAmount)
   const profit      = paidAmount - (project.approvedExpenses ?? 0)
@@ -706,10 +716,12 @@ export default function ProjectDetailPage() {
               className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors">
               Change Status
             </button>
-            <Link href={`/admin/invoices/new?projectId=${id}&clientId=${project.clientId?.id ?? project.clientId?._id ?? project.clientId ?? ''}`}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors">
-              <FileText className="w-3.5 h-3.5" /> Create Invoice
-            </Link>
+            {canViewFinancials && (
+              <Link href={`/admin/invoices/new?projectId=${id}&clientId=${project.clientId?.id ?? project.clientId?._id ?? project.clientId ?? ''}`}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors">
+                <FileText className="w-3.5 h-3.5" /> Create Invoice
+              </Link>
+            )}
             <button onClick={handleDelete}
               className="p-1.5 rounded-lg border border-gray-200 text-gray-400 hover:text-red-500 hover:border-red-200 transition-colors">
               <Trash2 className="w-4 h-4" />
@@ -720,12 +732,14 @@ export default function ProjectDetailPage() {
         {/* Stats row */}
         <div className="flex items-center gap-8 mt-5 pb-5 border-b border-gray-100 flex-wrap">
           {[
-            { label: 'Budget',   value: fmt(project.budget) },
-            { label: 'Paid',     value: fmt(paidAmount),  colored: true, positive: true },
-            { label: 'Due',      value: fmt(dueAmount),   colored: dueAmount > 0, positive: false },
-            { label: 'Expenses', value: fmt(project.approvedExpenses) },
-            { label: 'Profit',   value: fmt(profit), colored: true, positive: profit >= 0 },
-            { label: `Tasks`,    value: `${doneTasks} / ${totalTasks}` },
+            ...(canViewFinancials ? [
+              { label: 'Budget',   value: fmt(project.budget) },
+              { label: 'Paid',     value: fmt(paidAmount),  colored: true, positive: true },
+              { label: 'Due',      value: fmt(dueAmount),   colored: dueAmount > 0, positive: false },
+              { label: 'Expenses', value: fmt(project.approvedExpenses) },
+              { label: 'Profit',   value: fmt(profit), colored: true, positive: profit >= 0 },
+            ] : []),
+            { label: `Tasks`, value: `${doneTasks} / ${totalTasks}` },
           ].map(({ label, value, colored, positive }) => (
             <div key={label}>
               <p className={`text-lg font-semibold ${colored ? (positive ? 'text-green-600' : 'text-red-500') : 'text-gray-900'}`}>{value}</p>
@@ -762,9 +776,9 @@ export default function ProjectDetailPage() {
             </h3>
 
             {/* Progress bars */}
-            {(project.budget > 0 || totalTasks > 0) && (
+            {((canViewFinancials && project.budget > 0) || totalTasks > 0) && (
               <div className="space-y-3 mb-6 pb-6 border-b border-gray-100">
-                {project.budget > 0 && (
+                {canViewFinancials && project.budget > 0 && (
                   <div>
                     <div className="flex justify-between text-xs text-gray-400 mb-1.5">
                       <span>Budget used</span>
@@ -806,12 +820,14 @@ export default function ProjectDetailPage() {
                   { label: 'Next Billing', value: fmtDate(project.nextBillingDate) },
                 ]),
                 { label: 'Currency',   value: 'BDT' },
-                { label: 'Budget',     value: fmt(project.budget) },
-                { label: 'Discount',   value: fmt(project.discount) },
-                { label: 'Paid',       value: <span className="text-green-600">{fmt(paidAmount)}</span> },
-                { label: 'Due',        value: <span className={dueAmount > 0 ? 'text-red-500' : 'text-gray-600'}>{fmt(dueAmount)}</span> },
-                { label: 'Expenses',   value: fmt(project.approvedExpenses) },
-                { label: 'Profit',     value: <span className={profit >= 0 ? 'text-green-600' : 'text-red-500'}>{fmt(profit)}</span> },
+                ...(canViewFinancials ? [
+                  { label: 'Budget',   value: fmt(project.budget) },
+                  { label: 'Discount', value: fmt(project.discount) },
+                  { label: 'Paid',     value: <span className="text-green-600">{fmt(paidAmount)}</span> },
+                  { label: 'Due',      value: <span className={dueAmount > 0 ? 'text-red-500' : 'text-gray-600'}>{fmt(dueAmount)}</span> },
+                  { label: 'Expenses', value: fmt(project.approvedExpenses) },
+                  { label: 'Profit',   value: <span className={profit >= 0 ? 'text-green-600' : 'text-red-500'}>{fmt(profit)}</span> },
+                ] : []),
               ].map(({ label, value }) => (
                 <div key={label} className="flex flex-col gap-0.5">
                   <dt className="text-xs text-gray-400">{label}</dt>
@@ -878,18 +894,20 @@ export default function ProjectDetailPage() {
                   className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors text-left">
                   <Plus className="w-4 h-4 text-gray-400" /> Add Task
                 </button>
-                <button onClick={() => { setTab('expenses'); setExpenseModal(true) }}
-                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors text-left">
-                  <TrendingDown className="w-4 h-4 text-gray-400" /> Submit Expense
-                </button>
-                <button onClick={() => { setTab('payments'); setPaymentModal(true) }}
-                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors text-left">
-                  <CreditCard className="w-4 h-4 text-gray-400" /> Record Payment
-                </button>
-                <Link href={`/admin/invoices/new?projectId=${id}&clientId=${project.clientId?.id ?? project.clientId?._id ?? project.clientId ?? ''}`}
-                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors">
-                  <FileText className="w-4 h-4 text-gray-400" /> Create Invoice
-                </Link>
+                {canViewFinancials && (<>
+                  <button onClick={() => { setTab('expenses'); setExpenseModal(true) }}
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors text-left">
+                    <TrendingDown className="w-4 h-4 text-gray-400" /> Submit Expense
+                  </button>
+                  <button onClick={() => { setTab('payments'); setPaymentModal(true) }}
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors text-left">
+                    <CreditCard className="w-4 h-4 text-gray-400" /> Record Payment
+                  </button>
+                  <Link href={`/admin/invoices/new?projectId=${id}&clientId=${project.clientId?.id ?? project.clientId?._id ?? project.clientId ?? ''}`}
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors">
+                    <FileText className="w-4 h-4 text-gray-400" /> Create Invoice
+                  </Link>
+                </>)}
               </div>
             </div>
           </div>
@@ -1269,16 +1287,11 @@ export default function ProjectDetailPage() {
                   <form onSubmit={handleAssignFreelancer} className="space-y-4">
                     <div>
                       <label className="block text-xs font-medium text-gray-500 mb-1">Freelancer <span className="text-red-500">*</span></label>
-                      <select value={assignForm.freelancerId}
-                        onChange={e => setAssignForm(f => ({ ...f, freelancerId: e.target.value }))}
-                        className={ic} required>
-                        <option value="">Select freelancer…</option>
-                        {freelancerList.map(f => (
-                          <option key={f.id ?? f._id} value={f.id ?? f._id}>
-                            {f.userId?.name ?? f.id}{f.userId?.email ? ` — ${f.userId.email}` : ''}
-                          </option>
-                        ))}
-                      </select>
+                      <Select value={assignForm.freelancerId}
+                        onChange={v => setAssignForm(f => ({ ...f, freelancerId: v ?? '' }))}
+                        options={freelancerList.map(f => ({ value: f.id ?? f._id, label: `${f.userId?.name ?? f.id}${f.userId?.email ? ` — ${f.userId.email}` : ''}` }))}
+                        placeholder="Select freelancer…"
+                      />
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-gray-500 mb-1">Payment Amount (৳) <span className="text-red-500">*</span></label>

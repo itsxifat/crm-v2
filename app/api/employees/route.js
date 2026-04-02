@@ -4,6 +4,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { User, Employee, Task, Leave, CustomRole } from '@/models'
+import { normalizeDeptCode } from '@/models/Employee'
 import { z } from 'zod'
 import bcrypt from 'bcryptjs'
 
@@ -44,14 +45,29 @@ export async function GET(request) {
     await connectDB()
 
     const { searchParams } = new URL(request.url)
-    const page       = parseInt(searchParams.get('page')       ?? '1',  10)
-    const limit      = parseInt(searchParams.get('limit')      ?? '20', 10)
+    const page       = parseInt(searchParams.get('page')  ?? '1',  10)
+    const limit      = parseInt(searchParams.get('limit') ?? '20', 10)
     const search     = searchParams.get('search')
-    const department = searchParams.get('department')
+    const department = searchParams.get('department')  // full name or 3-letter code
+    const year       = searchParams.get('year')        // e.g. "2024"
+    const sortBy     = searchParams.get('sortBy')      // "employeeId" | default createdAt
     const skip       = (page - 1) * limit
 
     const filter = {}
-    if (department) filter.department = department
+
+    // Department filter — accept both code (DEV) and full name (Development)
+    if (department) {
+      const code = normalizeDeptCode(department)
+      filter.department = code
+        ? { $regex: `^${code}$`, $options: 'i' }  // exact code match
+        : { $regex: department, $options: 'i' }    // fallback: raw substring
+    }
+
+    // Year filter — match employeeId prefix ENF-*-YY-
+    if (year) {
+      const yy = String(year).slice(-2)
+      filter.employeeId = { $regex: `-${yy}-`, $options: 'i' }
+    }
 
     if (search) {
       const matchingUsers = await User.find({
@@ -62,17 +78,20 @@ export async function GET(request) {
       }).select('_id').lean()
       const userIds = matchingUsers.map(u => u._id)
       filter.$or = [
-        { userId:     { $in: userIds } },
-        { position:   { $regex: search, $options: 'i' } },
-        { department: { $regex: search, $options: 'i' } },
+        { userId:      { $in: userIds } },
+        { position:    { $regex: search, $options: 'i' } },
+        { department:  { $regex: search, $options: 'i' } },
+        { employeeId:  { $regex: search, $options: 'i' } },
       ]
     }
+
+    const sortOpt = sortBy === 'employeeId' ? { employeeId: 1 } : { createdAt: -1 }
 
     const [employees, total] = await Promise.all([
       Employee.find(filter)
         .skip(skip)
         .limit(limit)
-        .sort({ createdAt: -1 })
+        .sort(sortOpt)
         .populate({ path: 'userId', select: 'id name email avatar phone isActive role' })
         .populate({ path: 'customRoleId', select: 'id title department color' }),
       Employee.countDocuments(filter),

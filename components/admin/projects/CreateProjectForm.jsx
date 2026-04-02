@@ -2,19 +2,20 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { useForm } from 'react-hook-form'
+import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Loader2 } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { VENTURES, VENTURE_META, VENTURE_CATEGORIES } from '@/lib/ventures'
 import ClientSearch from '@/components/ui/ClientSearch'
+import Select from '@/components/ui/Select'
+import DatePicker from '@/components/ui/DatePicker'
 
 const schema = z.object({
   name:             z.string().min(1, 'Project name required'),
   description:      z.string().optional(),
   clientId:         z.string().min(1, 'Client required'),
-  venture:          z.enum(['ENSTUDIO','ENTECH','ENMARK'], { required_error: 'Venture required' }),
+  venture:          z.string().min(1, 'Venture required'),
   category:         z.string().min(1, 'Category required'),
   subcategory:      z.string().optional(),
   projectType:      z.enum(['FIXED','MONTHLY'], { required_error: 'Project type required' }),
@@ -28,10 +29,12 @@ const schema = z.object({
   tags:             z.string().optional(),
 })
 
+// Fallback styles for the 3 built-in ventures; unknown ventures get a neutral style
 const VENTURE_STYLES = {
   ENSTUDIO: { ring: 'ring-purple-500', bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200' },
   ENTECH:   { ring: 'ring-blue-500',   bg: 'bg-blue-50',   text: 'text-blue-700',   border: 'border-blue-200'   },
   ENMARK:   { ring: 'ring-green-500',  bg: 'bg-green-50',  text: 'text-green-700',  border: 'border-green-200'  },
+  _default: { ring: 'ring-gray-500',   bg: 'bg-gray-50',   text: 'text-gray-700',   border: 'border-gray-200'   },
 }
 
 const inputCls = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
@@ -40,9 +43,12 @@ const labelCls = 'block text-sm font-medium text-gray-700 mb-1'
 export default function CreateProjectForm({ project }) {
   const router = useRouter()
   const isEdit = !!project
-  const [managers, setManagers] = useState([])
+  const [managers,  setManagers]  = useState([])
+  const [ventures,  setVentures]  = useState([])   // [{ id, label, description }]
+  const [svcMap,    setSvcMap]    = useState({})    // { VENTURE_ID: { 'Label': ['sub1'] } }
+  const [configLoading, setConfigLoading] = useState(true)
 
-  const { register, handleSubmit, watch, setValue, formState: { errors, isSubmitting } } = useForm({
+  const { register, control, handleSubmit, watch, setValue, formState: { errors, isSubmitting } } = useForm({
     resolver: zodResolver(schema),
     defaultValues: isEdit ? {
       name:             project.name,
@@ -69,10 +75,34 @@ export default function CreateProjectForm({ project }) {
   const discount    = watch('discount')
   const category    = watch('category')
 
+  // Fetch managers
   useEffect(() => {
     fetch('/api/users?limit=50').then(r => r.json()).then(j => setManagers(j.data ?? []))
   }, [])
 
+  // Fetch config (ventures + services) from DB
+  useEffect(() => {
+    fetch('/api/config')
+      .then(r => r.json())
+      .then(j => {
+        const cfg = j.data ?? {}
+        setVentures((cfg.ventures ?? []).filter(v => v.active !== false))
+
+        // Convert services array → { 'Service Label': ['sub1', 'sub2'] }
+        const map = {}
+        for (const [vid, services] of Object.entries(cfg.services ?? {})) {
+          map[vid] = {}
+          for (const svc of services) {
+            map[vid][svc.label] = svc.subcategories ?? []
+          }
+        }
+        setSvcMap(map)
+      })
+      .catch(() => toast.error('Failed to load config'))
+      .finally(() => setConfigLoading(false))
+  }, [])
+
+  // Reset category/subcategory when venture changes
   useEffect(() => {
     if (!isEdit) {
       setValue('category', '')
@@ -80,8 +110,8 @@ export default function CreateProjectForm({ project }) {
     }
   }, [venture, isEdit, setValue])
 
-  const categories    = venture ? Object.keys(VENTURE_CATEGORIES[venture] ?? {}) : []
-  const subcategories = venture && category ? (VENTURE_CATEGORIES[venture]?.[category] ?? []) : []
+  const categories    = venture ? Object.keys(svcMap[venture] ?? {}) : []
+  const subcategories = venture && category ? (svcMap[venture]?.[category] ?? []) : []
   const profit        = (Number(budget) || 0) - (Number(discount) || 0)
 
   async function onSubmit(data) {
@@ -114,20 +144,25 @@ export default function CreateProjectForm({ project }) {
       {/* Venture */}
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6 space-y-4">
         <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Venture</h2>
-        <div className="grid grid-cols-3 gap-3">
-          {VENTURES.map(v => {
-            const s = VENTURE_STYLES[v]
-            const m = VENTURE_META[v]
-            return (
-              <button key={v} type="button"
-                onClick={() => setValue('venture', v, { shouldValidate: true })}
-                className={`p-4 rounded-xl border-2 text-left transition-all ${venture === v ? `${s.ring} ring-2 ${s.bg} ${s.border}` : 'border-gray-200 hover:border-gray-300'}`}>
-                <p className={`text-sm font-bold ${venture === v ? s.text : 'text-gray-700'}`}>{m.label}</p>
-                <p className="text-xs text-gray-500 mt-0.5">{m.description}</p>
-              </button>
-            )
-          })}
-        </div>
+        {configLoading ? (
+          <div className="flex items-center gap-2 text-sm text-gray-400">
+            <Loader2 className="w-4 h-4 animate-spin" /> Loading ventures…
+          </div>
+        ) : (
+          <div className="grid grid-cols-3 gap-3">
+            {ventures.map(v => {
+              const s = VENTURE_STYLES[v.id] ?? VENTURE_STYLES._default
+              return (
+                <button key={v.id} type="button"
+                  onClick={() => setValue('venture', v.id, { shouldValidate: true })}
+                  className={`p-4 rounded-xl border-2 text-left transition-all ${venture === v.id ? `${s.ring} ring-2 ${s.bg} ${s.border}` : 'border-gray-200 hover:border-gray-300'}`}>
+                  <p className={`text-sm font-bold ${venture === v.id ? s.text : 'text-gray-700'}`}>{v.label}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">{v.description}</p>
+                </button>
+              )
+            })}
+          </div>
+        )}
         {errors.venture && <p className="text-xs text-red-500">{errors.venture.message}</p>}
       </div>
 
@@ -169,18 +204,24 @@ export default function CreateProjectForm({ project }) {
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className={labelCls}>Category *</label>
-            <select {...register('category')} className={inputCls} disabled={!venture}>
-              <option value="">Select category…</option>
-              {categories.map(c => <option key={c}>{c}</option>)}
-            </select>
+            <Controller name="category" control={control} render={({ field }) => (
+              <Select value={field.value} onChange={v => field.onChange(v ?? '')}
+                options={categories.map(c => ({ value: c, label: c }))}
+                placeholder="Select category…"
+                disabled={!venture || configLoading}
+              />
+            )} />
             {errors.category && <p className="mt-1 text-xs text-red-500">{errors.category.message}</p>}
           </div>
           <div>
             <label className={labelCls}>Subcategory</label>
-            <select {...register('subcategory')} className={inputCls} disabled={!category || subcategories.length === 0}>
-              <option value="">Select subcategory…</option>
-              {subcategories.map(s => <option key={s}>{s}</option>)}
-            </select>
+            <Controller name="subcategory" control={control} render={({ field }) => (
+              <Select value={field.value} onChange={v => field.onChange(v ?? '')}
+                options={subcategories.map(s => ({ value: s, label: s }))}
+                placeholder="Select subcategory…"
+                disabled={!category || subcategories.length === 0}
+              />
+            )} />
           </div>
         </div>
         <div>
@@ -191,9 +232,12 @@ export default function CreateProjectForm({ project }) {
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className={labelCls}>Priority</label>
-            <select {...register('priority')} className={inputCls}>
-              {['LOW','MEDIUM','HIGH','URGENT'].map(p => <option key={p}>{p}</option>)}
-            </select>
+            <Controller name="priority" control={control} render={({ field }) => (
+              <Select value={field.value} onChange={v => field.onChange(v ?? 'MEDIUM')}
+                options={['LOW','MEDIUM','HIGH','URGENT'].map(p => ({ value: p, label: p }))}
+                placeholder="Select priority…"
+              />
+            )} />
           </div>
           <div>
             <label className={labelCls}>Tags</label>
@@ -215,7 +259,9 @@ export default function CreateProjectForm({ project }) {
           </div>
           <div>
             <label className={labelCls}>Start Date</label>
-            <input type="date" {...register('startDate')} className={inputCls} />
+            <Controller name="startDate" control={control} render={({ field }) => (
+              <DatePicker value={field.value || null} onChange={v => field.onChange(v ?? '')} />
+            )} />
           </div>
         </div>
         {projectType === 'FIXED' && (
@@ -223,7 +269,9 @@ export default function CreateProjectForm({ project }) {
             <div />
             <div>
               <label className={labelCls}>Deadline</label>
-              <input type="date" {...register('deadline')} className={inputCls} />
+              <Controller name="deadline" control={control} render={({ field }) => (
+                <DatePicker value={field.value || null} onChange={v => field.onChange(v ?? '')} />
+              )} />
             </div>
           </div>
         )}
@@ -234,10 +282,12 @@ export default function CreateProjectForm({ project }) {
         <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Team</h2>
         <div>
           <label className={labelCls}>Project Manager</label>
-          <select {...register('projectManagerId')} className={inputCls}>
-            <option value="">Unassigned</option>
-            {managers.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-          </select>
+          <Controller name="projectManagerId" control={control} render={({ field }) => (
+            <Select value={field.value} onChange={v => field.onChange(v ?? '')}
+              options={managers.map(m => ({ value: m.id, label: m.name }))}
+              placeholder="Unassigned"
+            />
+          )} />
         </div>
       </div>
 

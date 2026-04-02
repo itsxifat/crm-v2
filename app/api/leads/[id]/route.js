@@ -9,18 +9,27 @@ import Employee from '@/models/Employee'
 import { z } from 'zod'
 
 const updateLeadSchema = z.object({
-  name:         z.string().min(1).optional(),
-  email:        z.string().email().optional().nullable(),
-  phone:        z.string().optional().nullable(),
-  company:      z.string().optional().nullable(),
-  industry:     z.string().optional().nullable(),
-  source:       z.string().optional().nullable(),
-  status:       z.enum(['NEW','CONTACTED','PROPOSAL_SENT','NEGOTIATION','WON','LOST']).optional(),
-  value:        z.number().positive().optional().nullable(),
-  notes:        z.string().optional().nullable(),
-  assignedToId: z.string().optional().nullable(),
-  followUpDate: z.string().datetime().optional().nullable(),
-  lostReason:   z.string().optional().nullable(),
+  name:             z.string().min(1).optional(),
+  designation:      z.string().optional().nullable(),
+  email:            z.string().email().optional().nullable(),
+  phone:            z.string().optional().nullable(),
+  alternativePhone: z.string().optional().nullable(),
+  company:          z.string().optional().nullable(),
+  location:         z.string().optional().nullable(),
+  status:           z.enum(['NEW','CONTACTED','PROPOSAL_SENT','NEGOTIATION','WON','LOST']).optional(),
+  priority:         z.enum(['LOW','NORMAL','HIGH','URGENT']).optional(),
+  category:         z.string().optional().nullable(),
+  service:          z.string().optional().nullable(),
+  source:           z.string().optional().nullable(),
+  platform:         z.string().optional().nullable(),
+  reference:        z.string().optional().nullable(),
+  links:            z.array(z.string()).optional(),
+  sendingDate:      z.string().optional().nullable(),
+  followUpDate:     z.string().optional().nullable(),
+  value:            z.number().positive().optional().nullable(),
+  notes:            z.string().optional().nullable(),
+  assignedToId:     z.string().optional().nullable(),
+  lostReason:       z.string().optional().nullable(),
 })
 
 // GET /api/leads/[id]
@@ -64,6 +73,7 @@ export async function PUT(request, { params }) {
 
     const data = { ...parsed.data }
     if (data.followUpDate) data.followUpDate = new Date(data.followUpDate)
+    if (data.sendingDate)  data.sendingDate  = new Date(data.sendingDate)
 
     const lead = await Lead.findByIdAndUpdate(params.id, data, { new: true })
       .populate({ path: 'assignedToId', populate: { path: 'userId', select: 'name avatar' } })

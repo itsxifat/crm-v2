@@ -32,12 +32,11 @@ export async function POST(request, { params }) {
     if (!employee) return NextResponse.json({ error: 'Employee record not found' }, { status: 404 })
 
     let newEmployeeId = employee.employeeId
-    if (!newEmployeeId && department && (employee.phone || companyPhone)) {
+    if (!newEmployeeId && department) {
       try {
         newEmployeeId = await generateEmployeeId({
           department,
           hireDate: hireDate ? new Date(hireDate) : (employee.hireDate ?? null),
-          phone:    employee.phone || companyPhone,
         })
       } catch (err) {
         console.warn('[approve] employeeId generation skipped:', err.message)

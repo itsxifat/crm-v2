@@ -4,10 +4,17 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import toast from 'react-hot-toast'
-import { Eye, Pencil, Trash2, UserCheck, MoreHorizontal, Phone, Mail } from 'lucide-react'
+import { Eye, Pencil, Trash2, UserCheck, MoreHorizontal, Phone, Mail, MapPin, MessageSquare } from 'lucide-react'
 import Badge from '@/components/ui/Badge'
 import Avatar from '@/components/ui/Avatar'
 import { formatCurrency, formatDate, truncateText } from '@/lib/utils'
+
+const PRIORITY_STYLES = {
+  LOW:    'bg-gray-100 text-gray-500',
+  NORMAL: 'bg-blue-50 text-blue-600',
+  HIGH:   'bg-orange-100 text-orange-600',
+  URGENT: 'bg-red-100 text-red-600',
+}
 
 function ActionMenu({ lead, onEdit, onDelete, onConvert }) {
   const [open, setOpen] = useState(false)
@@ -111,7 +118,7 @@ export default function LeadsTable({ leads = [], onEdit, onRefresh }) {
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-gray-100 bg-gray-50/60">
-            {['Name / Company', 'Contact', 'Source', 'Status', 'Value', 'Assigned To', 'Follow-up', 'Created', 'Actions'].map((h) => (
+            {['Name / Company', 'Contact', 'Source / Platform', 'Status', 'Value', 'Assigned To', 'Follow-up', 'Notes', 'Actions'].map((h) => (
               <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">
                 {h}
               </th>
@@ -131,8 +138,16 @@ export default function LeadsTable({ leads = [], onEdit, onRefresh }) {
                   <Avatar name={lead.name} size="sm" />
                   <div className="min-w-0">
                     <p className="font-medium text-gray-900 truncate">{lead.name}</p>
+                    {lead.designation && (
+                      <p className="text-xs text-gray-500 truncate">{lead.designation}</p>
+                    )}
                     {lead.company && (
                       <p className="text-xs text-gray-400 truncate">{lead.company}</p>
+                    )}
+                    {lead.location && (
+                      <p className="flex items-center gap-1 text-xs text-gray-400 truncate">
+                        <MapPin className="w-2.5 h-2.5 shrink-0" />{lead.location}
+                      </p>
                     )}
                     {lead.convertedAt && (
                       <span className="inline-flex items-center gap-1 text-xs text-green-600 font-medium">
@@ -166,19 +181,44 @@ export default function LeadsTable({ leads = [], onEdit, onRefresh }) {
                       {lead.phone}
                     </a>
                   )}
+                  {lead.alternativePhone && (
+                    <a
+                      href={`tel:${lead.alternativePhone}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="flex items-center gap-1 text-xs text-gray-400 hover:text-blue-600 transition-colors"
+                    >
+                      <Phone className="w-3 h-3" />
+                      {lead.alternativePhone}
+                    </a>
+                  )}
                 </div>
               </td>
 
-              {/* Source */}
+              {/* Source / Platform */}
               <td className="px-4 py-3">
-                <span className="text-xs text-gray-500 capitalize">
-                  {lead.source?.replace(/_/g, ' ') ?? '—'}
-                </span>
+                <div className="space-y-0.5">
+                  {lead.source && (
+                    <p className="text-xs text-gray-600">{lead.source}</p>
+                  )}
+                  {lead.platform && (
+                    <p className="text-xs text-gray-400">{lead.platform}</p>
+                  )}
+                  {!lead.source && !lead.platform && (
+                    <span className="text-xs text-gray-300">—</span>
+                  )}
+                </div>
               </td>
 
-              {/* Status */}
+              {/* Status + Priority */}
               <td className="px-4 py-3">
-                <Badge status={lead.status} />
+                <div className="space-y-1">
+                  <Badge status={lead.status} />
+                  {lead.priority && lead.priority !== 'NORMAL' && (
+                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${PRIORITY_STYLES[lead.priority] ?? ''}`}>
+                      {lead.priority}
+                    </span>
+                  )}
+                </div>
               </td>
 
               {/* Value */}
@@ -190,11 +230,11 @@ export default function LeadsTable({ leads = [], onEdit, onRefresh }) {
 
               {/* Assigned To */}
               <td className="px-4 py-3">
-                {lead.assignedTo ? (
+                {lead.assignedToId ? (
                   <div className="flex items-center gap-2">
-                    <Avatar name={lead.assignedTo.user?.name ?? ''} size="xs" src={lead.assignedTo.user?.avatar} />
+                    <Avatar name={lead.assignedToId.userId?.name ?? ''} size="xs" src={lead.assignedToId.userId?.avatar} />
                     <span className="text-xs text-gray-600 truncate max-w-[100px]">
-                      {lead.assignedTo.user?.name ?? '—'}
+                      {lead.assignedToId.userId?.name ?? '—'}
                     </span>
                   </div>
                 ) : (
@@ -213,9 +253,21 @@ export default function LeadsTable({ leads = [], onEdit, onRefresh }) {
                 )}
               </td>
 
-              {/* Created */}
-              <td className="px-4 py-3 whitespace-nowrap text-xs text-gray-400">
-                {formatDate(lead.createdAt)}
+              {/* Notes / Comments / Links */}
+              <td className="px-4 py-3">
+                <div className="flex items-center gap-2">
+                  {lead.comments?.length > 0 && (
+                    <span className="flex items-center gap-1 text-xs text-gray-400">
+                      <MessageSquare className="w-3 h-3" />{lead.comments.length}
+                    </span>
+                  )}
+                  {lead.links?.length > 0 && (
+                    <span className="text-xs text-blue-400">{lead.links.length} link{lead.links.length > 1 ? 's' : ''}</span>
+                  )}
+                  {!lead.comments?.length && !lead.links?.length && (
+                    <span className="text-xs text-gray-300">—</span>
+                  )}
+                </div>
               </td>
 
               {/* Actions */}

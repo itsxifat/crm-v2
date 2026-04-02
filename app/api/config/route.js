@@ -9,6 +9,10 @@ const CONFIG_KEY = 'crm_config'
 
 // Default config structure
 const DEFAULT_CONFIG = {
+  leadSources:   [],   // e.g. ['Referral', 'Cold Outreach', 'Website']
+  leadPlatforms: [],   // e.g. ['Facebook', 'LinkedIn', 'WhatsApp']
+  leadCategories: [],  // e.g. ['Website', 'App', 'Branding']
+  leadServices:  [],   // e.g. ['EnStudio', 'EnTech'] (sister concern)
   ventures: [
     { id: 'ENSTUDIO', label: 'Enstudio', description: 'Creative Services', active: true },
     { id: 'ENTECH',   label: 'Entech',   description: 'Web & Tech',         active: true },

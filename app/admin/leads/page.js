@@ -6,6 +6,7 @@ import toast from 'react-hot-toast'
 import StatsCard from '@/components/ui/StatsCard'
 import SearchInput from '@/components/ui/SearchInput'
 import FilterSelect from '@/components/ui/FilterSelect'
+import DatePicker from '@/components/ui/DatePicker'
 import Pagination from '@/components/ui/Pagination'
 import LeadsTable from '@/components/admin/leads/LeadsTable'
 import LeadModal from '@/components/admin/leads/LeadModal'
@@ -20,6 +21,27 @@ const STATUS_OPTIONS = [
   { value: 'LOST',          label: 'Lost' },
 ]
 
+const PRIORITY_OPTIONS = [
+  { value: 'LOW',    label: 'Low' },
+  { value: 'NORMAL', label: 'Normal' },
+  { value: 'HIGH',   label: 'High' },
+  { value: 'URGENT', label: 'Urgent' },
+]
+
+const PLATFORM_OPTIONS = [
+  { value: 'Facebook',     label: 'Facebook' },
+  { value: 'LinkedIn',     label: 'LinkedIn' },
+  { value: 'Instagram',    label: 'Instagram' },
+  { value: 'WhatsApp',     label: 'WhatsApp' },
+  { value: 'Twitter / X',  label: 'Twitter / X' },
+  { value: 'YouTube',      label: 'YouTube' },
+  { value: 'TikTok',       label: 'TikTok' },
+  { value: 'Email',        label: 'Email' },
+  { value: 'Phone',        label: 'Phone' },
+  { value: 'Direct',       label: 'Direct' },
+  { value: 'Other',        label: 'Other' },
+]
+
 export default function LeadsPage() {
   const [leads,       setLeads]       = useState([])
   const [meta,        setMeta]        = useState({ page: 1, pages: 1, total: 0, limit: 20 })
@@ -27,6 +49,8 @@ export default function LeadsPage() {
   const [loading,     setLoading]     = useState(true)
   const [search,      setSearch]      = useState('')
   const [status,      setStatus]      = useState(null)
+  const [priority,    setPriority]    = useState(null)
+  const [platform,    setPlatform]    = useState(null)
   const [dateFrom,    setDateFrom]    = useState('')
   const [dateTo,      setDateTo]      = useState('')
   const [page,        setPage]        = useState(1)
@@ -37,8 +61,10 @@ export default function LeadsPage() {
     setLoading(true)
     try {
       const params = new URLSearchParams({ page, limit: 20 })
-      if (search) params.set('search', search)
-      if (status) params.set('status', status)
+      if (search)   params.set('search',   search)
+      if (status)   params.set('status',   status)
+      if (priority) params.set('priority', priority)
+      if (platform) params.set('platform', platform)
       if (dateFrom) params.set('dateFrom', dateFrom)
       if (dateTo)   params.set('dateTo',   dateTo)
 
@@ -53,7 +79,7 @@ export default function LeadsPage() {
     } finally {
       setLoading(false)
     }
-  }, [page, search, status, dateFrom, dateTo])
+  }, [page, search, status, priority, platform, dateFrom, dateTo])
 
   const fetchStats = useCallback(async () => {
     try {
@@ -84,8 +110,10 @@ export default function LeadsPage() {
   useEffect(() => { fetchLeads() }, [fetchLeads])
   useEffect(() => { fetchStats() }, [fetchStats])
 
-  const handleSearch = (val) => { setSearch(val); setPage(1) }
-  const handleStatus = (val) => { setStatus(val);  setPage(1) }
+  const handleSearch   = (val) => { setSearch(val);   setPage(1) }
+  const handleStatus   = (val) => { setStatus(val);   setPage(1) }
+  const handlePriority = (val) => { setPriority(val); setPage(1) }
+  const handlePlatform = (val) => { setPlatform(val); setPage(1) }
 
   const handleEdit = (lead) => {
     setEditingLead(lead)
@@ -168,26 +196,30 @@ export default function LeadsPage() {
             onChange={handleStatus}
             options={STATUS_OPTIONS}
             placeholder="All Statuses"
-            className="w-44"
+            className="w-36"
+          />
+          <FilterSelect
+            value={priority}
+            onChange={handlePriority}
+            options={PRIORITY_OPTIONS}
+            placeholder="All Priorities"
+            className="w-36"
+          />
+          <FilterSelect
+            value={platform}
+            onChange={handlePlatform}
+            options={PLATFORM_OPTIONS}
+            placeholder="All Platforms"
+            className="w-36"
           />
           <div className="flex items-center gap-2 ml-auto">
-            <label className="text-xs text-gray-500 font-medium">From</label>
-            <input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => { setDateFrom(e.target.value); setPage(1) }}
-              className="px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-            <label className="text-xs text-gray-500 font-medium">To</label>
-            <input
-              type="date"
-              value={dateTo}
-              onChange={(e) => { setDateTo(e.target.value); setPage(1) }}
-              className="px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-            {(search || status || dateFrom || dateTo) && (
+            <span className="text-xs text-gray-500 font-medium">From</span>
+            <DatePicker value={dateFrom || null} onChange={v => { setDateFrom(v ?? ''); setPage(1) }} placeholder="Start date" size="sm" className="w-36" />
+            <span className="text-xs text-gray-500 font-medium">To</span>
+            <DatePicker value={dateTo || null} onChange={v => { setDateTo(v ?? ''); setPage(1) }} placeholder="End date" size="sm" className="w-36" />
+            {(search || status || priority || platform || dateFrom || dateTo) && (
               <button
-                onClick={() => { setSearch(''); setStatus(null); setDateFrom(''); setDateTo(''); setPage(1) }}
+                onClick={() => { setSearch(''); setStatus(null); setPriority(null); setPlatform(null); setDateFrom(''); setDateTo(''); setPage(1) }}
                 className="px-3 py-2 text-xs font-medium text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
               >
                 Clear

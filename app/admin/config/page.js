@@ -176,6 +176,40 @@ function VenturePanel({ ventureId, services, config, onChange }) {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
+// ─── Lead Options List ────────────────────────────────────────────────────────
+
+function LeadOptionList({ label, description, items, onChange }) {
+  function add(val) {
+    if (items.includes(val)) { toast.error('Already exists'); return }
+    onChange([...items, val])
+  }
+  function remove(val) {
+    onChange(items.filter(i => i !== val))
+  }
+  function rename(old, next) {
+    onChange(items.map(i => i === old ? next : i))
+  }
+
+  return (
+    <div className="bg-white border border-gray-100 rounded-xl p-5">
+      <p className="text-sm font-semibold text-gray-800 mb-0.5">{label}</p>
+      <p className="text-xs text-gray-400 mb-3">{description}</p>
+      {items.length === 0 ? (
+        <p className="text-xs text-gray-400 italic mb-2">No options yet — add one below</p>
+      ) : (
+        <div className="flex flex-wrap gap-1.5 mb-1">
+          {items.map(item => (
+            <Tag key={item} label={item} onDelete={remove} onRename={rename} />
+          ))}
+        </div>
+      )}
+      <AddInput placeholder={`Add ${label.toLowerCase()}…`} onAdd={add} />
+    </div>
+  )
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
+
 export default function ConfigPage() {
   const [config,   setConfig]   = useState(null)
   const [loading,  setLoading]  = useState(true)
@@ -189,6 +223,11 @@ export default function ConfigPage() {
       .then(j => { setConfig(j.data); setLoading(false) })
       .catch(() => { toast.error('Failed to load config'); setLoading(false) })
   }, [])
+
+  function updateLeadOption(key, values) {
+    setConfig(c => ({ ...c, [key]: values }))
+    setDirty(true)
+  }
 
   function updateServices(ventureId, services) {
     setConfig(c => ({ ...c, services: { ...c.services, [ventureId]: services } }))
@@ -325,6 +364,40 @@ export default function ConfigPage() {
               </div>
             )
           })}
+        </div>
+      </div>
+
+      {/* Lead Options */}
+      <div className="space-y-4">
+        <div>
+          <h2 className="text-base font-semibold text-gray-900">Lead Options</h2>
+          <p className="text-sm text-gray-400 mt-0.5">Manage dropdown options for the Lead form — source, platform, category, and sister concern</p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <LeadOptionList
+            label="Sources"
+            description="How the lead found out about you (e.g. Referral, Cold Outreach)"
+            items={config?.leadSources ?? []}
+            onChange={v => updateLeadOption('leadSources', v)}
+          />
+          <LeadOptionList
+            label="Platforms"
+            description="Channel where the lead was contacted (e.g. Facebook, LinkedIn)"
+            items={config?.leadPlatforms ?? []}
+            onChange={v => updateLeadOption('leadPlatforms', v)}
+          />
+          <LeadOptionList
+            label="Categories"
+            description="Type of project the lead is interested in (e.g. Website, Branding)"
+            items={config?.leadCategories ?? []}
+            onChange={v => updateLeadOption('leadCategories', v)}
+          />
+          <LeadOptionList
+            label="Services / Sister Concern"
+            description="Which business unit will handle this lead (e.g. EnStudio, EnTech)"
+            items={config?.leadServices ?? []}
+            onChange={v => updateLeadOption('leadServices', v)}
+          />
         </div>
       </div>
 

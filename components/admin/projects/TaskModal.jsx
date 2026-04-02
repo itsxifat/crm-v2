@@ -1,11 +1,13 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { X, Loader2, CheckSquare } from 'lucide-react'
 import toast from 'react-hot-toast'
+import Select from '@/components/ui/Select'
+import DatePicker from '@/components/ui/DatePicker'
 
 const schema = z.object({
   title:               z.string().min(1, 'Title is required'),
@@ -29,6 +31,7 @@ export default function TaskModal({ task, projectId, defaultStatus, onClose, onS
 
   const {
     register,
+    control,
     handleSubmit,
     watch,
     formState: { errors, isSubmitting },
@@ -157,22 +160,32 @@ export default function TaskModal({ task, projectId, defaultStatus, onClose, onS
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-              <select {...register('status')} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary">
-                <option value="TODO">To Do</option>
-                <option value="IN_PROGRESS">In Progress</option>
-                <option value="IN_REVIEW">In Review</option>
-                <option value="COMPLETED">Completed</option>
-                <option value="CANCELLED">Cancelled</option>
-              </select>
+              <Controller name="status" control={control} render={({ field }) => (
+                <Select value={field.value} onChange={v => field.onChange(v ?? 'TODO')}
+                  options={[
+                    { value: 'TODO',        label: 'To Do' },
+                    { value: 'IN_PROGRESS', label: 'In Progress' },
+                    { value: 'IN_REVIEW',   label: 'In Review' },
+                    { value: 'COMPLETED',   label: 'Completed' },
+                    { value: 'CANCELLED',   label: 'Cancelled' },
+                  ]}
+                  placeholder="Select status…"
+                />
+              )} />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
-              <select {...register('priority')} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary">
-                <option value="LOW">Low</option>
-                <option value="MEDIUM">Medium</option>
-                <option value="HIGH">High</option>
-                <option value="URGENT">Urgent</option>
-              </select>
+              <Controller name="priority" control={control} render={({ field }) => (
+                <Select value={field.value} onChange={v => field.onChange(v ?? 'MEDIUM')}
+                  options={[
+                    { value: 'LOW',    label: 'Low' },
+                    { value: 'MEDIUM', label: 'Medium' },
+                    { value: 'HIGH',   label: 'High' },
+                    { value: 'URGENT', label: 'Urgent' },
+                  ]}
+                  placeholder="Select priority…"
+                />
+              )} />
             </div>
           </div>
 
