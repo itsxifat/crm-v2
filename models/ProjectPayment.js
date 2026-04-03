@@ -2,7 +2,7 @@ import mongoose from 'mongoose'
 
 const ProjectPaymentSchema = new mongoose.Schema(
   {
-    projectId:     { type: mongoose.Schema.Types.ObjectId, ref: 'Project',  required: true },
+    projectId:     { type: mongoose.Schema.Types.ObjectId, ref: 'Project',  default: null },
     invoiceId:     { type: mongoose.Schema.Types.ObjectId, ref: 'Invoice',  default: null },
     clientId:      { type: mongoose.Schema.Types.ObjectId, ref: 'Client',   default: null },
     submittedBy:   { type: mongoose.Schema.Types.ObjectId, ref: 'User',     default: null },

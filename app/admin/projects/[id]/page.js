@@ -247,17 +247,27 @@ function TaskModal({ projectId, task, onClose, onSaved }) {
 function ExpenseModal({ projectId, onClose, onSaved }) {
   const [form, setForm] = useState({
     title: '', amount: '', category: EXPENSE_CATEGORIES[0],
-    date: new Date().toISOString().slice(0,10), notes: '', invoiceUrl: '',
+    date: new Date().toISOString().slice(0,10), notes: '', invoiceUrl: '', freelancerId: '',
   })
-  const [saving, setSaving] = useState(false)
+  const [saving,      setSaving]      = useState(false)
+  const [freelancers, setFreelancers] = useState([])
+
+  const isFreelancerPayment = form.category === 'Freelancer Payment'
+
+  useEffect(() => {
+    fetch(`/api/freelancer-assignments?projectId=${projectId}`)
+      .then(r => r.json())
+      .then(j => setFreelancers(j.data ?? []))
+  }, [projectId])
 
   async function save() {
     if (!form.title || !form.amount) { toast.error('Title and amount required'); return }
+    if (isFreelancerPayment && !form.freelancerId) { toast.error('Select a freelancer'); return }
     setSaving(true)
     try {
       const res  = await fetch(`/api/projects/${projectId}/expenses`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, amount: Number(form.amount), invoiceUrl: form.invoiceUrl || null }),
+        body: JSON.stringify({ ...form, amount: Number(form.amount), invoiceUrl: form.invoiceUrl || null, freelancerId: form.freelancerId || null }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error)
@@ -290,11 +300,25 @@ function ExpenseModal({ projectId, onClose, onSaved }) {
           </div>
           <div className="col-span-2">
             <label className="block text-xs font-medium text-gray-500 mb-1">Category</label>
-            <Select value={form.category} onChange={v => setForm(f => ({ ...f, category: v ?? EXPENSE_CATEGORIES[0] }))}
+            <Select value={form.category} onChange={v => setForm(f => ({ ...f, category: v ?? EXPENSE_CATEGORIES[0], freelancerId: '' }))}
               options={EXPENSE_CATEGORIES.map(c => ({ value: c, label: c }))}
               placeholder="Select category…"
             />
           </div>
+          {isFreelancerPayment && (
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-gray-500 mb-1">Freelancer *</label>
+              <Select
+                value={form.freelancerId}
+                onChange={v => setForm(f => ({ ...f, freelancerId: v ?? '' }))}
+                options={freelancers.map(a => ({
+                  value: a.freelancerId?.id ?? a.freelancerId?._id ?? a.freelancerId,
+                  label: a.freelancerId?.userId?.name ?? a.freelancerId?.userId?.email ?? 'Unknown',
+                }))}
+                placeholder="Select freelancer…"
+              />
+            </div>
+          )}
           <div className="col-span-2">
             <label className="block text-xs font-medium text-gray-500 mb-1">Notes</label>
             <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} className={`${ic} resize-none`} />
@@ -1181,10 +1205,15 @@ export default function ProjectDetailPage() {
                 <h3 className="text-sm font-medium text-gray-900">Freelancer Assignments</h3>
                 <p className="text-xs text-gray-400 mt-0.5">{freelancerAssignments.length} assignment{freelancerAssignments.length !== 1 ? 's' : ''}</p>
               </div>
-              <button onClick={() => setAssignModal(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-50 transition-colors">
-                <Plus className="w-3.5 h-3.5" /> Assign Freelancer
-              </button>
+              {(
+                ['SUPER_ADMIN', 'MANAGER'].includes(session?.user?.role) ||
+                (session?.user?.role === 'EMPLOYEE' && (project.projectManagerId?.id ?? project.projectManagerId) === session.user.id)
+              ) && (
+                <button onClick={() => setAssignModal(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-50 transition-colors">
+                  <Plus className="w-3.5 h-3.5" /> Assign Freelancer
+                </button>
+              )}
             </div>
 
             {freelancerAssignments.length === 0 ? (

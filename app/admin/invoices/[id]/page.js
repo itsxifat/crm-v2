@@ -312,7 +312,7 @@ function InvoicePrintView({ invoice, payments = [] }) {
           <Image src="/en-logo.png" alt="Enfinito" width={120} height={38} style={{ objectFit: 'contain', display: 'block', marginBottom: 7 }} />
           <p style={{ margin: '0 0 2px', fontSize: 13, fontWeight: 700, color: '#0f172a' }}>Enfinito Bangladesh</p>
           <p style={{ margin: '0 0 2px', fontSize: 11, color: '#64748b' }}>Savar, Dhaka, Bangladesh</p>
-          <p style={{ margin: '0 0 2px', fontSize: 11, color: '#64748b' }}>+8801540110050 - info@enfinito.com</p>
+          <p style={{ margin: '0 0 2px', fontSize: 11, color: '#64748b' }}>+8801332818901 - info@enfinito.com</p>
           <p style={{ margin: 0,         fontSize: 11, color: '#64748b' }}>www.enfinito.com</p>
         </div>
         <div style={{ textAlign: 'right' }}>

@@ -30,10 +30,8 @@ export async function POST(request, { params }) {
     if (Number(amount) > balance + 0.01)
       return NextResponse.json({ error: `Amount exceeds outstanding balance of BDT ${balance.toFixed(2)}` }, { status: 422 })
 
-    // Use first linked project (or require one)
-    const projectId = invoice.projectIds?.[0]?._id ?? invoice.projectIds?.[0]
-    if (!projectId)
-      return NextResponse.json({ error: 'Invoice must be linked to a project to record payments' }, { status: 422 })
+    // Use first linked project if available (optional)
+    const projectId = invoice.projectIds?.[0]?._id ?? invoice.projectIds?.[0] ?? null
 
     const payment = await new ProjectPayment({
       projectId,

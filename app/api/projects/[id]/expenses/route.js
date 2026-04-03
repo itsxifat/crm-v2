@@ -36,16 +36,17 @@ export async function POST(request, { params }) {
 
     const body = await request.json()
     const expense = await new ProjectExpense({
-      projectId:   params.id,
-      venture:     project.venture ?? 'ENTECH',
-      title:       body.title,
-      amount:      body.amount,
-      category:    body.category,
-      date:        body.date ? new Date(body.date) : new Date(),
-      notes:       body.notes ?? null,
-      invoiceUrl:  body.invoiceUrl ?? null,
-      submittedBy: session.user.id,
-      status:      'PENDING',
+      projectId:    params.id,
+      venture:      project.venture ?? 'ENTECH',
+      title:        body.title,
+      amount:       body.amount,
+      category:     body.category,
+      date:         body.date ? new Date(body.date) : new Date(),
+      notes:        body.notes ?? null,
+      invoiceUrl:   body.invoiceUrl ?? null,
+      freelancerId: body.freelancerId ?? null,
+      submittedBy:  session.user.id,
+      status:       'PENDING',
     }).save()
 
     return NextResponse.json({ data: expense.toJSON() }, { status: 201 })

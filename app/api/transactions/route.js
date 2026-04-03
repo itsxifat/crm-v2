@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
-import { Transaction } from '@/models'
+import { Transaction, Invoice } from '@/models'
 import { z } from 'zod'
 
 const transactionSchema = z.object({
@@ -14,6 +14,7 @@ const transactionSchema = z.object({
   date:           z.string(),
   reference:      z.string().optional().nullable(),
   projectId:      z.string().optional().nullable(),
+  invoiceId:      z.string().optional().nullable(),
   clientId:       z.string().optional().nullable(),
   vendorId:       z.string().optional().nullable(),
   freelancerId:   z.string().optional().nullable(),
@@ -107,6 +108,23 @@ export async function POST(request) {
       date:      new Date(date),
       createdBy: session.user.id,
     }).save()
+
+    // Sync invoice paidAmount/status when an income transaction is linked to an invoice
+    if (clean.type === 'INCOME' && clean.invoiceId) {
+      const invoice = await Invoice.findById(clean.invoiceId)
+      if (invoice && !['PAID', 'CANCELLED'].includes(invoice.status)) {
+        const newPaid = Math.min((invoice.paidAmount ?? 0) + clean.amount, invoice.total)
+        invoice.paidAmount = newPaid
+        const balance = invoice.total - newPaid
+        if (balance <= 0.01) {
+          invoice.status = 'PAID'
+          if (!invoice.paidAt) invoice.paidAt = new Date(clean.date)
+        } else {
+          invoice.status = 'PARTIALLY_PAID'
+        }
+        await invoice.save()
+      }
+    }
 
     await transaction.populate([
       { path: 'paidBy',         select: 'name avatar' },

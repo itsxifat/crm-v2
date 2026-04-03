@@ -12,6 +12,8 @@ const ProjectExpenseSchema = new mongoose.Schema(
     notes:       { type: String, default: null },
     invoiceUrl:  { type: String, default: null },          // invoice/receipt uploaded by submitter
 
+    freelancerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Freelancer', default: null },
+
     submittedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     status:      { type: String, enum: ['PENDING','APPROVED','REJECTED'], default: 'PENDING' },
 

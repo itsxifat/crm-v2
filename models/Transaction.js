@@ -16,6 +16,7 @@ const TransactionSchema = new mongoose.Schema(
 
     // Relations
     projectId:     { type: mongoose.Schema.Types.ObjectId, ref: 'Project', default: null },
+    invoiceId:     { type: mongoose.Schema.Types.ObjectId, ref: 'Invoice', default: null },
     clientId:      { type: String, default: null },
     vendorId:      { type: String, default: null },
     freelancerId:  { type: String, default: null },

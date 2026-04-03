@@ -48,14 +48,20 @@ export async function POST(req) {
   try {
     const session = await getServerSession(authOptions)
     if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 })
-    if (!['SUPER_ADMIN', 'MANAGER'].includes(session.user.role)) {
-      return Response.json({ error: 'Forbidden' }, { status: 403 })
-    }
 
     await connectDB()
 
     const body = await req.json()
     const { projectId, freelancerId, paymentAmount, paymentNotes } = body
+
+    // SUPER_ADMIN and MANAGER can always assign; EMPLOYEE only if they are the project manager
+    if (!['SUPER_ADMIN', 'MANAGER'].includes(session.user.role)) {
+      if (session.user.role !== 'EMPLOYEE') return Response.json({ error: 'Forbidden' }, { status: 403 })
+      const project = await Project.findById(projectId).lean()
+      if (!project) return Response.json({ error: 'Project not found' }, { status: 404 })
+      const pmId = project.projectManagerId?.toString()
+      if (pmId !== session.user.id) return Response.json({ error: 'Forbidden — only the project manager can assign freelancers' }, { status: 403 })
+    }
 
     if (!projectId || !freelancerId || !paymentAmount) {
       return Response.json({ error: 'projectId, freelancerId and paymentAmount are required' }, { status: 400 })

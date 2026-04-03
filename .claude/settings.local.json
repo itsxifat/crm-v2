@@ -23,7 +23,9 @@
       "Bash(node -e \":*)",
       "Bash(grep -n \"EN-Tech\\\\|EN-CRM\\\\|EnTech\\\\|Entech Agency\\\\|en-crm\\\\b\" e:/En-Tech/internel/en-crm/app/client/ClientNav.js e:/En-Tech/internel/en-crm/app/layout.js \"e:/En-Tech/internel/en-crm/app/\\(auth\\)/login/page.js\" e:/En-Tech/internel/en-crm/app/freelancer/invite/[token]/page.js e:/En-Tech/internel/en-crm/app/freelancer/setup/page.js)",
       "Bash(grep -rn 'Client Panel' e:/En-Tech/internel/en-crm --include=*.js --include=*.jsx --include=*.ts --include=*.tsx)",
-      "Bash(grep -c \"EN-Tech Agency\" e:/En-Tech/internel/en-crm/lib/mailer.js e:/En-Tech/internel/en-crm/app/freelancer/invite/[token]/page.js)"
+      "Bash(grep -c \"EN-Tech Agency\" e:/En-Tech/internel/en-crm/lib/mailer.js e:/En-Tech/internel/en-crm/app/freelancer/invite/[token]/page.js)",
+      "Bash(openssl rand:*)",
+      "Bash(grep -n \"freelancerId\\\\|freelancer_id\" \"e:/En-Tech/internel/en-crm/app/api/projects/\"*\"/expenses/route.js\")"
     ]
   }
 }

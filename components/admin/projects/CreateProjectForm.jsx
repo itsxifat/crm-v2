@@ -77,7 +77,9 @@ export default function CreateProjectForm({ project }) {
 
   // Fetch managers
   useEffect(() => {
-    fetch('/api/users?limit=50').then(r => r.json()).then(j => setManagers(j.data ?? []))
+    fetch('/api/employees?limit=200').then(r => r.json()).then(j =>
+      setManagers((j.data ?? []).filter(e => e.userId?.id).map(e => ({ id: e.userId.id, name: e.userId.name })))
+    )
   }, [])
 
   // Fetch config (ventures + services) from DB

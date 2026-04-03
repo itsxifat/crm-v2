@@ -96,6 +96,7 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
   const isEdit = !!tx
   const [receiptUrl,  setReceiptUrl]  = useState('')
   const [projects,    setProjects]    = useState([])
+  const [invoices,    setInvoices]    = useState([])
   const [users,       setUsers]       = useState([])
   const [freelancers, setFreelancers] = useState([])
   const [employees,   setEmployees]   = useState([])
@@ -118,6 +119,7 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
   useEffect(() => {
     if (open) {
       fetch('/api/projects?limit=200').then(r => r.json()).then(j => setProjects(j.data ?? []))
+      fetch('/api/invoices?limit=200').then(r => r.json()).then(j => setInvoices((j.data ?? []).filter(inv => !['PAID','CANCELLED','DRAFT'].includes(inv.status))))
       fetch('/api/users?limit=100').then(r => r.json()).then(j => setUsers(j.data ?? []))
       fetch('/api/freelancers?limit=200').then(r => r.json()).then(j => setFreelancers(j.data ?? []))
       fetch('/api/employees?limit=200').then(r => r.json()).then(j => setEmployees(j.data ?? []))
@@ -138,6 +140,7 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
         accountManager: tx.accountManager?.id ?? tx.accountManager ?? '',
         paymentMethod:  tx.paymentMethod ?? '',
         projectId:      tx.projectId?.id ?? tx.projectId ?? '',
+        invoiceId:      tx.invoiceId?.id ?? tx.invoiceId ?? '',
         receiptUrl:     url,
         txnId:          tx.txnId ?? '',
       } : { type: 'INCOME', currency: 'BDT', date: new Date().toISOString().slice(0, 10), accountManager: currentUser?.id ?? '' })
@@ -324,6 +327,18 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
             <input {...register('reference')} placeholder="INV-001, PO-123…" className={ic} />
           </div>
         </div>
+
+        {type === 'INCOME' && (
+          <div>
+            <label className={lc}>Link to Invoice <span className="text-gray-400 font-normal text-xs">(syncs invoice paid amount)</span></label>
+            <Controller name="invoiceId" control={control} render={({ field }) => (
+              <Select value={field.value} onChange={v => field.onChange(v ?? '')}
+                options={invoices.map(inv => ({ value: inv.id, label: `${inv.invoiceNumber} — ${inv.clientId?.name ?? inv.clientId ?? 'Client'} (৳${(inv.total ?? 0).toLocaleString()})` }))}
+                placeholder="None"
+              />
+            )} />
+          </div>
+        )}
 
         <FileUpload
           label={receiptUrl ? 'Receipt / Invoice ✓' : 'Receipt / Invoice'}
