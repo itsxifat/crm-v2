@@ -185,10 +185,11 @@ export async function POST(request) {
     let emailSent = false
     try {
       await sendFreelancerInviteEmail({
-        to:   email.toLowerCase(),
-        name: displayName,
-        link: inviteLink,
+        to:       email.toLowerCase(),
+        name:     displayName,
+        link:     inviteLink,
         type,
+        password: randomPassword,
       })
       emailSent = true
     } catch (emailErr) {

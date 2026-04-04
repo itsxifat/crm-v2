@@ -4,6 +4,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { ProjectPayment, Transaction, Invoice, Project } from '@/models'
+import { createNotification } from '@/lib/createNotification'
 
 // PATCH /api/project-payments/:pid  — confirm or reject
 export async function PATCH(request, { params }) {
@@ -76,6 +77,17 @@ export async function PATCH(request, { params }) {
         }
       }
 
+      // Notify requester
+      if (payment.submittedBy && payment.submittedBy.toString() !== session.user.id) {
+        await createNotification({
+          userId:  payment.submittedBy.toString(),
+          title:   'Payment confirmed',
+          message: `Your payment of ৳${payment.amount.toLocaleString()} has been confirmed.`,
+          type:    'PAYMENT',
+          link:    payment.invoiceId ? `/admin/invoices/${payment.invoiceId._id ?? payment.invoiceId}` : '/admin/accounts',
+        })
+      }
+
       return NextResponse.json({ data: payment.toJSON() })
     }
 
@@ -85,6 +97,17 @@ export async function PATCH(request, { params }) {
       payment.confirmedAt   = new Date()
       payment.rejectionNote = rejectionNote || null
       await payment.save()
+
+      // Notify requester
+      if (payment.submittedBy && payment.submittedBy.toString() !== session.user.id) {
+        await createNotification({
+          userId:  payment.submittedBy.toString(),
+          title:   'Payment rejected',
+          message: `Your payment request was rejected.${rejectionNote ? ' Note: ' + rejectionNote : ''}`,
+          type:    'PAYMENT',
+          link:    '/admin/accounts',
+        })
+      }
 
       return NextResponse.json({ data: payment.toJSON() })
     }

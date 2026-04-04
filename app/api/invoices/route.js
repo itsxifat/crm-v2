@@ -5,6 +5,7 @@ import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Invoice, Client } from '@/models'
 import { logActivity } from '@/lib/logActivity'
+import { canAccess } from '@/lib/permissions'
 import mongoose from 'mongoose'
 
 // Helper: build a filter that matches a projectId in EITHER the new singular
@@ -70,7 +71,7 @@ export async function POST(request) {
   try {
     const session = await getServerSession(authOptions)
     if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-    if (!['SUPER_ADMIN','MANAGER'].includes(session.user.role))
+    if (!canAccess(session, 'invoices', 'create'))
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     await connectDB()
 

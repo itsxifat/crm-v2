@@ -28,7 +28,7 @@ import DocPreview from '@/components/ui/DocPreview'
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const INCOME_CATEGORIES  = ['Project Revenue', 'Retainer', 'Consulting', 'Product Sale', 'Referral', 'Other Income']
-const EXPENSE_CATEGORIES = ['Payroll', 'Freelancer Payment', 'Software', 'Marketing', 'Office', 'Travel', 'Tax', 'Vendor Payment', 'Other Expense']
+const EXPENSE_CATEGORIES = ['Payroll', 'Freelancer Payment', 'Agency Payment', 'Vendor Payment', 'Equipment', 'Employee Expense', 'Software', 'Marketing', 'Office', 'Travel', 'Tax', 'Other Expense']
 const CURRENCY_OPTIONS   = ['BDT']
 const PAYMENT_METHODS    = ['CASH', 'BANK_TRANSFER', 'CARD', 'CHEQUE', 'ONLINE', 'OTHER']
 const PIE_COLORS         = ['#3B82F6','#10B981','#F59E0B','#EF4444','#8B5CF6','#EC4899','#06B6D4','#14B8A6']
@@ -55,9 +55,13 @@ const txSchema = z.object({
   projectId:      z.string().optional(),
   receiptUrl:     z.string().optional(),
   txnId:          z.string().optional(),
-  freelancerId:   z.string().optional(),
-  vendorId:       z.string().optional(),
-  paidTo:         z.string().optional(),
+  freelancerId:     z.string().optional(),
+  vendorId:         z.string().optional(),
+  agencyId:         z.string().optional(),
+  paidTo:           z.string().optional(),
+  paidToEmployeeId: z.string().optional(),
+  paidToName:       z.string().optional(),
+  conveyanceType:   z.string().optional(),
 })
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -99,9 +103,11 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
   const [invoices,    setInvoices]    = useState([])
   const [users,       setUsers]       = useState([])
   const [freelancers, setFreelancers] = useState([])
+  const [agencies,    setAgencies]    = useState([])
   const [employees,   setEmployees]   = useState([])
   const [vendors,     setVendors]     = useState([])
   const [txnIdVal,    setTxnIdVal]    = useState('')
+  const [conveyanceType, setConveyanceType] = useState('employee')
 
   const { register, control, handleSubmit, watch, reset, setValue, formState: { errors, isSubmitting } } = useForm({
     resolver: zodResolver(txSchema),
@@ -111,22 +117,29 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
   const category   = watch('category')
   const categories = type === 'INCOME' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES
 
-  // Dynamic entity label/selector based on category
-  const isFreelancerPayment = type === 'EXPENSE' && category === 'Freelancer Payment'
-  const isPayroll           = type === 'EXPENSE' && (category === 'Payroll' || category === 'Employee Salary')
-  const isVendorPayment     = type === 'EXPENSE' && category === 'Vendor Payment'
+  // Dynamic entity selectors
+  const isExpense           = type === 'EXPENSE'
+  const isFreelancerPayment = isExpense && category === 'Freelancer Payment'
+  const isAgencyPayment     = isExpense && category === 'Agency Payment'
+  const isPayroll           = isExpense && (category === 'Payroll' || category === 'Employee Salary')
+  const isVendorPayment     = isExpense && category === 'Vendor Payment'
+  const isEquipment         = isExpense && category === 'Equipment'
+  const isEmployeeExpense   = isExpense && category === 'Employee Expense'
+  const isTravel            = isExpense && category === 'Travel'
 
   useEffect(() => {
     if (open) {
       fetch('/api/projects?limit=200').then(r => r.json()).then(j => setProjects(j.data ?? []))
       fetch('/api/invoices?limit=200').then(r => r.json()).then(j => setInvoices((j.data ?? []).filter(inv => !['PAID','CANCELLED','DRAFT'].includes(inv.status))))
       fetch('/api/users?limit=100').then(r => r.json()).then(j => setUsers(j.data ?? []))
-      fetch('/api/freelancers?limit=200').then(r => r.json()).then(j => setFreelancers(j.data ?? []))
+      fetch('/api/freelancers?limit=200&type=FREELANCER').then(r => r.json()).then(j => setFreelancers(j.data ?? []))
+      fetch('/api/freelancers?limit=200&type=AGENCY').then(r => r.json()).then(j => setAgencies(j.data ?? []))
       fetch('/api/employees?limit=200').then(r => r.json()).then(j => setEmployees(j.data ?? []))
       fetch('/api/vendors?limit=200').then(r => r.json()).then(j => setVendors(j.data ?? []))
       const url = isEdit ? tx.receiptUrl ?? '' : ''
       setReceiptUrl(url)
       setTxnIdVal(isEdit ? tx.txnId ?? '' : '')
+      setConveyanceType('employee')
       reset(isEdit ? {
         type:           tx.type,
         category:       tx.category,
@@ -229,7 +242,7 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
           </div>
         </div>
 
-        {/* Dynamic entity selector based on category */}
+        {/* Dynamic entity selectors based on category */}
         {isFreelancerPayment && (
           <div>
             <label className={lc}>Freelancer *</label>
@@ -241,26 +254,70 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
             )} />
           </div>
         )}
-        {isPayroll && (
+        {isAgencyPayment && (
           <div>
-            <label className={lc}>Employee *</label>
+            <label className={lc}>Agency *</label>
+            <Controller name="agencyId" control={control} render={({ field }) => (
+              <Select value={field.value} onChange={v => field.onChange(v ?? '')}
+                options={agencies.map(a => ({ value: a.id, label: a.agencyInfo?.agencyName ?? a.userId?.name ?? 'Unknown Agency' }))}
+                placeholder="Select agency…"
+              />
+            )} />
+          </div>
+        )}
+        {(isVendorPayment || isEquipment) && (
+          <div>
+            <label className={lc}>{isEquipment ? 'Purchased from (Vendor) *' : 'Vendor *'}</label>
+            <Controller name="vendorId" control={control} render={({ field }) => (
+              <Select value={field.value} onChange={v => field.onChange(v ?? '')}
+                options={vendors.map(v => ({ value: v.id, label: `${v.company}${v.serviceType ? ` — ${v.serviceType}` : ''}` }))}
+                placeholder="Select vendor…"
+              />
+            )} />
+          </div>
+        )}
+        {(isPayroll || isEmployeeExpense) && (
+          <div>
+            <label className={lc}>{isPayroll ? 'Employee *' : 'Employee *'}</label>
             <Controller name="paidTo" control={control} render={({ field }) => (
               <Select value={field.value} onChange={v => field.onChange(v ?? '')}
-                options={employees.map(e => ({ value: e.id, label: `${e.userId?.name ?? e.id}${e.designation ? ` — ${e.designation}` : e.position ? ` — ${e.position}` : ''}${e.salary ? ` (BDT ${Number(e.salary).toLocaleString()}/mo)` : ''}` }))}
+                options={employees.filter(e => e.userId?.id).map(e => ({ value: e.id, label: `${e.userId.name}${e.designation ? ` — ${e.designation}` : ''}${isPayroll && e.salary ? ` (BDT ${Number(e.salary).toLocaleString()}/mo)` : ''}` }))}
                 placeholder="Select employee…"
               />
             )} />
           </div>
         )}
-        {isVendorPayment && (
-          <div>
-            <label className={lc}>Vendor *</label>
-            <Controller name="vendorId" control={control} render={({ field }) => (
-              <Select value={field.value} onChange={v => field.onChange(v ?? '')}
-                options={vendors.map(v => ({ value: v.id, label: `${v.name}${v.category ? ` — ${v.category}` : ''}` }))}
-                placeholder="Select vendor…"
-              />
-            )} />
+        {isTravel && (
+          <div className="space-y-2">
+            <label className={lc}>Conveyance paid to *</label>
+            <div className="flex gap-2">
+              {['employee', 'freelancer', 'other'].map(t => (
+                <button key={t} type="button"
+                  onClick={() => { setConveyanceType(t); setValue('paidTo', ''); setValue('freelancerId', ''); setValue('paidToName', '') }}
+                  className={`flex-1 py-1.5 rounded-lg text-xs font-medium border transition-colors ${conveyanceType === t ? 'bg-gray-900 text-white border-gray-900' : 'border-gray-200 text-gray-600 hover:border-gray-400'}`}>
+                  {t.charAt(0).toUpperCase() + t.slice(1)}
+                </button>
+              ))}
+            </div>
+            {conveyanceType === 'employee' && (
+              <Controller name="paidTo" control={control} render={({ field }) => (
+                <Select value={field.value} onChange={v => field.onChange(v ?? '')}
+                  options={employees.filter(e => e.userId?.id).map(e => ({ value: e.id, label: `${e.userId.name}${e.designation ? ` — ${e.designation}` : ''}` }))}
+                  placeholder="Select employee…"
+                />
+              )} />
+            )}
+            {conveyanceType === 'freelancer' && (
+              <Controller name="freelancerId" control={control} render={({ field }) => (
+                <Select value={field.value} onChange={v => field.onChange(v ?? '')}
+                  options={[...freelancers, ...agencies].map(f => ({ value: f.id, label: f.agencyInfo?.agencyName ?? f.userId?.name ?? 'Unknown' }))}
+                  placeholder="Select freelancer / agency…"
+                />
+              )} />
+            )}
+            {conveyanceType === 'other' && (
+              <input {...register('paidToName')} placeholder="Enter name…" className={ic} />
+            )}
           </div>
         )}
 

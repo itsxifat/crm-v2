@@ -4,6 +4,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Transaction, Invoice } from '@/models'
+import { canAccess } from '@/lib/permissions'
 import { z } from 'zod'
 
 const transactionSchema = z.object({
@@ -13,11 +14,14 @@ const transactionSchema = z.object({
   description:    z.string().min(1),
   date:           z.string(),
   reference:      z.string().optional().nullable(),
-  projectId:      z.string().optional().nullable(),
-  invoiceId:      z.string().optional().nullable(),
-  clientId:       z.string().optional().nullable(),
-  vendorId:       z.string().optional().nullable(),
-  freelancerId:   z.string().optional().nullable(),
+  projectId:        z.string().optional().nullable(),
+  invoiceId:        z.string().optional().nullable(),
+  clientId:         z.string().optional().nullable(),
+  vendorId:         z.string().optional().nullable(),
+  freelancerId:     z.string().optional().nullable(),
+  agencyId:         z.string().optional().nullable(),
+  paidToEmployeeId: z.string().optional().nullable(),
+  paidToName:       z.string().optional().nullable(),
   currency:       z.string().default('BDT').transform(() => 'BDT'),  // always BDT
   vendor:         z.string().optional().nullable(),
   paidBy:         z.string().optional().nullable(),
@@ -33,7 +37,7 @@ export async function GET(request) {
   try {
     const session = await getServerSession(authOptions)
     if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-    if (!['SUPER_ADMIN','MANAGER'].includes(session.user.role))
+    if (!canAccess(session, 'accounts', 'view'))
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     await connectDB()
 
@@ -80,7 +84,7 @@ export async function POST(request) {
   try {
     const session = await getServerSession(authOptions)
     if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-    if (!['SUPER_ADMIN','MANAGER'].includes(session.user.role))
+    if (!canAccess(session, 'accounts', 'addTransaction'))
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     await connectDB()
 

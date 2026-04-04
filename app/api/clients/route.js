@@ -6,6 +6,7 @@ import connectDB from '@/lib/mongodb'
 import { User, Client, Project, Invoice } from '@/models'
 import bcrypt from 'bcryptjs'
 import { sendClientWelcomeEmail } from '@/lib/mailer'
+import { canAccess } from '@/lib/permissions'
 
 // GET /api/clients
 export async function GET(request) {
@@ -97,7 +98,7 @@ export async function POST(request) {
   try {
     const session = await getServerSession(authOptions)
     if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-    if (!['SUPER_ADMIN','MANAGER'].includes(session.user.role))
+    if (!canAccess(session, 'clients', 'create'))
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     await connectDB()

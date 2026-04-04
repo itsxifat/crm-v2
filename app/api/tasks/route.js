@@ -4,6 +4,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Task, Project, Employee, Freelancer, Client, Comment, Attachment } from '@/models'
+import { createNotification } from '@/lib/createNotification'
 import { z } from 'zod'
 
 const createTaskSchema = z.object({
@@ -122,9 +123,22 @@ export async function POST(request) {
     const task = await new Task(data).save()
     await task.populate([
       { path: 'projectId', select: 'name' },
-      { path: 'assignedEmployeeId', populate: { path: 'userId', select: 'name' } },
-      { path: 'assignedFreelancerId', populate: { path: 'userId', select: 'name' } },
+      { path: 'assignedEmployeeId', populate: { path: 'userId', select: 'name id' } },
+      { path: 'assignedFreelancerId', populate: { path: 'userId', select: 'name id' } },
     ])
+
+    // Notify assigned employee or freelancer
+    const assignedUserId = task.assignedEmployeeId?.userId?.id
+      ?? task.assignedFreelancerId?.userId?.id
+    if (assignedUserId && assignedUserId !== session.user.id) {
+      await createNotification({
+        userId:  assignedUserId,
+        title:   'New task assigned',
+        message: `"${task.title}" in project ${task.projectId?.name ?? '—'}`,
+        type:    'TASK',
+        link:    `/admin/tasks`,
+      })
+    }
 
     return NextResponse.json({ data: task }, { status: 201 })
   } catch (err) {

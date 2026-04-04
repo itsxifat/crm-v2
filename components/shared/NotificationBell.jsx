@@ -17,7 +17,7 @@ export default function NotificationBell() {
       const res = await fetch('/api/notifications?limit=10')
       if (res.ok) {
         const data = await res.json()
-        setNotifications(data.notifications || [])
+        setNotifications(data.data || [])
         setUnreadCount(data.unreadCount || 0)
       }
     } catch {}
@@ -42,7 +42,7 @@ export default function NotificationBell() {
 
   const markAllRead = async () => {
     try {
-      await fetch('/api/notifications/read-all', { method: 'POST' })
+      await fetch('/api/notifications', { method: 'PATCH' })
       setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })))
       setUnreadCount(0)
     } catch {}

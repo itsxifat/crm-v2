@@ -15,8 +15,11 @@ const TransactionSchema = new mongoose.Schema(
     reference:     { type: String, default: null },
 
     // Relations
-    projectId:     { type: mongoose.Schema.Types.ObjectId, ref: 'Project', default: null },
-    invoiceId:     { type: mongoose.Schema.Types.ObjectId, ref: 'Invoice', default: null },
+    projectId:        { type: mongoose.Schema.Types.ObjectId, ref: 'Project',    default: null },
+    invoiceId:        { type: mongoose.Schema.Types.ObjectId, ref: 'Invoice',     default: null },
+    agencyId:         { type: mongoose.Schema.Types.ObjectId, ref: 'Freelancer',  default: null },
+    paidToEmployeeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Employee',    default: null },
+    paidToName:       { type: String, default: null },
     clientId:      { type: String, default: null },
     vendorId:      { type: String, default: null },
     freelancerId:  { type: String, default: null },

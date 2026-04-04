@@ -247,27 +247,64 @@ function TaskModal({ projectId, task, onClose, onSaved }) {
 function ExpenseModal({ projectId, onClose, onSaved }) {
   const [form, setForm] = useState({
     title: '', amount: '', category: EXPENSE_CATEGORIES[0],
-    date: new Date().toISOString().slice(0,10), notes: '', invoiceUrl: '', freelancerId: '',
+    date: new Date().toISOString().slice(0,10), notes: '', invoiceUrl: '',
+    freelancerId: '', agencyId: '', vendorId: '', paidToEmployeeId: '',
+    paidToName: '', conveyanceType: 'employee',
   })
   const [saving,      setSaving]      = useState(false)
   const [freelancers, setFreelancers] = useState([])
+  const [agencies,    setAgencies]    = useState([])
+  const [vendors,     setVendors]     = useState([])
+  const [employees,   setEmployees]   = useState([])
 
-  const isFreelancerPayment = form.category === 'Freelancer Payment'
+  const cat = form.category
+  const isFreelancer      = cat === 'Freelancer Payment'
+  const isAgency          = cat === 'Agency Payment'
+  const isVendor          = cat === 'Vendor Payment'
+  const isEmployeeExpense = cat === 'Employee Expense'
+  const isEquipment       = cat === 'Equipment'
+  const isTravel          = cat === 'Travel'
 
   useEffect(() => {
+    // Always fetch assigned freelancers for this project
     fetch(`/api/freelancer-assignments?projectId=${projectId}`)
-      .then(r => r.json())
-      .then(j => setFreelancers(j.data ?? []))
+      .then(r => r.json()).then(j => {
+        const all = j.data ?? []
+        setFreelancers(all.filter(a => a.freelancerId?.type !== 'AGENCY'))
+        setAgencies(all.filter(a => a.freelancerId?.type === 'AGENCY'))
+      })
+    fetch('/api/vendors?limit=200').then(r => r.json()).then(j => setVendors(j.data ?? []))
+    fetch('/api/employees?limit=200').then(r => r.json()).then(j => setEmployees(j.data ?? []))
   }, [projectId])
+
+  function resetEntityFields() {
+    setForm(f => ({ ...f, freelancerId: '', agencyId: '', vendorId: '', paidToEmployeeId: '', paidToName: '', conveyanceType: 'employee' }))
+  }
 
   async function save() {
     if (!form.title || !form.amount) { toast.error('Title and amount required'); return }
-    if (isFreelancerPayment && !form.freelancerId) { toast.error('Select a freelancer'); return }
+    if (isFreelancer      && !form.freelancerId)                                        { toast.error('Select a freelancer'); return }
+    if (isAgency          && !form.agencyId)                                             { toast.error('Select an agency'); return }
+    if (isVendor          && !form.vendorId)                                             { toast.error('Select a vendor'); return }
+    if (isEquipment       && !form.vendorId)                                             { toast.error('Select a vendor for this equipment'); return }
+    if (isEmployeeExpense && !form.paidToEmployeeId)                                     { toast.error('Select an employee'); return }
+    if (isTravel && form.conveyanceType === 'employee'  && !form.paidToEmployeeId)       { toast.error('Select an employee'); return }
+    if (isTravel && form.conveyanceType === 'freelancer' && !form.freelancerId)          { toast.error('Select a freelancer'); return }
+    if (isTravel && form.conveyanceType === 'other'      && !form.paidToName?.trim())    { toast.error('Enter a name'); return }
     setSaving(true)
     try {
-      const res  = await fetch(`/api/projects/${projectId}/expenses`, {
+      const res = await fetch(`/api/projects/${projectId}/expenses`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, amount: Number(form.amount), invoiceUrl: form.invoiceUrl || null, freelancerId: form.freelancerId || null }),
+        body: JSON.stringify({
+          ...form,
+          amount:           Number(form.amount),
+          invoiceUrl:       form.invoiceUrl       || null,
+          freelancerId:     form.freelancerId     || null,
+          agencyId:         form.agencyId         || null,
+          vendorId:         form.vendorId         || null,
+          paidToEmployeeId: form.paidToEmployeeId || null,
+          paidToName:       form.paidToName       || null,
+        }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error)
@@ -300,25 +337,105 @@ function ExpenseModal({ projectId, onClose, onSaved }) {
           </div>
           <div className="col-span-2">
             <label className="block text-xs font-medium text-gray-500 mb-1">Category</label>
-            <Select value={form.category} onChange={v => setForm(f => ({ ...f, category: v ?? EXPENSE_CATEGORIES[0], freelancerId: '' }))}
+            <Select value={form.category}
+              onChange={v => { setForm(f => ({ ...f, category: v ?? EXPENSE_CATEGORIES[0] })); resetEntityFields() }}
               options={EXPENSE_CATEGORIES.map(c => ({ value: c, label: c }))}
               placeholder="Select category…"
             />
           </div>
-          {isFreelancerPayment && (
+
+          {isFreelancer && (
             <div className="col-span-2">
               <label className="block text-xs font-medium text-gray-500 mb-1">Freelancer *</label>
-              <Select
-                value={form.freelancerId}
-                onChange={v => setForm(f => ({ ...f, freelancerId: v ?? '' }))}
+              <Select value={form.freelancerId} onChange={v => setForm(f => ({ ...f, freelancerId: v ?? '' }))}
                 options={freelancers.map(a => ({
-                  value: a.freelancerId?.id ?? a.freelancerId?._id ?? a.freelancerId,
+                  value: a.freelancerId?.id ?? a.freelancerId,
                   label: a.freelancerId?.userId?.name ?? a.freelancerId?.userId?.email ?? 'Unknown',
                 }))}
                 placeholder="Select freelancer…"
               />
             </div>
           )}
+
+          {isAgency && (
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-gray-500 mb-1">Agency *</label>
+              <Select value={form.agencyId} onChange={v => setForm(f => ({ ...f, agencyId: v ?? '' }))}
+                options={agencies.map(a => ({
+                  value: a.freelancerId?.id ?? a.freelancerId,
+                  label: a.freelancerId?.agencyInfo?.agencyName ?? a.freelancerId?.userId?.name ?? 'Unknown Agency',
+                }))}
+                placeholder="Select agency…"
+              />
+            </div>
+          )}
+
+          {(isVendor || isEquipment) && (
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-gray-500 mb-1">
+                {isEquipment ? 'Purchased from (Vendor) *' : 'Vendor *'}
+              </label>
+              <Select value={form.vendorId} onChange={v => setForm(f => ({ ...f, vendorId: v ?? '' }))}
+                options={vendors.map(v => ({
+                  value: v.id,
+                  label: `${v.company}${v.serviceType ? ` — ${v.serviceType}` : ''}`,
+                }))}
+                placeholder="Select vendor…"
+              />
+            </div>
+          )}
+
+          {isTravel && (
+            <div className="col-span-2 space-y-2">
+              <label className="block text-xs font-medium text-gray-500 mb-1">Conveyance paid to *</label>
+              <div className="flex gap-2">
+                {['employee', 'freelancer', 'other'].map(t => (
+                  <button key={t} type="button"
+                    onClick={() => setForm(f => ({ ...f, conveyanceType: t, paidToEmployeeId: '', freelancerId: '', paidToName: '' }))}
+                    className={`flex-1 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                      form.conveyanceType === t
+                        ? 'bg-gray-900 text-white border-gray-900'
+                        : 'border-gray-200 text-gray-600 hover:border-gray-400'
+                    }`}>
+                    {t.charAt(0).toUpperCase() + t.slice(1)}
+                  </button>
+                ))}
+              </div>
+              {form.conveyanceType === 'employee' && (
+                <Select value={form.paidToEmployeeId} onChange={v => setForm(f => ({ ...f, paidToEmployeeId: v ?? '' }))}
+                  options={employees.filter(e => e.userId?.id).map(e => ({ value: e.id, label: `${e.userId.name}${e.designation ? ` — ${e.designation}` : ''}` }))}
+                  placeholder="Select employee…"
+                />
+              )}
+              {form.conveyanceType === 'freelancer' && (
+                <Select value={form.freelancerId} onChange={v => setForm(f => ({ ...f, freelancerId: v ?? '' }))}
+                  options={[...freelancers, ...agencies].map(a => ({
+                    value: a.freelancerId?.id ?? a.freelancerId,
+                    label: a.freelancerId?.agencyInfo?.agencyName ?? a.freelancerId?.userId?.name ?? 'Unknown',
+                  }))}
+                  placeholder="Select freelancer / agency…"
+                />
+              )}
+              {form.conveyanceType === 'other' && (
+                <input value={form.paidToName} onChange={e => setForm(f => ({ ...f, paidToName: e.target.value }))}
+                  placeholder="Enter name…" className={ic} />
+              )}
+            </div>
+          )}
+
+          {isEmployeeExpense && (
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-gray-500 mb-1">Employee *</label>
+              <Select value={form.paidToEmployeeId} onChange={v => setForm(f => ({ ...f, paidToEmployeeId: v ?? '' }))}
+                options={employees.filter(e => e.userId?.id).map(e => ({
+                  value: e.id,
+                  label: `${e.userId.name}${e.designation ? ` — ${e.designation}` : ''}`,
+                }))}
+                placeholder="Select employee…"
+              />
+            </div>
+          )}
+
           <div className="col-span-2">
             <label className="block text-xs font-medium text-gray-500 mb-1">Notes</label>
             <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} className={`${ic} resize-none`} />

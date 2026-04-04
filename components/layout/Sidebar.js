@@ -4,13 +4,14 @@ import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import { cn } from '@/lib/utils'
+import { sessionCan } from '@/lib/permissions'
 import {
   LayoutDashboard, Users, UserCheck, Briefcase, ClipboardList,
   FileText, DollarSign, TrendingUp, Settings, Settings2,
   Calendar, Clock, FolderOpen, FileSignature,
   BarChart3, UserCog, Building2, ChevronLeft, ChevronRight,
   ArrowRightLeft, ArrowDownLeft, ArrowUpRight as ArrowUpRightIcon,
-  CheckCircle, Inbox, ChevronDown, ShieldCheck, Activity,
+  CheckCircle, Inbox, ChevronDown, ShieldCheck, Activity, Bell,
 } from 'lucide-react'
 import Image from 'next/image'
 import { useState } from 'react'
@@ -27,27 +28,31 @@ import { useState } from 'react'
 // `href` on a parent = the base path used for active detection.
 // `tab` on children = query param appended as ?tab=value
 
+// permKey maps to CustomRole.permissions module keys.
+// If set, EMPLOYEE visibility is also gated by sessionCan(user, permKey, 'view').
+// SUPER_ADMIN and MANAGER always see all items in their roles array.
+
 const NAV_SECTIONS = [
   {
     label: 'Main',
     roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
     items: [
-      { href: '/admin', label: 'Dashboard', icon: LayoutDashboard, exact: true, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'] },
+      { href: '/admin', label: 'Dashboard', icon: LayoutDashboard, exact: true, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permKey: 'dashboard' },
     ],
   },
   {
     label: 'CRM',
     roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
     items: [
-      { href: '/admin/leads',   label: 'Leads',   icon: TrendingUp, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'] },
-      { href: '/admin/clients', label: 'Clients', icon: UserCheck,  roles: ['SUPER_ADMIN', 'MANAGER'] },
+      { href: '/admin/leads',   label: 'Leads',   icon: TrendingUp, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permKey: 'leads' },
+      { href: '/admin/clients', label: 'Clients', icon: UserCheck,  roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permKey: 'clients' },
     ],
   },
   {
     label: 'Work',
     roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
     items: [
-      { href: '/admin/projects', label: 'Projects', icon: Briefcase,     roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'] },
+      { href: '/admin/projects', label: 'Projects', icon: Briefcase,     roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permKey: 'projects' },
       { href: '/admin/tasks',    label: 'Tasks',    icon: ClipboardList, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'] },
     ],
   },
@@ -59,41 +64,53 @@ const NAV_SECTIONS = [
         href: '/admin/invoices',
         label: 'Invoices',
         icon: FileText,
-        roles: ['SUPER_ADMIN', 'MANAGER'],
+        roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
+        permKey: 'invoices',
+      },
+      {
+        href: '/admin/quotations',
+        label: 'Quotations',
+        icon: FileSignature,
+        roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
       },
       {
         href: '/admin/accounts',
         label: 'Accounts',
         icon: DollarSign,
         roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
+        permKey: 'accounts',
         children: [
           {
             href: '/admin/accounts?tab=transactions',
             tab: 'transactions',
             label: 'Transactions',
             icon: ArrowRightLeft,
-            roles: ['SUPER_ADMIN', 'MANAGER'],
+            roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
+            permKey: 'accounts',
           },
           {
             href: '/admin/accounts?tab=income',
             tab: 'income',
             label: 'Income',
             icon: ArrowDownLeft,
-            roles: ['SUPER_ADMIN', 'MANAGER'],
+            roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
+            permKey: 'accounts',
           },
           {
             href: '/admin/accounts?tab=expense',
             tab: 'expense',
             label: 'Expense',
             icon: ArrowUpRightIcon,
-            roles: ['SUPER_ADMIN', 'MANAGER'],
+            roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
+            permKey: 'accounts',
           },
           {
             href: '/admin/accounts?tab=confirmations',
             tab: 'confirmations',
             label: 'Payment Confirmations',
             icon: CheckCircle,
-            roles: ['SUPER_ADMIN', 'MANAGER'],
+            roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
+            permKey: 'accounts',
           },
           {
             href: '/admin/accounts?tab=requests',
@@ -108,12 +125,12 @@ const NAV_SECTIONS = [
   },
   {
     label: 'People',
-    roles: ['SUPER_ADMIN', 'MANAGER'],
+    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
     items: [
-      { href: '/admin/employees',   label: 'Employees',          icon: Users,       roles: ['SUPER_ADMIN', 'MANAGER'] },
-      { href: '/admin/freelancers', label: 'Freelancers',        icon: UserCog,     roles: ['SUPER_ADMIN', 'MANAGER'] },
-      { href: '/admin/vendors',     label: 'Vendors',            icon: Building2,   roles: ['SUPER_ADMIN', 'MANAGER'] },
-      { href: '/admin/roles',       label: 'Roles & Permissions', icon: ShieldCheck, roles: ['SUPER_ADMIN', 'MANAGER'] },
+      { href: '/admin/employees',   label: 'Employees',           icon: Users,       roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permKey: 'employees' },
+      { href: '/admin/freelancers', label: 'Freelancers', icon: UserCog,   roles: ['SUPER_ADMIN', 'MANAGER'] },
+      { href: '/admin/vendors',     label: 'Vendors',     icon: Building2, roles: ['SUPER_ADMIN', 'MANAGER'] },
+      { href: '/admin/roles',       label: 'Roles & Permissions', icon: ShieldCheck, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permKey: 'roles' },
     ],
   },
   {
@@ -126,7 +143,7 @@ const NAV_SECTIONS = [
   },
   {
     label: 'Documents',
-    roles: ['SUPER_ADMIN', 'MANAGER'],
+    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
     items: [
       { href: '/admin/agreements', label: 'Agreements', icon: FileSignature, roles: ['SUPER_ADMIN', 'MANAGER'] },
       { href: '/admin/documents',  label: 'Documents',  icon: FolderOpen,    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'] },
@@ -152,7 +169,8 @@ const NAV_SECTIONS = [
     label: 'Account',
     roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
     items: [
-      { href: '/admin/account', label: 'My Account', icon: UserCog, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'] },
+      { href: '/admin/account',       label: 'My Account',    icon: UserCog, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'] },
+      { href: '/admin/notifications', label: 'Notifications', icon: Bell,    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'] },
     ],
   },
 ]
@@ -181,14 +199,20 @@ function NavItem({ item, active, collapsed }) {
 
 // ─── Collapsible nav group ────────────────────────────────────────────────────
 
-function NavGroup({ item, role, pathname, searchParams, collapsed }) {
+function NavGroup({ item, role, sessionUser, pathname, searchParams, collapsed }) {
   const currentTab   = searchParams?.get('tab') ?? ''
   const isOnBasePath = pathname === item.href || pathname.startsWith(`${item.href}/`)
 
   const [open, setOpen] = useState(() => isOnBasePath)
   const Icon = item.icon
 
-  const visibleChildren = item.children.filter(c => c.roles.includes(role))
+  const visibleChildren = item.children.filter(c => {
+    if (!c.roles.includes(role)) return false
+    if (role === 'EMPLOYEE' && c.permKey && sessionUser?.permissions) {
+      return sessionCan(sessionUser, c.permKey, 'view')
+    }
+    return true
+  })
 
   const isChildActive = (child) => {
     if (!isOnBasePath) return false
@@ -274,6 +298,15 @@ export default function Sidebar() {
     return pathname === item.href || pathname.startsWith(`${item.href}/`)
   }
 
+  function itemVisible(item) {
+    if (!item.roles.includes(role)) return false
+    // For EMPLOYEE with a custom role, check permKey if present
+    if (role === 'EMPLOYEE' && item.permKey && session?.user?.permissions) {
+      return sessionCan(session.user, item.permKey, 'view')
+    }
+    return true
+  }
+
   return (
     <aside
       className={cn(
@@ -322,7 +355,7 @@ export default function Sidebar() {
         {NAV_SECTIONS.map((section) => {
           if (!section.roles.includes(role)) return null
 
-          const visibleItems = section.items.filter(item => item.roles.includes(role))
+          const visibleItems = section.items.filter(item => itemVisible(item))
           if (visibleItems.length === 0) return null
 
           return (
@@ -339,6 +372,7 @@ export default function Sidebar() {
                       <NavGroup
                         item={item}
                         role={role}
+                        sessionUser={session?.user}
                         pathname={pathname}
                         searchParams={searchParams}
                         collapsed={collapsed}
