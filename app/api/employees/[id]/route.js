@@ -29,6 +29,7 @@ const updateEmployeeSchema = z.object({
   panelAccessGranted:   z.boolean().optional(),
   customRoleId:         z.string().optional().nullable(),
   password:             z.string().min(6).optional().or(z.literal('')).transform(v => v === '' ? undefined : v),
+  resign:               z.boolean().optional(),
 })
 
 // GET /api/employees/[id]
@@ -84,12 +85,21 @@ export async function PUT(request, { params }) {
       return NextResponse.json({ error: 'Validation failed', details: parsed.error.flatten() }, { status: 422 })
     }
 
-    const { name, email, phone, isActive, role, password, hireDate, ...empData } = parsed.data
+    const { name, email, phone, isActive, role, password, hireDate, resign, ...empData } = parsed.data
 
     const current = await Employee.findById(params.id).lean()
     if (!current) return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
 
     const userUpdate = {}
+
+    // Resign action — deactivate panel and user account
+    if (resign) {
+      empData.resigned          = true
+      empData.resignDate        = new Date()
+      empData.panelAccessGranted = false
+      userUpdate.isActive       = false
+    }
+
     if (name     !== undefined) userUpdate.name     = name
     if (email    !== undefined) userUpdate.email    = email
     if (phone    !== undefined) { userUpdate.phone  = phone; empData.phone = phone }

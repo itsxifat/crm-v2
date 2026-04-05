@@ -1,14 +1,12 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import Image from 'next/image'
 import Select from '@/components/ui/Select'
 import DatePicker from '@/components/ui/DatePicker'
 import {
-  Plus, Search, MoreHorizontal, Eye, Pencil, Trash2, Users,
+  Plus, Search, MoreHorizontal, Eye, Pencil, Users,
   Briefcase, Clock, Building2, Shield, ShieldCheck, Download,
-  FileText, X, Loader2, ChevronDown, Link2, ClipboardList,
-  CheckCircle, XCircle, ChevronRight,
+  FileText, X, Loader2, LogOut,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import Link from 'next/link'
@@ -174,30 +172,12 @@ function EmployeeModal({ open, onClose, employee, onSaved, customRoles = [], ven
                 <label className={lc}>Email *</label>
                 <input required type="email" value={form.email} onChange={e => set('email', e.target.value)} placeholder="hasan@company.com" className={ic} disabled={isEdit} />
               </div>
-              <div>
-                <label className={lc}>Phone</label>
-                <input value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="+8801XXXXXXXXX" className={ic} />
-              </div>
-              <div>
-                <label className={lc}>Blood Group</label>
-                <Select value={form.bloodGroup} onChange={v => set('bloodGroup', v ?? '')}
-                  options={['A+','A-','B+','B-','AB+','AB-','O+','O-'].map(g => ({ value: g, label: g }))}
-                  placeholder="Select…"
-                />
-              </div>
-              <div className="col-span-2">
-                <label className={lc}>Address</label>
-                <input value={form.address} onChange={e => set('address', e.target.value)} placeholder="Dhaka, Bangladesh" className={ic} />
-              </div>
-              <div>
-                <label className={lc}>NID Number</label>
-                <input value={form.nidNumber} onChange={e => set('nidNumber', e.target.value)} placeholder="19XXXXXXXXXXXXXXX" className={ic} />
-              </div>
-              <div>
-                <label className={lc}>Emergency Contact</label>
-                <input value={form.emergencyContact} onChange={e => set('emergencyContact', e.target.value)} placeholder="+8801XXXXXXXXX" className={ic} />
-              </div>
             </div>
+            {!isEdit && (
+              <p className="text-xs text-blue-500 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 mt-3">
+                An email with login credentials and onboarding details will be sent to this email address once the employee is created.
+              </p>
+            )}
           </div>
 
           {/* Section: Employment */}
@@ -253,33 +233,6 @@ function EmployeeModal({ open, onClose, employee, onSaved, customRoles = [], ven
             </div>
           </div>
 
-          {/* Section: Documents */}
-          <div>
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Documents</p>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className={lc}>Appointment Letter URL</label>
-                <input value={form.appointmentLetterUrl} onChange={e => set('appointmentLetterUrl', e.target.value)} placeholder="https://…" className={ic} />
-              </div>
-              <div>
-                <label className={lc}>Agreement URL</label>
-                <input value={form.agreementUrl} onChange={e => set('agreementUrl', e.target.value)} placeholder="https://…" className={ic} />
-              </div>
-            </div>
-          </div>
-
-          {/* Section: Panel Access */}
-          <div>
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Panel Access</p>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={form.panelAccessGranted} onChange={e => set('panelAccessGranted', e.target.checked)}
-                className="w-4 h-4 rounded accent-blue-600" />
-              <span className="text-sm text-gray-700">Grant panel access</span>
-            </label>
-            {!isEdit && (
-              <p className="text-xs text-gray-400 mt-2">A temporary password will be auto-generated and shown once after creation.</p>
-            )}
-          </div>
         </form>
 
         {/* Footer */}
@@ -299,299 +252,13 @@ function EmployeeModal({ open, onClose, employee, onSaved, customRoles = [], ven
   )
 }
 
-// ─── Onboarding Review Modal ──────────────────────────────────────────────────
-
-function OnboardingReviewModal({ open, record, onClose, onDone, customRoles = [], ventures = [] }) {
-  const [saving, setSaving]     = useState(false)
-  const [tab, setTab]           = useState('self')   // 'self' | 'hr'
-  const [form, setForm]         = useState({
-    venture: '', department: '', position: '', designation: '', salary: '',
-    hireDate: '', role: 'EMPLOYEE', customRoleId: '', appointmentLetterUrl: '',
-    agreementUrl: '', panelAccessGranted: false, password: '',
-    companyPhone: '', companyWebmail: '',
-    companyItems: [],
-    hrNote: '',
-  })
-  const [newItem, setNewItem] = useState({ item: '', value: '', description: '' })
-
-  useEffect(() => {
-    if (!open || !record) return
-    setTab('self')
-    setForm(f => ({
-      ...f,
-      venture: record.hrData?.venture ?? '',
-      department: record.hrData?.department ?? record.selfData?.department ?? '',
-      position: record.hrData?.position ?? '',
-      designation: record.hrData?.designation ?? '',
-      salary: record.hrData?.salary ?? '',
-      hireDate: record.hrData?.hireDate ? record.hrData.hireDate.slice(0, 10) : '',
-      role: record.hrData?.role ?? 'EMPLOYEE',
-      customRoleId: record.hrData?.customRoleId ?? '',
-      appointmentLetterUrl: record.hrData?.appointmentLetterUrl ?? '',
-      agreementUrl: record.hrData?.agreementUrl ?? '',
-      panelAccessGranted: record.hrData?.panelAccessGranted ?? false,
-      password: '',
-      companyPhone: record.hrData?.companyPhone ?? '',
-      companyWebmail: record.hrData?.companyWebmail ?? '',
-      companyItems: record.hrData?.companyItems ?? [],
-      hrNote: record.hrNote ?? '',
-    }))
-  }, [open, record])
-
-  function set(k, v) { setForm(f => ({ ...f, [k]: v })) }
-
-  function addItem() {
-    if (!newItem.item.trim()) return
-    setForm(f => ({ ...f, companyItems: [...f.companyItems, { ...newItem }] }))
-    setNewItem({ item: '', value: '', description: '' })
-  }
-
-  function removeItem(i) {
-    setForm(f => ({ ...f, companyItems: f.companyItems.filter((_, idx) => idx !== i) }))
-  }
-
-  async function handleSave() {
-    setSaving(true)
-    try {
-      const body = {
-        venture:              form.venture       || null,
-        department:           form.department    || null,
-        position:             form.position      || null,
-        designation:          form.designation   || null,
-        salary:               form.salary        ? Number(form.salary) : null,
-        hireDate:             form.hireDate      ? new Date(form.hireDate).toISOString() : null,
-        customRoleId:         form.customRoleId  || null,
-        appointmentLetterUrl: form.appointmentLetterUrl || null,
-        agreementUrl:         form.agreementUrl  || null,
-        companyPhone:         form.companyPhone  || null,
-        companyWebmail:       form.companyWebmail || null,
-        companyItems:         form.companyItems,
-        hrNote:               form.hrNote        || null,
-      }
-      const res  = await fetch(`/api/onboarding/${record.token}/approve`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error ?? 'Save failed')
-      toast.success('Employment details saved')
-      onDone()
-      onClose()
-    } catch (err) {
-      toast.error(err.message)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  if (!open || !record) return null
-
-  const sd  = record.selfData ?? {}
-  const ic  = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500'
-  const lc  = 'block text-xs font-medium text-gray-600 mb-1'
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <div>
-            <h2 className="text-base font-semibold text-gray-900">Add Employment Details</h2>
-            <p className="text-xs text-gray-400 mt-0.5">{sd.name ?? record.email} · Account already active</p>
-          </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* Tabs */}
-        <div className="flex border-b border-gray-100 px-6">
-          {[['self', 'Employee Info'], ['hr', 'HR Details']].map(([k, label]) => (
-            <button key={k} onClick={() => setTab(k)}
-              className={`py-2.5 mr-4 text-sm font-medium border-b-2 transition-colors ${tab === k ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
-              {label}
-            </button>
-          ))}
-        </div>
-
-        <div className="overflow-y-auto flex-1 px-6 py-5 space-y-4">
-
-          {/* Tab: Employee submitted info (read-only) */}
-          {tab === 'self' && (
-            <div className="space-y-4">
-              {sd.photo && (
-                <div className="flex items-center gap-3">
-                  <Image src={sd.photo} alt="photo" width={64} height={64} className="w-16 h-16 rounded-xl object-cover border border-gray-200" />
-                  <div>
-                    <p className="text-sm font-semibold text-gray-800">{sd.name}</p>
-                    <p className="text-xs text-gray-400">{sd.email}</p>
-                  </div>
-                </div>
-              )}
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                {[
-                  ['Primary Phone', sd.phone],
-                  ['Secondary Phone', sd.secondaryPhone],
-                  ['Home Phone', sd.homePhone],
-                  ['Date of Birth', sd.dateOfBirth ? new Date(sd.dateOfBirth).toLocaleDateString('en-GB') : null],
-                  ['Blood Group', sd.bloodGroup],
-                  ['NID Number', sd.nidNumber],
-                  ['Emergency Contact', sd.emergencyContact],
-                  ['Address', sd.address],
-                ].map(([label, value]) => value ? (
-                  <div key={label} className="bg-gray-50 rounded-lg px-3 py-2">
-                    <p className="text-xs text-gray-400">{label}</p>
-                    <p className="text-gray-700 mt-0.5">{value}</p>
-                  </div>
-                ) : null)}
-              </div>
-              {sd.documents?.length > 0 && (
-                <div>
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Documents</p>
-                  <div className="space-y-1.5">
-                    {sd.documents.map((doc, i) => (
-                      <a key={i} href={doc.url} target="_blank" rel="noreferrer"
-                        className="flex items-center gap-2 text-sm text-blue-600 hover:underline">
-                        <FileText className="w-3.5 h-3.5 shrink-0" />
-                        <span className="truncate">{doc.url.split('/').pop()}</span>
-                        <span className="ml-auto text-xs bg-gray-100 text-gray-500 rounded px-1.5 py-0.5">{doc.type}</span>
-                      </a>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {!sd.name && <p className="text-sm text-gray-400 text-center py-8">No data submitted yet</p>}
-            </div>
-          )}
-
-          {/* Tab: HR fills employment details */}
-          {tab === 'hr' && (
-            <div className="space-y-5">
-              <div>
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Employment Details</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className={lc}>Venture</label>
-                    <Select value={form.venture} onChange={v => set('venture', v ?? '')}
-                      options={ventures.map(v => ({ value: v.id, label: v.label }))}
-                      placeholder="— Not assigned —"
-                    />
-                  </div>
-                  <div>
-                    <label className={lc}>Department</label>
-                    <Select value={form.department} onChange={v => set('department', v ?? '')}
-                      options={Object.entries(DEPT_CODES).map(([code, label]) => ({ value: code, label: `${label} (${code})` }))}
-                      placeholder="— Not assigned —"
-                    />
-                  </div>
-                  <div>
-                    <label className={lc}>Position / Job Title</label>
-                    <input className={ic} value={form.position} onChange={e => set('position', e.target.value)} placeholder="Senior Designer" />
-                  </div>
-                  <div>
-                    <label className={lc}>Designation</label>
-                    <input className={ic} value={form.designation} onChange={e => set('designation', e.target.value)} placeholder="Creative Lead" />
-                  </div>
-                  <div>
-                    <label className={lc}>Monthly Salary (৳)</label>
-                    <input className={ic} type="number" min="0" value={form.salary} onChange={e => set('salary', e.target.value)} placeholder="50000" />
-                  </div>
-                  <div>
-                    <label className={lc}>Hire Date</label>
-                    <DatePicker value={form.hireDate || null} onChange={v => set('hireDate', v ?? '')} />
-                  </div>
-                  <div>
-                    <label className={lc}>Org Role & Permissions</label>
-                    <Select value={form.customRoleId} onChange={v => set('customRoleId', v ?? '')}
-                      options={customRoles.map(r => ({ value: r.id, label: `${r.title} · ${r.department}` }))}
-                      placeholder="— No role —"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Company Provided Items</p>
-                <div className="grid grid-cols-2 gap-3 mb-3">
-                  <div>
-                    <label className={lc}>Company Phone</label>
-                    <input className={ic} value={form.companyPhone} onChange={e => set('companyPhone', e.target.value)} placeholder="+880…" />
-                  </div>
-                  <div>
-                    <label className={lc}>Company Webmail</label>
-                    <input className={ic} value={form.companyWebmail} onChange={e => set('companyWebmail', e.target.value)} placeholder="name@company.com" />
-                  </div>
-                </div>
-                {/* Additional company items */}
-                {form.companyItems.map((item, i) => (
-                  <div key={i} className="flex items-center gap-2 mb-2 p-2 bg-gray-50 rounded-lg">
-                    <div className="flex-1 text-sm">
-                      <span className="font-medium text-gray-700">{item.item}</span>
-                      {item.value && <span className="text-gray-500"> — {item.value}</span>}
-                    </div>
-                    <button type="button" onClick={() => removeItem(i)} className="text-gray-400 hover:text-red-500">
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))}
-                <div className="flex gap-2 mt-2">
-                  <input className={ic} placeholder="Item name (e.g. Laptop)" value={newItem.item}
-                    onChange={e => setNewItem(n => ({ ...n, item: e.target.value }))} />
-                  <input className={ic} placeholder="Value" value={newItem.value}
-                    onChange={e => setNewItem(n => ({ ...n, value: e.target.value }))} />
-                  <button type="button" onClick={addItem}
-                    className="px-3 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm hover:bg-gray-200 shrink-0">
-                    Add
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-xl">
-                <CheckCircle className="w-4 h-4 text-green-600 shrink-0" />
-                <p className="text-xs text-green-700">Panel access is already active — employee set their own credentials when submitting the form.</p>
-              </div>
-
-              <div>
-                <label className={lc}>HR Note (optional)</label>
-                <textarea className={ic} rows={2} value={form.hrNote}
-                  onChange={e => set('hrNote', e.target.value)} placeholder="Internal notes…" />
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-100">
-          <button type="button" onClick={onClose}
-            className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-            Close
-          </button>
-          {tab === 'self' ? (
-            <button type="button" onClick={() => setTab('hr')}
-              className="flex items-center gap-1.5 px-5 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors">
-              Employment Details <ChevronRight className="w-4 h-4" />
-            </button>
-          ) : (
-            <button type="button" onClick={handleSave} disabled={saving}
-              className="flex items-center gap-1.5 px-5 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors">
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-              Save Employment Details
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
-
 // ─── Row Menu ─────────────────────────────────────────────────────────────────
 
-function RowMenu({ employee, onEdit, onDeleted, onRoleChanged }) {
+function RowMenu({ employee, onEdit, onResigned, onRoleChanged }) {
   const [open,        setOpen]        = useState(false)
   const [roleMode,    setRoleMode]    = useState(false)
   const [changingRole, setChangingRole] = useState(false)
+  const [resigning,   setResigning]   = useState(false)
   const ref = useRef(null)
 
   useEffect(() => {
@@ -600,16 +267,23 @@ function RowMenu({ employee, onEdit, onDeleted, onRoleChanged }) {
     return () => document.removeEventListener('mousedown', h)
   }, [])
 
-  async function handleDelete() {
+  async function handleResign() {
     setOpen(false)
-    if (!confirm(`Remove employee ${employee.userId?.name}?`)) return
+    if (!confirm(`Mark ${employee.userId?.name} as resigned? Their panel access will be deactivated.`)) return
+    setResigning(true)
     try {
-      const res = await fetch(`/api/employees/${employee.id}`, { method: 'DELETE' })
+      const res = await fetch(`/api/employees/${employee.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resign: true }),
+      })
       if (!res.ok) throw new Error((await res.json()).error)
-      toast.success('Employee removed')
-      onDeleted(employee.id)
+      toast.success('Employee marked as resigned')
+      onResigned(employee.id)
     } catch (err) {
       toast.error(err.message)
+    } finally {
+      setResigning(false)
     }
   }
 
@@ -669,10 +343,16 @@ function RowMenu({ employee, onEdit, onDeleted, onRoleChanged }) {
               </a>
             )}
             <div className="border-t border-gray-100 my-1" />
-            <button onClick={handleDelete}
-              className="w-full flex items-center gap-2.5 px-4 py-2 text-red-600 hover:bg-red-50">
-              <Trash2 className="w-3.5 h-3.5" /> Remove
-            </button>
+            {employee.resigned ? (
+              <span className="w-full flex items-center gap-2.5 px-4 py-2 text-gray-400 cursor-default text-xs">
+                <LogOut className="w-3.5 h-3.5" /> Already Resigned
+              </span>
+            ) : (
+              <button onClick={handleResign} disabled={resigning}
+                className="w-full flex items-center gap-2.5 px-4 py-2 text-orange-600 hover:bg-orange-50 disabled:opacity-50">
+                <LogOut className="w-3.5 h-3.5" /> Resigned
+              </button>
+            )}
           </>) : (<>
             <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wide flex items-center justify-between">
               <span>Change Role</span>
@@ -709,16 +389,6 @@ export default function EmployeesPage() {
   const [editing,      setEditing]      = useState(null)
   const [customRoles,  setCustomRoles]  = useState([])
   const [ventures,     setVentures]     = useState([])
-  const [obPanel,      setObPanel]      = useState(false)   // onboarding submissions panel
-  const [obRecords,    setObRecords]    = useState([])
-  const [obLoading,    setObLoading]    = useState(false)
-  const [obRecord,     setObRecord]     = useState(null)    // reviewing
-  const [obReviewOpen, setObReviewOpen] = useState(false)
-  const [sendModalOpen, setSendModalOpen] = useState(false)
-  const [sendEmail,     setSendEmail]     = useState('')
-  const [sendName,      setSendName]      = useState('')
-  const [sending,       setSending]       = useState(false)
-
   const load = useCallback(async () => {
     setLoading(true)
     try {
@@ -743,13 +413,6 @@ export default function EmployeesPage() {
   useEffect(() => { load() }, [load])
 
   useEffect(() => {
-    fetch('/api/onboarding?status=APPROVED')
-      .then(r => r.json())
-      .then(j => setObRecords(j.data ?? []))
-      .catch(() => {})
-  }, [])
-
-  useEffect(() => {
     fetch('/api/custom-roles')
       .then(r => r.json())
       .then(j => setCustomRoles(j.data ?? []))
@@ -757,56 +420,12 @@ export default function EmployeesPage() {
   }, [])
 
   useEffect(() => {
+    if (!modalOpen) return
     fetch('/api/config')
       .then(r => r.json())
       .then(j => setVentures((j.data?.ventures ?? []).filter(v => v.active !== false)))
       .catch(() => {})
-  }, [])
-
-  async function loadOnboarding() {
-    setObLoading(true)
-    try {
-      const res  = await fetch('/api/onboarding?status=APPROVED')
-      const json = await res.json()
-      setObRecords(json.data ?? [])
-    } catch { /* ignore */ } finally {
-      setObLoading(false)
-    }
-  }
-
-  function openObPanel() {
-    setObPanel(true)
-    loadOnboarding()
-  }
-
-  async function handleSendOnboarding() {
-    if (!sendEmail.trim()) { toast.error('Enter the employee email'); return }
-    setSending(true)
-    try {
-      const res  = await fetch('/api/onboarding', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: sendEmail.trim(), name: sendName.trim() || null }),
-      })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error ?? 'Failed')
-      if (json.emailSent) {
-        toast.success(`Onboarding email sent to ${sendEmail}`)
-      } else {
-        // Email failed but link was created — copy as fallback
-        await navigator.clipboard.writeText(json.link).catch(() => {})
-        toast.error('Email could not be sent — link copied to clipboard instead', { duration: 6000 })
-      }
-      setSendModalOpen(false)
-      setSendEmail('')
-      setSendName('')
-      loadOnboarding()
-    } catch (err) {
-      toast.error(err.message)
-    } finally {
-      setSending(false)
-    }
-  }
+  }, [modalOpen])
 
   function handleSaved(emp, tempPw) {
     if (tempPw) toast.success(`Employee added! Temp password: ${tempPw}`, { duration: 8000 })
@@ -815,8 +434,14 @@ export default function EmployeesPage() {
     load()
   }
 
-  function handleDeleted(id) {
-    setEmployees(p => p.filter(e => e.id !== id))
+  function handleResigned(id) {
+    setEmployees(p => p.map(e => e.id !== id ? e : {
+      ...e,
+      resigned: true,
+      resignDate: new Date().toISOString(),
+      panelAccessGranted: false,
+      userId: { ...e.userId, isActive: false },
+    }))
   }
 
   function handleRoleChanged(id, newRole) {
@@ -839,18 +464,9 @@ export default function EmployeesPage() {
           <p className="text-sm text-gray-400 mt-0.5">Manage team members, profiles and panel access</p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={openObPanel}
-            className="relative flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-            <ClipboardList className="w-4 h-4" /> Onboarding
-            {obRecords.length > 0 && (
-              <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
-                {obRecords.length}
-              </span>
-            )}
-          </button>
-          <button onClick={() => setSendModalOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-indigo-700 border border-indigo-200 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors">
-            <Link2 className="w-4 h-4" /> Send Onboarding
+          <button onClick={() => { setEditing(null); setModalOpen(true) }}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors">
+            <Plus className="w-4 h-4" /> Add Employee
           </button>
         </div>
       </div>
@@ -936,7 +552,7 @@ export default function EmployeesPage() {
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {employees.map(emp => (
-                  <tr key={emp.id} className="hover:bg-gray-50/60 transition-colors group">
+                  <tr key={emp.id} className={`hover:bg-gray-50/60 transition-colors group${emp.resigned ? ' opacity-60' : ''}`}>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
                         <Avatar name={emp.userId?.name} src={emp.userId?.avatar} size="sm" />
@@ -975,7 +591,11 @@ export default function EmployeesPage() {
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      {emp.panelAccessGranted ? (
+                      {emp.resigned ? (
+                        <span className="inline-flex items-center gap-1 text-xs text-orange-600">
+                          <LogOut className="w-3.5 h-3.5" /> Resigned
+                        </span>
+                      ) : emp.panelAccessGranted ? (
                         <span className="inline-flex items-center gap-1 text-xs text-green-700">
                           <ShieldCheck className="w-3.5 h-3.5" /> Granted
                         </span>
@@ -1008,7 +628,7 @@ export default function EmployeesPage() {
                       <RowMenu
                         employee={emp}
                         onEdit={e => { setEditing(e); setModalOpen(true) }}
-                        onDeleted={handleDeleted}
+                        onResigned={handleResigned}
                         onRoleChanged={handleRoleChanged}
                       />
                     </td>
@@ -1046,120 +666,6 @@ export default function EmployeesPage() {
         ventures={ventures}
       />
 
-      {/* Onboarding submissions panel */}
-      {obPanel && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setObPanel(false)} />
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[80vh] flex flex-col">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-              <div>
-                <h2 className="text-base font-semibold text-gray-900">Onboarding Submissions</h2>
-                <p className="text-xs text-gray-400 mt-0.5">Review submitted employee onboarding forms</p>
-              </div>
-              <button onClick={() => setObPanel(false)} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="overflow-y-auto flex-1 p-4">
-              {obLoading ? (
-                <div className="flex justify-center py-10">
-                  <Loader2 className="w-5 h-5 animate-spin text-blue-500" />
-                </div>
-              ) : obRecords.length === 0 ? (
-                <div className="text-center py-12">
-                  <ClipboardList className="w-10 h-10 text-gray-200 mx-auto mb-2" />
-                  <p className="text-sm text-gray-400">No pending submissions</p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {obRecords.map(r => (
-                    <div key={r.id} className="flex items-center gap-3 p-3 border border-gray-100 rounded-xl hover:bg-gray-50 transition-colors">
-                      <div className="w-9 h-9 rounded-lg bg-indigo-100 flex items-center justify-center shrink-0">
-                        <Users className="w-4 h-4 text-indigo-600" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-800">{r.selfData?.name ?? r.email ?? 'Unknown'}</p>
-                        <p className="text-xs text-gray-400">{r.selfData?.email ?? r.email} · Submitted {new Date(r.submittedAt).toLocaleDateString('en-GB')}</p>
-                      </div>
-                      <button
-                        onClick={() => { setObRecord(r); setObReviewOpen(true); setObPanel(false) }}
-                        className="flex items-center gap-1 px-3 py-1.5 text-xs text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shrink-0">
-                        Review <ChevronRight className="w-3 h-3" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Send Onboarding Email Modal */}
-      {sendModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setSendModalOpen(false)} />
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-              <div>
-                <h2 className="text-base font-semibold text-gray-900">Send Onboarding Invitation</h2>
-                <p className="text-xs text-gray-400 mt-0.5">Employee will receive an email with the form link</p>
-              </div>
-              <button onClick={() => setSendModalOpen(false)} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="px-6 py-5 space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Employee Name (optional)</label>
-                <input
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  placeholder="Md. Rahim Uddin"
-                  value={sendName}
-                  onChange={e => setSendName(e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Employee Email *</label>
-                <input
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  type="email"
-                  placeholder="employee@example.com"
-                  value={sendEmail}
-                  onChange={e => setSendEmail(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && handleSendOnboarding()}
-                  autoFocus
-                />
-              </div>
-              <div className="bg-blue-50 border border-blue-100 rounded-xl p-3">
-                <p className="text-xs text-blue-700 leading-relaxed">
-                  An email will be sent with a secure link. The employee can open it, fill in their details and upload documents — their panel account will be created automatically on submission.
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center justify-end gap-3 px-6 pb-5">
-              <button onClick={() => setSendModalOpen(false)}
-                className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">
-                Cancel
-              </button>
-              <button onClick={handleSendOnboarding} disabled={sending}
-                className="flex items-center gap-2 px-5 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors">
-                {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Link2 className="w-4 h-4" />}
-                {sending ? 'Sending…' : 'Send Email'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <OnboardingReviewModal
-        open={obReviewOpen}
-        record={obRecord}
-        onClose={() => setObReviewOpen(false)}
-        onDone={() => { loadOnboarding(); load() }}
-        customRoles={customRoles}
-        ventures={ventures}
-      />
     </div>
   )
 }

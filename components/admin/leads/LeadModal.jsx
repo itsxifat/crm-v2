@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { useSession } from 'next-auth/react'
-import { useForm, Controller } from 'react-hook-form'
+import { useForm, Controller, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import toast from 'react-hot-toast'
@@ -21,8 +21,9 @@ const schema = z.object({
   location:         z.string().optional().nullable(),
   status:           z.enum(['NEW','CONTACTED','PROPOSAL_SENT','NEGOTIATION','WON','LOST']).default('NEW'),
   priority:         z.enum(['LOW','NORMAL','HIGH','URGENT']).default('NORMAL'),
-  category:         z.string().optional().nullable(),
   service:          z.string().optional().nullable(),
+  category:         z.string().optional().nullable(),
+  subcategory:      z.string().optional().nullable(),
   source:           z.string().optional().nullable(),
   platform:         z.string().optional().nullable(),
   reference:        z.string().optional().nullable(),
@@ -60,29 +61,48 @@ export default function LeadModal({ open, onClose, lead, onSuccess }) {
   const [commentSaving, setCommentSaving] = useState(false)
   const [sources,       setSources]       = useState([])
   const [platforms,     setPlatforms]     = useState([])
-  const [categories,    setCategories]    = useState([])
-  const [services,      setServices]      = useState([])
+  const [ventures,      setVentures]      = useState([])   // [{id, label}]
+  const [servicesMap,   setServicesMap]   = useState({})   // { ventureId: [{id, label, subcategories}] }
   const isEdit = !!lead
 
-  const { register, handleSubmit, reset, control, formState: { errors } } = useForm({
+  const { register, handleSubmit, reset, control, setValue, formState: { errors } } = useForm({
     resolver: zodResolver(schema),
     defaultValues: {
       name: '', designation: '', email: '', phone: '', alternativePhone: '',
       company: '', location: '', status: 'NEW', priority: 'NORMAL',
-      category: '', service: '', source: '', platform: '', reference: '',
+      service: '', category: '', subcategory: '', source: '', platform: '', reference: '',
       sendingDate: '', followUpDate: '', value: '', assignedToId: '', notes: '',
     },
   })
 
+  const watchedService  = useWatch({ control, name: 'service' })
+  const watchedCategory = useWatch({ control, name: 'category' })
+
+  // Derive category options from selected venture
+  const categoryOptions = useMemo(() => {
+    if (!watchedService || !servicesMap[watchedService]) return []
+    return servicesMap[watchedService].map(s => ({ value: s.label, label: s.label }))
+  }, [watchedService, servicesMap])
+
+  // Derive subcategory options from selected category
+  const subcategoryOptions = useMemo(() => {
+    if (!watchedService || !watchedCategory || !servicesMap[watchedService]) return []
+    const svc = servicesMap[watchedService].find(s => s.label === watchedCategory)
+    return (svc?.subcategories ?? []).map(s => ({ value: s, label: s }))
+  }, [watchedService, watchedCategory, servicesMap])
+
   useEffect(() => {
     if (!open) return
+    // Reset cascade guards so initial form population doesn't trigger cascade clears
+    mountedService.current  = false
+    mountedCategory.current = false
     fetch('/api/employees?limit=100').then(r => r.json()).then(d => setEmployees(d.data ?? [])).catch(() => {})
     fetch('/api/config').then(r => r.json()).then(j => {
       const d = j.data ?? {}
-      setSources(d.leadSources   ?? [])
+      setSources(d.leadSources    ?? [])
       setPlatforms(d.leadPlatforms ?? [])
-      setCategories(d.leadCategories ?? [])
-      setServices(d.leadServices  ?? [])
+      setVentures(d.ventures       ?? [])
+      setServicesMap(d.services    ?? {})
     }).catch(() => {})
 
     if (lead) {
@@ -96,8 +116,9 @@ export default function LeadModal({ open, onClose, lead, onSuccess }) {
         location:         lead.location         ?? '',
         status:           lead.status           ?? 'NEW',
         priority:         lead.priority         ?? 'NORMAL',
-        category:         lead.category         ?? '',
         service:          lead.service          ?? '',
+        category:         lead.category         ?? '',
+        subcategory:      lead.subcategory      ?? '',
         source:           lead.source           ?? '',
         platform:         lead.platform         ?? '',
         reference:        lead.reference        ?? '',
@@ -113,7 +134,7 @@ export default function LeadModal({ open, onClose, lead, onSuccess }) {
       reset({
         name: '', designation: '', email: '', phone: '', alternativePhone: '',
         company: '', location: '', status: 'NEW', priority: 'NORMAL',
-        category: '', service: '', source: '', platform: '', reference: '',
+        service: '', category: '', subcategory: '', source: '', platform: '', reference: '',
         sendingDate: '', followUpDate: '', value: '', assignedToId: '', notes: '',
       })
       setLinks([])
@@ -122,6 +143,21 @@ export default function LeadModal({ open, onClose, lead, onSuccess }) {
     setLinkInput('')
     setCommentText('')
   }, [open, lead, reset])
+
+  // Reset category + subcategory when venture changes (skip on first mount)
+  const mountedService = useRef(false)
+  useEffect(() => {
+    if (!mountedService.current) { mountedService.current = true; return }
+    setValue('category', '')
+    setValue('subcategory', '')
+  }, [watchedService]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reset subcategory when category changes (skip on first mount)
+  const mountedCategory = useRef(false)
+  useEffect(() => {
+    if (!mountedCategory.current) { mountedCategory.current = true; return }
+    setValue('subcategory', '')
+  }, [watchedCategory]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function addLink() {
     const url = linkInput.trim()
@@ -175,8 +211,9 @@ export default function LeadModal({ open, onClose, lead, onSuccess }) {
         designation:      values.designation      || null,
         company:          values.company          || null,
         location:         values.location         || null,
-        category:         values.category         || null,
         service:          values.service          || null,
+        category:         values.category         || null,
+        subcategory:      values.subcategory      || null,
         source:           values.source           || null,
         platform:         values.platform         || null,
         reference:        values.reference        || null,
@@ -293,22 +330,32 @@ export default function LeadModal({ open, onClose, lead, onSuccess }) {
               )} />
             </div>
             <div>
-              <label className={lc}>Category</label>
-              <Controller name="category" control={control} render={({ field }) => (
+              <label className={lc}>Service / Sister Concern</label>
+              <Controller name="service" control={control} render={({ field }) => (
                 <Select value={field.value} onChange={field.onChange}
-                  options={categories.map(c => ({ value: c, label: c }))}
-                  placeholder={categories.length === 0 ? 'No categories — add in Config' : 'Select category…'}
-                  disabled={categories.length === 0}
+                  options={ventures.map(v => ({ value: v.id, label: v.label }))}
+                  placeholder={ventures.length === 0 ? 'No ventures — add in Config' : 'Select venture…'}
+                  disabled={ventures.length === 0}
                 />
               )} />
             </div>
             <div>
-              <label className={lc}>Service / Sister Concern</label>
-              <Controller name="service" control={control} render={({ field }) => (
+              <label className={lc}>Category</label>
+              <Controller name="category" control={control} render={({ field }) => (
                 <Select value={field.value} onChange={field.onChange}
-                  options={services.map(s => ({ value: s, label: s }))}
-                  placeholder={services.length === 0 ? 'No services — add in Config' : 'Select service…'}
-                  disabled={services.length === 0}
+                  options={categoryOptions}
+                  placeholder={!watchedService ? 'Select venture first…' : categoryOptions.length === 0 ? 'No categories for this venture' : 'Select category…'}
+                  disabled={categoryOptions.length === 0}
+                />
+              )} />
+            </div>
+            <div>
+              <label className={lc}>Subcategory</label>
+              <Controller name="subcategory" control={control} render={({ field }) => (
+                <Select value={field.value} onChange={field.onChange}
+                  options={subcategoryOptions}
+                  placeholder={!watchedCategory ? 'Select category first…' : subcategoryOptions.length === 0 ? 'No subcategories' : 'Select subcategory…'}
+                  disabled={subcategoryOptions.length === 0}
                 />
               )} />
             </div>

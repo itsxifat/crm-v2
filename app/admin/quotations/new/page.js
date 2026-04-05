@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, useCallback, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Plus, Trash2, ChevronDown, Loader2, ArrowLeft, Save } from 'lucide-react'
 import toast from 'react-hot-toast'
 import Link from 'next/link'
@@ -105,16 +105,17 @@ function ItemCard({ item, idx, onChange, onRemove }) {
 
 const emptyItem = () => ({ description: '', venture: '', service_category: '', service: '', quantity: 1, rate: '', amount: 0 })
 
-export default function NewQuotationPage() {
-  const router = useRouter()
+function NewQuotationForm() {
+  const router      = useRouter()
+  const searchParams = useSearchParams()
   const [saving, setSaving] = useState(false)
 
-  // Source
-  const [sourceType, setSourceType] = useState('LEAD')
+  // Source — pre-fill from URL params (?sourceType=LEAD&leadId=xxx or ?sourceType=CLIENT&clientId=xxx)
+  const [sourceType, setSourceType] = useState(() => searchParams.get('sourceType') || 'LEAD')
   const [leads,   setLeads]   = useState([])
   const [clients, setClients] = useState([])
-  const [leadId,   setLeadId]   = useState('')
-  const [clientId, setClientId] = useState('')
+  const [leadId,   setLeadId]   = useState(() => searchParams.get('leadId') || '')
+  const [clientId, setClientId] = useState(() => searchParams.get('clientId') || '')
 
   // Recipient (snapshot)
   const [recipientName,    setRecipientName]    = useState('')
@@ -220,7 +221,7 @@ export default function NewQuotationPage() {
   const fmt = (n) => `৳ ${(n ?? 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })}`
 
   return (
-    <form onSubmit={save} className="space-y-6 max-w-6xl">
+    <form onSubmit={save} className="space-y-6 max-w-6xl" data-component="new-quotation-form">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -393,5 +394,13 @@ export default function NewQuotationPage() {
         </div>
       </div>
     </form>
+  )
+}
+
+export default function NewQuotationPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-[60vh]"><div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" /></div>}>
+      <NewQuotationForm />
+    </Suspense>
   )
 }

@@ -371,7 +371,10 @@ export default function ConfigPage() {
       <div className="space-y-4">
         <div>
           <h2 className="text-base font-semibold text-gray-900">Lead Options</h2>
-          <p className="text-sm text-gray-400 mt-0.5">Manage dropdown options for the Lead form — source, platform, category, and sister concern</p>
+          <p className="text-sm text-gray-400 mt-0.5">
+            Manage dropdown options for the Lead form.
+            <span className="ml-1 text-gray-300">Service / Sister Concern, Category, and Subcategory are driven by the Ventures &amp; Services configuration above.</span>
+          </p>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <LeadOptionList
@@ -386,27 +389,15 @@ export default function ConfigPage() {
             items={config?.leadPlatforms ?? []}
             onChange={v => updateLeadOption('leadPlatforms', v)}
           />
-          <LeadOptionList
-            label="Categories"
-            description="Type of project the lead is interested in (e.g. Website, Branding)"
-            items={config?.leadCategories ?? []}
-            onChange={v => updateLeadOption('leadCategories', v)}
-          />
-          <LeadOptionList
-            label="Services / Sister Concern"
-            description="Which business unit will handle this lead (e.g. EnStudio, EnTech)"
-            items={config?.leadServices ?? []}
-            onChange={v => updateLeadOption('leadServices', v)}
-          />
         </div>
       </div>
 
       {/* Info */}
       <div className="text-xs text-gray-400 bg-gray-50 rounded-xl p-4">
-        <p className="font-medium text-gray-600 mb-1">How this config links to projects</p>
-        <p>When creating a new project, the Venture dropdown loads from <strong>Ventures</strong> above.
-          Selecting a venture dynamically populates the <strong>Service / Category</strong> dropdown,
-          and then the <strong>Subcategory</strong> dropdown — all driven by this configuration.
+        <p className="font-medium text-gray-600 mb-1">How this config links to projects &amp; leads</p>
+        <p>When creating a new project or lead, the <strong>Venture / Sister Concern</strong> dropdown loads from the Ventures above.
+          Selecting a venture dynamically populates the <strong>Category</strong> dropdown from that venture&apos;s services,
+          and then the <strong>Subcategory</strong> dropdown from the selected service&apos;s subcategories — all driven by this configuration.
           Changes take effect immediately after saving.</p>
       </div>
     </div>

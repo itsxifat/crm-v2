@@ -47,8 +47,9 @@ const LeadSchema = new mongoose.Schema(
       enum:    ['LOW', 'NORMAL', 'HIGH', 'URGENT'],
       default: 'NORMAL',
     },
-    category: { type: String, default: null },   // e.g. "Website", "App", "Branding"
-    service:  { type: String, default: null },   // sister concern / business unit
+    category:    { type: String, default: null },   // service label within the venture (e.g. "Web Development")
+    subcategory: { type: String, default: null },   // subcategory within the service (e.g. "Landing Page")
+    service:     { type: String, default: null },   // venture id / sister concern (e.g. "ENTECH")
 
     // ── Source & tracking ─────────────────────────────────────────────────────
     source:    { type: String, default: null },  // channel: Referral, Cold Outreach…

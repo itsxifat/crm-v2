@@ -7,13 +7,14 @@ import toast from 'react-hot-toast'
 import {
   ArrowLeft, Mail, Phone, Globe, MapPin, Building2,
   FolderOpen, FileText, FileCheck, DollarSign, Calendar,
-  Pencil, CheckCircle, Clock, ShieldCheck, ExternalLink, Link2
+  Pencil, CheckCircle, Clock, ShieldCheck, ExternalLink, Link2,
+  FileEdit, Plus,
 } from 'lucide-react'
 import Avatar from '@/components/ui/Avatar'
 import Badge from '@/components/ui/Badge'
 import ClientModal from '@/components/admin/clients/ClientModal'
 
-const TABS = ['Overview', 'Projects', 'Invoices', 'Agreements', 'Documents', 'KYC']
+const TABS = ['Overview', 'Projects', 'Invoices', 'Proposals', 'Agreements', 'Documents', 'KYC']
 
 const KYC_STATUS_META = {
   NOT_SUBMITTED: { label: 'Not Submitted', color: 'bg-gray-100 text-gray-500' },
@@ -54,17 +55,25 @@ function StatBox({ label, value, sub, color = 'blue' }) {
 export default function ClientDetailPage() {
   const { id }   = useParams()
   const router   = useRouter()
-  const [data,       setData]       = useState(null)
-  const [loading,    setLoading]    = useState(true)
-  const [tab,        setTab]        = useState('Overview')
-  const [editOpen,   setEditOpen]   = useState(false)
+  const [data,        setData]        = useState(null)
+  const [quotations,  setQuotations]  = useState([])
+  const [loading,     setLoading]     = useState(true)
+  const [tab,         setTab]         = useState('Overview')
+  const [editOpen,    setEditOpen]    = useState(false)
 
   async function load() {
     try {
-      const res  = await fetch(`/api/clients/${id}`)
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error)
+      const [clientRes, quotRes] = await Promise.all([
+        fetch(`/api/clients/${id}`),
+        fetch(`/api/quotations?clientId=${id}&limit=50`),
+      ])
+      const json = await clientRes.json()
+      if (!clientRes.ok) throw new Error(json.error)
       setData(json.data)
+      if (quotRes.ok) {
+        const quotJson = await quotRes.json()
+        setQuotations(quotJson.data ?? [])
+      }
     } catch (err) {
       toast.error(err.message ?? 'Failed to load client')
     } finally {
@@ -300,6 +309,60 @@ export default function ClientDetailPage() {
                 </tbody>
               </table>
             )
+          )}
+
+          {/* PROPOSALS */}
+          {tab === 'Proposals' && (
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <p className="text-sm text-gray-500">{quotations.length} proposal{quotations.length !== 1 ? 's' : ''}</p>
+                <Link
+                  href={`/admin/quotations/new?sourceType=CLIENT&clientId=${id}`}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 transition-colors"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  New Proposal
+                </Link>
+              </div>
+              {quotations.length === 0 ? (
+                <div className="text-center py-12">
+                  <FileEdit className="w-10 h-10 text-gray-200 mx-auto mb-3" />
+                  <p className="text-gray-500">No proposals yet</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {quotations.map((q) => (
+                    <Link
+                      key={q.id}
+                      href={`/admin/quotations/${q.id}`}
+                      className="flex items-center justify-between p-4 rounded-xl border border-gray-100 hover:border-blue-100 hover:bg-blue-50/30 transition-all group"
+                    >
+                      <div className="flex items-center gap-3">
+                        <FileEdit className="w-5 h-5 text-blue-400 shrink-0" />
+                        <div>
+                          <p className="font-medium text-gray-900 group-hover:text-blue-700">{q.quotationNumber}</p>
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            {q.issueDate ? new Date(q.issueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
+                            {q.validUntil ? ` · valid until ${new Date(q.validUntil).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}` : ''}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <span className="text-sm font-semibold text-gray-800">
+                          {q.currency === 'BDT' ? '৳' : q.currency} {(q.total ?? 0).toLocaleString()}
+                        </span>
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                          q.status === 'ACCEPTED' ? 'bg-green-100 text-green-700' :
+                          q.status === 'REJECTED' ? 'bg-red-100 text-red-600' :
+                          q.status === 'SENT'     ? 'bg-blue-100 text-blue-700' :
+                                                    'bg-gray-100 text-gray-500'
+                        }`}>{q.status}</span>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
 
           {/* AGREEMENTS */}

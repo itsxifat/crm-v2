@@ -7,8 +7,9 @@ import {
   ArrowLeft, Mail, Phone, MapPin, Calendar, Briefcase, Shield,
   ShieldCheck, FileText, Download, CheckCircle2, Clock, XCircle,
   User, Building2, CreditCard, Activity, Upload, Loader2, X, Image,
-  Package, Plus, Pencil, Save,
+  Package, Plus, Pencil, Save, BadgeCheck, AlertCircle, ThumbsUp, ThumbsDown,
 } from 'lucide-react'
+import { useSession } from 'next-auth/react'
 import toast from 'react-hot-toast'
 import Avatar from '@/components/ui/Avatar'
 import TkAmt from '@/components/ui/TkAmt'
@@ -108,7 +109,6 @@ function DocumentsTab({ emp, empId, onUpdated }) {
   const [addName,   setAddName]   = useState('')
   const fileRef = useRef(null)
 
-  // Combine onboarding docs with employee.documents
   const systemDocs = [
     emp.photo            && { url: emp.photo,            type: 'PHOTO',       name: 'Formal Photo',        _system: true },
     emp.appointmentLetterUrl && { url: emp.appointmentLetterUrl, type: 'APPOINTMENT', name: 'Appointment Letter', _system: true },
@@ -442,14 +442,194 @@ function CompanyItemsTab({ emp, empId, onUpdated }) {
   )
 }
 
+// ─── Profile Status / Review Card ────────────────────────────────────────────
+
+const PROFILE_STATUS_META = {
+  CREATED:          { label: 'Not Started',       bg: 'bg-gray-100',   text: 'text-gray-600',  icon: AlertCircle },
+  INCOMPLETE:       { label: 'Incomplete',         bg: 'bg-amber-50',   text: 'text-amber-700', icon: AlertCircle },
+  PENDING_APPROVAL: { label: 'Pending HR Review',  bg: 'bg-blue-50',    text: 'text-blue-700',  icon: Clock       },
+  APPROVED:         { label: 'Approved',           bg: 'bg-green-50',   text: 'text-green-700', icon: BadgeCheck  },
+}
+
+function ProfileProgressBar({ pct }) {
+  const color = pct === 100 ? 'bg-green-500' : pct >= 60 ? 'bg-blue-500' : 'bg-amber-400'
+  return (
+    <div className="w-full bg-gray-100 rounded-full h-2">
+      <div className={`h-2 rounded-full transition-all duration-700 ${color}`} style={{ width: `${pct}%` }} />
+    </div>
+  )
+}
+
+function ProfileReviewCard({ emp, empId, onUpdated }) {
+  const pct    = emp.profileCompletionPct ?? 0
+  const status = emp.profileStatus ?? 'CREATED'
+  const meta   = PROFILE_STATUS_META[status] ?? PROFILE_STATUS_META.INCOMPLETE
+  const Icon   = meta.icon
+
+  const [approving, setApproving] = useState(false)
+  const [notes,     setNotes]     = useState(emp.hrNotes ?? '')
+  const [showNotes, setShowNotes] = useState(false)
+
+  async function handleAction(action) {
+    setApproving(true)
+    try {
+      const res  = await fetch(`/api/admin/employees/${empId}/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, notes: notes.trim() || undefined }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Action failed')
+      toast.success(json.message)
+      onUpdated(prev => ({ ...prev, ...json.data }))
+    } catch (err) {
+      toast.error(err.message)
+    } finally {
+      setApproving(false)
+    }
+  }
+
+  // Employee-filled fields for display
+  const personalItems = [
+    { label: 'Gender',         value: emp.gender },
+    { label: 'Date of Birth',  value: emp.dateOfBirth ? new Date(emp.dateOfBirth).toLocaleDateString('en-GB') : null },
+    { label: 'Nationality',    value: emp.nationality },
+    { label: 'Marital Status', value: emp.maritalStatus },
+    { label: 'Photo',          value: emp.photo ? '✓ Uploaded' : null },
+  ]
+  const contactItems = [
+    { label: 'Phone',             value: emp.phone },
+    { label: 'Alt Phone',         value: emp.secondaryPhone },
+    { label: 'Address',           value: emp.address },
+    { label: 'Emergency Contact', value: emp.emergencyContact },
+  ]
+  const kycItems = [
+    { label: 'NID Number',      value: emp.nidNumber },
+    { label: 'Passport Number', value: emp.passportNumber },
+    { label: 'Documents',       value: (emp.documents ?? []).length > 0 ? `${emp.documents.length} file(s)` : null },
+  ]
+
+  return (
+    <div className="bg-white border border-gray-100 rounded-xl p-5 space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-gray-700">Profile Onboarding</h3>
+        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${meta.bg} ${meta.text}`}>
+          <Icon className="w-3.5 h-3.5" />
+          {meta.label}
+        </span>
+      </div>
+
+      {/* Progress */}
+      <div>
+        <div className="flex items-center justify-between mb-1.5 text-xs">
+          <span className="text-gray-500">Completion</span>
+          <span className={`font-bold ${pct === 100 ? 'text-green-600' : 'text-blue-600'}`}>{pct}%</span>
+        </div>
+        <ProfileProgressBar pct={pct} />
+      </div>
+
+      {/* Employee-filled data summary */}
+      {(status === 'PENDING_APPROVAL' || status === 'APPROVED') && (
+        <div className="space-y-3 pt-1">
+          {[
+            { section: 'Personal', items: personalItems },
+            { section: 'Contact',  items: contactItems  },
+            { section: 'KYC',      items: kycItems       },
+          ].map(({ section, items }) => (
+            <div key={section}>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">{section}</p>
+              <div className="space-y-1">
+                {items.map(({ label, value }) => (
+                  <div key={label} className="flex items-center justify-between">
+                    <span className="text-xs text-gray-500">{label}</span>
+                    {value
+                      ? <span className="text-xs text-gray-800 font-medium max-w-[160px] truncate text-right">{value}</span>
+                      : <span className="text-xs text-gray-300">—</span>
+                    }
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* HR notes (existing) */}
+      {emp.hrNotes && (
+        <div className="p-2.5 bg-amber-50 border border-amber-100 rounded-lg text-xs text-amber-700">
+          <span className="font-medium">HR Note: </span>{emp.hrNotes}
+        </div>
+      )}
+
+      {/* HR actions */}
+      {status === 'PENDING_APPROVAL' && (
+        <div className="pt-1 space-y-3 border-t border-gray-100">
+          <button
+            type="button"
+            onClick={() => setShowNotes(v => !v)}
+            className="text-xs text-gray-400 hover:text-gray-600 underline underline-offset-2"
+          >
+            {showNotes ? 'Hide notes' : 'Add notes (optional)'}
+          </button>
+
+          {showNotes && (
+            <textarea
+              rows={2}
+              placeholder="Optional notes for the employee…"
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+            />
+          )}
+
+          <div className="flex gap-2">
+            <button
+              type="button"
+              disabled={approving}
+              onClick={() => handleAction('approve')}
+              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-green-600 text-white text-xs font-semibold rounded-xl hover:bg-green-700 disabled:opacity-50 transition-colors"
+            >
+              {approving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ThumbsUp className="w-3.5 h-3.5" />}
+              Approve
+            </button>
+            <button
+              type="button"
+              disabled={approving}
+              onClick={() => handleAction('reject')}
+              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-red-50 text-red-700 text-xs font-semibold rounded-xl hover:bg-red-100 disabled:opacity-50 transition-colors border border-red-100"
+            >
+              <ThumbsDown className="w-3.5 h-3.5" />
+              Return
+            </button>
+          </div>
+        </div>
+      )}
+
+      {status === 'APPROVED' && (
+        <div className="flex items-center gap-2 pt-1 text-xs text-green-700">
+          <BadgeCheck className="w-4 h-4" />
+          Profile approved — full access granted
+        </div>
+      )}
+
+      {status !== 'PENDING_APPROVAL' && status !== 'APPROVED' && pct < 100 && (
+        <p className="text-xs text-gray-400 pt-1">Approval available after employee completes 100% of their profile.</p>
+      )}
+    </div>
+  )
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function EmployeeProfilePage() {
   const { id } = useParams()
   const router  = useRouter()
+  const { data: session } = useSession()
   const [data,    setData]    = useState(null)
   const [loading, setLoading] = useState(true)
   const [tab,     setTab]     = useState('overview')
+
+  const isHR = ['SUPER_ADMIN', 'MANAGER'].includes(session?.user?.role)
 
   useEffect(() => {
     fetch(`/api/employees/${id}`)
@@ -587,6 +767,9 @@ export default function EmployeeProfilePage() {
 
           {/* Right: sidebar */}
           <div className="space-y-5">
+            {/* HR Profile Review card */}
+            {isHR && <ProfileReviewCard emp={emp} empId={id} onUpdated={setData} />}
+
             <div className="bg-white border border-gray-100 rounded-xl p-5 space-y-4">
               <h3 className="text-sm font-semibold text-gray-700">Access & Role</h3>
               <div className="space-y-3">

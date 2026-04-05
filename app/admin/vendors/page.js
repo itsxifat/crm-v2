@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react'
 import {
   Plus, Search, X, Loader2, Pencil, Trash2,
   Building2, Phone, Mail, Globe, MapPin, Tag, FileText, Settings2,
+  ShoppingCart,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -226,18 +227,173 @@ function DeleteConfirm({ vendor, onClose, onDeleted }) {
   )
 }
 
+// ─── Purchase Modal ───────────────────────────────────────────────────────────
+
+const STATUS_COLORS = {
+  pending:   'bg-yellow-100 text-yellow-700',
+  received:  'bg-green-100 text-green-700',
+  cancelled: 'bg-red-100 text-red-700',
+}
+
+function PurchaseModal({ vendorId, purchase, onClose, onSaved }) {
+  const isEdit = !!purchase
+  const today  = new Date().toISOString().slice(0, 10)
+  const [form, setForm] = useState({
+    item:        purchase?.item        ?? '',
+    description: purchase?.description ?? '',
+    quantity:    purchase?.quantity    ?? 1,
+    unitPrice:   purchase?.unitPrice   ?? '',
+    totalAmount: purchase?.totalAmount ?? '',
+    date:        purchase?.date ? purchase.date.slice(0, 10) : today,
+    category:    purchase?.category    ?? '',
+    status:      purchase?.status      ?? 'pending',
+    invoiceRef:  purchase?.invoiceRef  ?? '',
+    notes:       purchase?.notes       ?? '',
+  })
+  const [saving, setSaving] = useState(false)
+  const ic = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900'
+
+  function set(k, v) { setForm(f => ({ ...f, [k]: v })) }
+
+  // Auto-calculate total when qty or unit price changes
+  function handleQty(v) {
+    const q = parseFloat(v) || 0
+    setForm(f => ({ ...f, quantity: q, totalAmount: (q * (parseFloat(f.unitPrice) || 0)).toFixed(2) }))
+  }
+  function handleUnit(v) {
+    const u = parseFloat(v) || 0
+    setForm(f => ({ ...f, unitPrice: v, totalAmount: ((parseFloat(f.quantity) || 0) * u).toFixed(2) }))
+  }
+
+  async function save() {
+    if (!form.item.trim())   { toast.error('Item name is required'); return }
+    if (!form.unitPrice)     { toast.error('Unit price is required'); return }
+    if (!form.date)          { toast.error('Date is required'); return }
+    setSaving(true)
+    try {
+      const url    = isEdit ? `/api/purchases/${purchase.id}` : '/api/purchases'
+      const method = isEdit ? 'PUT' : 'POST'
+      const body   = {
+        ...form,
+        vendorId,
+        quantity:    parseFloat(form.quantity)    || 1,
+        unitPrice:   parseFloat(form.unitPrice)   || 0,
+        totalAmount: parseFloat(form.totalAmount) || 0,
+        description: form.description || null,
+        category:    form.category    || null,
+        invoiceRef:  form.invoiceRef  || null,
+        notes:       form.notes       || null,
+      }
+      const res  = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Failed')
+      toast.success(isEdit ? 'Purchase updated' : 'Purchase added')
+      onSaved(); onClose()
+    } catch (err) { toast.error(err.message) }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-xl border border-gray-200 w-full max-w-lg p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between">
+          <h3 className="text-base font-semibold text-gray-900">{isEdit ? 'Edit Purchase' : 'Add Purchase'}</h3>
+          <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100"><X className="w-4 h-4 text-gray-400" /></button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="col-span-2">
+            <label className="block text-xs font-medium text-gray-500 mb-1">Item / Product *</label>
+            <input value={form.item} onChange={e => set('item', e.target.value)} placeholder="e.g. Office Chair" className={ic} />
+          </div>
+          <div className="col-span-2">
+            <label className="block text-xs font-medium text-gray-500 mb-1">Description</label>
+            <input value={form.description} onChange={e => set('description', e.target.value)} placeholder="Optional details" className={ic} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Quantity</label>
+            <input type="number" min="0" value={form.quantity} onChange={e => handleQty(e.target.value)} className={ic} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Unit Price *</label>
+            <input type="number" min="0" step="0.01" value={form.unitPrice} onChange={e => handleUnit(e.target.value)} placeholder="0.00" className={ic} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Total Amount</label>
+            <input type="number" min="0" step="0.01" value={form.totalAmount} onChange={e => set('totalAmount', e.target.value)} placeholder="0.00" className={ic} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Date *</label>
+            <input type="date" value={form.date} onChange={e => set('date', e.target.value)} className={ic} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Category</label>
+            <input value={form.category} onChange={e => set('category', e.target.value)} placeholder="e.g. Hardware" className={ic} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
+            <select value={form.status} onChange={e => set('status', e.target.value)} className={ic}>
+              <option value="pending">Pending</option>
+              <option value="received">Received</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </div>
+          <div className="col-span-2">
+            <label className="block text-xs font-medium text-gray-500 mb-1">Invoice / Bill Ref</label>
+            <input value={form.invoiceRef} onChange={e => set('invoiceRef', e.target.value)} placeholder="INV-001" className={ic} />
+          </div>
+          <div className="col-span-2">
+            <label className="block text-xs font-medium text-gray-500 mb-1">Notes</label>
+            <textarea value={form.notes} onChange={e => set('notes', e.target.value)} rows={2} className={`${ic} resize-none`} />
+          </div>
+        </div>
+
+        <div className="flex gap-2 justify-end pt-1">
+          <button onClick={onClose} className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
+          <button onClick={save} disabled={saving}
+            className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 disabled:opacity-40 flex items-center gap-2">
+            {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+            {isEdit ? 'Save Changes' : 'Add Purchase'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Vendor Detail Panel ──────────────────────────────────────────────────────
 
 function VendorDetail({ vendor, onClose, onEdit }) {
-  const [detail,  setDetail]  = useState(null)
-  const [loading, setLoading] = useState(true)
+  const { data: session } = useSession()
+  const [detail,       setDetail]       = useState(null)
+  const [loading,      setLoading]      = useState(true)
+  const [purchaseModal, setPurchaseModal] = useState(false)
+  const [editPurchase, setEditPurchase] = useState(null)
+  const [delPurchase,  setDelPurchase]  = useState(null)
+  const [deletingId,   setDeletingId]   = useState(null)
 
-  useEffect(() => {
+  const canDelete = session?.user?.role === 'SUPER_ADMIN' || session?.user?.role === 'MANAGER'
+
+  function loadDetail() {
+    setLoading(true)
     fetch(`/api/vendors/${vendor.id}`)
       .then(r => r.json())
       .then(j => setDetail(j.data ?? null))
       .finally(() => setLoading(false))
-  }, [vendor.id])
+  }
+
+  useEffect(() => { loadDetail() }, [vendor.id])
+
+  async function deletePurchase(p) {
+    setDeletingId(p.id)
+    try {
+      const res = await fetch(`/api/purchases/${p.id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error((await res.json()).error)
+      toast.success('Purchase deleted')
+      loadDetail()
+    } catch (err) { toast.error(err.message) }
+    finally { setDeletingId(null) }
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-4">
@@ -311,18 +467,70 @@ function VendorDetail({ vendor, onClose, onEdit }) {
 
           {detail && (
             <>
-              {/* Payment history */}
+              {/* Purchases */}
               <div>
                 <div className="flex items-center justify-between mb-3">
-                  <h4 className="text-sm font-semibold text-gray-800">Payment History</h4>
-                  <span className="text-xs text-gray-400">Total paid: <strong>{fmt(detail.totalPaid)}</strong></span>
+                  <h4 className="text-sm font-semibold text-gray-800">Purchases</h4>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs text-gray-400">Total: <strong>{fmt(detail.totalPurchased)}</strong></span>
+                    {canDelete && (
+                      <button onClick={() => setPurchaseModal(true)}
+                        className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-800">
+                        <Plus className="w-3.5 h-3.5" /> Add
+                      </button>
+                    )}
+                  </div>
                 </div>
-                {detail.payments?.length === 0 ? (
-                  <p className="text-xs text-gray-400 text-center py-4 border border-dashed border-gray-200 rounded-lg">No payments recorded</p>
+                {detail.purchases?.length === 0 ? (
+                  <p className="text-xs text-gray-400 text-center py-4 border border-dashed border-gray-200 rounded-lg">No purchases recorded</p>
                 ) : (
                   <div className="divide-y divide-gray-50 border border-gray-100 rounded-lg overflow-hidden">
+                    {detail.purchases.map(p => (
+                      <div key={p._id ?? p.id} className="flex items-start justify-between px-4 py-3 gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-gray-800 truncate">{p.item}</p>
+                          <p className="text-xs text-gray-400">
+                            {fmtDate(p.date)}
+                            {p.category ? ` · ${p.category}` : ''}
+                            {p.invoiceRef ? ` · ${p.invoiceRef}` : ''}
+                          </p>
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            {p.quantity} × {fmt(p.unitPrice)} = <strong>{fmt(p.totalAmount)}</strong>
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${STATUS_COLORS[p.status] ?? 'bg-gray-100 text-gray-600'}`}>
+                            {p.status}
+                          </span>
+                          {canDelete && (
+                            <>
+                              <button onClick={() => setEditPurchase(p)}
+                                className="p-1 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100">
+                                <Pencil className="w-3 h-3" />
+                              </button>
+                              <button onClick={() => deletePurchase(p)} disabled={deletingId === (p._id ?? p.id)}
+                                className="p-1 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-40">
+                                {deletingId === (p._id ?? p.id) ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Payment history */}
+              {detail.payments?.length > 0 && (
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="text-sm font-semibold text-gray-800">Payment History</h4>
+                    <span className="text-xs text-gray-400">Total paid: <strong>{fmt(detail.totalPaid)}</strong></span>
+                  </div>
+                  <div className="divide-y divide-gray-50 border border-gray-100 rounded-lg overflow-hidden">
                     {detail.payments.map(p => (
-                      <div key={p.id} className="flex items-center justify-between px-4 py-3">
+                      <div key={p._id ?? p.id} className="flex items-center justify-between px-4 py-3">
                         <div>
                           <p className="text-sm font-medium text-gray-800">{fmt(p.amount)}</p>
                           <p className="text-xs text-gray-400">{fmtDate(p.date)}{p.description ? ` · ${p.description}` : ''}</p>
@@ -330,21 +538,6 @@ function VendorDetail({ vendor, onClose, onEdit }) {
                         <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${p.status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
                           {p.status}
                         </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Linked projects */}
-              {detail.projectVendors?.length > 0 && (
-                <div>
-                  <h4 className="text-sm font-semibold text-gray-800 mb-3">Linked Projects</h4>
-                  <div className="divide-y divide-gray-50 border border-gray-100 rounded-lg overflow-hidden">
-                    {detail.projectVendors.map(pv => (
-                      <div key={pv.id} className="flex items-center justify-between px-4 py-3">
-                        <p className="text-sm text-gray-700">{pv.projectId?.name ?? '—'}</p>
-                        <span className="text-xs text-gray-400">{pv.projectId?.projectCode ?? ''}</span>
                       </div>
                     ))}
                   </div>
@@ -357,7 +550,7 @@ function VendorDetail({ vendor, onClose, onEdit }) {
                   <h4 className="text-sm font-semibold text-gray-800 mb-3">Documents</h4>
                   <div className="space-y-2">
                     {detail.documents.map(doc => (
-                      <div key={doc.id} className="flex items-center gap-3 px-4 py-2 border border-gray-100 rounded-lg">
+                      <div key={doc._id ?? doc.id} className="flex items-center gap-3 px-4 py-2 border border-gray-100 rounded-lg">
                         <FileText className="w-4 h-4 text-gray-400 shrink-0" />
                         <a href={doc.fileUrl} target="_blank" rel="noreferrer" className="text-sm text-blue-600 hover:underline truncate">{doc.title ?? doc.fileName ?? 'Document'}</a>
                         <span className="text-xs text-gray-400 ml-auto shrink-0">{fmtDate(doc.createdAt)}</span>
@@ -370,6 +563,22 @@ function VendorDetail({ vendor, onClose, onEdit }) {
           )}
         </div>
       </div>
+
+      {purchaseModal && (
+        <PurchaseModal
+          vendorId={vendor.id}
+          onClose={() => setPurchaseModal(false)}
+          onSaved={loadDetail}
+        />
+      )}
+      {editPurchase && (
+        <PurchaseModal
+          vendorId={vendor.id}
+          purchase={editPurchase}
+          onClose={() => setEditPurchase(null)}
+          onSaved={loadDetail}
+        />
+      )}
     </div>
   )
 }
@@ -472,15 +681,14 @@ export default function VendorsPage() {
                     <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Company</th>
                     <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Contact</th>
                     <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Service Type</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Projects</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Total Paid</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Purchases</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Total Purchased</th>
                     <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Added</th>
                     <th className="px-4 py-3" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                   {vendors.map(v => {
-                    const totalPaid = (v.payments ?? []).filter(p => p.status === 'paid').reduce((s, p) => s + p.amount, 0)
                     return (
                       <tr key={v.id} className="hover:bg-gray-50 transition-colors">
                         <td className="px-4 py-3">
@@ -498,8 +706,8 @@ export default function VendorsPage() {
                             ? <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700">{v.serviceType}</span>
                             : <span className="text-xs text-gray-400">—</span>}
                         </td>
-                        <td className="px-4 py-3 text-sm text-gray-600">{v.projectVendorCount ?? 0}</td>
-                        <td className="px-4 py-3 text-sm font-medium text-gray-800">{totalPaid > 0 ? fmt(totalPaid) : '—'}</td>
+                        <td className="px-4 py-3 text-sm text-gray-600">{v.purchaseCount ?? 0}</td>
+                        <td className="px-4 py-3 text-sm font-medium text-gray-800">{v.totalPurchaseAmount > 0 ? fmt(v.totalPurchaseAmount) : '—'}</td>
                         <td className="px-4 py-3 text-xs text-gray-400">{fmtDate(v.createdAt)}</td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-1 justify-end">

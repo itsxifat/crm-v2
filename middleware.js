@@ -32,7 +32,7 @@ export default withAuth(
     const token        = req.nextauth.token
 
     // Allow public routes without redirection
-    const publicRoutes = ['/login', '/register', '/forgot-password', '/reset-password', '/onboarding', '/freelancer/invite']
+    const publicRoutes = ['/login', '/register', '/forgot-password', '/reset-password', '/freelancer/invite']
     if (publicRoutes.some((r) => pathname.startsWith(r))) {
       // If already logged in, redirect to their dashboard
       if (token) {
@@ -50,6 +50,18 @@ export default withAuth(
     }
 
     const role = token.role
+
+    // Employees who have not completed HR approval are restricted to /admin/profile only
+    if (role === 'EMPLOYEE') {
+      const profileStatus = token.profileStatus
+      if (profileStatus !== 'APPROVED') {
+        // Allow the profile page and any sub-path of it
+        if (!pathname.startsWith('/admin/profile')) {
+          return NextResponse.redirect(new URL('/admin/profile', req.url))
+        }
+        return NextResponse.next()
+      }
+    }
 
     // Role-based access check
     if (!hasAccess(role, pathname)) {

@@ -32,7 +32,7 @@ function ActionMenu({ lead, onEdit, onDelete, onConvert }) {
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
           <div className="absolute right-0 top-full mt-1 z-20 w-44 bg-white rounded-xl shadow-xl border border-gray-100 py-1 overflow-hidden">
             <Link
-              href={`/leads/${lead.id}`}
+              href={`/admin/leads/${lead.id}`}
               className="flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
               onClick={() => setOpen(false)}
             >
@@ -130,7 +130,7 @@ export default function LeadsTable({ leads = [], onEdit, onRefresh }) {
             <tr
               key={lead.id}
               className="group hover:bg-blue-50/30 transition-colors cursor-pointer"
-              onClick={() => router.push(`/leads/${lead.id}`)}
+              onClick={() => router.push(`/admin/leads/${lead.id}`)}
             >
               {/* Name / Company */}
               <td className="px-4 py-3">

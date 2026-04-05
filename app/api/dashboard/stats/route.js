@@ -5,7 +5,7 @@ import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import {
   Lead, Project, Client, Task, Invoice, WithdrawalRequest,
-  Transaction, Employee, Attendance, Leave, EmployeeOnboarding,
+  Transaction, Employee, Attendance, Leave,
 } from '@/models'
 
 export async function GET(request) {
@@ -40,7 +40,6 @@ export async function GET(request) {
       pendingWithdrawals,
       totalEmployees, activeEmployees,
       pendingLeaves,
-      pendingOnboarding,
       recentProjects,
       recentLeads,
       recentInvoices,
@@ -71,8 +70,6 @@ export async function GET(request) {
       Employee.countDocuments({ isActive: true }),
 
       Leave.countDocuments({ status: 'PENDING' }),
-
-      EmployeeOnboarding.countDocuments({ status: 'SUBMITTED' }),
 
       Project.find({ status: { $in: ['IN_PROGRESS', 'ACTIVE', 'IN_REVIEW'] } })
         .sort({ updatedAt: -1 }).limit(5)
@@ -181,7 +178,7 @@ export async function GET(request) {
         revenueVsProfit,
         dailyData,
         pendingWithdrawals,
-        hr: { total: totalEmployees, active: activeEmployees, pendingLeaves, pendingOnboarding, todayAttendance },
+        hr: { total: totalEmployees, active: activeEmployees, pendingLeaves, todayAttendance },
         recentProjects,
         recentLeads,
         recentInvoices,

@@ -14,7 +14,6 @@ const PURPOSES = [
   { id: 'general',      label: 'General',              description: 'Default fallback for all emails' },
   { id: 'invoice',      label: 'Invoices',             description: 'Invoice delivery to clients' },
   { id: 'client',       label: 'Client Welcome',       description: 'New client account credentials' },
-  { id: 'onboarding',   label: 'Employee Onboarding',  description: 'Onboarding invitation links' },
   { id: 'freelancer',   label: 'Freelancer Invites',   description: 'Freelancer/agency panel invites' },
   { id: 'notification', label: 'Notifications',        description: 'System alerts and reminders' },
 ]

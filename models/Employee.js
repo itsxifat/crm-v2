@@ -11,7 +11,7 @@ const EmployeeSchema = new mongoose.Schema(
     hireDate:        { type: Date,   default: null },
     employeeId:      { type: String },
 
-    // Personal details (populated from onboarding selfData)
+    // Personal details
     phone:            { type: String, default: null },
     secondaryPhone:   { type: String, default: null },
     homePhone:        { type: String, default: null },
@@ -36,6 +36,14 @@ const EmployeeSchema = new mongoose.Schema(
     appointmentLetterUrl: { type: String, default: null },
     agreementUrl:         { type: String, default: null },
 
+    // Additional personal fields (employee fills)
+    gender:        { type: String, enum: ['MALE', 'FEMALE', 'OTHER', null], default: null },
+    nationality:   { type: String, default: null },
+    maritalStatus: { type: String, enum: ['SINGLE', 'MARRIED', 'DIVORCED', 'WIDOWED', null], default: null },
+
+    // KYC additional
+    passportNumber: { type: String, default: null },
+
     // Organisational role
     customRoleId: { type: mongoose.Schema.Types.ObjectId, ref: 'CustomRole', default: null },
 
@@ -43,9 +51,20 @@ const EmployeeSchema = new mongoose.Schema(
     panelAccessGranted: { type: Boolean, default: false },
     panelAccessDate:    { type: Date,    default: null },
 
+    // Profile onboarding
+    profileStatus:        { type: String, enum: ['CREATED', 'INCOMPLETE', 'PENDING_APPROVAL', 'APPROVED'], default: 'CREATED' },
+    profileCompletionPct: { type: Number, default: 0 },
+    hrNotes:              { type: String, default: null },
+
+    // Data locks
+    kycApproved:   { type: Boolean, default: false },  // locks KYC docs after HR approves KYC
+    finalApproved: { type: Boolean, default: false },  // set on HR final approval — locks name/phone/email/company/salary
+
     // Status
     isActive:   { type: Boolean, default: true },
     endDate:    { type: Date,    default: null },
+    resigned:   { type: Boolean, default: false },
+    resignDate: { type: Date,    default: null },
   },
   {
     timestamps: true,
@@ -57,14 +76,23 @@ const EmployeeSchema = new mongoose.Schema(
 )
 
 // ── Employee ID System ────────────────────────────────────────────────────────
-// Format : ENF-[DEPT]-[YY]-[SERIAL]-[ALPHA]
-// Example: ENF-DEV-24-001-KX
+// Format : [VENTURE_PREFIX]-[DEPT][YY][MM][SERIAL]
+// Examples:
+//   ENSTUDIO → EN-MKT2604001
+//   ENTECH   → ENT-MKT2604001
+//   ENMARK   → ENM-MKT2604001
 //
-//  ENF    — fixed company prefix
-//  DEPT   — 3-letter department code  (DEV | MKT | HR | SLS | ACC | OPS | SUP)
-//  YY     — last 2 digits of joining year, auto-derived from hireDate
-//  SERIAL — 3-digit counter, resets per department per year, starts at 001
-//  ALPHA  — 2 random uppercase letters for uniqueness guarantee
+//  VENTURE_PREFIX — venture-specific prefix (EN | ENT | ENM)
+//  DEPT           — 3-letter department code  (DEV | MKT | HR | SLS | ACC | OPS | SUP)
+//  YY             — last 2 digits of joining year, auto-derived from hireDate
+//  MM             — 2-digit joining month (01–12)
+//  SERIAL         — counter, resets per department per year, starts at 001; grows beyond 3 digits if needed
+
+export const VENTURE_PREFIXES = {
+  ENSTUDIO: 'EN',
+  ENTECH:   'ENT',
+  ENMARK:   'ENM',
+}
 
 export const DEPT_CODES = {
   DEV: 'Development',
@@ -94,15 +122,9 @@ export function normalizeDeptCode(dept) {
   return null
 }
 
-function _randomAlpha2() {
-  return Array.from({ length: 2 }, () =>
-    String.fromCharCode(65 + Math.floor(Math.random() * 26))
-  ).join('')
-}
-
-// Generate the next employee ID for the given department + year.
-// Serial resets per dept per year; ALPHA adds collision safety.
-export async function generateEmployeeId({ department, hireDate }) {
+// Generate the next employee ID for the given venture + department + hireDate.
+// Serial resets per dept per year; expands beyond 3 digits if needed (1000+).
+export async function generateEmployeeId({ venture, department, hireDate }) {
   const code = normalizeDeptCode(department)
   if (!code) {
     throw new Error(
@@ -110,40 +132,50 @@ export async function generateEmployeeId({ department, hireDate }) {
     )
   }
 
-  const date = hireDate ? new Date(hireDate) : new Date()
-  const yy   = String(date.getFullYear()).slice(-2)
-  const prefix = `ENF-${code}-${yy}-`
+  const venturePrefix = (venture && VENTURE_PREFIXES[venture]) ? VENTURE_PREFIXES[venture] : 'EN'
 
-  // Find all existing IDs for this dept+year to determine max serial
+  const date    = hireDate ? new Date(hireDate) : new Date()
+  const yy      = String(date.getFullYear()).slice(-2)
+  const mm      = String(date.getMonth() + 1).padStart(2, '0')
+  // yearPrefix used for searching all months in this dept+year+venture
+  const yearPrefix = `${venturePrefix}-${code}${yy}`
+  const fullPrefix = `${yearPrefix}${mm}`
+
+  // Find all existing IDs for this venture+dept+year (across all months) to determine max serial
   const existing = await mongoose.model('Employee')
-    .find({ employeeId: { $regex: `^${prefix}`, $options: 'i' } }, { employeeId: 1 })
+    .find({ employeeId: { $regex: `^${yearPrefix}`, $options: 'i' } }, { employeeId: 1 })
     .lean()
+
+  // Serial starts after: venturePrefix + '-' (1) + code + YY (2) + MM (2)
+  const serialOffset = venturePrefix.length + 1 + code.length + 4
 
   let maxSerial = 0
   for (const emp of existing) {
-    // Format: ENF-DEV-24-001-KX  → parts[3] = "001"
-    const parts  = (emp.employeeId ?? '').split('-')
-    const serial = parseInt(parts[3], 10)
+    const id     = emp.employeeId ?? ''
+    const serial = parseInt(id.slice(serialOffset), 10)
     if (!isNaN(serial) && serial > maxSerial) maxSerial = serial
   }
 
+  // Pad to 3 digits minimum; naturally grows to 4+ digits beyond 999
   const serial = String(maxSerial + 1).padStart(3, '0')
-  const alpha  = _randomAlpha2()
 
-  return `${prefix}${serial}-${alpha}`
+  return `${fullPrefix}${serial}`
 }
 
 // Parse a structured employeeId into its components (for sorting/filtering)
+// Format: {VENTURE_PREFIX}-{DEPT}{YY}{MM}{SERIAL}
+// Examples: EN-MKT2604001, ENT-MKT2604001, ENM-MKT2604001
 export function parseEmployeeId(id) {
   if (!id) return null
-  const parts = id.split('-')
-  if (parts.length !== 5 || parts[0] !== 'ENF') return null
+  // (EN|ENT|ENM)-[2-4 letter dept][YY][MM][3+ digit serial]
+  const match = id.match(/^(EN[TM]?)-([A-Z]{2,4})(\d{2})(\d{2})(\d{3,})$/)
+  if (!match) return null
   return {
-    prefix: parts[0],                       // ENF
-    dept:   parts[1],                       // DEV
-    year:   `20${parts[2]}`,               // 2024
-    serial: parseInt(parts[3], 10),         // 1
-    alpha:  parts[4],                       // KX
+    prefix: match[1],                   // EN | ENT | ENM
+    dept:   match[2],                   // MKT
+    year:   `20${match[3]}`,            // 2026
+    month:  match[4],                   // 04
+    serial: parseInt(match[5], 10),     // 1
   }
 }
 
@@ -162,6 +194,7 @@ EmployeeSchema.pre('save', async function () {
   if (!this.department) return
   try {
     this.employeeId = await generateEmployeeId({
+      venture:    this.venture,
       department: this.department,
       hireDate:   this.hireDate,
     })
@@ -169,6 +202,28 @@ EmployeeSchema.pre('save', async function () {
     console.warn('[Employee] Could not auto-generate employeeId:', err.message)
   }
 })
+
+// ── Profile Completion ────────────────────────────────────────────────────────
+// 10 employee-fillable required fields, each worth 10%.
+// Personal (5): gender, dateOfBirth, nationality, maritalStatus, photo
+// Contact  (3): phone, address, emergencyContact
+// KYC      (2): nidNumber + at least 1 document uploaded
+export function calcProfileCompletion(emp) {
+  const checks = [
+    !!emp.gender,
+    !!emp.dateOfBirth,
+    !!emp.nationality,
+    !!emp.maritalStatus,
+    !!emp.photo,
+    !!emp.phone,
+    !!emp.address,
+    !!emp.emergencyContact,
+    !!emp.nidNumber,
+    Array.isArray(emp.documents) && emp.documents.length > 0,
+  ]
+  const filled = checks.filter(Boolean).length
+  return Math.round((filled / checks.length) * 100)
+}
 
 if (mongoose.models.Employee) delete mongoose.models.Employee
 export default mongoose.model('Employee', EmployeeSchema)

@@ -25,7 +25,15 @@
       "Bash(grep -rn 'Client Panel' e:/En-Tech/internel/en-crm --include=*.js --include=*.jsx --include=*.ts --include=*.tsx)",
       "Bash(grep -c \"EN-Tech Agency\" e:/En-Tech/internel/en-crm/lib/mailer.js e:/En-Tech/internel/en-crm/app/freelancer/invite/[token]/page.js)",
       "Bash(openssl rand:*)",
-      "Bash(grep -n \"freelancerId\\\\|freelancer_id\" \"e:/En-Tech/internel/en-crm/app/api/projects/\"*\"/expenses/route.js\")"
+      "Bash(grep -n \"freelancerId\\\\|freelancer_id\" \"e:/En-Tech/internel/en-crm/app/api/projects/\"*\"/expenses/route.js\")",
+      "Bash(mongosh \"mongodb://localhost:27017/en_crm\" --eval \"db.users.find\\({role:'SUPER_ADMIN'},{email:1,name:1,isActive:1}\\).toArray\\(\\)\" --quiet)",
+      "Bash(netstat -ano)",
+      "Bash(findstr \":3000\")",
+      "Bash(mongosh en_crm --eval \"db.employees.find\\({role:'admin'},{email:1,password:1,name:1}\\).toArray\\(\\)\")",
+      "Bash(mongosh \"mongodb://localhost:27017/en_crm\" --eval \"db.employees.find\\({role:'admin'},{email:1,name:1}\\).toArray\\(\\)\")",
+      "Bash(ls e:/En-Tech/internel/en-crm/app/admin/vendors/[id]/)",
+      "Bash(ls -la /e/En-Tech/internel/en-crm/app/admin/leads/[id]/)",
+      "Bash(ls -la /e/En-Tech/internel/en-crm/app/api/leads/[id]/)"
     ]
   }
 }

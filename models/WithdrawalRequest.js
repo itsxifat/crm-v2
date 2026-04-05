@@ -18,6 +18,7 @@ const WithdrawalRequestSchema = new mongoose.Schema(
     adminNote:   { type: String, default: null },
     processedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     processedAt: { type: Date, default: null },
+    isDirectPayment: { type: Boolean, default: false },
   },
   {
     timestamps: true,

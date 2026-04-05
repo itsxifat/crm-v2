@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
-import { User, Client, Lead } from '@/models'
+import { User, Client, Lead, Quotation } from '@/models'
 import { LeadActivity } from '@/models/Lead'
 import bcrypt from 'bcryptjs'
 
@@ -60,6 +60,9 @@ export async function POST(request, { params }) {
 
     // Mark lead as converted
     await Lead.findByIdAndUpdate(params.id, { convertedAt: new Date(), status: 'WON' })
+
+    // Transfer all lead quotations to the new client so they appear in their proposals
+    await Quotation.updateMany({ leadId: params.id }, { $set: { clientId: client._id } })
 
     // Log activity
     await new LeadActivity({

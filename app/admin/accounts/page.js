@@ -9,10 +9,6 @@ import {
   Paperclip, ExternalLink, ArrowUpRight, ArrowDownRight, BarChart2, Percent, FileText as FileTextIcon, ChevronLeft,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
-import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, PieChart, Pie, Cell, Legend
-} from 'recharts'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -31,8 +27,7 @@ const INCOME_CATEGORIES  = ['Project Revenue', 'Retainer', 'Consulting', 'Produc
 const EXPENSE_CATEGORIES = ['Payroll', 'Freelancer Payment', 'Agency Payment', 'Vendor Payment', 'Equipment', 'Employee Expense', 'Software', 'Marketing', 'Office', 'Travel', 'Tax', 'Other Expense']
 const CURRENCY_OPTIONS   = ['BDT']
 const PAYMENT_METHODS    = ['CASH', 'BANK_TRANSFER', 'CARD', 'CHEQUE', 'ONLINE', 'OTHER']
-const PIE_COLORS         = ['#3B82F6','#10B981','#F59E0B','#EF4444','#8B5CF6','#EC4899','#06B6D4','#14B8A6']
-const TABS               = ['Overview', 'Charts', 'Transactions', 'Payment Confirmations', 'Payment Requests', 'Withdrawals', 'P&L Report']
+const TABS               = ['Overview', 'Transactions', 'Payment Confirmations', 'Payment Requests', 'Withdrawals', 'P&L Report']
 
 const VENTURE_COLORS = {
   ENSTUDIO: 'bg-purple-100 text-purple-700',
@@ -1508,71 +1503,6 @@ export default function AccountsPage() {
                 )
               })()}
 
-            </>
-          ) : null}
-        </div>
-      )}
-
-      {/* ── CHARTS ── */}
-      {tab === 'Charts' && (
-        <div className="space-y-6">
-          {loading ? <Spinner /> : summary ? (
-            <>
-              {summary.monthlyData?.length > 0 && (
-                <div className="bg-white rounded-xl border border-gray-100 p-6">
-                  <h3 className="text-sm font-semibold text-gray-700 mb-4">Monthly Income vs Expenses</h3>
-                  <ResponsiveContainer width="100%" height={260}>
-                    <BarChart data={summary.monthlyData.map(d => ({ ...d, month: fmtMonth(d.month) }))} barSize={14}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
-                      <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94A3B8' }} axisLine={false} tickLine={false} />
-                      <YAxis tick={{ fontSize: 11, fill: '#94A3B8' }} axisLine={false} tickLine={false} tickFormatter={(v) => `${v >= 1000 ? `${(v/1000).toFixed(0)}k` : v}`} />
-                      <Tooltip formatter={(v) => fmt(v)} contentStyle={{ borderRadius: 8, border: '1px solid #E2E8F0', fontSize: 12 }} />
-                      <Legend wrapperStyle={{ fontSize: 12 }} />
-                      <Bar dataKey="income"  name="Income"  fill="#10B981" radius={[4,4,0,0]} />
-                      <Bar dataKey="expense" name="Expense" fill="#EF4444" radius={[4,4,0,0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
-
-              {summary.expenseByCategory?.length > 0 && (
-                <div className="grid lg:grid-cols-2 gap-6">
-                  <div className="bg-white rounded-xl border border-gray-100 p-6">
-                    <h3 className="text-sm font-semibold text-gray-700 mb-4">Expenses by Category</h3>
-                    <ResponsiveContainer width="100%" height={220}>
-                      <PieChart>
-                        <Pie data={summary.expenseByCategory} dataKey="amount" nameKey="category" cx="50%" cy="50%" outerRadius={80} label={({ category, percent }) => `${category} ${(percent * 100).toFixed(0)}%`} labelLine={false} fontSize={10}>
-                          {summary.expenseByCategory.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
-                        </Pie>
-                        <Tooltip formatter={(v) => fmt(v)} contentStyle={{ borderRadius: 8, fontSize: 12 }} />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </div>
-                  <div className="bg-white rounded-xl border border-gray-100 p-6">
-                    <h3 className="text-sm font-semibold text-gray-700 mb-4">Category Breakdown</h3>
-                    <div className="space-y-3">
-                      {summary.expenseByCategory.map((c, i) => {
-                        const total = summary.expenseByCategory.reduce((s, x) => s + x.amount, 0)
-                        const pct   = total > 0 ? (c.amount / total) * 100 : 0
-                        return (
-                          <div key={c.category}>
-                            <div className="flex justify-between items-center mb-1">
-                              <span className="text-sm text-gray-700 flex items-center gap-2">
-                                <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: PIE_COLORS[i % PIE_COLORS.length] }} />
-                                {c.category}
-                              </span>
-                              <span className="text-sm font-medium text-gray-900"><TkAmt value={c.amount} decimals={2} /></span>
-                            </div>
-                            <div className="w-full bg-gray-100 rounded-full h-1.5">
-                              <div className="h-1.5 rounded-full" style={{ width: `${pct}%`, backgroundColor: PIE_COLORS[i % PIE_COLORS.length] }} />
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                </div>
-              )}
             </>
           ) : null}
         </div>

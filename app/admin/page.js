@@ -482,7 +482,6 @@ function TeamSummary({ hr }) {
     { label: 'Active',          value: hr.active,            icon: UserCheck,    color: 'text-emerald-500' },
     { label: 'Present Today',   value: hr.todayAttendance,   icon: CheckCircle2, color: 'text-blue-500' },
     { label: 'Pending Leaves',  value: hr.pendingLeaves,     icon: Clock,        color: hr.pendingLeaves > 0 ? 'text-amber-500' : 'text-gray-300' },
-    { label: 'Onboarding',      value: hr.pendingOnboarding, icon: Flag,         color: hr.pendingOnboarding > 0 ? 'text-violet-500' : 'text-gray-300' },
   ]
   return (
     <div className="space-y-2.5">

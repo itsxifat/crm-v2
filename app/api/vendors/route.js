@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
-import { Vendor, VendorPayment, ProjectVendor } from '@/models'
+import { Vendor, VendorPayment, Purchase } from '@/models'
 import { z } from 'zod'
 
 const createVendorSchema = z.object({
@@ -51,21 +51,31 @@ export async function GET(request) {
     ])
 
     const vendorIds = vendors.map(v => v._id)
-    const [projectCounts, payments] = await Promise.all([
-      ProjectVendor.aggregate([
+    const [purchaseCounts, purchaseTotals, payments] = await Promise.all([
+      Purchase.aggregate([
         { $match: { vendorId: { $in: vendorIds } } },
-        { $group: { _id: '$vendorId', count: { $sum: 1 } } },
+        { $group: { _id: '$vendorId', count: { $sum: 1 }, total: { $sum: '$totalAmount' } } },
+      ]),
+      Purchase.aggregate([
+        { $match: { vendorId: { $in: vendorIds }, status: 'received' } },
+        { $group: { _id: '$vendorId', total: { $sum: '$totalAmount' } } },
       ]),
       VendorPayment.find({ vendorId: { $in: vendorIds } }).select('vendorId amount status').lean(),
     ])
 
-    const projectCountMap = Object.fromEntries(projectCounts.map(p => [p._id.toString(), p.count]))
+    const purchaseCountMap = Object.fromEntries(purchaseCounts.map(p => [p._id.toString(), p]))
+    const purchaseTotalMap = Object.fromEntries(purchaseTotals.map(p => [p._id.toString(), p.total]))
 
-    const enriched = vendors.map(v => ({
-      ...v.toJSON(),
-      projectVendorCount: projectCountMap[v._id.toString()] ?? 0,
-      payments: payments.filter(p => p.vendorId.toString() === v._id.toString()),
-    }))
+    const enriched = vendors.map(v => {
+      const pInfo = purchaseCountMap[v._id.toString()]
+      return {
+        ...v.toJSON(),
+        purchaseCount:       pInfo?.count ?? 0,
+        totalPurchaseAmount: pInfo?.total ?? 0,
+        receivedAmount:      purchaseTotalMap[v._id.toString()] ?? 0,
+        payments: payments.filter(p => p.vendorId.toString() === v._id.toString()),
+      }
+    })
 
     return NextResponse.json({
       data: enriched,

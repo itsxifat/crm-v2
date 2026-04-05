@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
-import { Vendor, VendorPayment, ProjectVendor, Agreement, Document, Project, Client, User } from '@/models'
+import { Vendor, VendorPayment, Purchase, Agreement, Document } from '@/models'
 import { z } from 'zod'
 
 const updateVendorSchema = z.object({
@@ -28,18 +28,18 @@ export async function GET(request, { params }) {
     const vendor = await Vendor.findById(params.id)
     if (!vendor) return NextResponse.json({ error: 'Vendor not found' }, { status: 404 })
 
-    const [projectVendors, payments, agreements, documents] = await Promise.all([
-      ProjectVendor.find({ vendorId: params.id })
-        .populate({ path: 'projectId', populate: { path: 'clientId', populate: { path: 'userId', select: 'name' } } }),
+    const [purchases, payments, agreements, documents] = await Promise.all([
+      Purchase.find({ vendorId: params.id }).sort({ date: -1 }),
       VendorPayment.find({ vendorId: params.id }).sort({ date: -1 }),
       Agreement.find({ vendorId: params.id }).sort({ createdAt: -1 }),
       Document.find({ vendorId: params.id }).sort({ createdAt: -1 }),
     ])
 
     const totalPaid = payments.filter(p => p.status === 'paid').reduce((sum, p) => sum + p.amount, 0)
+    const totalPurchased = purchases.filter(p => p.status !== 'cancelled').reduce((sum, p) => sum + p.totalAmount, 0)
 
     return NextResponse.json({
-      data: { ...vendor.toJSON(), projectVendors, payments, agreements, documents, totalPaid },
+      data: { ...vendor.toJSON(), purchases, payments, agreements, documents, totalPaid, totalPurchased },
     })
   } catch (err) {
     console.error('[GET /api/vendors/[id]]', err)

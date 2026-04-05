@@ -1,13 +1,14 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import {
   ArrowLeft, Edit2, Save, X, Loader2, Copy, Trash2, Send,
-  CheckCircle, XCircle, RotateCcw, Download, Plus, Trash,
+  CheckCircle, XCircle, RotateCcw, Plus, Trash, Printer,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import Link from 'next/link'
+import Image from 'next/image'
 import { VENTURE_CATEGORIES } from '@/lib/ventures'
 
 const VENTURES = ['ENSTUDIO', 'ENTECH', 'ENMARK']
@@ -131,10 +132,190 @@ function ItemCard({ item, idx, onChange, onRemove, editing }) {
   )
 }
 
+// ─── Print / PDF View ─────────────────────────────────────────────────────────
+
+function QuotationPrintView({ quotation: q }) {
+  const subtotal  = q.subtotal  ?? 0
+  const discount  = q.discount  ?? 0
+  const taxAmount = q.taxAmount ?? 0
+  const total     = q.total     ?? 0
+  const cur       = q.currency  ?? 'BDT'
+  const statusStyle = STATUS_STYLES[q.status] ?? STATUS_STYLES.DRAFT
+
+  const isBDT = cur === 'BDT'
+  const curSymbol = isBDT ? '৳' : cur
+  const Sym = () => isBDT
+    ? <span style={{ fontSize: 14, fontWeight: 400, lineHeight: 1, letterSpacing: '-0.5px', fontFamily: 'Georgia, serif' }}>৳</span>
+    : <span>{cur}</span>
+
+  const accent = {
+    ACCEPTED: '#16a34a', REJECTED: '#dc2626',
+    SENT: '#2563eb', DRAFT: '#64748b',
+  }[q.status] ?? '#2563eb'
+
+  const TH = (extra = {}) => ({
+    padding: '7px 16px', fontSize: 10, fontWeight: 600,
+    textTransform: 'uppercase', letterSpacing: '0.07em',
+    color: '#64748b', borderBottom: '1px solid #e2e8f0',
+    background: '#fff', ...extra,
+  })
+  const TD = (extra = {}) => ({
+    padding: '8px 16px', fontSize: 12.5, color: '#334155',
+    borderBottom: '1px solid #f1f5f9', verticalAlign: 'top', ...extra,
+  })
+
+  return (
+    <div id="quotation-print" style={{
+      fontFamily: "'Inter', 'Segoe UI', sans-serif",
+      background: '#ffffff', padding: '36px 56px',
+      maxWidth: 820, margin: '0 auto',
+    }}>
+
+      {/* ── HEADER ── */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
+        <div>
+          <Image src="/en-logo.png" alt="Enfinito" width={120} height={38} style={{ objectFit: 'contain', display: 'block', marginBottom: 7 }} />
+          <p style={{ margin: '0 0 2px', fontSize: 13, fontWeight: 700, color: '#0f172a' }}>Enfinito Bangladesh</p>
+          <p style={{ margin: '0 0 2px', fontSize: 11, color: '#64748b' }}>Savar, Dhaka, Bangladesh</p>
+          <p style={{ margin: '0 0 2px', fontSize: 11, color: '#64748b' }}>+8801332818901 - info@enfinito.com</p>
+          <p style={{ margin: 0,         fontSize: 11, color: '#64748b' }}>www.enfinito.com</p>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <p style={{ margin: 0, fontSize: 26, fontWeight: 700, color: '#0f172a', letterSpacing: '-0.5px' }}>Quotation</p>
+          <p style={{ margin: '4px 0 0', fontSize: 13, fontWeight: 700, color: '#94a3b8' }}>
+            Quote No: <strong style={{ color: accent, fontWeight: 700 }}>{q.quotationNumber}</strong>
+          </p>
+          <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-end' }}>
+            {[
+              { label: 'Issued', value: fmtDate(q.issueDate) },
+              ...(q.validUntil ? [{ label: 'Valid Until', value: fmtDate(q.validUntil) }] : []),
+            ].map(row => (
+              <div key={row.label} style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
+                <span style={{ fontSize: 11, color: '#94a3b8', minWidth: 60, textAlign: 'right' }}>{row.label}</span>
+                <strong style={{ fontSize: 11, color: '#475569', minWidth: 80, textAlign: 'left' }}>{row.value}</strong>
+              </div>
+            ))}
+          </div>
+          <p style={{ margin: '10px 0 0', fontSize: 13, fontWeight: 700, color: '#94a3b8' }}>
+            Status: <strong style={{ color: accent, fontWeight: 700 }}>{statusStyle.label}</strong>
+          </p>
+        </div>
+      </div>
+
+      {/* ── DIVIDER ── */}
+      <div style={{ height: 1, background: '#e2e8f0', marginBottom: 20 }} />
+
+      {/* ── QUOTED TO ── */}
+      <div style={{ marginBottom: 20 }}>
+        <p style={{ margin: '0 0 10px', fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#94a3b8' }}>Quoted To</p>
+        {q.recipientName    && <p style={{ margin: '0 0 2px', fontSize: 13, fontWeight: 700, color: '#0f172a' }}>{q.recipientName}</p>}
+        {q.recipientCompany && <p style={{ margin: '0 0 2px', fontSize: 11, fontWeight: 700, color: '#64748b' }}>{q.recipientCompany}</p>}
+        {q.recipientAddress && <p style={{ margin: '0 0 2px', fontSize: 11, color: '#64748b' }}>{q.recipientAddress}</p>}
+        {q.recipientPhone   && <p style={{ margin: '0 0 2px', fontSize: 11, color: '#64748b' }}>Phone: {q.recipientPhone}</p>}
+        {q.recipientEmail   && <p style={{ margin: 0,         fontSize: 11, color: '#64748b' }}>Email: {q.recipientEmail}</p>}
+      </div>
+
+      {/* ── ITEMS TABLE ── */}
+      <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 0 }}>
+        <thead>
+          <tr>
+            <th style={TH({ textAlign: 'left',   borderTop: '2px solid #0f172a' })}>Description</th>
+            <th style={TH({ textAlign: 'left',   borderTop: '2px solid #0f172a' })}>Service</th>
+            <th style={TH({ textAlign: 'center', borderTop: '2px solid #0f172a' })}>Qty</th>
+            <th style={TH({ textAlign: 'right',  borderTop: '2px solid #0f172a', whiteSpace: 'nowrap' })}>Unit Price</th>
+            <th style={TH({ textAlign: 'right',  borderTop: '2px solid #0f172a', paddingRight: 0, whiteSpace: 'nowrap' })}>Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {(q.items ?? []).map((item, i) => (
+            <tr key={i}>
+              <td style={TD({})}>
+                <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: '#0f172a', lineHeight: 1.4 }}>{item.description || '—'}</p>
+              </td>
+              <td style={TD({})}>
+                {item.venture && <p style={{ margin: '0 0 2px', fontSize: 10, fontWeight: 500, color: '#94a3b8', lineHeight: 1.3, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{item.venture}</p>}
+                {item.service && <p style={{ margin: 0, fontSize: 12, color: '#475569' }}>{item.service}</p>}
+                {!item.venture && !item.service && <span style={{ color: '#94a3b8' }}>—</span>}
+              </td>
+              <td style={TD({ textAlign: 'center', color: '#64748b' })}>{item.quantity}</td>
+              <td style={TD({ textAlign: 'right', color: '#64748b', whiteSpace: 'nowrap' })}>
+                <Sym />&nbsp;{Number(item.rate).toLocaleString('en-BD', { minimumFractionDigits: 2 })}
+              </td>
+              <td style={TD({ textAlign: 'right', paddingRight: 0, fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap' })}>
+                <Sym />&nbsp;{(Number(item.quantity) * Number(item.rate)).toLocaleString('en-BD', { minimumFractionDigits: 2 })}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {/* ── TOTALS ── */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 20 }}>
+        <div style={{ width: 280 }}>
+          <div style={{ height: 2, background: '#0f172a', marginBottom: 0 }} />
+          {[
+            { label: 'Sub Total',  n: subtotal,  prefix: '',  show: true,          valueColor: '#334155' },
+            { label: 'Discount',   n: discount,  prefix: '−', show: discount > 0,  valueColor: '#ef4444' },
+            { label: `MFS Charge (${q.taxRate ?? 0}%)`, n: taxAmount, prefix: '', show: taxAmount > 0, valueColor: '#334155' },
+          ].filter(r => r.show).map((row, i) => (
+            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid #f1f5f9' }}>
+              <span style={{ fontSize: 12, color: '#64748b' }}>{row.label}</span>
+              <span style={{ fontSize: 12, color: row.valueColor, fontWeight: 500 }}>
+                {row.prefix}<Sym />&nbsp;{(row.n ?? 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })}
+              </span>
+            </div>
+          ))}
+          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 16px', marginTop: 3, marginLeft: -16, marginRight: -16, borderRadius: 8, background: '#f8fafc' }}>
+            <span style={{ fontSize: 14, fontWeight: 800, color: '#0f172a' }}>Total</span>
+            <span style={{ fontSize: 14, fontWeight: 800, color: '#0f172a' }}><Sym />&nbsp;{(total).toLocaleString('en-BD', { minimumFractionDigits: 2 })}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* ── NOTES / TERMS ── */}
+      {(q.notes || q.terms) && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+          {q.notes && (
+            <div>
+              <p style={{ margin: '0 0 6px', fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#94a3b8' }}>Notes</p>
+              <p style={{ margin: 0, fontSize: 11, color: '#475569', lineHeight: 1.7 }}>{q.notes}</p>
+            </div>
+          )}
+          {q.terms && (
+            <div>
+              <p style={{ margin: '0 0 6px', fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#94a3b8' }}>Terms & Conditions</p>
+              <p style={{ margin: 0, fontSize: 11, color: '#475569', lineHeight: 1.7 }}>{q.terms}</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── SYSTEM NOTE ── */}
+      <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 16, marginBottom: 20, textAlign: 'center' }}>
+        <p style={{ margin: 0, fontSize: 11, color: '#64748b', lineHeight: 1.8 }}>
+          This is a system generated quotation. No signature is required.
+        </p>
+      </div>
+
+      {/* ── FOOTER ── */}
+      <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 12, textAlign: 'center' }}>
+        <p style={{ margin: '0 0 3px', fontSize: 11, color: '#94a3b8' }}>
+          Generated on {new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} –{' '}
+          {new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+        </p>
+        <p style={{ margin: 0, fontSize: 10, color: '#cbd5e1', letterSpacing: '0.04em' }}>
+          Powered by Enfinito Technology – Entech
+        </p>
+      </div>
+    </div>
+  )
+}
+
+// ─── Main ─────────────────────────────────────────────────────────────────────
+
 export default function QuotationDetailPage() {
   const { id } = useParams()
   const router  = useRouter()
-  const printRef = useRef()
 
   const [q,        setQ]        = useState(null)
   const [loading,  setLoading]  = useState(true)
@@ -142,6 +323,7 @@ export default function QuotationDetailPage() {
   const [saving,   setSaving]   = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [transitioning, setTransitioning] = useState(false)
+  const [printMode, setPrintMode] = useState(false)
 
   // Edit form state
   const [recipientName,    setRecipientName]    = useState('')
@@ -257,8 +439,8 @@ export default function QuotationDetailPage() {
     finally { setDeleting(false) }
   }
 
-  function printPDF() {
-    window.print()
+  function openPrint() {
+    setPrintMode(true)
   }
 
   if (loading) return (
@@ -271,6 +453,40 @@ export default function QuotationDetailPage() {
   const s     = STATUS_STYLES[q.status] ?? STATUS_STYLES.DRAFT
   const trans = TRANSITIONS[q.status]   ?? []
   const canEdit = q.status === 'DRAFT'
+
+  if (printMode) {
+    return (
+      <div>
+        <div className="print:hidden flex items-center gap-3 mb-4 px-4 pt-4">
+          <button onClick={() => setPrintMode(false)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-200 rounded-xl hover:bg-gray-50">
+            <ArrowLeft className="w-4 h-4" /> Back
+          </button>
+          <button onClick={() => {
+              const el = document.getElementById('quotation-print')
+              if (!el) return
+              const win = window.open('', '_blank')
+              win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"/>
+                <title>Quotation ${q.quotationNumber}</title>
+                <style>
+                  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+                  * { box-sizing: border-box; margin: 0; padding: 0; }
+                  body { font-family: 'Inter','Segoe UI',sans-serif; background:#fff; }
+                  @page { margin: 0; size: A4; }
+                </style>
+              </head><body>${el.outerHTML}</body></html>`)
+              win.document.close()
+              win.focus()
+              setTimeout(() => { win.print(); win.close() }, 500)
+            }}
+            className="flex items-center gap-1.5 px-4 py-1.5 text-sm bg-blue-600 text-white rounded-xl hover:bg-blue-700">
+            <Printer className="w-4 h-4" /> Print / Save PDF
+          </button>
+        </div>
+        <QuotationPrintView quotation={q} />
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -303,9 +519,9 @@ export default function QuotationDetailPage() {
             </button>
           ))}
 
-          <button onClick={printPDF}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-            <Download className="w-3.5 h-3.5" /> PDF
+          <button onClick={openPrint}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-purple-50 text-purple-700 rounded-lg hover:bg-purple-100 transition-colors">
+            <Printer className="w-3.5 h-3.5" /> Print / PDF
           </button>
 
           <button onClick={duplicate}
@@ -340,25 +556,13 @@ export default function QuotationDetailPage() {
         </div>
       </div>
 
-      {/* Quotation document */}
-      <div ref={printRef} className="bg-white border border-gray-100 rounded-xl overflow-hidden print:border-0 print:rounded-none">
-        {/* Print header */}
-        <div className="hidden print:flex items-center justify-between px-10 pt-8 pb-4 border-b border-gray-200">
-          <div>
-            <p className="text-2xl font-bold text-gray-900">En-Tech Group</p>
-            <p className="text-sm text-gray-500">Dhaka, Bangladesh · +8801332818901</p>
-          </div>
-          <div className="text-right">
-            <p className="text-2xl font-bold font-mono text-gray-800">{q.quotationNumber}</p>
-            <p className="text-sm text-gray-500">QUOTATION</p>
-          </div>
-        </div>
-
-        {/* Top info bar */}
-        <div className="grid grid-cols-2 gap-6 p-6 border-b border-gray-100">
-          <div>
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Recipient</p>
-            {editing ? (
+      {/* Edit form — only shown when editing */}
+      {editing && (
+        <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+          {/* Recipient + Dates */}
+          <div className="grid grid-cols-2 gap-6 p-6 border-b border-gray-100">
+            <div>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Recipient</p>
               <div className="space-y-2">
                 <input value={recipientName} onChange={e => setRecipientName(e.target.value)}
                   placeholder="Name" className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none" />
@@ -371,22 +575,9 @@ export default function QuotationDetailPage() {
                 <input value={recipientAddress} onChange={e => setRecipientAddress(e.target.value)}
                   placeholder="Address" className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none" />
               </div>
-            ) : (
-              <div className="space-y-0.5">
-                {q.recipientName    && <p className="text-sm font-medium text-gray-900">{q.recipientName}</p>}
-                {q.recipientCompany && <p className="text-sm text-gray-700">{q.recipientCompany}</p>}
-                {q.recipientEmail   && <p className="text-sm text-gray-500">{q.recipientEmail}</p>}
-                {q.recipientPhone   && <p className="text-sm text-gray-500">{q.recipientPhone}</p>}
-                {q.recipientAddress && <p className="text-sm text-gray-500">{q.recipientAddress}</p>}
-              </div>
-            )}
-          </div>
-          <div className="text-right space-y-2">
-            <div>
-              <p className="text-xs text-gray-400">Quotation #</p>
-              <p className="text-sm font-mono font-semibold text-gray-900">{q.quotationNumber}</p>
             </div>
-            {editing ? (
+            <div className="text-right">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Details</p>
               <div className="flex flex-col items-end gap-2">
                 <div className="flex items-center gap-2">
                   <label className="text-xs text-gray-400">Issue Date</label>
@@ -409,122 +600,83 @@ export default function QuotationDetailPage() {
                   </select>
                 </div>
               </div>
-            ) : (
-              <>
-                <div><p className="text-xs text-gray-400">Issue Date</p><p className="text-sm text-gray-700">{fmtDate(q.issueDate)}</p></div>
-                {q.validUntil && <div><p className="text-xs text-gray-400">Valid Until</p><p className="text-sm text-gray-700">{fmtDate(q.validUntil)}</p></div>}
-                <div><p className="text-xs text-gray-400">Currency</p><p className="text-sm text-gray-700">{q.currency || 'BDT'}</p></div>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Items */}
-        <div className="p-6 space-y-3">
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Items</p>
-          {editing ? (
-            <>
-              {items.map((item, idx) => (
-                <ItemCard key={idx} item={item} idx={idx} editing
-                  onChange={(i, u) => setItems(prev => prev.map((x, j) => j === i ? u : x))}
-                  onRemove={(i) => setItems(prev => prev.filter((_, j) => j !== i))} />
-              ))}
-              <button type="button" onClick={() => setItems(prev => [...prev, emptyItem()])}
-                className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800 font-medium pt-1">
-                <Plus className="w-4 h-4" /> Add Item
-              </button>
-            </>
-          ) : (
-            (q.items || []).map((item, idx) => (
-              <ItemCard key={idx} item={item} idx={idx} editing={false} onChange={() => {}} onRemove={() => {}} />
-            ))
-          )}
-        </div>
-
-        {/* Totals */}
-        <div className="flex justify-end p-6 border-t border-gray-100">
-          <div className="w-64 space-y-2">
-            <div className="flex justify-between text-sm text-gray-600">
-              <span>Subtotal</span>
-              <span>{editing ? fmt(subtotal) : fmt(q.subtotal)}</span>
-            </div>
-            {editing ? (
-              <>
-                <div className="flex items-center justify-between gap-2">
-                  <label className="text-sm text-gray-600">Tax (%)</label>
-                  <input type="number" min="0" max="100" step="0.5" value={taxRate} onChange={e => setTaxRate(e.target.value)}
-                    className="w-20 border border-gray-200 rounded-lg px-2 py-1 text-sm text-right focus:outline-none" />
-                </div>
-                {taxAmount > 0 && (
-                  <div className="flex justify-between text-sm text-gray-500">
-                    <span>Tax Amount</span><span>{fmt(taxAmount)}</span>
-                  </div>
-                )}
-                <div className="flex items-center justify-between gap-2">
-                  <label className="text-sm text-gray-600">Discount (৳)</label>
-                  <input type="number" min="0" value={discount} onChange={e => setDiscount(e.target.value)}
-                    className="w-24 border border-gray-200 rounded-lg px-2 py-1 text-sm text-right focus:outline-none" />
-                </div>
-              </>
-            ) : (
-              <>
-                {(q.taxRate > 0) && (
-                  <div className="flex justify-between text-sm text-gray-500">
-                    <span>Tax ({q.taxRate}%)</span><span>{fmt(q.taxAmount)}</span>
-                  </div>
-                )}
-                {(q.discount > 0) && (
-                  <div className="flex justify-between text-sm text-gray-500">
-                    <span>Discount</span><span>-{fmt(q.discount)}</span>
-                  </div>
-                )}
-              </>
-            )}
-            <div className="border-t border-gray-200 pt-2 flex justify-between">
-              <span className="text-sm font-semibold text-gray-700">Total</span>
-              <span className="text-base font-bold text-gray-900">
-                {editing ? fmt(editTotal) : fmt(q.total)}
-              </span>
             </div>
           </div>
-        </div>
 
-        {/* Notes & Terms */}
-        {(editing || q.notes || q.terms) && (
-          <div className="grid grid-cols-2 gap-6 px-6 pb-6 pt-0 border-t border-gray-100">
+          {/* Items */}
+          <div className="p-6 space-y-3">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Items</p>
+            {items.map((item, idx) => (
+              <ItemCard key={idx} item={item} idx={idx} editing
+                onChange={(i, u) => setItems(prev => prev.map((x, j) => j === i ? u : x))}
+                onRemove={(i) => setItems(prev => prev.filter((_, j) => j !== i))} />
+            ))}
+            <button type="button" onClick={() => setItems(prev => [...prev, emptyItem()])}
+              className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800 font-medium pt-1">
+              <Plus className="w-4 h-4" /> Add Item
+            </button>
+          </div>
+
+          {/* Totals */}
+          <div className="flex justify-end p-6 border-t border-gray-100">
+            <div className="w-64 space-y-2">
+              <div className="flex justify-between text-sm text-gray-600">
+                <span>Subtotal</span><span>{fmt(subtotal)}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-sm text-gray-600">Tax (%)</label>
+                <input type="number" min="0" max="100" step="0.5" value={taxRate} onChange={e => setTaxRate(e.target.value)}
+                  className="w-20 border border-gray-200 rounded-lg px-2 py-1 text-sm text-right focus:outline-none" />
+              </div>
+              {taxAmount > 0 && (
+                <div className="flex justify-between text-sm text-gray-500">
+                  <span>Tax Amount</span><span>{fmt(taxAmount)}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-sm text-gray-600">Discount (৳)</label>
+                <input type="number" min="0" value={discount} onChange={e => setDiscount(e.target.value)}
+                  className="w-24 border border-gray-200 rounded-lg px-2 py-1 text-sm text-right focus:outline-none" />
+              </div>
+              <div className="border-t border-gray-200 pt-2 flex justify-between">
+                <span className="text-sm font-semibold text-gray-700">Total</span>
+                <span className="text-base font-bold text-gray-900">{fmt(editTotal)}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Notes & Terms */}
+          <div className="grid grid-cols-2 gap-6 px-6 pb-6 border-t border-gray-100">
             <div>
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2 mt-4">Notes</p>
-              {editing ? (
-                <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3}
-                  placeholder="Notes for client…"
-                  className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none resize-none" />
-              ) : (
-                <p className="text-sm text-gray-600 whitespace-pre-wrap">{q.notes || '—'}</p>
-              )}
+              <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3}
+                placeholder="Notes for client…"
+                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none resize-none" />
             </div>
             <div>
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2 mt-4">Terms & Conditions</p>
-              {editing ? (
-                <textarea value={terms} onChange={e => setTerms(e.target.value)} rows={3}
-                  placeholder="Payment terms, validity…"
-                  className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none resize-none" />
-              ) : (
-                <p className="text-sm text-gray-600 whitespace-pre-wrap">{q.terms || '—'}</p>
-              )}
+              <textarea value={terms} onChange={e => setTerms(e.target.value)} rows={3}
+                placeholder="Payment terms, validity…"
+                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none resize-none" />
             </div>
           </div>
-        )}
-
-        {/* Timestamps */}
-        <div className="px-6 py-3 bg-gray-50 border-t border-gray-100 flex flex-wrap gap-x-6 gap-y-1 print:hidden">
-          {q.sentAt     && <p className="text-xs text-gray-400">Sent: {fmtDate(q.sentAt)}</p>}
-          {q.acceptedAt && <p className="text-xs text-gray-400">Accepted: {fmtDate(q.acceptedAt)}</p>}
-          {q.rejectedAt && <p className="text-xs text-gray-400">Rejected: {fmtDate(q.rejectedAt)}</p>}
-          {q.duplicatedFromId && <p className="text-xs text-gray-400">Duplicated from a previous quotation</p>}
-          <p className="text-xs text-gray-400 ml-auto">
-            Created by {q.createdBy?.name || 'Unknown'}
-          </p>
         </div>
+      )}
+
+      {/* Quotation document — invoice-style view */}
+      {!editing && (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          <QuotationPrintView quotation={q} />
+        </div>
+      )}
+
+      {/* Timestamps */}
+      <div className="flex flex-wrap gap-x-6 gap-y-1 px-1">
+        {q.sentAt     && <p className="text-xs text-gray-400">Sent: {fmtDate(q.sentAt)}</p>}
+        {q.acceptedAt && <p className="text-xs text-gray-400">Accepted: {fmtDate(q.acceptedAt)}</p>}
+        {q.rejectedAt && <p className="text-xs text-gray-400">Rejected: {fmtDate(q.rejectedAt)}</p>}
+        {q.duplicatedFromId && <p className="text-xs text-gray-400">Duplicated from a previous quotation</p>}
+        <p className="text-xs text-gray-400 ml-auto">Created by {q.createdBy?.name || 'Unknown'}</p>
       </div>
     </div>
   )

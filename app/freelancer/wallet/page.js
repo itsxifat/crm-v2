@@ -161,9 +161,16 @@ export default function FreelancerWalletPage() {
                     <td className="px-5 py-3.5 text-sm font-medium text-gray-900">{fmt(w.amount)}</td>
                     <td className="px-5 py-3.5 text-sm text-gray-600">{w.method}</td>
                     <td className="px-5 py-3.5">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${WITHDRAWAL_STATUS_COLORS[w.status] ?? 'bg-gray-100 text-gray-600'}`}>
-                        {w.status}
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${WITHDRAWAL_STATUS_COLORS[w.status] ?? 'bg-gray-100 text-gray-600'}`}>
+                          {w.status}
+                        </span>
+                        {w.isDirectPayment && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
+                            Direct Pay
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-5 py-3.5 text-sm text-gray-400">{w.adminNote ?? '—'}</td>
                   </tr>

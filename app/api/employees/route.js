@@ -7,6 +7,7 @@ import { User, Employee, Task, Leave, CustomRole } from '@/models'
 import { normalizeDeptCode } from '@/models/Employee'
 import { z } from 'zod'
 import bcrypt from 'bcryptjs'
+import { sendEmployeeLoginEmail } from '@/lib/mailer'
 
 const createEmployeeSchema = z.object({
   name:                 z.string().min(1, 'Name is required'),
@@ -63,10 +64,10 @@ export async function GET(request) {
         : { $regex: department, $options: 'i' }    // fallback: raw substring
     }
 
-    // Year filter — match employeeId prefix ENF-*-YY-
+    // Year filter — match employeeId pattern [VENTURE_PREFIX]-[DEPT][YY][MM][SERIAL]
     if (year) {
       const yy = String(year).slice(-2)
-      filter.employeeId = { $regex: `-${yy}-`, $options: 'i' }
+      filter.employeeId = { $regex: `^EN[TM]?-[A-Z]{2,4}${yy}`, $options: 'i' }
     }
 
     if (search) {
@@ -171,6 +172,11 @@ export async function POST(request) {
       { path: 'userId', select: 'id name email avatar' },
       { path: 'customRoleId', select: 'id title department color' },
     ])
+
+    // Fire-and-forget login credentials email
+    sendEmployeeLoginEmail({ to: email, name, password: rawPw }).catch(err =>
+      console.error('[POST /api/employees] login email failed:', err.message)
+    )
 
     return NextResponse.json({ data: employee, tempPassword: password ? undefined : rawPw }, { status: 201 })
   } catch (err) {

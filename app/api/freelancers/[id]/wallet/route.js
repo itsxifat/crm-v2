@@ -33,10 +33,17 @@ export async function GET(request, { params }) {
         id: e._id.toString(), type: 'credit', amount: e.amount,
         description: e.description, date: e.createdAt, category: e.type,
       })),
-      ...withdrawals.map(w => ({
-        id: w._id.toString(), type: 'debit', amount: w.amount,
-        description: `Withdrawal via ${w.method}`, date: w.processedAt ?? w.createdAt, category: 'withdrawal',
-      })),
+      ...withdrawals.map(w => w.isDirectPayment
+        ? {
+            id: w._id.toString(), type: 'direct_payment', amount: w.amount,
+            description: `Direct payment via ${w.method}${w.adminNote ? ` — ${w.adminNote}` : ''}`,
+            date: w.processedAt ?? w.createdAt, category: 'direct_payment',
+          }
+        : {
+            id: w._id.toString(), type: 'debit', amount: w.amount,
+            description: `Withdrawal via ${w.method}`, date: w.processedAt ?? w.createdAt, category: 'withdrawal',
+          }
+      ),
     ].sort((a, b) => new Date(b.date) - new Date(a.date))
 
     return NextResponse.json({ data: { balance: freelancer.walletBalance, transactions } })

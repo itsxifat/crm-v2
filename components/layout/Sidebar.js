@@ -11,7 +11,7 @@ import {
   Calendar, Clock, FolderOpen, FileSignature,
   BarChart3, UserCog, Building2, ChevronLeft, ChevronRight,
   ArrowRightLeft, ArrowDownLeft, ArrowUpRight as ArrowUpRightIcon,
-  CheckCircle, Inbox, ChevronDown, ShieldCheck, Activity, Bell,
+  CheckCircle, Inbox, ChevronDown, ShieldCheck, Activity, Bell, UserCircle,
 } from 'lucide-react'
 import Image from 'next/image'
 import { useState } from 'react'
@@ -169,8 +169,9 @@ const NAV_SECTIONS = [
     label: 'Account',
     roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
     items: [
-      { href: '/admin/account',       label: 'My Account',    icon: UserCog, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'] },
-      { href: '/admin/notifications', label: 'Notifications', icon: Bell,    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'] },
+      { href: '/admin/profile',       label: 'My Profile',    icon: UserCircle, roles: ['EMPLOYEE'] },
+      { href: '/admin/account',       label: 'My Account',    icon: UserCog,    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'] },
+      { href: '/admin/notifications', label: 'Notifications', icon: Bell,       roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'] },
     ],
   },
 ]
