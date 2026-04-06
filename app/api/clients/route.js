@@ -8,6 +8,7 @@ import bcrypt from 'bcryptjs'
 import { sendClientWelcomeEmail } from '@/lib/mailer'
 import { sendClientWelcomeWhatsApp } from '@/lib/whatsapp'
 import { canAccess } from '@/lib/permissions'
+import { blindIndex } from '@/lib/encryption'
 
 // GET /api/clients
 export async function GET(request) {
@@ -29,19 +30,20 @@ export async function GET(request) {
     if (priority)  filter.priority     = priority
     if (kycStatus) filter['kyc.status'] = kycStatus
     if (search) {
+      // email and phone are encrypted — use blind indexes for exact-match lookups
+      const emailToken = blindIndex(search.toLowerCase(), 'users', 'email')
+      const phoneToken = blindIndex(search, 'users', 'phone')
       const matchingUsers = await User.find({
         $or: [
-          { name:  { $regex: search, $options: 'i' } },
-          { email: { $regex: search, $options: 'i' } },
-          { phone: { $regex: search, $options: 'i' } },
+          { emailIdx: emailToken },
+          { phoneIdx: phoneToken },
         ],
       }).select('_id').lean()
       const userIds = matchingUsers.map(u => u._id)
+      // clientCode is not encrypted — regex still works on it
       filter.$or = [
-        { userId:        { $in: userIds } },
-        { company:       { $regex: search, $options: 'i' } },
-        { clientCode:    { $regex: search, $options: 'i' } },
-        { contactPerson: { $regex: search, $options: 'i' } },
+        { userId:     { $in: userIds } },
+        { clientCode: { $regex: search, $options: 'i' } },
       ]
     }
 
@@ -117,7 +119,8 @@ export async function POST(request) {
     if (!name?.trim()) return NextResponse.json({ error: 'Name is required' }, { status: 422 })
     if (!email?.trim()) return NextResponse.json({ error: 'Email is required' }, { status: 422 })
 
-    let user       = await User.findOne({ email: email.trim().toLowerCase() }).lean()
+    const emailToken = blindIndex(email.trim().toLowerCase(), 'users', 'email')
+    let user         = await User.findOne({ emailIdx: emailToken }).select('+emailIdx').lean()
     let rawPw      = null
     let isNewUser  = false
 

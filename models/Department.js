@@ -18,7 +18,7 @@ export function generateShortCode(name) {
 const DepartmentSchema = new mongoose.Schema(
   {
     name:        { type: String, required: true, unique: true, trim: true },
-    shortCode:   { type: String, required: true, unique: true, uppercase: true, trim: true },
+    shortCode:   { type: String, required: true, uppercase: true, trim: true },
     description: { type: String, default: null },
     isActive:    { type: Boolean, default: true },
     createdBy:   { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
