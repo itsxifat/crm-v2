@@ -10,7 +10,7 @@ import {
   DollarSign, TrendingUp, TrendingDown, Loader2, X, Paperclip,
   CreditCard, Clock, Calendar, Users, Tag, Flag, BarChart2,
   ChevronRight, MoreHorizontal, Check, AlertTriangle, FileText,
-  BookOpen, MessageSquare, Send, Pencil as PencilIcon,
+  BookOpen, MessageSquare, Send, Pencil as PencilIcon, Building2,
 } from 'lucide-react'
 import { VENTURE_META, STATUS_META, EXPENSE_CATEGORIES } from '@/lib/ventures'
 import Image from 'next/image'
@@ -170,7 +170,7 @@ function TaskModal({ projectId, task, onClose, onSaved }) {
   const [members, setMembers] = useState([])
 
   useEffect(() => {
-    fetch('/api/users?limit=100').then(r => r.json()).then(j => setMembers(j.data ?? []))
+    fetch('/api/users?limit=100&roles=EMPLOYEE,FREELANCER').then(r => r.json()).then(j => setMembers(j.data ?? []))
   }, [])
 
   async function save() {
@@ -329,7 +329,7 @@ function ExpenseModal({ projectId, onClose, onSaved }) {
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Amount (৳) *</label>
-            <input type="number" step="0.01" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" className={ic} />
+            <input type="number" step="0.01" min="0" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} onKeyDown={e => { if (e.key === '-' || e.key === 'e') e.preventDefault() }} placeholder="0.00" className={ic} />
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Date</label>
@@ -497,7 +497,7 @@ function PaymentModal({ projectId, onClose, onSaved }) {
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Amount (৳) *</label>
-            <input type="number" step="0.01" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" className={ic} />
+            <input type="number" step="0.01" min="0" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} onKeyDown={e => { if (e.key === '-' || e.key === 'e') e.preventDefault() }} placeholder="0.00" className={ic} />
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Method</label>
@@ -533,9 +533,9 @@ function PaymentModal({ projectId, onClose, onSaved }) {
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
-const ALL_TABS = ['overview', 'brief', 'discussion', 'tasks', 'expenses', 'payments', 'renewals', 'freelancers']
+const ALL_TABS = ['overview', 'brief', 'discussion', 'tasks', 'expenses', 'payments', 'renewals', 'freelancers', 'agencies']
 const FINANCIAL_TABS = new Set(['expenses', 'payments'])
-const TAB_LABELS = { overview: 'Overview', brief: 'Brief', discussion: 'Discussion', tasks: 'Tasks', expenses: 'Expenses', payments: 'Payments', renewals: 'Renewals', freelancers: 'Freelancers' }
+const TAB_LABELS = { overview: 'Overview', brief: 'Brief', discussion: 'Discussion', tasks: 'Tasks', expenses: 'Expenses', payments: 'Payments', renewals: 'Renewals', freelancers: 'Freelancers', agencies: 'Agencies' }
 
 export default function ProjectDetailPage() {
   const { id }  = useParams()
@@ -559,6 +559,15 @@ export default function ProjectDetailPage() {
   const [assignSaving,        setAssignSaving]        = useState(false)
   const [approvingAssign,     setApprovingAssign]     = useState(null)
   const [processingExpense,   setProcessingExpense]   = useState(null)
+  const [requestingPayment,   setRequestingPayment]   = useState(null)
+  const [editAssignment,      setEditAssignment]      = useState(null)    // {id, paymentAmount, paymentNotes, status}
+  const [editAssignSaving,    setEditAssignSaving]    = useState(false)
+  const [deletingAssign,      setDeletingAssign]      = useState(null)
+  // Agency assignments (reuse FreelancerAssignment model; agencies have type=AGENCY)
+  const [agencyList,          setAgencyList]          = useState([])
+  const [assignAgencyModal,   setAssignAgencyModal]   = useState(false)
+  const [assignAgencyForm,    setAssignAgencyForm]    = useState({ freelancerId: '', paymentAmount: '', paymentNotes: '' })
+  const [assignAgencySaving,  setAssignAgencySaving]  = useState(false)
 
   // Brief state
   const [brief,            setBrief]            = useState(null)
@@ -611,9 +620,14 @@ export default function ProjectDetailPage() {
   }, [tab, loadPayments])
 
   useEffect(() => {
-    if (tab === 'freelancers') {
+    if (tab === 'freelancers' || tab === 'agencies') {
       loadFreelancerAssignments()
-      fetch('/api/freelancers?limit=200').then(r => r.json()).then(j => setFreelancerList(j.data ?? []))
+    }
+    if (tab === 'freelancers') {
+      fetch('/api/freelancers?limit=200&type=FREELANCER').then(r => r.json()).then(j => setFreelancerList(j.data ?? []))
+    }
+    if (tab === 'agencies') {
+      fetch('/api/freelancers?limit=200&type=AGENCY').then(r => r.json()).then(j => setAgencyList(j.data ?? []))
     }
   }, [tab, loadFreelancerAssignments])
 
@@ -713,6 +727,29 @@ export default function ProjectDetailPage() {
     finally { setAssignSaving(false) }
   }
 
+  async function handleAssignAgency(e) {
+    e.preventDefault()
+    if (!assignAgencyForm.freelancerId || !assignAgencyForm.paymentAmount) {
+      toast.error('Agency and payment amount are required')
+      return
+    }
+    setAssignAgencySaving(true)
+    try {
+      const res  = await fetch('/api/freelancer-assignments', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ projectId: id, ...assignAgencyForm, paymentAmount: Number(assignAgencyForm.paymentAmount) }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error)
+      toast.success('Agency assigned!')
+      setAssignAgencyModal(false)
+      setAssignAgencyForm({ freelancerId: '', paymentAmount: '', paymentNotes: '' })
+      loadFreelancerAssignments()
+    } catch (err) { toast.error(err.message) }
+    finally { setAssignAgencySaving(false) }
+  }
+
   async function handleApproveAssignment(assignmentId) {
     setApprovingAssign(assignmentId)
     try {
@@ -741,6 +778,53 @@ export default function ProjectDetailPage() {
       toast.success('Assignment marked as completed')
       loadFreelancerAssignments()
     } catch (err) { toast.error(err.message) }
+  }
+
+  async function handleRequestPayment(assignmentId) {
+    setRequestingPayment(assignmentId)
+    try {
+      const res  = await fetch(`/api/freelancer-assignments/${assignmentId}`, {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ action: 'request_payment' }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error)
+      toast.success('Payment request sent to accounts')
+      loadFreelancerAssignments()
+    } catch (err) { toast.error(err.message) }
+    finally { setRequestingPayment(null) }
+  }
+
+  async function handleEditAssignment(e) {
+    e.preventDefault()
+    if (!editAssignment) return
+    setEditAssignSaving(true)
+    try {
+      const res  = await fetch(`/api/freelancer-assignments/${editAssignment.id}`, {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ action: 'edit', paymentAmount: editAssignment.paymentAmount, paymentNotes: editAssignment.paymentNotes, status: editAssignment.status }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error)
+      toast.success('Assignment updated')
+      setEditAssignment(null)
+      loadFreelancerAssignments()
+    } catch (err) { toast.error(err.message) }
+    finally { setEditAssignSaving(false) }
+  }
+
+  async function handleDeleteAssignment(assignmentId) {
+    if (!confirm('Delete this freelancer assignment?')) return
+    setDeletingAssign(assignmentId)
+    try {
+      const res  = await fetch(`/api/freelancer-assignments/${assignmentId}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error((await res.json()).error)
+      toast.success('Assignment deleted')
+      loadFreelancerAssignments()
+    } catch (err) { toast.error(err.message) }
+    finally { setDeletingAssign(null) }
   }
 
   async function handleExpenseAction(expenseId, action) {
@@ -849,7 +933,7 @@ export default function ProjectDetailPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0 flex-wrap">
+          <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap">
             <Link href={`/admin/projects/${id}/edit`}
               className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors">
               <Pencil className="w-3.5 h-3.5" /> Edit
@@ -872,7 +956,7 @@ export default function ProjectDetailPage() {
         </div>
 
         {/* Stats row */}
-        <div className="flex items-center gap-8 mt-5 pb-5 border-b border-gray-100 flex-wrap">
+        <div className="flex items-center gap-4 sm:gap-8 mt-5 pb-5 border-b border-gray-100 flex-wrap">
           {[
             ...(canViewFinancials ? [
               { label: 'Budget',   value: fmt(project.budget) },
@@ -892,10 +976,10 @@ export default function ProjectDetailPage() {
       </div>
 
       {/* Tab Nav */}
-      <div className="flex gap-0 border-b border-gray-100">
+      <div className="flex gap-0 border-b border-gray-100 overflow-x-auto scrollbar-none">
         {TABS.map(t => (
           <button key={t} onClick={() => setTab(t)}
-            className={`px-4 py-2.5 text-sm font-medium transition-all -mb-px ${
+            className={`px-4 py-2.5 text-sm font-medium transition-all -mb-px shrink-0 ${
               tab === t
                 ? 'border-b-2 border-gray-900 text-gray-900'
                 : 'text-gray-400 hover:text-gray-600 border-b-2 border-transparent'
@@ -912,7 +996,7 @@ export default function ProjectDetailPage() {
       {tab === 'overview' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
           {/* Details card */}
-          <div className="lg:col-span-2 bg-white border border-gray-100 rounded-xl p-6">
+          <div className="lg:col-span-2 bg-white border border-gray-100 rounded-xl p-4 sm:p-6">
             <h3 className="text-sm font-medium text-gray-500 mb-5 flex items-center gap-2">
               <FileText className="w-4 h-4" /> Project Details
             </h3>
@@ -946,7 +1030,7 @@ export default function ProjectDetailPage() {
               </div>
             )}
 
-            <dl className="grid grid-cols-2 gap-x-8 gap-y-4">
+            <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4">
               {[
                 { label: 'Client',       value: project.clientId?.userId?.name ?? '—' },
                 { label: 'Company',      value: project.clientId?.company ?? '—' },
@@ -1059,7 +1143,7 @@ export default function ProjectDetailPage() {
       {/* ── TASKS ── */}
       {tab === 'tasks' && (
         <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+          <div className="px-4 sm:px-6 py-4 border-b border-gray-100 flex items-center justify-between">
             <div>
               <h3 className="text-sm font-medium text-gray-900">Tasks</h3>
               <p className="text-xs text-gray-400 mt-0.5">{doneTasks} of {totalTasks} completed</p>
@@ -1071,7 +1155,7 @@ export default function ProjectDetailPage() {
           </div>
 
           {totalTasks > 0 && (
-            <div className="px-6 py-3 border-b border-gray-100">
+            <div className="px-4 sm:px-6 py-3 border-b border-gray-100">
               <div className="flex items-center gap-3">
                 <div className="flex-1 bg-gray-100 rounded-full h-1">
                   <div className="h-1 rounded-full bg-gray-400 transition-all" style={{ width: `${taskPct}%` }} />
@@ -1093,7 +1177,7 @@ export default function ProjectDetailPage() {
               {project.tasks.map(t => {
                 const isDone = t.status === 'COMPLETED'
                 return (
-                  <div key={t.id ?? t._id} className="flex items-start gap-4 px-6 py-4 hover:bg-gray-50/50 group transition-colors">
+                  <div key={t.id ?? t._id} className="flex items-start gap-3 px-4 sm:px-6 py-4 hover:bg-gray-50/50 group transition-colors">
                     <button onClick={() => handleToggleTask(t)} className="mt-0.5 shrink-0">
                       {isDone
                         ? <CheckCircle2 className="w-5 h-5 text-gray-400" />
@@ -1123,13 +1207,13 @@ export default function ProjectDetailPage() {
                         </div>
                       )}
                     </div>
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                    <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shrink-0">
                       <button onClick={() => { setEditingTask(t); setTaskModal(true) }}
-                        className="p-1.5 rounded-lg text-gray-300 hover:text-gray-600 hover:bg-gray-100 transition-colors">
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
                         <Pencil className="w-3.5 h-3.5" />
                       </button>
                       <button onClick={() => handleDeleteTask(t.id ?? t._id)}
-                        className="p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors">
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors">
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
@@ -1144,7 +1228,7 @@ export default function ProjectDetailPage() {
       {/* ── EXPENSES ── */}
       {tab === 'expenses' && (
         <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+          <div className="px-4 sm:px-6 py-4 border-b border-gray-100 flex items-center justify-between">
             <h3 className="text-sm font-medium text-gray-900">Expenses ({project.expenses?.length ?? 0})</h3>
             <button onClick={() => setExpenseModal(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-50 transition-colors">
@@ -1154,54 +1238,56 @@ export default function ProjectDetailPage() {
           {(project.expenses?.length ?? 0) === 0 ? (
             <div className="py-16 text-center text-gray-400 text-sm">No expenses yet</div>
           ) : (
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-gray-100">
-                  {['Title','Category','Amount','Date','Status',''].map(h => (
-                    <th key={h} className="px-5 py-3 text-left text-xs text-gray-400 font-medium">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {project.expenses.map(e => (
-                  <tr key={e.id ?? e._id} className="hover:bg-gray-50/50">
-                    <td className="px-5 py-3 text-sm text-gray-800">{e.title}</td>
-                    <td className="px-5 py-3 text-sm text-gray-400">{e.category}</td>
-                    <td className="px-5 py-3 text-sm text-gray-900">BDT {Number(e.amount).toLocaleString()}</td>
-                    <td className="px-5 py-3 text-sm text-gray-400">{fmtDate(e.date)}</td>
-                    <td className="px-5 py-3">
-                      <div className="flex items-center gap-1.5">
-                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                          e.status === 'APPROVED' ? 'bg-green-500' :
-                          e.status === 'REJECTED' ? 'bg-red-500' :
-                          'bg-yellow-400'
-                        }`} />
-                        <span className="text-xs text-gray-500">{e.status}</span>
-                      </div>
-                    </td>
-                    <td className="px-5 py-3">
-                      <div className="flex items-center gap-2">
-                        {e.invoiceUrl && <DocPreview url={e.invoiceUrl} compact />}
-                        {e.status === 'PENDING' && (
-                          <>
-                            <button onClick={() => handleExpenseAction(e.id ?? e._id, 'approve')}
-                              disabled={processingExpense === (e.id ?? e._id)}
-                              className="px-2 py-0.5 text-xs font-medium text-white bg-green-600 rounded hover:bg-green-700 disabled:opacity-50">
-                              Approve
-                            </button>
-                            <button onClick={() => handleExpenseAction(e.id ?? e._id, 'reject')}
-                              disabled={processingExpense === (e.id ?? e._id)}
-                              className="px-2 py-0.5 text-xs font-medium text-red-600 border border-red-200 rounded hover:bg-red-50 disabled:opacity-50">
-                              Reject
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[560px]">
+                <thead>
+                  <tr className="border-b border-gray-100">
+                    {['Title','Category','Amount','Date','Status',''].map(h => (
+                      <th key={h} className="px-5 py-3 text-left text-xs text-gray-400 font-medium">{h}</th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {project.expenses.map(e => (
+                    <tr key={e.id ?? e._id} className="hover:bg-gray-50/50">
+                      <td className="px-5 py-3 text-sm text-gray-800">{e.title}</td>
+                      <td className="px-5 py-3 text-sm text-gray-400 whitespace-nowrap">{e.category}</td>
+                      <td className="px-5 py-3 text-sm text-gray-900 whitespace-nowrap">BDT {Number(e.amount).toLocaleString()}</td>
+                      <td className="px-5 py-3 text-sm text-gray-400 whitespace-nowrap">{fmtDate(e.date)}</td>
+                      <td className="px-5 py-3 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5">
+                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                            e.status === 'APPROVED' ? 'bg-green-500' :
+                            e.status === 'REJECTED' ? 'bg-red-500' :
+                            'bg-yellow-400'
+                          }`} />
+                          <span className="text-xs text-gray-500">{e.status}</span>
+                        </div>
+                      </td>
+                      <td className="px-5 py-3">
+                        <div className="flex items-center gap-2">
+                          {e.invoiceUrl && <DocPreview url={e.invoiceUrl} compact />}
+                          {e.status === 'PENDING' && (
+                            <>
+                              <button onClick={() => handleExpenseAction(e.id ?? e._id, 'approve')}
+                                disabled={processingExpense === (e.id ?? e._id)}
+                                className="px-2 py-0.5 text-xs font-medium text-white bg-green-600 rounded hover:bg-green-700 disabled:opacity-50">
+                                Approve
+                              </button>
+                              <button onClick={() => handleExpenseAction(e.id ?? e._id, 'reject')}
+                                disabled={processingExpense === (e.id ?? e._id)}
+                                className="px-2 py-0.5 text-xs font-medium text-red-600 border border-red-200 rounded hover:bg-red-50 disabled:opacity-50">
+                                Reject
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       )}
@@ -1209,7 +1295,7 @@ export default function ProjectDetailPage() {
       {/* ── PAYMENTS ── */}
       {tab === 'payments' && (
         <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+          <div className="px-4 sm:px-6 py-4 border-b border-gray-100 flex items-center justify-between">
             <h3 className="text-sm font-medium text-gray-900">Payments ({payments.length})</h3>
             <button onClick={() => setPaymentModal(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-50 transition-colors">
@@ -1223,43 +1309,45 @@ export default function ProjectDetailPage() {
           ) : payments.length === 0 ? (
             <div className="py-16 text-center text-gray-400 text-sm">No payments recorded yet</div>
           ) : (
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-gray-100">
-                  {['Description','Amount','Method','Date','Status','Proof'].map(h => (
-                    <th key={h} className="px-5 py-3 text-left text-xs text-gray-400 font-medium">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {payments.map(p => (
-                  <tr key={p.id} className="hover:bg-gray-50/50">
-                    <td className="px-5 py-3 text-sm text-gray-800">{p.description || '—'}</td>
-                    <td className="px-5 py-3 text-sm text-gray-900">BDT {Number(p.amount).toLocaleString()}</td>
-                    <td className="px-5 py-3 text-sm text-gray-400">{p.paymentMethod?.replace('_',' ')}</td>
-                    <td className="px-5 py-3 text-sm text-gray-400">{fmtDate(p.paymentDate)}</td>
-                    <td className="px-5 py-3">
-                      <div className="flex items-center gap-1.5">
-                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                          p.status === 'CONFIRMED' ? 'bg-green-500' :
-                          p.status === 'REJECTED'  ? 'bg-red-500'   :
-                          'bg-yellow-400'
-                        }`} />
-                        <span className="text-xs text-gray-500">
-                          {p.status === 'PENDING_CONFIRMATION' ? 'Pending' : p.status === 'CONFIRMED' ? 'Confirmed' : 'Rejected'}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-5 py-3">
-                      {p.receiptUrl ? <DocPreview url={p.receiptUrl} compact /> : '—'}
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[540px]">
+                <thead>
+                  <tr className="border-b border-gray-100">
+                    {['Description','Amount','Method','Date','Status','Proof'].map(h => (
+                      <th key={h} className="px-5 py-3 text-left text-xs text-gray-400 font-medium whitespace-nowrap">{h}</th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {payments.map(p => (
+                    <tr key={p.id} className="hover:bg-gray-50/50">
+                      <td className="px-5 py-3 text-sm text-gray-800">{p.description || '—'}</td>
+                      <td className="px-5 py-3 text-sm text-gray-900 whitespace-nowrap">BDT {Number(p.amount).toLocaleString()}</td>
+                      <td className="px-5 py-3 text-sm text-gray-400 whitespace-nowrap">{p.paymentMethod?.replace('_',' ')}</td>
+                      <td className="px-5 py-3 text-sm text-gray-400 whitespace-nowrap">{fmtDate(p.paymentDate)}</td>
+                      <td className="px-5 py-3 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5">
+                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                            p.status === 'CONFIRMED' ? 'bg-green-500' :
+                            p.status === 'REJECTED'  ? 'bg-red-500'   :
+                            'bg-yellow-400'
+                          }`} />
+                          <span className="text-xs text-gray-500">
+                            {p.status === 'PENDING_CONFIRMATION' ? 'Pending' : p.status === 'CONFIRMED' ? 'Confirmed' : 'Rejected'}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-5 py-3">
+                        {p.receiptUrl ? <DocPreview url={p.receiptUrl} compact /> : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
           {payments.some(p => p.status === 'PENDING_CONFIRMATION') && (
-            <div className="px-6 py-3 border-t border-gray-100">
+            <div className="px-4 sm:px-6 py-3 border-t border-gray-100">
               <p className="text-xs text-gray-400">Pending payments are awaiting confirmation in <strong className="text-gray-600">Accounts → Payment Confirmations</strong>.</p>
             </div>
           )}
@@ -1269,36 +1357,38 @@ export default function ProjectDetailPage() {
       {/* ── RENEWALS ── */}
       {tab === 'renewals' && (
         <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-100">
+          <div className="px-4 sm:px-6 py-4 border-b border-gray-100">
             <h3 className="text-sm font-medium text-gray-900">Renewal History ({project.renewals?.length ?? 0})</h3>
           </div>
           {(project.renewals?.length ?? 0) === 0 ? (
             <div className="py-16 text-center text-gray-400 text-sm">No renewal history</div>
           ) : (
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-gray-100">
-                  {['Period','Amount','Status','Notes'].map(h => (
-                    <th key={h} className="px-5 py-3 text-left text-xs text-gray-400 font-medium">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {project.renewals.map(r => (
-                  <tr key={r.id ?? r._id} className="hover:bg-gray-50/50">
-                    <td className="px-5 py-3 text-sm text-gray-700">{fmtDate(r.periodStart)} – {fmtDate(r.periodEnd)}</td>
-                    <td className="px-5 py-3 text-sm text-gray-900">BDT {Number(r.billingAmount).toLocaleString()}</td>
-                    <td className="px-5 py-3">
-                      <div className="flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0" />
-                        <span className="text-xs text-gray-500">{r.status}</span>
-                      </div>
-                    </td>
-                    <td className="px-5 py-3 text-sm text-gray-400">{r.notes ?? '—'}</td>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[420px]">
+                <thead>
+                  <tr className="border-b border-gray-100">
+                    {['Period','Amount','Status','Notes'].map(h => (
+                      <th key={h} className="px-5 py-3 text-left text-xs text-gray-400 font-medium whitespace-nowrap">{h}</th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {project.renewals.map(r => (
+                    <tr key={r.id ?? r._id} className="hover:bg-gray-50/50">
+                      <td className="px-5 py-3 text-sm text-gray-700 whitespace-nowrap">{fmtDate(r.periodStart)} – {fmtDate(r.periodEnd)}</td>
+                      <td className="px-5 py-3 text-sm text-gray-900 whitespace-nowrap">BDT {Number(r.billingAmount).toLocaleString()}</td>
+                      <td className="px-5 py-3 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0" />
+                          <span className="text-xs text-gray-500">{r.status}</span>
+                        </div>
+                      </td>
+                      <td className="px-5 py-3 text-sm text-gray-400">{r.notes ?? '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       )}
@@ -1310,17 +1400,20 @@ export default function ProjectDetailPage() {
           IN_PROGRESS: 'bg-purple-100 text-purple-700', COMPLETED: 'bg-green-100 text-green-700', CANCELLED: 'bg-red-100 text-red-600',
         }
         const PAY_STATUS_COLORS = {
-          PENDING: 'bg-yellow-100 text-yellow-700', IN_WALLET: 'bg-green-100 text-green-700',
+          PENDING: 'bg-yellow-100 text-yellow-700', PAYMENT_REQUESTED: 'bg-orange-100 text-orange-700',
+          IN_WALLET: 'bg-green-100 text-green-700',
           WITHDRAWAL_REQUESTED: 'bg-blue-100 text-blue-700', PAID: 'bg-gray-100 text-gray-600',
         }
+        const isAdmin = ['SUPER_ADMIN', 'MANAGER'].includes(session?.user?.role)
         const ic = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900'
+        const freelancerOnlyAssignments = freelancerAssignments.filter(a => a.freelancerId?.type !== 'AGENCY')
 
         return (
           <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
             <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-medium text-gray-900">Freelancer Assignments</h3>
-                <p className="text-xs text-gray-400 mt-0.5">{freelancerAssignments.length} assignment{freelancerAssignments.length !== 1 ? 's' : ''}</p>
+                <p className="text-xs text-gray-400 mt-0.5">{freelancerOnlyAssignments.length} assignment{freelancerOnlyAssignments.length !== 1 ? 's' : ''}</p>
               </div>
               {(
                 ['SUPER_ADMIN', 'MANAGER'].includes(session?.user?.role) ||
@@ -1333,7 +1426,7 @@ export default function ProjectDetailPage() {
               )}
             </div>
 
-            {freelancerAssignments.length === 0 ? (
+            {freelancerOnlyAssignments.length === 0 ? (
               <div className="py-16 text-center text-gray-400 text-sm">No freelancers assigned to this project yet</div>
             ) : (
               <div className="overflow-x-auto">
@@ -1346,7 +1439,7 @@ export default function ProjectDetailPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
-                    {freelancerAssignments.map(a => {
+                    {freelancerOnlyAssignments.map(a => {
                       const name   = a.freelancerId?.userId?.name ?? 'Unknown'
                       const email  = a.freelancerId?.userId?.email ?? ''
                       const avatar = a.freelancerId?.userId?.avatar
@@ -1377,12 +1470,26 @@ export default function ProjectDetailPage() {
                             </span>
                           </td>
                           <td className="px-5 py-3.5">
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${PAY_STATUS_COLORS[a.paymentStatus] ?? 'bg-gray-100 text-gray-600'}`}>
-                              {a.paymentStatus?.replace('_', ' ') ?? 'PENDING'}
-                            </span>
+                            {/* Payment Status — dropdown for admin when PENDING */}
+                            {isAdmin && a.paymentStatus === 'PENDING' ? (
+                              <select
+                                value={a.paymentStatus}
+                                disabled={requestingPayment === aId}
+                                onChange={e => { if (e.target.value === 'PAYMENT_REQUESTED') handleRequestPayment(aId) }}
+                                className="text-xs border border-gray-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-gray-900 cursor-pointer"
+                              >
+                                <option value="PENDING">Pending</option>
+                                <option value="PAYMENT_REQUESTED">Send Request for Payment</option>
+                              </select>
+                            ) : (
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${PAY_STATUS_COLORS[a.paymentStatus] ?? 'bg-gray-100 text-gray-600'}`}>
+                                {a.paymentStatus === 'PAYMENT_REQUESTED' ? 'Payment Requested' : (a.paymentStatus?.replace(/_/g, ' ') ?? 'PENDING')}
+                              </span>
+                            )}
+                            {requestingPayment === aId && <Loader2 className="w-3 h-3 animate-spin inline ml-1.5 text-gray-400" />}
                           </td>
                           <td className="px-5 py-3.5">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               {a.status === 'IN_PROGRESS' && (
                                 <button
                                   onClick={() => handleCompleteAssignment(aId)}
@@ -1400,6 +1507,23 @@ export default function ProjectDetailPage() {
                                   {approvingAssign === aId && <Loader2 className="w-3 h-3 animate-spin" />}
                                   Approve Payment
                                 </button>
+                              )}
+                              {isAdmin && (
+                                <>
+                                  <button
+                                    onClick={() => setEditAssignment({ id: aId, paymentAmount: a.paymentAmount, paymentNotes: a.paymentNotes ?? '', status: a.status })}
+                                    className="flex items-center gap-1 px-2.5 py-1 border border-gray-200 text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-50 transition-colors"
+                                  >
+                                    <Pencil className="w-3 h-3" /> Edit
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteAssignment(aId)}
+                                    disabled={deletingAssign === aId}
+                                    className="flex items-center gap-1 px-2.5 py-1 border border-red-200 text-red-600 text-xs font-medium rounded-lg hover:bg-red-50 disabled:opacity-50 transition-colors"
+                                  >
+                                    {deletingAssign === aId ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                                  </button>
+                                </>
                               )}
                             </div>
                           </td>
@@ -1449,6 +1573,288 @@ export default function ProjectDetailPage() {
                       <button type="submit" disabled={assignSaving}
                         className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 disabled:opacity-40 flex items-center gap-2">
                         {assignSaving && <Loader2 className="w-4 h-4 animate-spin" />} Assign
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+
+            {/* Edit Assignment Modal */}
+            {editAssignment && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+                <div className="bg-white rounded-xl border border-gray-200 w-full max-w-md p-6 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-base font-semibold text-gray-900">Edit Assignment</h3>
+                    <button onClick={() => setEditAssignment(null)} className="p-1 rounded-lg hover:bg-gray-100">
+                      <X className="w-4 h-4 text-gray-400" />
+                    </button>
+                  </div>
+                  <form onSubmit={handleEditAssignment} className="space-y-4">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
+                      <select
+                        value={editAssignment.status}
+                        onChange={e => setEditAssignment(f => ({ ...f, status: e.target.value }))}
+                        className={ic}
+                      >
+                        {['ASSIGNED', 'ACCEPTED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'].map(s => (
+                          <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Payment Amount (৳) <span className="text-red-500">*</span></label>
+                      <input type="number" step="0.01" min="1"
+                        value={editAssignment.paymentAmount}
+                        onChange={e => setEditAssignment(f => ({ ...f, paymentAmount: e.target.value }))}
+                        placeholder="0.00" className={ic} required />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Payment Notes</label>
+                      <textarea value={editAssignment.paymentNotes}
+                        onChange={e => setEditAssignment(f => ({ ...f, paymentNotes: e.target.value }))}
+                        rows={2} placeholder="Additional notes…" className={`${ic} resize-none`} />
+                    </div>
+                    <div className="flex gap-2 justify-end pt-1">
+                      <button type="button" onClick={() => setEditAssignment(null)}
+                        className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
+                      <button type="submit" disabled={editAssignSaving}
+                        className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 disabled:opacity-40 flex items-center gap-2">
+                        {editAssignSaving && <Loader2 className="w-4 h-4 animate-spin" />} Save Changes
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+          </div>
+        )
+      })()}
+
+      {/* ── AGENCIES ── */}
+      {tab === 'agencies' && (() => {
+        const ASSIGN_STATUS_COLORS = {
+          ASSIGNED: 'bg-blue-100 text-blue-700', ACCEPTED: 'bg-teal-100 text-teal-700',
+          IN_PROGRESS: 'bg-purple-100 text-purple-700', COMPLETED: 'bg-green-100 text-green-700', CANCELLED: 'bg-red-100 text-red-600',
+        }
+        const PAY_STATUS_COLORS = {
+          PENDING: 'bg-yellow-100 text-yellow-700', PAYMENT_REQUESTED: 'bg-orange-100 text-orange-700',
+          IN_WALLET: 'bg-green-100 text-green-700',
+          WITHDRAWAL_REQUESTED: 'bg-blue-100 text-blue-700', PAID: 'bg-gray-100 text-gray-600',
+        }
+        const isAdmin = ['SUPER_ADMIN', 'MANAGER'].includes(session?.user?.role)
+        const ic = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900'
+        const agencyAssignments = freelancerAssignments.filter(a => a.freelancerId?.type === 'AGENCY')
+
+        return (
+          <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-medium text-gray-900">Agency Assignments</h3>
+                <p className="text-xs text-gray-400 mt-0.5">{agencyAssignments.length} assignment{agencyAssignments.length !== 1 ? 's' : ''}</p>
+              </div>
+              {(
+                ['SUPER_ADMIN', 'MANAGER'].includes(session?.user?.role) ||
+                (session?.user?.role === 'EMPLOYEE' && (project.projectManagerId?.id ?? project.projectManagerId) === session.user.id)
+              ) && (
+                <button onClick={() => setAssignAgencyModal(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-50 transition-colors">
+                  <Plus className="w-3.5 h-3.5" /> Assign Agency
+                </button>
+              )}
+            </div>
+
+            {agencyAssignments.length === 0 ? (
+              <div className="py-16 text-center text-gray-400 text-sm">No agencies assigned to this project yet</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[640px]">
+                  <thead>
+                    <tr className="border-b border-gray-100">
+                      {['Agency', 'Payment ৳', 'Status', 'Payment Status', 'Action'].map(h => (
+                        <th key={h} className="px-5 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {agencyAssignments.map(a => {
+                      const agencyName = a.freelancerId?.agencyInfo?.agencyName ?? a.freelancerId?.userId?.name ?? 'Unknown'
+                      const email      = a.freelancerId?.userId?.email ?? ''
+                      const aId        = a.id ?? a._id
+                      return (
+                        <tr key={aId} className="hover:bg-gray-50/50 transition-colors">
+                          <td className="px-5 py-3.5">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-7 h-7 rounded-full bg-indigo-100 flex items-center justify-center text-xs font-medium text-indigo-600 shrink-0">
+                                {agencyName[0]?.toUpperCase()}
+                              </div>
+                              <div>
+                                <p className="text-sm font-medium text-gray-900">{agencyName}</p>
+                                {email && <p className="text-xs text-gray-400">{email}</p>}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-5 py-3.5 text-sm font-medium text-gray-900">
+                            ৳{(a.paymentAmount ?? 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })}
+                          </td>
+                          <td className="px-5 py-3.5">
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${ASSIGN_STATUS_COLORS[a.status] ?? 'bg-gray-100 text-gray-600'}`}>
+                              {a.status?.replace('_', ' ')}
+                            </span>
+                          </td>
+                          <td className="px-5 py-3.5">
+                            {isAdmin && a.paymentStatus === 'PENDING' ? (
+                              <select
+                                value={a.paymentStatus}
+                                disabled={requestingPayment === aId}
+                                onChange={e => { if (e.target.value === 'PAYMENT_REQUESTED') handleRequestPayment(aId) }}
+                                className="text-xs border border-gray-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-gray-900 cursor-pointer"
+                              >
+                                <option value="PENDING">Pending</option>
+                                <option value="PAYMENT_REQUESTED">Send Request for Payment</option>
+                              </select>
+                            ) : (
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${PAY_STATUS_COLORS[a.paymentStatus] ?? 'bg-gray-100 text-gray-600'}`}>
+                                {a.paymentStatus === 'PAYMENT_REQUESTED' ? 'Payment Requested' : (a.paymentStatus?.replace(/_/g, ' ') ?? 'PENDING')}
+                              </span>
+                            )}
+                            {requestingPayment === aId && <Loader2 className="w-3 h-3 animate-spin inline ml-1.5 text-gray-400" />}
+                          </td>
+                          <td className="px-5 py-3.5">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {a.status === 'IN_PROGRESS' && (
+                                <button
+                                  onClick={() => handleCompleteAssignment(aId)}
+                                  className="flex items-center gap-1 px-2.5 py-1 bg-teal-600 text-white text-xs font-medium rounded-lg hover:bg-teal-700 transition-colors"
+                                >
+                                  <CheckCircle2 className="w-3 h-3" /> Mark Complete
+                                </button>
+                              )}
+                              {a.status === 'COMPLETED' && a.paymentStatus === 'PENDING' && (
+                                <button
+                                  onClick={() => handleApproveAssignment(aId)}
+                                  disabled={approvingAssign === aId}
+                                  className="flex items-center gap-1 px-2.5 py-1 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
+                                >
+                                  {approvingAssign === aId && <Loader2 className="w-3 h-3 animate-spin" />}
+                                  Approve Payment
+                                </button>
+                              )}
+                              {isAdmin && (
+                                <>
+                                  <button
+                                    onClick={() => setEditAssignment({ id: aId, paymentAmount: a.paymentAmount, paymentNotes: a.paymentNotes ?? '', status: a.status })}
+                                    className="flex items-center gap-1 px-2.5 py-1 border border-gray-200 text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-50 transition-colors"
+                                  >
+                                    <Pencil className="w-3 h-3" /> Edit
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteAssignment(aId)}
+                                    disabled={deletingAssign === aId}
+                                    className="flex items-center gap-1 px-2.5 py-1 border border-red-200 text-red-600 text-xs font-medium rounded-lg hover:bg-red-50 disabled:opacity-50 transition-colors"
+                                  >
+                                    {deletingAssign === aId ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Assign Agency Modal */}
+            {assignAgencyModal && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+                <div className="bg-white rounded-xl border border-gray-200 w-full max-w-md p-6 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-base font-semibold text-gray-900">Assign Agency</h3>
+                    <button onClick={() => setAssignAgencyModal(false)} className="p-1 rounded-lg hover:bg-gray-100">
+                      <X className="w-4 h-4 text-gray-400" />
+                    </button>
+                  </div>
+                  <form onSubmit={handleAssignAgency} className="space-y-4">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Agency <span className="text-red-500">*</span></label>
+                      <Select value={assignAgencyForm.freelancerId}
+                        onChange={v => setAssignAgencyForm(f => ({ ...f, freelancerId: v ?? '' }))}
+                        options={agencyList.map(f => ({ value: f.id ?? f._id, label: `${f.agencyInfo?.agencyName ?? f.userId?.name ?? f.id}${f.userId?.email ? ` — ${f.userId.email}` : ''}` }))}
+                        placeholder="Select agency…"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Payment Amount (৳) <span className="text-red-500">*</span></label>
+                      <input type="number" step="0.01" min="1"
+                        value={assignAgencyForm.paymentAmount}
+                        onChange={e => setAssignAgencyForm(f => ({ ...f, paymentAmount: e.target.value }))}
+                        placeholder="0.00" className={ic} required />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Payment Notes</label>
+                      <textarea value={assignAgencyForm.paymentNotes}
+                        onChange={e => setAssignAgencyForm(f => ({ ...f, paymentNotes: e.target.value }))}
+                        rows={2} placeholder="Additional notes…" className={`${ic} resize-none`} />
+                    </div>
+                    <div className="flex gap-2 justify-end pt-1">
+                      <button type="button" onClick={() => setAssignAgencyModal(false)}
+                        className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
+                      <button type="submit" disabled={assignAgencySaving}
+                        className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 disabled:opacity-40 flex items-center gap-2">
+                        {assignAgencySaving && <Loader2 className="w-4 h-4 animate-spin" />} Assign
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+
+            {/* Edit Assignment Modal (shared with freelancers tab) */}
+            {editAssignment && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+                <div className="bg-white rounded-xl border border-gray-200 w-full max-w-md p-6 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-base font-semibold text-gray-900">Edit Assignment</h3>
+                    <button onClick={() => setEditAssignment(null)} className="p-1 rounded-lg hover:bg-gray-100">
+                      <X className="w-4 h-4 text-gray-400" />
+                    </button>
+                  </div>
+                  <form onSubmit={handleEditAssignment} className="space-y-4">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
+                      <select
+                        value={editAssignment.status}
+                        onChange={e => setEditAssignment(f => ({ ...f, status: e.target.value }))}
+                        className={ic}
+                      >
+                        {['ASSIGNED', 'ACCEPTED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'].map(s => (
+                          <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Payment Amount (৳) <span className="text-red-500">*</span></label>
+                      <input type="number" step="0.01" min="1"
+                        value={editAssignment.paymentAmount}
+                        onChange={e => setEditAssignment(f => ({ ...f, paymentAmount: e.target.value }))}
+                        placeholder="0.00" className={ic} required />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Payment Notes</label>
+                      <textarea value={editAssignment.paymentNotes}
+                        onChange={e => setEditAssignment(f => ({ ...f, paymentNotes: e.target.value }))}
+                        rows={2} placeholder="Additional notes…" className={`${ic} resize-none`} />
+                    </div>
+                    <div className="flex gap-2 justify-end pt-1">
+                      <button type="button" onClick={() => setEditAssignment(null)}
+                        className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
+                      <button type="submit" disabled={editAssignSaving}
+                        className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 disabled:opacity-40 flex items-center gap-2">
+                        {editAssignSaving && <Loader2 className="w-4 h-4 animate-spin" />} Save Changes
                       </button>
                     </div>
                   </form>

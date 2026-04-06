@@ -16,7 +16,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 
-const TABS = ['Overview', 'Tasks', 'Timesheets', 'Assignments', 'Wallet', 'Withdrawals']
+const TABS = ['Overview', 'Tasks', 'Timesheets', 'Assignments', 'Dues', 'Wallet', 'Withdrawals']
 
 const walletSchema = z.object({
   type:        z.enum(['credit', 'debit']),
@@ -29,6 +29,13 @@ const directPaySchema = z.object({
   method:       z.string().min(1, 'Required'),
   reference:    z.string().optional(),
   note:         z.string().optional(),
+})
+
+const bulkPaySchema = z.object({
+  amount:         z.coerce.number().positive('Must be > 0'),
+  method:         z.string().min(1, 'Required'),
+  paymentDetails: z.string().optional(),
+  note:           z.string().optional(),
 })
 
 function StatBox({ label, value, color = 'blue' }) {
@@ -84,7 +91,7 @@ function WalletModal({ open, onOpenChange, freelancerId, balance, onDone }) {
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Amount ($)</label>
-          <input type="number" step="0.01" placeholder="0.00" {...register('amount')}
+          <input type="number" step="0.01" min="0" placeholder="0.00" {...register('amount')} onKeyDown={e => { if (e.key === '-' || e.key === 'e') e.preventDefault() }}
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
           {errors.amount && <p className="mt-1 text-xs text-red-500">{errors.amount.message}</p>}
         </div>
@@ -153,7 +160,7 @@ function DirectPayModal({ open, onOpenChange, freelancerId, assignment, onDone }
       <form id="direct-pay-form" onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Amount (৳)</label>
-          <input type="number" step="0.01" placeholder="0.00" {...register('amount')}
+          <input type="number" step="0.01" min="0" placeholder="0.00" {...register('amount')} onKeyDown={e => { if (e.key === '-' || e.key === 'e') e.preventDefault() }}
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
           {errors.amount && <p className="mt-1 text-xs text-red-500">{errors.amount.message}</p>}
         </div>
@@ -190,6 +197,181 @@ function DirectPayModal({ open, onOpenChange, freelancerId, assignment, onDone }
   )
 }
 
+const VENTURE_COLORS = {
+  ENSTUDIO: 'bg-purple-100 text-purple-700',
+  ENTECH:   'bg-blue-100 text-blue-700',
+  ENMARK:   'bg-green-100 text-green-700',
+}
+
+// Compute FIFO allocation preview on the client (mirrors server logic)
+function computeAllocations(assignments, amount) {
+  const result = []
+  let remaining = amount
+  for (const a of assignments) {
+    if (remaining <= 0) break
+    const allocAmt = Math.min(remaining, a.paymentAmount)
+    result.push({ assignment: a, amount: allocAmt })
+    remaining -= allocAmt
+  }
+  return result
+}
+
+function BulkPayModal({ open, onOpenChange, freelancerId, dueSummary, onDone }) {
+  const [fullPay, setFullPay] = useState(true)
+  const { register, handleSubmit, watch, reset, setValue, formState: { errors, isSubmitting } } = useForm({
+    resolver: zodResolver(bulkPaySchema),
+    defaultValues: { method: 'BKASH', paymentDetails: '', note: '' },
+  })
+
+  const watchAmount = watch('amount')
+  const totalDue = dueSummary?.totalDue ?? 0
+  const assignments = dueSummary?.assignments ?? []
+
+  useEffect(() => {
+    if (open) {
+      setFullPay(true)
+      reset({ amount: totalDue > 0 ? totalDue : '', method: 'BKASH', paymentDetails: '', note: '' })
+    }
+  }, [open, totalDue, reset])
+
+  useEffect(() => {
+    if (fullPay) setValue('amount', totalDue > 0 ? totalDue : '')
+  }, [fullPay, totalDue, setValue])
+
+  const parsedAmount = Number(watchAmount) || 0
+  const previewAllocations = parsedAmount > 0 ? computeAllocations(assignments, parsedAmount) : []
+
+  async function onSubmit(data) {
+    if (Number(data.amount) > totalDue) {
+      toast.error(`Amount exceeds total due ৳${totalDue.toLocaleString()}`)
+      return
+    }
+    const res  = await fetch(`/api/admin/freelancers/${freelancerId}/pay`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...data, amount: Number(data.amount) }),
+    })
+    const json = await res.json()
+    if (!res.ok) throw new Error(json.error ?? 'Payment failed')
+    toast.success('Payment request submitted for approval')
+    onDone()
+    onOpenChange(false)
+  }
+
+  return (
+    <Modal open={open} onOpenChange={onOpenChange} title="Pay Freelancer Dues" size="lg"
+      description={`Total outstanding: ৳${totalDue.toLocaleString('en-BD', { minimumFractionDigits: 2 })}`}>
+      <form id="bulk-pay-form" onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+
+        {/* Full / Partial toggle */}
+        <div className="flex gap-3">
+          {[{ val: true, label: 'Pay Full Amount' }, { val: false, label: 'Pay Partial' }].map(({ val, label }) => (
+            <button key={label} type="button"
+              onClick={() => setFullPay(val)}
+              className={`flex-1 py-2.5 text-sm font-medium rounded-lg border transition-colors ${
+                fullPay === val
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+              }`}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* Amount */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Amount (৳) {fullPay && <span className="text-gray-400 font-normal">— pre-filled</span>}
+          </label>
+          <input type="number" step="0.01" min="0" readOnly={fullPay} {...register('amount')} onKeyDown={e => { if (e.key === '-' || e.key === 'e') e.preventDefault() }}
+            className={`w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${fullPay ? 'bg-gray-50 text-gray-500' : ''}`} />
+          {errors.amount && <p className="mt-1 text-xs text-red-500">{errors.amount.message}</p>}
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          {/* Method */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Payment Method</label>
+            <select {...register('method')}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+              {['BKASH', 'BANK', 'CASH', 'CHEQUE', 'ONLINE', 'OTHER'].map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </div>
+          {/* Note */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Note <span className="text-gray-400 font-normal">(optional)</span></label>
+            <input placeholder="Reference, reason…" {...register('note')}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
+        </div>
+
+        {/* Payment details */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Payment Details <span className="text-gray-400 font-normal">(account / bKash no. etc.)</span></label>
+          <textarea rows={2} placeholder="e.g. bKash: 01XXXXXXXXX" {...register('paymentDetails')}
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
+        </div>
+
+        {/* Allocation preview */}
+        {previewAllocations.length > 0 && (
+          <div className="rounded-xl border border-gray-100 overflow-hidden">
+            <div className="px-4 py-2 bg-gray-50 border-b border-gray-100">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Allocation Preview (FIFO)</p>
+            </div>
+            <div className="divide-y divide-gray-50">
+              {previewAllocations.map(({ assignment, amount: allocAmt }, i) => (
+                <div key={i} className="flex items-center justify-between px-4 py-2.5">
+                  <div className="flex items-center gap-2 min-w-0">
+                    {assignment.project?.venture && (
+                      <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${VENTURE_COLORS[assignment.project.venture] ?? 'bg-gray-100 text-gray-600'}`}>
+                        {assignment.project.venture}
+                      </span>
+                    )}
+                    <p className="text-sm text-gray-700 truncate">{assignment.project?.name ?? 'Unknown Project'}</p>
+                    {assignment.project?.code && (
+                      <span className="text-xs text-gray-400 font-mono">{assignment.project.code}</span>
+                    )}
+                  </div>
+                  <div className="text-right shrink-0 ml-4">
+                    <span className="text-sm font-semibold text-gray-900">
+                      ৳{allocAmt.toLocaleString('en-BD', { minimumFractionDigits: 2 })}
+                    </span>
+                    {allocAmt < assignment.paymentAmount && (
+                      <span className="ml-1.5 text-xs text-orange-500">(partial)</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center justify-between px-4 py-2.5 bg-blue-50 border-t border-blue-100">
+              <p className="text-sm font-semibold text-blue-700">Total</p>
+              <p className="text-sm font-bold text-blue-700">
+                ৳{previewAllocations.reduce((s, a) => s + a.amount, 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })}
+              </p>
+            </div>
+          </div>
+        )}
+
+        <p className="text-xs text-gray-400 flex items-start gap-1.5">
+          <span className="mt-0.5">ℹ</span>
+          This payment will be sent to Accounts for approval. All syncing (project expenses, transaction records) happens after approval.
+        </p>
+      </form>
+      <ModalFooter>
+        <button type="button" onClick={() => onOpenChange(false)}
+          className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+          Cancel
+        </button>
+        <button type="submit" form="bulk-pay-form" disabled={isSubmitting || totalDue === 0}
+          className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-60 transition-colors flex items-center gap-2">
+          {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
+          Submit for Approval
+        </button>
+      </ModalFooter>
+    </Modal>
+  )
+}
+
 export default function FreelancerDetailPage() {
   const { id }  = useParams()
   const router  = useRouter()
@@ -203,6 +385,9 @@ export default function FreelancerDetailPage() {
   const [approving,         setApproving]         = useState(null)
   const [directPayOpen,     setDirectPayOpen]     = useState(false)
   const [directPayAssign,   setDirectPayAssign]   = useState(null)
+  const [bulkPayOpen,       setBulkPayOpen]       = useState(false)
+  const [dueSummary,        setDueSummary]        = useState(null)
+  const [dueLoading,        setDueLoading]        = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -233,9 +418,20 @@ export default function FreelancerDetailPage() {
     } catch { /* silent */ }
   }, [id])
 
+  const loadDueSummary = useCallback(async () => {
+    setDueLoading(true)
+    try {
+      const res  = await fetch(`/api/admin/freelancers/${id}/due-summary`)
+      const json = await res.json()
+      if (res.ok) setDueSummary(json.data)
+    } catch { /* silent */ }
+    finally { setDueLoading(false) }
+  }, [id])
+
   useEffect(() => { load() }, [load])
   useEffect(() => { if (tab === 'Wallet')       loadWallet()      }, [tab, loadWallet])
   useEffect(() => { if (tab === 'Assignments')  loadAssignments() }, [tab, loadAssignments])
+  useEffect(() => { if (tab === 'Dues')         loadDueSummary()  }, [tab, loadDueSummary])
 
   async function handleWithdrawal(requestId, action) {
     setApproving(requestId)
@@ -277,6 +473,7 @@ export default function FreelancerDetailPage() {
   const totalEarned    = earnings.filter(e => e.amount > 0).reduce((s, e) => s + e.amount, 0)
   const pendingPayouts = withdrawals.filter(w => w.status === 'PENDING').length
   const totalHours     = timesheets.reduce((s, t) => s + (t.hours ?? 0), 0)
+  const totalDue       = dueSummary?.totalDue ?? 0
 
   return (
     <div className="space-y-6">
@@ -330,6 +527,9 @@ export default function FreelancerDetailPage() {
               {t}
               {t === 'Withdrawals' && pendingPayouts > 0 && (
                 <span className="ml-1.5 px-1.5 py-0.5 text-xs bg-red-500 text-white rounded-full">{pendingPayouts}</span>
+              )}
+              {t === 'Dues' && totalDue > 0 && (
+                <span className="ml-1.5 px-1.5 py-0.5 text-xs bg-orange-500 text-white rounded-full">৳</span>
               )}
             </button>
           ))}
@@ -441,6 +641,113 @@ export default function FreelancerDetailPage() {
                     })}
                   </tbody>
                 </table>
+              </div>
+            )
+          )}
+
+          {/* DUES */}
+          {tab === 'Dues' && (
+            dueLoading ? (
+              <div className="flex items-center justify-center py-16">
+                <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : (
+              <div className="space-y-5">
+                {/* Summary header */}
+                <div className="flex items-center justify-between gap-4 p-5 rounded-xl bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-100">
+                  <div>
+                    <p className="text-xs font-medium text-orange-600 uppercase tracking-wide">Total Outstanding Dues</p>
+                    <p className="text-3xl font-bold text-gray-900 mt-1">
+                      ৳{(dueSummary?.totalDue ?? 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })}
+                    </p>
+                    <p className="text-sm text-gray-500 mt-0.5">
+                      {dueSummary?.assignments?.length ?? 0} unpaid assignment{(dueSummary?.assignments?.length ?? 0) !== 1 ? 's' : ''}
+                    </p>
+                  </div>
+                  {(dueSummary?.totalDue ?? 0) > 0 && (
+                    <button
+                      onClick={() => setBulkPayOpen(true)}
+                      className="flex items-center gap-2 px-5 py-2.5 bg-orange-600 hover:bg-orange-700 text-white text-sm font-medium rounded-lg transition-colors shrink-0">
+                      <BanknoteIcon className="w-4 h-4" />
+                      Pay Dues
+                    </button>
+                  )}
+                </div>
+
+                {/* Assignment breakdown */}
+                {(dueSummary?.assignments?.length ?? 0) === 0 ? (
+                  <div className="text-center py-12">
+                    <p className="text-gray-400">No outstanding dues — all assignments paid.</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[560px]">
+                      <thead>
+                        <tr className="border-b border-gray-100">
+                          {['Project', 'Due Amount', 'Assignment Status', 'Payment Status', 'Date'].map(h => (
+                            <th key={h} className="pb-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wide">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {dueSummary.assignments.map((a, i) => {
+                          const ASSIGN_COLORS = {
+                            ASSIGNED: 'bg-blue-100 text-blue-700', ACCEPTED: 'bg-teal-100 text-teal-700',
+                            IN_PROGRESS: 'bg-purple-100 text-purple-700', COMPLETED: 'bg-green-100 text-green-700',
+                          }
+                          const PAY_COLORS = {
+                            PENDING: 'bg-yellow-100 text-yellow-700',
+                            IN_WALLET: 'bg-green-100 text-green-700',
+                            WITHDRAWAL_REQUESTED: 'bg-blue-100 text-blue-700',
+                            PAYMENT_REQUESTED: 'bg-orange-100 text-orange-700',
+                          }
+                          return (
+                            <tr key={a.id ?? i} className="hover:bg-gray-50 transition-colors">
+                              <td className="py-3 pr-4">
+                                <div className="flex items-center gap-2">
+                                  {a.project?.venture && (
+                                    <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${VENTURE_COLORS[a.project.venture] ?? 'bg-gray-100 text-gray-600'}`}>
+                                      {a.project.venture}
+                                    </span>
+                                  )}
+                                  <div>
+                                    <p className="text-sm font-medium text-gray-900">{a.project?.name ?? '—'}</p>
+                                    {a.project?.code && <p className="text-xs text-gray-400 font-mono">{a.project.code}</p>}
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="py-3 pr-4 text-sm font-semibold text-gray-900">
+                                ৳{(a.paymentAmount ?? 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })}
+                              </td>
+                              <td className="py-3 pr-4">
+                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${ASSIGN_COLORS[a.status] ?? 'bg-gray-100 text-gray-600'}`}>
+                                  {a.status?.replace('_', ' ') ?? '—'}
+                                </span>
+                              </td>
+                              <td className="py-3 pr-4">
+                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${PAY_COLORS[a.paymentStatus] ?? 'bg-gray-100 text-gray-600'}`}>
+                                  {a.paymentStatus?.replace('_', ' ') ?? 'PENDING'}
+                                </span>
+                              </td>
+                              <td className="py-3 text-sm text-gray-400">
+                                {a.createdAt ? new Date(a.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t-2 border-gray-200">
+                          <td className="py-3 text-sm font-semibold text-gray-700">Total Due</td>
+                          <td className="py-3 text-sm font-bold text-orange-600">
+                            ৳{(dueSummary?.totalDue ?? 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })}
+                          </td>
+                          <td colSpan={3} />
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
               </div>
             )
           )}
@@ -634,6 +941,17 @@ export default function FreelancerDetailPage() {
           toast.success('Payment recorded')
           loadAssignments()
           loadWallet()
+        }}
+      />
+
+      <BulkPayModal
+        open={bulkPayOpen}
+        onOpenChange={setBulkPayOpen}
+        freelancerId={id}
+        dueSummary={dueSummary}
+        onDone={() => {
+          loadDueSummary()
+          load()
         }}
       />
     </div>

@@ -85,7 +85,7 @@ function ItemCard({ item, idx, onChange, onRemove, editing }) {
         <input value={item.description} onChange={e => upd('description', e.target.value)}
           placeholder="Describe the service…" className={inputCls} />
       </div>
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div>
           <label className={labelCls}>Venture</label>
           <select value={item.venture} onChange={e => upd('venture', e.target.value)} className={inputCls}>
@@ -110,7 +110,7 @@ function ItemCard({ item, idx, onChange, onRemove, editing }) {
           </select>
         </div>
       </div>
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div>
           <label className={labelCls}>Quantity</label>
           <input type="number" min="1" value={item.quantity} onChange={e => upd('quantity', e.target.value)}
@@ -135,12 +135,13 @@ function ItemCard({ item, idx, onChange, onRemove, editing }) {
 // ─── Print / PDF View ─────────────────────────────────────────────────────────
 
 function QuotationPrintView({ quotation: q }) {
-  const subtotal  = q.subtotal  ?? 0
-  const discount  = q.discount  ?? 0
-  const taxAmount = q.taxAmount ?? 0
-  const total     = q.total     ?? 0
-  const cur       = q.currency  ?? 'BDT'
-  const statusStyle = STATUS_STYLES[q.status] ?? STATUS_STYLES.DRAFT
+  const subtotal     = q.subtotal     ?? 0
+  const discount     = q.discount     ?? 0
+  const taxAmount    = q.taxAmount    ?? 0
+  const total        = q.total        ?? 0
+  const cur          = q.currency     ?? 'BDT'
+  const itemPriceOnly = !!q.itemPriceOnly
+  const statusStyle  = STATUS_STYLES[q.status] ?? STATUS_STYLES.DRAFT
 
   const isBDT = cur === 'BDT'
   const curSymbol = isBDT ? '৳' : cur
@@ -250,27 +251,29 @@ function QuotationPrintView({ quotation: q }) {
       </table>
 
       {/* ── TOTALS ── */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 20 }}>
-        <div style={{ width: 280 }}>
-          <div style={{ height: 2, background: '#0f172a', marginBottom: 0 }} />
-          {[
-            { label: 'Sub Total',  n: subtotal,  prefix: '',  show: true,          valueColor: '#334155' },
-            { label: 'Discount',   n: discount,  prefix: '−', show: discount > 0,  valueColor: '#ef4444' },
-            { label: `MFS Charge (${q.taxRate ?? 0}%)`, n: taxAmount, prefix: '', show: taxAmount > 0, valueColor: '#334155' },
-          ].filter(r => r.show).map((row, i) => (
-            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid #f1f5f9' }}>
-              <span style={{ fontSize: 12, color: '#64748b' }}>{row.label}</span>
-              <span style={{ fontSize: 12, color: row.valueColor, fontWeight: 500 }}>
-                {row.prefix}<Sym />&nbsp;{(row.n ?? 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })}
-              </span>
+      {!itemPriceOnly && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 20 }}>
+          <div style={{ width: 280 }}>
+            <div style={{ height: 2, background: '#0f172a', marginBottom: 0 }} />
+            {[
+              { label: 'Sub Total',  n: subtotal,  prefix: '',  show: true,          valueColor: '#334155' },
+              { label: 'Discount',   n: discount,  prefix: '−', show: discount > 0,  valueColor: '#ef4444' },
+              { label: `MFS Charge (${q.taxRate ?? 0}%)`, n: taxAmount, prefix: '', show: taxAmount > 0, valueColor: '#334155' },
+            ].filter(r => r.show).map((row, i) => (
+              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid #f1f5f9' }}>
+                <span style={{ fontSize: 12, color: '#64748b' }}>{row.label}</span>
+                <span style={{ fontSize: 12, color: row.valueColor, fontWeight: 500 }}>
+                  {row.prefix}<Sym />&nbsp;{(row.n ?? 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+            ))}
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 16px', marginTop: 3, marginLeft: -16, marginRight: -16, borderRadius: 8, background: '#f8fafc' }}>
+              <span style={{ fontSize: 14, fontWeight: 800, color: '#0f172a' }}>Total</span>
+              <span style={{ fontSize: 14, fontWeight: 800, color: '#0f172a' }}><Sym />&nbsp;{(total).toLocaleString('en-BD', { minimumFractionDigits: 2 })}</span>
             </div>
-          ))}
-          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 16px', marginTop: 3, marginLeft: -16, marginRight: -16, borderRadius: 8, background: '#f8fafc' }}>
-            <span style={{ fontSize: 14, fontWeight: 800, color: '#0f172a' }}>Total</span>
-            <span style={{ fontSize: 14, fontWeight: 800, color: '#0f172a' }}><Sym />&nbsp;{(total).toLocaleString('en-BD', { minimumFractionDigits: 2 })}</span>
           </div>
         </div>
-      </div>
+      )}
 
       {/* ── NOTES / TERMS ── */}
       {(q.notes || q.terms) && (
@@ -336,9 +339,10 @@ export default function QuotationDetailPage() {
   const [discount,  setDiscount]  = useState(0)
   const [issueDate,  setIssueDate]  = useState('')
   const [validUntil, setValidUntil] = useState('')
-  const [currency,  setCurrency]  = useState('BDT')
-  const [notes,     setNotes]     = useState('')
-  const [terms,     setTerms]     = useState('')
+  const [currency,      setCurrency]      = useState('BDT')
+  const [notes,         setNotes]         = useState('')
+  const [terms,         setTerms]         = useState('')
+  const [itemPriceOnly, setItemPriceOnly] = useState(false)
 
   const subtotal  = items.reduce((s, i) => s + (Number(i.amount) || 0), 0)
   const taxAmount = subtotal * (Number(taxRate) / 100)
@@ -375,6 +379,7 @@ export default function QuotationDetailPage() {
     setCurrency(q.currency || 'BDT')
     setNotes(q.notes || '')
     setTerms(q.terms || '')
+    setItemPriceOnly(!!q.itemPriceOnly)
     setEditing(true)
   }
 
@@ -389,6 +394,7 @@ export default function QuotationDetailPage() {
         issueDate, validUntil: validUntil || null,
         taxRate: Number(taxRate), discount: Number(discount),
         currency, notes: notes || null, terms: terms || null,
+        itemPriceOnly,
       }
       const res  = await fetch(`/api/quotations/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       const json = await res.json()
@@ -560,7 +566,7 @@ export default function QuotationDetailPage() {
       {editing && (
         <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
           {/* Recipient + Dates */}
-          <div className="grid grid-cols-2 gap-6 p-6 border-b border-gray-100">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 p-6 border-b border-gray-100">
             <div>
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Recipient</p>
               <div className="space-y-2">
@@ -594,7 +600,7 @@ export default function QuotationDetailPage() {
                   <select value={currency} onChange={e => setCurrency(e.target.value)}
                     className="border border-gray-200 rounded-lg px-2 py-1 text-sm bg-white focus:outline-none">
                     <option value="BDT">BDT (৳)</option>
-                    <option value="USD">USD ($)</option>
+                    <option value="USD">USD (৳)</option>
                     <option value="EUR">EUR (€)</option>
                     <option value="GBP">GBP (£)</option>
                   </select>
@@ -642,11 +648,16 @@ export default function QuotationDetailPage() {
                 <span className="text-sm font-semibold text-gray-700">Total</span>
                 <span className="text-base font-bold text-gray-900">{fmt(editTotal)}</span>
               </div>
+              <label className="flex items-center gap-2 pt-2 cursor-pointer select-none">
+                <input type="checkbox" checked={itemPriceOnly} onChange={e => setItemPriceOnly(e.target.checked)}
+                  className="w-4 h-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900 cursor-pointer" />
+                <span className="text-xs text-gray-600">Send price item-wise only <span className="text-gray-400">(hide total on PDF)</span></span>
+              </label>
             </div>
           </div>
 
           {/* Notes & Terms */}
-          <div className="grid grid-cols-2 gap-6 px-6 pb-6 border-t border-gray-100">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 px-6 pb-6 border-t border-gray-100">
             <div>
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2 mt-4">Notes</p>
               <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3}

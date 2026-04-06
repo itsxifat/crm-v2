@@ -6,6 +6,7 @@ import connectDB from '@/lib/mongodb'
 import { User } from '@/models'
 import bcrypt from 'bcryptjs'
 import { z } from 'zod'
+import { blindIndex } from '@/lib/encryption'
 
 const createUserSchema = z.object({
   email:    z.string().email(),
@@ -30,13 +31,15 @@ export async function GET(request) {
 
     const { searchParams } = new URL(request.url)
     const role   = searchParams.get('role')
+    const roles  = searchParams.get('roles')
     const search = searchParams.get('search')
     const page   = parseInt(searchParams.get('page')  ?? '1',  10)
     const limit  = parseInt(searchParams.get('limit') ?? '20', 10)
     const skip   = (page - 1) * limit
 
     const filter = {}
-    if (role) filter.role = role
+    if (roles) filter.role = { $in: roles.split(',').map(r => r.trim()) }
+    else if (role) filter.role = role
     if (search) {
       filter.$or = [
         { name:  { $regex: search, $options: 'i' } },
@@ -81,7 +84,9 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Validation failed', details: parsed.error.flatten() }, { status: 422 })
     }
 
-    const existing = await User.findOne({ email: parsed.data.email }).lean()
+    // Email is encrypted; use the blind index for the duplicate check.
+    const emailToken = blindIndex(parsed.data.email, 'users', 'email')
+    const existing = await User.findOne({ emailIdx: emailToken }).select('_id').lean()
     if (existing) {
       return NextResponse.json({ error: 'Email already in use' }, { status: 409 })
     }

@@ -211,7 +211,7 @@ export default function LeavesPage() {
     <div className="space-y-5">
 
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-gray-900">Leaves</h1>
           <p className="text-sm text-gray-400 mt-0.5">
@@ -226,7 +226,7 @@ export default function LeavesPage() {
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {[
           { label: 'Pending',  count: pending,  dot: 'bg-amber-500',   click: 'PENDING' },
           { label: 'Approved', count: approved, dot: 'bg-emerald-500', click: 'APPROVED' },

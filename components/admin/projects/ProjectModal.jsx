@@ -45,7 +45,7 @@ export default function ProjectModal({ project, onClose, onSave }) {
       startDate:   project?.startDate ? new Date(project.startDate).toISOString().split('T')[0] : '',
       endDate:     project?.endDate   ? new Date(project.endDate).toISOString().split('T')[0]   : '',
       budget:      project?.budget?.toString() ?? '',
-      currency:    project?.currency ?? 'USD',
+      currency:    project?.currency ?? 'BDT',
       tags:        project?.tags ?? '',
     },
   })
@@ -230,7 +230,7 @@ export default function ProjectModal({ project, onClose, onSave }) {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Currency</label>
               <Controller name="currency" control={control} render={({ field }) => (
-                <Select value={field.value} onChange={v => field.onChange(v ?? 'USD')}
+                <Select value={field.value} onChange={v => field.onChange(v ?? 'BDT')}
                   options={[
                     { value: 'USD', label: 'USD' },
                     { value: 'EUR', label: 'EUR' },

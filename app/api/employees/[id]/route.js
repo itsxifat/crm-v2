@@ -21,7 +21,11 @@ const updateEmployeeSchema = z.object({
   isActive:             z.boolean().optional(),
   role:                 z.enum(['SUPER_ADMIN','MANAGER','EMPLOYEE','FREELANCER','CLIENT','VENDOR']).optional(),
   bloodGroup:           z.string().optional().nullable(),
-  emergencyContact:     z.string().optional().nullable(),
+  emergencyContacts:    z.array(z.object({
+    name:     z.string().min(1),
+    relation: z.string().min(1),
+    phone:    z.string().min(1),
+  })).optional(),
   address:              z.string().optional().nullable(),
   nidNumber:            z.string().optional().nullable(),
   appointmentLetterUrl: z.string().optional().nullable(),

@@ -27,6 +27,7 @@ export async function GET(req) {
       })
       .populate({ path: 'projectId', select: 'name projectCode venture' })
       .populate({ path: 'processedBy', select: 'name email' })
+      .populate({ path: 'allocations.projectId', select: 'name projectCode venture' })
       .sort({ createdAt: -1 })
       .lean()
 

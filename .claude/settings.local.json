@@ -33,7 +33,13 @@
       "Bash(mongosh \"mongodb://localhost:27017/en_crm\" --eval \"db.employees.find\\({role:'admin'},{email:1,name:1}\\).toArray\\(\\)\")",
       "Bash(ls e:/En-Tech/internel/en-crm/app/admin/vendors/[id]/)",
       "Bash(ls -la /e/En-Tech/internel/en-crm/app/admin/leads/[id]/)",
-      "Bash(ls -la /e/En-Tech/internel/en-crm/app/api/leads/[id]/)"
+      "Bash(ls -la /e/En-Tech/internel/en-crm/app/api/leads/[id]/)",
+      "Bash(ls -la /e/En-Tech/internel/en-crm/app/admin/employees/[id]/)",
+      "Bash(ls -la /e/En-Tech/internel/en-crm/app/api/projects/[id]/)",
+      "Bash(ls -la /e/En-Tech/internel/en-crm/app/api/invoices/[id]/)",
+      "Bash(node -e ':*)",
+      "Bash(mkdir -p \"e:/En-Tech/internel/en-crm/app/api/client/invoices/[id]\")",
+      "Bash(mkdir -p \"e:/En-Tech/internel/en-crm/app/client/invoices/[id]\")"
     ]
   }
 }

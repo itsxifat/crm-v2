@@ -1,12 +1,13 @@
 import './globals.css'
-import { Inter } from 'next/font/google'
+import { Roboto } from 'next/font/google'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import Providers from '@/components/providers/Providers'
 
-const inter = Inter({
+const roboto = Roboto({
   subsets:  ['latin'],
-  variable: '--font-inter',
+  weight:   ['300', '400', '500', '700'],
+  variable: '--font-roboto',
   display:  'swap',
 })
 
@@ -35,7 +36,7 @@ export default async function RootLayout({ children }) {
   const session = await getServerSession(authOptions)
 
   return (
-    <html lang="en" className={inter.variable} suppressHydrationWarning>
+    <html lang="en" className={roboto.variable} suppressHydrationWarning>
       <body className="min-h-screen bg-background font-sans antialiased">
         <Providers session={session}>
           {children}

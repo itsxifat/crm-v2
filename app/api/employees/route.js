@@ -23,7 +23,11 @@ const createEmployeeSchema = z.object({
   employeeId:           z.string().optional().nullable(),
   role:                 z.enum(['EMPLOYEE','MANAGER','SUPER_ADMIN']).default('EMPLOYEE'),
   bloodGroup:           z.string().optional().nullable(),
-  emergencyContact:     z.string().optional().nullable(),
+  emergencyContacts:    z.array(z.object({
+    name:     z.string().min(1),
+    relation: z.string().min(1),
+    phone:    z.string().min(1),
+  })).optional(),
   address:              z.string().optional().nullable(),
   nidNumber:            z.string().optional().nullable(),
   appointmentLetterUrl: z.string().optional().nullable(),
@@ -52,9 +56,14 @@ export async function GET(request) {
     const department = searchParams.get('department')  // full name or 3-letter code
     const year       = searchParams.get('year')        // e.g. "2024"
     const sortBy     = searchParams.get('sortBy')      // "employeeId" | default createdAt
+    const status     = searchParams.get('status')      // "active" | "resigned" | "all" (default: all)
     const skip       = (page - 1) * limit
 
     const filter = {}
+
+    // Status filter
+    if (status === 'active')   filter.resigned = { $ne: true }
+    if (status === 'resigned') filter.resigned = true
 
     // Department filter — accept both code (DEV) and full name (Development)
     if (department) {
@@ -150,7 +159,7 @@ export async function POST(request) {
     }
 
     const { name, email, password, phone, venture, department, position, designation, salary, hireDate, employeeId, role,
-            bloodGroup, emergencyContact, address, nidNumber, appointmentLetterUrl, agreementUrl, panelAccessGranted,
+            bloodGroup, emergencyContacts, address, nidNumber, appointmentLetterUrl, agreementUrl, panelAccessGranted,
             customRoleId } = parsed.data
 
     const existing = await User.findOne({ email }).lean()
@@ -163,7 +172,7 @@ export async function POST(request) {
     const employee = await new Employee({
       userId: user._id, venture, department, position, designation, salary,
       hireDate: hireDate ? new Date(hireDate) : null, employeeId,
-      bloodGroup, emergencyContact, address, nidNumber,
+      bloodGroup, emergencyContacts, address, nidNumber,
       appointmentLetterUrl, agreementUrl,
       panelAccessGranted: panelAccessGranted ?? false,
       customRoleId: customRoleId || null,

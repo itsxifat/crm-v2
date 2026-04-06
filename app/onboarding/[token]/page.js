@@ -6,7 +6,7 @@ import { useParams } from 'next/navigation'
 import {
   Upload, X, FileText, Loader2, CheckCircle, AlertCircle,
   ChevronRight, ChevronLeft, ChevronDown, Calendar,
-  User, MapPin, Camera, Eye, EyeOff,
+  User, MapPin, Camera, Eye, EyeOff, Plus,
 } from 'lucide-react'
 import toast, { Toaster } from 'react-hot-toast'
 
@@ -338,7 +338,8 @@ export default function OnboardingPage() {
 
   const [form, setForm] = useState({
     name: '', email: '', phone: '', secondaryPhone: '', homePhone: '',
-    dateOfBirth: '', nidNumber: '', nidUrl: '', address: '', emergencyContact: '',
+    dateOfBirth: '', nidNumber: '', nidUrl: '', address: '',
+    emergencyContacts: [{ name: '', relation: '', phone: '' }],
     bloodGroup: '', photo: '', documents: [], password: '', confirmPassword: '',
   })
 
@@ -598,10 +599,38 @@ export default function OnboardingPage() {
               <textarea className={inputCls} rows={2} placeholder="House, Road, Area, City" value={form.address}
                 onChange={e => set('address', e.target.value)} />
             </Field>
-            <Field label="Emergency Contact" hint="Name and phone number of someone we can contact">
-              <input className={inputCls} placeholder="e.g. Rafiq (Father) · 01711..." value={form.emergencyContact}
-                onChange={e => set('emergencyContact', e.target.value)} />
-            </Field>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium text-gray-700">Emergency Contacts</label>
+                <button type="button"
+                  onClick={() => set('emergencyContacts', [...(form.emergencyContacts ?? []), { name: '', relation: '', phone: '' }])}
+                  className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium">
+                  <Plus className="w-3.5 h-3.5" /> Add Another
+                </button>
+              </div>
+              {(form.emergencyContacts ?? []).map((c, i) => (
+                <div key={i} className="border border-gray-200 rounded-xl p-3 space-y-2">
+                  {(form.emergencyContacts ?? []).length > 1 && (
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs text-gray-400 font-medium">Contact {i + 1}</span>
+                      <button type="button"
+                        onClick={() => set('emergencyContacts', form.emergencyContacts.filter((_, j) => j !== i))}
+                        className="p-1 text-gray-300 hover:text-red-500 rounded-lg hover:bg-red-50 transition-colors">
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <input className={inputCls} placeholder="Full Name" value={c.name}
+                      onChange={e => { const updated = [...form.emergencyContacts]; updated[i] = { ...c, name: e.target.value }; set('emergencyContacts', updated) }} />
+                    <input className={inputCls} placeholder="Relation (e.g. Father)" value={c.relation}
+                      onChange={e => { const updated = [...form.emergencyContacts]; updated[i] = { ...c, relation: e.target.value }; set('emergencyContacts', updated) }} />
+                    <input className={inputCls} placeholder="Phone Number" value={c.phone}
+                      onChange={e => { const updated = [...form.emergencyContacts]; updated[i] = { ...c, phone: e.target.value }; set('emergencyContacts', updated) }} />
+                  </div>
+                </div>
+              ))}
+            </div>
           </>}
 
           {/* ── Step 2: Photo & Documents ───────────────────────────────── */}

@@ -35,7 +35,7 @@ const STATUS_META = {
 
 // Which fields count toward each tab's completion
 const PERSONAL_FIELDS = ['gender', 'dateOfBirth', 'nationality', 'maritalStatus', 'photo']
-const CONTACT_FIELDS  = ['phone', 'address', 'emergencyContact']
+const CONTACT_FIELDS  = ['phone', 'address', 'emergencyContacts']
 const KYC_FIELDS      = ['nidNumber', '_hasDoc']  // _hasDoc is synthetic
 
 function fmtDate(d) {
@@ -172,6 +172,22 @@ function PersonalTab({ form, onChange, locked, uploading, onPhotoUpload }) {
 // ─── Tab: Contact ─────────────────────────────────────────────────────────────
 
 function ContactTab({ form, onChange, locked }) {
+  const contacts = form.emergencyContacts ?? [{ name: '', relation: '', phone: '' }]
+
+  function updateContact(index, field, value) {
+    const updated = contacts.map((c, i) => i === index ? { ...c, [field]: value } : c)
+    onChange('emergencyContacts', updated)
+  }
+
+  function addContact() {
+    onChange('emergencyContacts', [...contacts, { name: '', relation: '', phone: '' }])
+  }
+
+  function removeContact(index) {
+    if (contacts.length <= 1) return
+    onChange('emergencyContacts', contacts.filter((_, i) => i !== index))
+  }
+
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <Field label="Phone Number" required locked={locked}>
@@ -195,10 +211,41 @@ function ContactTab({ form, onChange, locked }) {
         </Field>
       </div>
 
-      <div className="sm:col-span-2">
-        <Field label="Emergency Contact" required locked={locked}>
-          <Input type="text" placeholder="Name — Relationship — Phone" value={form.emergencyContact ?? ''} onChange={e => onChange('emergencyContact', e.target.value)} locked={locked} />
-        </Field>
+      <div className="sm:col-span-2 space-y-3">
+        <div className="flex items-center justify-between">
+          <label className="block text-xs font-medium text-gray-500">
+            Emergency Contacts <span className="text-red-400">*</span>
+          </label>
+          {!locked && (
+            <button type="button" onClick={addContact}
+              className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium">
+              <Plus className="w-3.5 h-3.5" /> Add Another
+            </button>
+          )}
+        </div>
+        {contacts.map((contact, i) => (
+          <div key={i} className="border border-gray-200 rounded-xl p-3 space-y-2">
+            {contacts.length > 1 && (
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-gray-400 font-medium">Contact {i + 1}</span>
+                {!locked && (
+                  <button type="button" onClick={() => removeContact(i)}
+                    className="p-1 text-gray-300 hover:text-red-500 rounded-lg hover:bg-red-50 transition-colors">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            )}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <Input type="text" placeholder="Full Name" value={contact.name} locked={locked}
+                onChange={e => updateContact(i, 'name', e.target.value)} />
+              <Input type="text" placeholder="Relation (e.g. Father)" value={contact.relation} locked={locked}
+                onChange={e => updateContact(i, 'relation', e.target.value)} />
+              <Input type="tel" placeholder="Phone Number" value={contact.phone} locked={locked}
+                onChange={e => updateContact(i, 'phone', e.target.value)} />
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   )
@@ -338,8 +385,10 @@ export default function EmployeeProfilePage() {
       photo:            data.photo         ?? '',
       phone:            data.phone         ?? '',
       secondaryPhone:   data.secondaryPhone ?? '',
-      address:          data.address       ?? '',
-      emergencyContact: data.emergencyContact ?? '',
+      address:             data.address ?? '',
+      emergencyContacts:   Array.isArray(data.emergencyContacts) && data.emergencyContacts.length > 0
+                             ? data.emergencyContacts
+                             : [{ name: '', relation: '', phone: '' }],
       nidNumber:        data.nidNumber     ?? '',
       passportNumber:   data.passportNumber ?? '',
       documents:        data.documents     ?? [],
@@ -404,8 +453,8 @@ export default function EmployeeProfilePage() {
         photo:            form.photo         || null,
         phone:            form.phone         || null,
         secondaryPhone:   form.secondaryPhone || null,
-        address:          form.address       || null,
-        emergencyContact: form.emergencyContact || null,
+        address:             form.address || null,
+        emergencyContacts:   (form.emergencyContacts ?? []).filter(c => c.name && c.relation && c.phone),
         nidNumber:        form.nidNumber     || null,
         passportNumber:   form.passportNumber || null,
         documents:        form.documents     ?? [],
@@ -452,7 +501,7 @@ export default function EmployeeProfilePage() {
     photo:          !!form.photo,
     phone:          !!form.phone,
     address:        !!form.address,
-    emergencyContact: !!form.emergencyContact,
+    emergencyContacts: (form.emergencyContacts ?? []).some(c => c.name && c.relation && c.phone),
     nidNumber:      !!form.nidNumber,
     _hasDoc:        (form.documents ?? []).length > 0,
   }

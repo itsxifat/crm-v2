@@ -6,7 +6,7 @@ import DatePicker from '@/components/ui/DatePicker'
 import {
   Plus, Search, MoreHorizontal, Eye, Pencil, Users,
   Briefcase, Clock, Building2, Shield, ShieldCheck, Download,
-  FileText, X, Loader2, LogOut,
+  FileText, X, Loader2, LogOut, Settings, Trash2, Check,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import Link from 'next/link'
@@ -18,14 +18,12 @@ import TkAmt from '@/components/ui/TkAmt'
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 const fmt = (n) => n != null ? `৳ ${Number(n).toLocaleString('en-BD')}` : '—'
 
-const DEPT_CODES = {
-  DEV: 'Development',
-  MKT: 'Marketing',
-  HR:  'Human Resources',
-  SLS: 'Sales',
-  ACC: 'Accounting',
-  OPS: 'Operations',
-  SUP: 'Support',
+// Auto-generate a short code from a department name (mirrors server logic)
+function autoShortCode(name) {
+  if (!name) return ''
+  const words = name.trim().split(/[\s&\/\-_]+/).filter(Boolean)
+  if (words.length === 1) return words[0].slice(0, 3).toUpperCase()
+  return words.map(w => w[0]).join('').toUpperCase()
 }
 
 const ROLE_META = {
@@ -48,7 +46,7 @@ function RoleBadge({ role }) {
 
 // ─── Employee Modal ───────────────────────────────────────────────────────────
 
-function EmployeeModal({ open, onClose, employee, onSaved, customRoles = [], ventures = [] }) {
+function EmployeeModal({ open, onClose, employee, onSaved, customRoles = [], ventures = [], departments = [] }) {
   const isEdit = !!employee
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({
@@ -194,7 +192,7 @@ function EmployeeModal({ open, onClose, employee, onSaved, customRoles = [], ven
               <div>
                 <label className={lc}>Department</label>
                 <Select value={form.department} onChange={v => set('department', v ?? '')}
-                  options={Object.entries(DEPT_CODES).map(([code, label]) => ({ value: code, label: `${label} (${code})` }))}
+                  options={departments.map(d => ({ value: d.shortCode, label: `${d.name} (${d.shortCode})` }))}
                   placeholder="— Not assigned —"
                 />
               </div>
@@ -246,6 +244,196 @@ function EmployeeModal({ open, onClose, employee, onSaved, customRoles = [], ven
             {saving && <Loader2 className="w-4 h-4 animate-spin" />}
             {isEdit ? 'Save Changes' : 'Add Employee'}
           </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Manage Departments Modal ─────────────────────────────────────────────────
+
+function ManageDepartmentsModal({ open, onClose, departments, onChanged }) {
+  const [form,     setForm]     = useState({ name: '', shortCode: '', description: '' })
+  const [editing,  setEditing]  = useState(null) // { id, name, shortCode, description }
+  const [saving,   setSaving]   = useState(false)
+  const [deleting, setDeleting] = useState(null) // id being deleted
+
+  // Auto-update shortCode when name changes (only if not manually edited)
+  const [codeManual, setCodeManual] = useState(false)
+
+  function handleNameChange(v) {
+    setForm(f => ({ ...f, name: v, shortCode: codeManual ? f.shortCode : autoShortCode(v) }))
+  }
+  function handleCodeChange(v) {
+    setCodeManual(true)
+    setForm(f => ({ ...f, shortCode: v.toUpperCase() }))
+  }
+
+  function resetForm() {
+    setForm({ name: '', shortCode: '', description: '' })
+    setCodeManual(false)
+    setEditing(null)
+  }
+
+  function startEdit(dept) {
+    setEditing(dept)
+    setForm({ name: dept.name, shortCode: dept.shortCode, description: dept.description ?? '' })
+    setCodeManual(true)
+  }
+
+  async function handleSave(e) {
+    e.preventDefault()
+    if (!form.name.trim()) return
+    setSaving(true)
+    try {
+      const isEdit = !!editing
+      const url    = isEdit ? `/api/departments/${editing.id}` : '/api/departments'
+      const method = isEdit ? 'PUT' : 'POST'
+      const res  = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: form.name, shortCode: form.shortCode, description: form.description }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Failed')
+      toast.success(isEdit ? 'Department updated' : 'Department added')
+      resetForm()
+      onChanged()
+    } catch (err) {
+      toast.error(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleDelete(id) {
+    if (!confirm('Deactivate this department? Existing employees will keep their current department code.')) return
+    setDeleting(id)
+    try {
+      const res  = await fetch(`/api/departments/${id}`, { method: 'DELETE' })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Failed')
+      toast.success('Department deactivated')
+      onChanged()
+    } catch (err) {
+      toast.error(err.message)
+    } finally {
+      setDeleting(null)
+    }
+  }
+
+  if (!open) return null
+
+  const ic = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500'
+  const lc = 'block text-xs font-medium text-gray-600 mb-1'
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => { resetForm(); onClose() }} />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <div>
+            <h2 className="text-base font-semibold text-gray-900">Manage Departments</h2>
+            <p className="text-xs text-gray-400 mt-0.5">Add or edit departments used for employee grouping</p>
+          </div>
+          <button onClick={() => { resetForm(); onClose() }} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="overflow-y-auto flex-1 px-6 py-5 space-y-5">
+          {/* Add / Edit form */}
+          <form onSubmit={handleSave} className="space-y-3">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+              {editing ? 'Edit Department' : 'Add New Department'}
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2">
+                <label className={lc}>Department Name *</label>
+                <input
+                  required
+                  value={form.name}
+                  onChange={e => handleNameChange(e.target.value)}
+                  placeholder="e.g. Human Resources"
+                  className={ic}
+                />
+              </div>
+              <div>
+                <label className={lc}>Short Code *</label>
+                <input
+                  required
+                  value={form.shortCode}
+                  onChange={e => handleCodeChange(e.target.value)}
+                  placeholder="e.g. HR"
+                  maxLength={6}
+                  className={`${ic} font-mono uppercase`}
+                />
+                <p className="text-xs text-gray-400 mt-1">Used in employee ID. Auto-generated, you can edit.</p>
+              </div>
+              <div>
+                <label className={lc}>Description</label>
+                <input
+                  value={form.description}
+                  onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+                  placeholder="Optional"
+                  className={ic}
+                />
+              </div>
+            </div>
+            <div className="flex items-center gap-2 pt-1">
+              <button type="submit" disabled={saving}
+                className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-60 transition-colors">
+                {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                {saving ? 'Saving…' : editing ? 'Save Changes' : 'Add Department'}
+              </button>
+              {editing && (
+                <button type="button" onClick={resetForm}
+                  className="px-3 py-2 text-sm text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50">
+                  Cancel
+                </button>
+              )}
+            </div>
+          </form>
+
+          {/* Departments list */}
+          {departments.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Existing Departments</p>
+              <div className="space-y-1">
+                {departments.map(dept => (
+                  <div key={dept.id}
+                    className={`flex items-center justify-between px-3 py-2.5 rounded-lg border ${editing?.id === dept.id ? 'border-blue-200 bg-blue-50' : 'border-gray-100 bg-gray-50'}`}>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className="font-mono text-xs font-semibold text-gray-500 bg-white border border-gray-200 px-2 py-0.5 rounded shrink-0">
+                        {dept.shortCode}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-800 truncate">{dept.name}</p>
+                        {dept.description && <p className="text-xs text-gray-400 truncate">{dept.description}</p>}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0 ml-2">
+                      <button onClick={() => startEdit(dept)}
+                        className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-white rounded-lg transition-colors">
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button onClick={() => handleDelete(dept.id)} disabled={deleting === dept.id}
+                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-white rounded-lg transition-colors disabled:opacity-40">
+                        {deleting === dept.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {departments.length === 0 && (
+            <div className="text-center py-8 text-sm text-gray-400">
+              No departments yet. Add one above.
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -384,11 +572,14 @@ export default function EmployeesPage() {
   const [department, setDepartment] = useState('')
   const [year,       setYear]       = useState('')
   const [sortBy,     setSortBy]     = useState('')
+  const [status,     setStatus]     = useState('')
   const [page,       setPage]       = useState(1)
   const [modalOpen,    setModalOpen]    = useState(false)
   const [editing,      setEditing]      = useState(null)
   const [customRoles,  setCustomRoles]  = useState([])
   const [ventures,     setVentures]     = useState([])
+  const [departments,  setDepartments]  = useState([])
+  const [deptModalOpen, setDeptModalOpen] = useState(false)
   const load = useCallback(async () => {
     setLoading(true)
     try {
@@ -397,6 +588,7 @@ export default function EmployeesPage() {
       if (department) p.set('department', department)
       if (year)       p.set('year',       year)
       if (sortBy)     p.set('sortBy',     sortBy)
+      if (status)     p.set('status',     status)
       const res  = await fetch(`/api/employees?${p}`)
       const json = await res.json()
       if (!res.ok) throw new Error(json.error)
@@ -408,7 +600,7 @@ export default function EmployeesPage() {
     } finally {
       setLoading(false)
     }
-  }, [page, search, department, year, sortBy])
+  }, [page, search, department, year, sortBy, status])
 
   useEffect(() => { load() }, [load])
 
@@ -418,6 +610,15 @@ export default function EmployeesPage() {
       .then(j => setCustomRoles(j.data ?? []))
       .catch(() => {})
   }, [])
+
+  function loadDepartments() {
+    fetch('/api/departments')
+      .then(r => r.json())
+      .then(j => setDepartments(j.data ?? []))
+      .catch(() => {})
+  }
+
+  useEffect(() => { loadDepartments() }, [])
 
   useEffect(() => {
     if (!modalOpen) return
@@ -458,12 +659,16 @@ export default function EmployeesPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-gray-900">Employees</h1>
           <p className="text-sm text-gray-400 mt-0.5">Manage team members, profiles and panel access</p>
         </div>
         <div className="flex items-center gap-2">
+          <button onClick={() => setDeptModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+            <Settings className="w-4 h-4" /> Departments
+          </button>
           <button onClick={() => { setEditing(null); setModalOpen(true) }}
             className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors">
             <Plus className="w-4 h-4" /> Add Employee
@@ -500,7 +705,7 @@ export default function EmployeesPage() {
           />
         </div>
         <Select value={department} onChange={v => { setDepartment(v ?? ''); setPage(1) }}
-          options={Object.entries(DEPT_CODES).map(([code, label]) => ({ value: code, label }))}
+          options={departments.map(d => ({ value: d.shortCode, label: d.name }))}
           placeholder="All Departments"
           className="w-44"
           size="sm"
@@ -509,6 +714,15 @@ export default function EmployeesPage() {
           options={Array.from({ length: 6 }, (_, i) => new Date().getFullYear() - i).map(y => ({ value: String(y), label: String(y) }))}
           placeholder="All Years"
           className="w-28"
+          size="sm"
+        />
+        <Select value={status} onChange={v => { setStatus(v ?? ''); setPage(1) }}
+          options={[
+            { value: 'active',   label: 'Active' },
+            { value: 'resigned', label: 'Resigned' },
+          ]}
+          placeholder="All Status"
+          className="w-36"
           size="sm"
         />
         <Select value={sortBy} onChange={v => { setSortBy(v ?? ''); setPage(1) }}
@@ -664,6 +878,14 @@ export default function EmployeesPage() {
         onSaved={handleSaved}
         customRoles={customRoles}
         ventures={ventures}
+        departments={departments}
+      />
+
+      <ManageDepartmentsModal
+        open={deptModalOpen}
+        onClose={() => setDeptModalOpen(false)}
+        departments={departments}
+        onChanged={loadDepartments}
       />
 
     </div>

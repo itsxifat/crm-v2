@@ -39,7 +39,7 @@ export async function PUT(request, { params }) {
     const {
       recipientName, recipientCompany, recipientEmail, recipientPhone, recipientAddress,
       items = [], issueDate, validUntil, taxRate = 0, discount = 0,
-      notes, terms, currency,
+      notes, terms, currency, itemPriceOnly,
     } = body
 
     const processedItems = items.map(item => {
@@ -48,9 +48,9 @@ export async function PUT(request, { params }) {
       return { description: item.description, venture: item.venture || null, service: item.service || null, quantity: qty, rate, amount: qty * rate }
     })
 
-    const subtotal  = processedItems.reduce((s, i) => s + i.amount, 0)
-    const taxAmount = subtotal * (Number(taxRate) / 100)
-    const total     = subtotal + taxAmount - Number(discount)
+    const subtotal  = Math.round(processedItems.reduce((s, i) => s + i.amount, 0) * 100) / 100
+    const taxAmount = Math.round(subtotal * ((Number(taxRate) || 0) / 100) * 100) / 100
+    const total     = Math.round((subtotal + taxAmount - (Number(discount) || 0)) * 100) / 100
 
     const q = await Quotation.findByIdAndUpdate(params.id, {
       recipientName, recipientCompany, recipientEmail, recipientPhone, recipientAddress,
@@ -60,6 +60,7 @@ export async function PUT(request, { params }) {
       subtotal, taxRate: Number(taxRate), taxAmount, discount: Number(discount), total,
       ...(currency && { currency }),
       notes: notes ?? null, terms: terms ?? null,
+      ...(itemPriceOnly !== undefined && { itemPriceOnly: !!itemPriceOnly }),
     }, { new: true })
 
     if (!q) return NextResponse.json({ error: 'Not found' }, { status: 404 })

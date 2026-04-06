@@ -1,8 +1,10 @@
 import mongoose from 'mongoose'
+import { encryptionPlugin } from '@/lib/encryptionPlugin'
 
 const VendorSchema = new mongoose.Schema(
   {
     userId:      { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    // All business/contact fields stored encrypted
     company:     { type: String, required: true, trim: true },
     contactName: { type: String, default: null },
     email:       { type: String, default: null },
@@ -20,5 +22,19 @@ const VendorSchema = new mongoose.Schema(
     },
   }
 )
+
+VendorSchema.plugin(encryptionPlugin, {
+  collection: 'vendors',
+  fields: [
+    { path: 'company'     },
+    { path: 'contactName' },
+    { path: 'email'       },
+    { path: 'phone'       },
+    { path: 'serviceType' },
+    { path: 'address'     },
+    { path: 'website'     },
+    { path: 'notes'       },
+  ],
+})
 
 export default mongoose.models.Vendor ?? mongoose.model('Vendor', VendorSchema)

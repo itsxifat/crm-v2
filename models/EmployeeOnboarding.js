@@ -30,7 +30,11 @@ const EmployeeOnboardingSchema = new mongoose.Schema(
       dateOfBirth:      { type: Date,   default: null },
       nidNumber:        { type: String, default: null },
       address:          { type: String, default: null },
-      emergencyContact: { type: String, default: null },   // name + phone
+      emergencyContacts: [{
+        name:     { type: String },
+        relation: { type: String },
+        phone:    { type: String },
+      }],
       bloodGroup:       { type: String, default: null },
       photo:            { type: String, default: null },   // formal photo URL
       documents:        [DocSchema],

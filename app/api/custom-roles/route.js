@@ -4,12 +4,13 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { CustomRole } from '@/models'
+import { canDo } from '@/lib/rbac'
 
 export async function GET() {
   try {
     const session = await getServerSession(authOptions)
     if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-    if (!['SUPER_ADMIN', 'MANAGER'].includes(session.user.role))
+    if (!canDo(session, 'hr.roles.manage') && session.user.role !== 'SUPER_ADMIN')
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     await connectDB()
     const roles = await CustomRole.find().sort({ department: 1, title: 1 }).populate('createdBy', 'name')
@@ -24,21 +25,22 @@ export async function POST(request) {
   try {
     const session = await getServerSession(authOptions)
     if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-    if (!['SUPER_ADMIN', 'MANAGER'].includes(session.user.role))
+    if (!canDo(session, 'hr.roles.manage'))
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     await connectDB()
 
-    const { department, title, description, venture, color } = await request.json()
+    const { department, title, description, venture, color, permissions } = await request.json()
     if (!department?.trim() || !title?.trim())
       return NextResponse.json({ error: 'Department and title are required' }, { status: 422 })
 
     const role = await new CustomRole({
-      department: department.trim(),
-      title:      title.trim(),
+      department:  department.trim(),
+      title:       title.trim(),
       description: description || null,
-      venture:    venture || null,
-      color:      color || null,
-      createdBy:  session.user.id,
+      venture:     venture || null,
+      color:       color || '#6366f1',
+      createdBy:   session.user.id,
+      permissions: Array.isArray(permissions) ? permissions : [],
     }).save()
 
     return NextResponse.json({ data: role.toJSON() }, { status: 201 })

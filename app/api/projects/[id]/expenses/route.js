@@ -35,11 +35,15 @@ export async function POST(request, { params }) {
     if (!project) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
     const body = await request.json()
+    const amount = Number(body.amount)
+    if (!Number.isFinite(amount) || amount < 0)
+      return NextResponse.json({ error: 'Amount must be a non-negative number' }, { status: 422 })
+
     const expense = await new ProjectExpense({
       projectId:        params.id,
       venture:          project.venture ?? 'ENTECH',
       title:            body.title,
-      amount:           body.amount,
+      amount:           amount,
       category:         body.category,
       date:             body.date ? new Date(body.date) : new Date(),
       notes:            body.notes ?? null,

@@ -97,7 +97,7 @@ function StatusChangeModal({ invoice, onClose, onDone }) {
         {action === 'PARTIALLY_PAID' && (
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Amount Paid (BDT)</label>
-            <input type="number" step="0.01" value={paidAmount} onChange={e => setPaidAmount(e.target.value)}
+            <input type="number" step="0.01" min="0" value={paidAmount} onChange={e => setPaidAmount(e.target.value)} onKeyDown={e => { if (e.key === '-' || e.key === 'e') e.preventDefault() }}
               placeholder="0.00"
               className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
           </div>
@@ -155,7 +155,7 @@ function RecordPaymentModal({ invoice, onClose, onSaved }) {
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Amount (BDT) *</label>
-            <input type="number" step="0.01" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" className={ic} />
+            <input type="number" step="0.01" min="0" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} onKeyDown={e => { if (e.key === '-' || e.key === 'e') e.preventDefault() }} placeholder="0.00" className={ic} />
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Method</label>
@@ -652,7 +652,7 @@ export default function InvoiceDetailPage() {
       </div>
 
       {/* Payable / Paid / Due summary */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white rounded-2xl border border-gray-100 p-4">
           <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-1">Payable</p>
           <p className="text-lg font-bold text-gray-900"><TkAmt value={invoice.total} decimals={2} /></p>

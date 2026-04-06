@@ -5,8 +5,12 @@ import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Invoice, InvoiceItem, Payment } from '@/models'
 
-function formatCurrency(amount, currency = 'USD') {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amount ?? 0)
+function formatCurrency(amount, currency = 'BDT') {
+  const n = amount ?? 0
+  if (!currency || currency === 'BDT') {
+    return `৳ ${new Intl.NumberFormat('en-BD', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)}`
+  }
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(n)
 }
 
 function formatDate(date) {

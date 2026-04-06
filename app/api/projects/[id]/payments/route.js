@@ -46,7 +46,7 @@ export async function POST(request, { params }) {
       clientId:      project.clientId,
       submittedBy:   session.user.id,
       amount:        Number(amount),
-      currency:      currency ?? project.currency ?? 'USD',
+      currency:      currency ?? project.currency ?? 'BDT',
       paymentMethod: paymentMethod ?? 'BANK_TRANSFER',
       paymentDate:   paymentDate ? new Date(paymentDate) : new Date(),
       description:   description || null,

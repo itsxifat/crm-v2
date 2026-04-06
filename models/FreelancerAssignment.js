@@ -17,10 +17,11 @@ const FreelancerAssignmentSchema = new mongoose.Schema({
   approvedBy:  { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   paymentStatus: {
     type: String,
-    enum: ['PENDING', 'IN_WALLET', 'WITHDRAWAL_REQUESTED', 'PAID'],
+    enum: ['PENDING', 'PAYMENT_REQUESTED', 'IN_WALLET', 'WITHDRAWAL_REQUESTED', 'PAID'],
     default: 'PENDING',
   },
   withdrawalRequestId: { type: mongoose.Schema.Types.ObjectId, ref: 'WithdrawalRequest', default: null },
+  expenseId: { type: mongoose.Schema.Types.ObjectId, ref: 'ProjectExpense', default: null },
 }, {
   timestamps: true,
   toJSON: {

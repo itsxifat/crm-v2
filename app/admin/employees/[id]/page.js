@@ -7,7 +7,7 @@ import {
   ArrowLeft, Mail, Phone, MapPin, Calendar, Briefcase, Shield,
   ShieldCheck, FileText, Download, CheckCircle2, Clock, XCircle,
   User, Building2, CreditCard, Activity, Upload, Loader2, X, Image,
-  Package, Plus, Pencil, Save, BadgeCheck, AlertCircle, ThumbsUp, ThumbsDown,
+  Package, Plus, Pencil, Save, BadgeCheck, AlertCircle, ThumbsUp, ThumbsDown, LogOut,
 } from 'lucide-react'
 import { useSession } from 'next-auth/react'
 import toast from 'react-hot-toast'
@@ -255,18 +255,20 @@ function DocumentsTab({ emp, empId, onUpdated }) {
   )
 }
 
-const ITEM_PRESETS = [
-  'Laptop', 'Desktop', 'Monitor', 'Keyboard', 'Mouse', 'Headphone',
-  'Mobile Phone', 'SIM Card', 'Access Card', 'Office Key', 'Locker Key',
-  'Desk', 'Chair', 'Hard Disk', 'Pen Drive', 'Webcam', 'Other',
-]
-
 function CompanyItemsTab({ emp, empId, onUpdated }) {
-  const [items,   setItems]   = useState(() => (emp.companyItems ?? []).map((it, i) => ({ ...it, _id: i })))
+  const [items,        setItems]        = useState(() => (emp.companyItems ?? []).map((it, i) => ({ ...it, _id: i })))
+  const [itemPresets,  setItemPresets]  = useState([])
   const [saving,  setSaving]  = useState(false)
   const [editIdx, setEditIdx] = useState(null)   // index being edited inline
   const [form,    setForm]    = useState({ item: '', value: '', description: '' })
   const [adding,  setAdding]  = useState(false)
+
+  useEffect(() => {
+    fetch('/api/config')
+      .then(r => r.json())
+      .then(j => setItemPresets(j.data?.companyItemCategories ?? []))
+      .catch(() => {})
+  }, [])
 
   function openAdd() { setForm({ item: '', value: '', description: '' }); setAdding(true); setEditIdx(null) }
   function openEdit(i) { setForm({ ...items[i] }); setEditIdx(i); setAdding(false) }
@@ -334,7 +336,7 @@ function CompanyItemsTab({ emp, empId, onUpdated }) {
                 <input list="item-presets" value={form.item} onChange={e => setForm(f => ({ ...f, item: e.target.value }))}
                   placeholder="e.g. Laptop" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 <datalist id="item-presets">
-                  {ITEM_PRESETS.map(p => <option key={p} value={p} />)}
+                  {itemPresets.map(p => <option key={p} value={p} />)}
                 </datalist>
               </div>
               <div>
@@ -452,11 +454,37 @@ const PROFILE_STATUS_META = {
 }
 
 function ProfileProgressBar({ pct }) {
-  const color = pct === 100 ? 'bg-green-500' : pct >= 60 ? 'bg-blue-500' : 'bg-amber-400'
+  const [display, setDisplay] = useState(0)
+
+  useEffect(() => {
+    setDisplay(0)
+    if (pct <= 0) return
+    // Build milestone steps: every 10% increment up to actual pct
+    const steps = []
+    for (let i = 10; i <= pct; i += 10) steps.push(i)
+    if (steps.length === 0) return
+
+    let idx = 0
+    const id = setInterval(() => {
+      setDisplay(steps[idx])
+      idx++
+      if (idx >= steps.length) clearInterval(id)
+    }, 300)
+
+    return () => clearInterval(id)
+  }, [pct])
+
+  const color = display === 100 ? 'bg-green-500' : display >= 60 ? 'bg-blue-500' : 'bg-amber-400'
   return (
-    <div className="w-full bg-gray-100 rounded-full h-2">
-      <div className={`h-2 rounded-full transition-all duration-700 ${color}`} style={{ width: `${pct}%` }} />
-    </div>
+    <>
+      <div className="flex items-center justify-between mb-1.5 text-xs">
+        <span className="text-gray-500">Completion</span>
+        <span className={`font-bold transition-colors ${display === 100 ? 'text-green-600' : 'text-blue-600'}`}>{display}%</span>
+      </div>
+      <div className="w-full bg-gray-100 rounded-full h-2">
+        <div className={`h-2 rounded-full transition-all duration-500 ${color}`} style={{ width: `${display}%` }} />
+      </div>
+    </>
   )
 }
 
@@ -481,7 +509,15 @@ function ProfileReviewCard({ emp, empId, onUpdated }) {
       const json = await res.json()
       if (!res.ok) throw new Error(json.error ?? 'Action failed')
       toast.success(json.message)
-      onUpdated(prev => ({ ...prev, ...json.data }))
+      const d = json.data
+      onUpdated(prev => ({
+        ...prev,
+        profileStatus:      d.profileStatus,
+        panelAccessGranted: d.panelAccessGranted,
+        finalApproved:      d.finalApproved,
+        kycApproved:        d.kycApproved,
+        hrNotes:            d.hrNotes ?? prev.hrNotes,
+      }))
     } catch (err) {
       toast.error(err.message)
     } finally {
@@ -501,7 +537,10 @@ function ProfileReviewCard({ emp, empId, onUpdated }) {
     { label: 'Phone',             value: emp.phone },
     { label: 'Alt Phone',         value: emp.secondaryPhone },
     { label: 'Address',           value: emp.address },
-    { label: 'Emergency Contact', value: emp.emergencyContact },
+    ...(emp.emergencyContacts ?? []).map((c, i) => ({
+      label: i === 0 ? 'Emergency Contact' : `Emergency Contact ${i + 1}`,
+      value: c.name ? `${c.name} (${c.relation}) · ${c.phone}` : null,
+    })),
   ]
   const kycItems = [
     { label: 'NID Number',      value: emp.nidNumber },
@@ -521,10 +560,6 @@ function ProfileReviewCard({ emp, empId, onUpdated }) {
 
       {/* Progress */}
       <div>
-        <div className="flex items-center justify-between mb-1.5 text-xs">
-          <span className="text-gray-500">Completion</span>
-          <span className={`font-bold ${pct === 100 ? 'text-green-600' : 'text-blue-600'}`}>{pct}%</span>
-        </div>
         <ProfileProgressBar pct={pct} />
       </div>
 
@@ -674,6 +709,18 @@ export default function EmployeeProfilePage() {
         <ArrowLeft className="w-4 h-4" /> Back to Employees
       </Link>
 
+      {/* Resigned Banner */}
+      {emp.resigned && (
+        <div className="flex items-center gap-3 px-5 py-3.5 bg-orange-50 border border-orange-200 rounded-xl text-sm text-orange-800">
+          <LogOut className="w-4 h-4 shrink-0 text-orange-500" />
+          <span className="font-medium">This employee has resigned</span>
+          {emp.resignDate && (
+            <span className="text-orange-600 text-xs">· {fmtDate(emp.resignDate)}</span>
+          )}
+          <span className="ml-auto text-xs text-orange-500">All data is read-only and preserved for records</span>
+        </div>
+      )}
+
       {/* Profile Header */}
       <div className="bg-white border border-gray-100 rounded-2xl p-6">
         <div className="flex flex-wrap items-start gap-5">
@@ -746,7 +793,11 @@ export default function EmployeeProfilePage() {
                 <InfoRow icon={Mail}     label="Email"            value={user.email} />
                 <InfoRow icon={Phone}    label="Phone"            value={user.phone} />
                 <InfoRow icon={Activity} label="Blood Group"      value={emp.bloodGroup} />
-                <InfoRow icon={Phone}    label="Emergency Contact" value={emp.emergencyContact} />
+                {(emp.emergencyContacts ?? []).map((c, i) => (
+                  <InfoRow key={i} icon={Phone}
+                    label={i === 0 ? 'Emergency Contact' : `Emergency Contact ${i + 1}`}
+                    value={c.name ? `${c.name} (${c.relation}) · ${c.phone}` : null} />
+                ))}
                 <InfoRow icon={CreditCard} label="NID Number"     value={emp.nidNumber} />
                 <InfoRow icon={MapPin}   label="Address"          value={emp.address} className="sm:col-span-2" />
               </div>
@@ -761,6 +812,9 @@ export default function EmployeeProfilePage() {
                 <InfoRow icon={Briefcase} label="Designation"     value={emp.designation} />
                 <InfoRow icon={CreditCard} label="Monthly Salary" value={<TkAmt value={emp.salary} />} />
                 <InfoRow icon={Calendar}  label="Hire Date"       value={fmtDate(emp.hireDate)} />
+                {emp.resigned && emp.resignDate && (
+                  <InfoRow icon={LogOut} label="Resigned On" value={fmtDate(emp.resignDate)} />
+                )}
               </div>
             </div>
           </div>

@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
-import { Task, Timesheet, Comment, Attachment } from '@/models'
+import { Task, Timesheet, Comment, Attachment, Employee, Freelancer } from '@/models'
 import { z } from 'zod'
 
 const updateTaskSchema = z.object({
@@ -35,6 +35,26 @@ export async function GET(request, { params }) {
       .populate({ path: 'assignedFreelancerId', populate: { path: 'userId', select: 'id name avatar email' } })
 
     if (!task) return NextResponse.json({ error: 'Task not found' }, { status: 404 })
+
+    // Enforce visibility by role
+    const { role } = session.user
+    if (role === 'EMPLOYEE') {
+      const employee = await Employee.findOne({ userId: session.user.id }).lean()
+      const assignedId = task.assignedEmployeeId?._id ?? task.assignedEmployeeId
+      if (!employee || assignedId?.toString() !== employee._id.toString()) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+    } else if (role === 'FREELANCER') {
+      const freelancer = await Freelancer.findOne({ userId: session.user.id }).lean()
+      const assignedId = task.assignedFreelancerId?._id ?? task.assignedFreelancerId
+      if (!freelancer || assignedId?.toString() !== freelancer._id.toString()) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+    } else if (role === 'CLIENT') {
+      if (!task.isClientVisible) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+    }
 
     const [timesheets, comments, attachments, commentCount, attachmentCount, timesheetCount] = await Promise.all([
       Timesheet.find({ taskId: params.id })

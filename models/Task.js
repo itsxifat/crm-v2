@@ -1,27 +1,30 @@
 import mongoose from 'mongoose'
+import { encryptionPlugin } from '@/lib/encryptionPlugin'
 
 const TaskSchema = new mongoose.Schema(
   {
-    projectId:            { type: mongoose.Schema.Types.ObjectId, ref: 'Project', required: true },
+    projectId:            { type: mongoose.Schema.Types.ObjectId, ref: 'Project',    required: true },
+    // Encrypted content
     title:                { type: String, required: true, trim: true },
     description:          { type: String, default: null },
-    status:               {
+    status: {
       type:    String,
       enum:    ['TODO', 'IN_PROGRESS', 'IN_REVIEW', 'COMPLETED', 'CANCELLED'],
       default: 'TODO',
     },
-    priority:             {
+    priority: {
       type:    String,
       enum:    ['LOW', 'MEDIUM', 'HIGH', 'URGENT'],
       default: 'MEDIUM',
     },
     dueDate:              { type: Date, default: null },
-    estimatedHours:       { type: Number, default: null },
-    actualHours:          { type: Number, default: null },
-    assignedEmployeeId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Employee', default: null },
+    // Mixed — encrypted Numbers
+    estimatedHours:       { type: mongoose.Schema.Types.Mixed, default: null },
+    actualHours:          { type: mongoose.Schema.Types.Mixed, default: null },
+    assignedEmployeeId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Employee',   default: null },
     assignedFreelancerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Freelancer', default: null },
     isClientVisible:      { type: Boolean, default: false },
-    position:             { type: Number, default: 0 },
+    position:             { type: Number,  default: 0 },
   },
   {
     timestamps: true,
@@ -31,5 +34,15 @@ const TaskSchema = new mongoose.Schema(
     },
   }
 )
+
+TaskSchema.plugin(encryptionPlugin, {
+  collection: 'tasks',
+  fields: [
+    { path: 'title'          },
+    { path: 'description'    },
+    { path: 'estimatedHours', type: 'number' },
+    { path: 'actualHours',    type: 'number' },
+  ],
+})
 
 export default mongoose.models.Task ?? mongoose.model('Task', TaskSchema)

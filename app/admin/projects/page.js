@@ -299,7 +299,7 @@ export default function ProjectsPage() {
     <div className="space-y-5">
 
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-semibold text-gray-900">Projects</h1>
         <Link href="/admin/projects/new"
           className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors">
@@ -333,7 +333,7 @@ export default function ProjectsPage() {
       </div>
 
       {/* Venture tabs */}
-      <div className="flex items-center gap-6 border-b border-gray-100">
+      <div className="flex items-center gap-6 border-b border-gray-100 overflow-x-auto scrollbar-none">
         {[['', 'All Ventures'], ...VENTURES.map(v => [v, VENTURE_META[v]?.label ?? v])].map(([v, l]) => (
           <button
             key={v}
@@ -351,7 +351,7 @@ export default function ProjectsPage() {
 
       {/* Filters row */}
       <div className="flex flex-wrap items-center gap-3">
-        <div className="relative flex-1 min-w-52 max-w-xs">
+        <div className="relative w-full sm:flex-1 sm:min-w-52 sm:max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
           <input
             value={search}
@@ -360,29 +360,31 @@ export default function ProjectsPage() {
             className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 placeholder-gray-400"
           />
         </div>
-        <Select value={type} onChange={v => { setType(v ?? ''); setPage(1) }}
-          options={[
-            { value: 'FIXED',   label: 'Fixed' },
-            { value: 'MONTHLY', label: 'Monthly' },
-          ]}
-          placeholder="All Types"
-          size="sm"
-          className="w-36"
-        />
-        {/* Date range */}
-        <div className="flex items-center gap-1.5">
-          <DatePicker value={startDate || null} onChange={v => { setStartDate(v ?? ''); setPage(1) }} />
-          <span className="text-xs text-gray-400">—</span>
-          <DatePicker value={endDate || null} onChange={v => { setEndDate(v ?? ''); setPage(1) }} />
+        <div className="flex flex-wrap items-center gap-3">
+          <Select value={type} onChange={v => { setType(v ?? ''); setPage(1) }}
+            options={[
+              { value: 'FIXED',   label: 'Fixed' },
+              { value: 'MONTHLY', label: 'Monthly' },
+            ]}
+            placeholder="All Types"
+            size="sm"
+            className="w-36"
+          />
+          {/* Date range */}
+          <div className="flex items-center gap-1.5">
+            <DatePicker value={startDate || null} onChange={v => { setStartDate(v ?? ''); setPage(1) }} />
+            <span className="text-xs text-gray-400">—</span>
+            <DatePicker value={endDate || null} onChange={v => { setEndDate(v ?? ''); setPage(1) }} />
+          </div>
+          {hasFilters && (
+            <button
+              onClick={() => { setSearch(''); setVenture(''); setType(''); setStatus(''); setStartDate(''); setEndDate(''); setPage(1) }}
+              className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1.5 rounded hover:bg-gray-100 transition-colors">
+              Clear
+            </button>
+          )}
         </div>
-        {hasFilters && (
-          <button
-            onClick={() => { setSearch(''); setVenture(''); setType(''); setStatus(''); setStartDate(''); setEndDate(''); setPage(1) }}
-            className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1.5 rounded hover:bg-gray-100 transition-colors">
-            Clear
-          </button>
-        )}
-        <span className="text-xs text-gray-400 ml-auto">{meta.total} project{meta.total !== 1 ? 's' : ''}</span>
+        <span className="text-xs text-gray-400 sm:ml-auto">{meta.total} project{meta.total !== 1 ? 's' : ''}</span>
       </div>
 
       {/* Table */}

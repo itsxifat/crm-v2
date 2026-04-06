@@ -21,7 +21,11 @@ const profileSchema = z.object({
   phone:            z.string().optional().nullable(),
   secondaryPhone:   z.string().optional().nullable(),
   address:          z.string().optional().nullable(),
-  emergencyContact: z.string().optional().nullable(),
+  emergencyContacts: z.array(z.object({
+    name:     z.string().min(1),
+    relation: z.string().min(1),
+    phone:    z.string().min(1),
+  })).optional(),
 
   // KYC
   nidNumber:      z.string().optional().nullable(),
@@ -92,7 +96,7 @@ export async function PUT(request) {
       phone:            data.phone,
       secondaryPhone:   data.secondaryPhone,
       address:          data.address,
-      emergencyContact: data.emergencyContact,
+      emergencyContacts: data.emergencyContacts,
     }
 
     if (!kycLocked) {

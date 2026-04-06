@@ -135,7 +135,7 @@ function AccountForm({ initial, onSave, onCancel, isSaving }) {
       </div>
 
       {/* Row 2 — host + port + secure */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
         <div className="col-span-2">
           <label className="block text-xs font-medium text-gray-600 mb-1.5">SMTP Host <span className="text-red-500">*</span></label>
           <input

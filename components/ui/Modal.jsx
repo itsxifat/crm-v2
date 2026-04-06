@@ -26,21 +26,25 @@ export default function Modal({
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
         <Dialog.Content
+          onInteractOutside={(e) => {
+            const target = e.detail?.originalEvent?.target
+            if (target?.closest?.('[data-datepicker-popup]')) e.preventDefault()
+          }}
           className={cn(
             'fixed left-[50%] top-[50%] z-50 translate-x-[-50%] translate-y-[-50%]',
-            'w-full bg-white rounded-xl shadow-xl',
+            'w-[calc(100%-2rem)] sm:w-full bg-white rounded-xl shadow-xl',
             'data-[state=open]:animate-in data-[state=closed]:animate-out',
             'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
             'data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
             'data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%]',
             'data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%]',
             sizeMap[size],
-            'max-h-[90vh] flex flex-col',
+            'max-h-[95vh] sm:max-h-[90vh] flex flex-col',
             className
           )}
         >
           {/* Header */}
-          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
+          <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-100 shrink-0">
             <div>
               <Dialog.Title className="text-lg font-semibold text-gray-900">
                 {title}
@@ -57,7 +61,7 @@ export default function Modal({
           </div>
 
           {/* Scrollable body */}
-          <div className="flex-1 overflow-y-auto px-6 py-4">
+          <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4">
             {children}
           </div>
         </Dialog.Content>
@@ -68,7 +72,7 @@ export default function Modal({
 
 export function ModalFooter({ children, className }) {
   return (
-    <div className={cn('flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-100 bg-gray-50 rounded-b-xl shrink-0', className)}>
+    <div className={cn('flex items-center justify-end gap-3 px-4 sm:px-6 py-4 border-t border-gray-100 bg-gray-50 rounded-b-xl shrink-0', className)}>
       {children}
     </div>
   )

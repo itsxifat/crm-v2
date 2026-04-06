@@ -24,6 +24,21 @@ function StatusBadge({ status }) {
   )
 }
 
+function PriorityBadge({ priority }) {
+  const map = {
+    LOW:    { label: 'Low',    bg: 'bg-gray-100',    text: 'text-gray-500' },
+    MEDIUM: { label: 'Medium', bg: 'bg-blue-50',     text: 'text-blue-600' },
+    HIGH:   { label: 'High',   bg: 'bg-orange-100',  text: 'text-orange-600' },
+    URGENT: { label: 'Urgent', bg: 'bg-red-100',     text: 'text-red-600' },
+  }
+  const p = map[priority] || map.MEDIUM
+  return (
+    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${p.bg} ${p.text}`}>
+      {p.label}
+    </span>
+  )
+}
+
 function TaskStatusBadge({ status }) {
   const map = {
     TODO:        { label: 'To Do',      bg: 'bg-gray-100',   text: 'text-gray-600' },
@@ -132,9 +147,10 @@ export default function ClientProjectDetailPage() {
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8">
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
           <div className="flex-1">
-            <div className="flex items-center gap-3 mb-2">
+            <div className="flex items-center gap-3 mb-2 flex-wrap">
               <h1 className="text-2xl font-bold text-gray-900">{project.name}</h1>
               <StatusBadge status={project.status} />
+              {project.priority && <PriorityBadge priority={project.priority} />}
             </div>
             {project.description && (
               <p className="text-gray-500 text-sm max-w-2xl">{project.description}</p>
@@ -344,10 +360,16 @@ export default function ClientProjectDetailPage() {
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
             <h2 className="text-base font-bold text-gray-900 mb-4">Project Details</h2>
             <div className="space-y-3">
-              <div className="flex justify-between">
+              <div className="flex justify-between items-center">
                 <span className="text-sm text-gray-500">Status</span>
                 <StatusBadge status={project.status} />
               </div>
+              {project.priority && (
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-gray-500">Priority</span>
+                  <PriorityBadge priority={project.priority} />
+                </div>
+              )}
               {project.startDate && (
                 <div className="flex justify-between">
                   <span className="text-sm text-gray-500">Start Date</span>
@@ -366,6 +388,35 @@ export default function ClientProjectDetailPage() {
               </div>
             </div>
           </div>
+
+          {/* Pricing Summary */}
+          {project.budget > 0 && (
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+              <h2 className="text-base font-bold text-gray-900 mb-4">Pricing</h2>
+              <div className="space-y-3">
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-500">Project Price</span>
+                  <span className="text-sm font-semibold text-gray-800">৳ {project.budget.toLocaleString()}</span>
+                </div>
+                {project.discount > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-sm text-gray-500">Discount</span>
+                    <span className="text-sm font-medium text-green-600">- ৳ {project.discount.toLocaleString()}</span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-500">Paid</span>
+                  <span className="text-sm font-medium text-blue-600">৳ {project.paidAmount.toLocaleString()}</span>
+                </div>
+                <div className="pt-2 border-t border-gray-100 flex justify-between">
+                  <span className="text-sm font-semibold text-gray-700">Due</span>
+                  <span className={`text-sm font-bold ${project.dueAmount > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                    ৳ {project.dueAmount.toLocaleString()}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Messages link */}
           <Link href="/client/messages">

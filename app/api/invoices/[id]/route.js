@@ -43,9 +43,9 @@ export async function PUT(request, { params }) {
       rate:        Number(item.rate)     || 0,
       amount:      (Number(item.quantity) || 1) * (Number(item.rate) || 0),
     }))
-    const subtotal = processedItems.reduce((s, i) => s + i.amount, 0)
-    const taxAmt   = subtotal * ((Number(taxRate) || 0) / 100)
-    const total    = subtotal + taxAmt - (Number(discount) || 0)
+    const subtotal = Math.round(processedItems.reduce((s, i) => s + i.amount, 0) * 100) / 100
+    const taxAmt   = Math.round(subtotal * ((Number(taxRate) || 0) / 100) * 100) / 100
+    const total    = Math.round((subtotal + taxAmt - (Number(discount) || 0)) * 100) / 100
 
     const invoice = await Invoice.findByIdAndUpdate(
       params.id,

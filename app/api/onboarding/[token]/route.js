@@ -41,7 +41,7 @@ export async function PATCH(request, { params }) {
     const body = await request.json()
     const {
       name, email, phone, secondaryPhone, homePhone,
-      dateOfBirth, nidNumber, address, emergencyContact,
+      dateOfBirth, nidNumber, address, emergencyContacts,
       bloodGroup, photo, documents, password,
     } = body
 
@@ -58,10 +58,10 @@ export async function PATCH(request, { params }) {
       dateOfBirth:      dateOfBirth      ? new Date(dateOfBirth) : null,
       nidNumber:        nidNumber        || null,
       address:          address          || null,
-      emergencyContact: emergencyContact || null,
-      bloodGroup:       bloodGroup       || null,
-      photo:            photo            || null,
-      documents:        Array.isArray(documents) ? documents : [],
+      emergencyContacts: Array.isArray(emergencyContacts) ? emergencyContacts : [],
+      bloodGroup:        bloodGroup       || null,
+      photo:             photo            || null,
+      documents:         Array.isArray(documents) ? documents : [],
     }
 
     // ── Auto-create User + Employee account immediately ──────────────────────
@@ -90,7 +90,7 @@ export async function PATCH(request, { params }) {
         homePhone:        homePhone        || null,
         dateOfBirth:      dateOfBirth      ? new Date(dateOfBirth) : null,
         bloodGroup:       bloodGroup       || null,
-        emergencyContact: emergencyContact || null,
+        emergencyContacts: Array.isArray(emergencyContacts) ? emergencyContacts : [],
         address:          address          || null,
         nidNumber:        nidNumber        || null,
         photo:            photo            || null,

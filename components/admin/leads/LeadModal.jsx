@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useMemo, useRef } from 'react'
+import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import { useForm, Controller, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -27,6 +27,8 @@ const schema = z.object({
   source:           z.string().optional().nullable(),
   platform:         z.string().optional().nullable(),
   reference:        z.string().optional().nullable(),
+  referenceType:    z.enum(['CLIENT', 'EMPLOYEE', 'LEAD']).optional().nullable(),
+  referenceId:      z.string().optional().nullable(),
   sendingDate:      z.string().optional().nullable(),
   followUpDate:     z.string().optional().nullable(),
   value:            z.string().optional().nullable(),
@@ -63,6 +65,16 @@ export default function LeadModal({ open, onClose, lead, onSuccess }) {
   const [platforms,     setPlatforms]     = useState([])
   const [ventures,      setVentures]      = useState([])   // [{id, label}]
   const [servicesMap,   setServicesMap]   = useState({})   // { ventureId: [{id, label, subcategories}] }
+
+  // Reference autocomplete
+  const [refQuery,       setRefQuery]       = useState('')
+  const [refSuggestions, setRefSuggestions] = useState([])  // [{group, label, sublabel, value, id}]
+  const [refOpen,        setRefOpen]        = useState(false)
+  const [refLoading,     setRefLoading]     = useState(false)
+  const [refType,        setRefType]        = useState(null)  // 'CLIENT'|'EMPLOYEE'|'LEAD'|null
+  const [refId,          setRefId]          = useState(null)
+  const refDebounce = useRef(null)
+  const refWrapRef  = useRef(null)
   const isEdit = !!lead
 
   const { register, handleSubmit, reset, control, setValue, formState: { errors } } = useForm({
@@ -71,6 +83,7 @@ export default function LeadModal({ open, onClose, lead, onSuccess }) {
       name: '', designation: '', email: '', phone: '', alternativePhone: '',
       company: '', location: '', status: 'NEW', priority: 'NORMAL',
       service: '', category: '', subcategory: '', source: '', platform: '', reference: '',
+      referenceType: null, referenceId: null,
       sendingDate: '', followUpDate: '', value: '', assignedToId: '', notes: '',
     },
   })
@@ -122,12 +135,16 @@ export default function LeadModal({ open, onClose, lead, onSuccess }) {
         source:           lead.source           ?? '',
         platform:         lead.platform         ?? '',
         reference:        lead.reference        ?? '',
+        referenceType:    lead.referenceType    ?? null,
+        referenceId:      lead.referenceId      ?? null,
         sendingDate:      lead.sendingDate  ? new Date(lead.sendingDate).toISOString().slice(0,10)  : '',
         followUpDate:     lead.followUpDate ? new Date(lead.followUpDate).toISOString().slice(0,10) : '',
         value:            lead.value ? String(lead.value) : '',
         assignedToId:     typeof lead.assignedToId === 'object' ? (lead.assignedToId?.id ?? '') : (lead.assignedToId ?? ''),
         notes:            lead.notes ?? '',
       })
+      setRefType(lead.referenceType ?? null)
+      setRefId(lead.referenceId ?? null)
       setLinks(lead.links ?? [])
       setComments(lead.comments ?? [])
     } else {
@@ -135,8 +152,11 @@ export default function LeadModal({ open, onClose, lead, onSuccess }) {
         name: '', designation: '', email: '', phone: '', alternativePhone: '',
         company: '', location: '', status: 'NEW', priority: 'NORMAL',
         service: '', category: '', subcategory: '', source: '', platform: '', reference: '',
+        referenceType: null, referenceId: null,
         sendingDate: '', followUpDate: '', value: '', assignedToId: '', notes: '',
       })
+      setRefType(null)
+      setRefId(null)
       setLinks([])
       setComments([])
     }
@@ -158,6 +178,81 @@ export default function LeadModal({ open, onClose, lead, onSuccess }) {
     if (!mountedCategory.current) { mountedCategory.current = true; return }
     setValue('subcategory', '')
   }, [watchedCategory]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sync refQuery with form value when editing
+  useEffect(() => {
+    if (open) setRefQuery(lead?.reference ?? '')
+  }, [open, lead])
+
+  // Close reference dropdown on outside click
+  useEffect(() => {
+    function onMouseDown(e) {
+      if (refWrapRef.current && !refWrapRef.current.contains(e.target)) setRefOpen(false)
+    }
+    document.addEventListener('mousedown', onMouseDown)
+    return () => document.removeEventListener('mousedown', onMouseDown)
+  }, [])
+
+  const searchReference = useCallback((q) => {
+    clearTimeout(refDebounce.current)
+    if (!q.trim()) { setRefSuggestions([]); setRefOpen(false); return }
+    refDebounce.current = setTimeout(async () => {
+      setRefLoading(true)
+      try {
+        const qs = encodeURIComponent(q)
+        const [leadsRes, clientsRes, employeesRes] = await Promise.all([
+          fetch(`/api/leads?search=${qs}&limit=5`),
+          fetch(`/api/clients?search=${qs}&limit=5`),
+          fetch(`/api/employees?search=${qs}&limit=5`),
+        ])
+        const suggestions = []
+        if (leadsRes.ok) {
+          const { data } = await leadsRes.json()
+          ;(data ?? []).forEach(l => suggestions.push({
+            group: 'Lead', type: 'LEAD',
+            label: l.name,
+            sublabel: l.company ?? l.email ?? '',
+            value: l.name,
+            id: l.id ?? l._id,
+          }))
+        }
+        if (clientsRes.ok) {
+          const { data } = await clientsRes.json()
+          ;(data ?? []).forEach(c => {
+            const name = c.userId?.name ?? c.contactPerson ?? c.company ?? ''
+            if (!name) return
+            suggestions.push({
+              group: 'Client', type: 'CLIENT',
+              label: name,
+              sublabel: c.company ?? c.userId?.email ?? '',
+              value: name,
+              id: c.id ?? c._id,
+            })
+          })
+        }
+        if (employeesRes.ok) {
+          const { data } = await employeesRes.json()
+          ;(data ?? []).forEach(e => {
+            const name = e.userId?.name ?? ''
+            if (!name) return
+            suggestions.push({
+              group: 'Employee', type: 'EMPLOYEE',
+              label: name,
+              sublabel: e.userId?.email ?? e.designation ?? '',
+              value: name,
+              id: e.id ?? e._id,
+            })
+          })
+        }
+        // Deduplicate by value
+        const seen = new Set()
+        setRefSuggestions(suggestions.filter(s => { if (seen.has(s.value)) return false; seen.add(s.value); return true }))
+        setRefOpen(suggestions.length > 0)
+      } catch { /* silent */ } finally {
+        setRefLoading(false)
+      }
+    }, 300)
+  }, [])
 
   function addLink() {
     const url = linkInput.trim()
@@ -217,6 +312,8 @@ export default function LeadModal({ open, onClose, lead, onSuccess }) {
         source:           values.source           || null,
         platform:         values.platform         || null,
         reference:        values.reference        || null,
+        referenceType:    values.reference ? (refType ?? null) : null,
+        referenceId:      values.reference ? (refId   ?? null) : null,
         value:            values.value ? parseFloat(values.value) : null,
         assignedToId:     values.assignedToId     || null,
         followUpDate:     values.followUpDate ? new Date(values.followUpDate).toISOString() : null,
@@ -359,9 +456,73 @@ export default function LeadModal({ open, onClose, lead, onSuccess }) {
                 />
               )} />
             </div>
-            <div className="col-span-2">
+            <div className="col-span-2" ref={refWrapRef}>
               <label className={lc}>Reference / Referred By</label>
-              <input {...register('reference')} placeholder="Who referred this lead?" className={ic()} />
+              <div className="relative">
+                <input
+                  value={refQuery}
+                  onChange={e => {
+                    setRefQuery(e.target.value)
+                    setValue('reference', e.target.value || null)
+                    setValue('referenceType', null)
+                    setValue('referenceId', null)
+                    setRefType(null)
+                    setRefId(null)
+                    searchReference(e.target.value)
+                  }}
+                  onFocus={() => { if (refSuggestions.length > 0) setRefOpen(true) }}
+                  placeholder="Search leads, clients or employees…"
+                  className={ic()}
+                  autoComplete="off"
+                />
+                {refLoading && (
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">
+                    <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                    </svg>
+                  </span>
+                )}
+                {refType && !refOpen && (
+                  <span className={`absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${
+                    refType === 'CLIENT'   ? 'bg-green-100 text-green-700' :
+                    refType === 'EMPLOYEE' ? 'bg-purple-100 text-purple-700' :
+                                            'bg-blue-100 text-blue-700'
+                  }`}>{refType === 'LEAD' ? 'Lead' : refType === 'CLIENT' ? 'Client' : 'Employee'}</span>
+                )}
+                {refOpen && refSuggestions.length > 0 && (
+                  <ul className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-52 overflow-y-auto text-sm">
+                    {refSuggestions.map((s, i) => (
+                      <li
+                        key={i}
+                        onMouseDown={e => {
+                          e.preventDefault()
+                          setRefQuery(s.value)
+                          setValue('reference', s.value)
+                          setValue('referenceType', s.type)
+                          setValue('referenceId', s.id ? String(s.id) : null)
+                          setRefType(s.type)
+                          setRefId(s.id ? String(s.id) : null)
+                          setRefOpen(false)
+                        }}
+                        className="flex items-center gap-3 px-3 py-2 hover:bg-blue-50 cursor-pointer"
+                      >
+                        <span className={`shrink-0 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${
+                          s.group === 'Client'   ? 'bg-green-100 text-green-700' :
+                          s.group === 'Employee' ? 'bg-purple-100 text-purple-700' :
+                                                   'bg-blue-100 text-blue-700'
+                        }`}>
+                          {s.group}
+                        </span>
+                        <span className="flex-1 min-w-0">
+                          <span className="font-medium text-gray-900">{s.label}</span>
+                          {s.sublabel && <span className="ml-1.5 text-gray-400 text-xs truncate">{s.sublabel}</span>}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </div>
           </div>
         </div>

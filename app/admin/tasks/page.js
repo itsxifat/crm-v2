@@ -178,7 +178,7 @@ export default function TasksPage() {
     <div className="space-y-5">
 
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-gray-900">Tasks</h1>
           <p className="text-sm text-gray-400 mt-0.5">{total} task{total !== 1 ? 's' : ''} total</p>

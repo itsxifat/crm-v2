@@ -45,10 +45,11 @@ export async function POST(request, { params }) {
     if (!lead) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
 
     const activity = await new LeadActivity({
-      leadId:      params.id,
-      type:        parsed.data.type,
-      note:        parsed.data.note,
-      createdById: session.user.id,
+      leadId:        params.id,
+      type:          parsed.data.type,
+      note:          parsed.data.note,
+      createdById:   session.user.id,
+      createdByName: session.user.name ?? session.user.email ?? 'Unknown',
     }).save()
 
     return NextResponse.json({ data: activity }, { status: 201 })

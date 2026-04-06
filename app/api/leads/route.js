@@ -21,6 +21,8 @@ const createLeadSchema = z.object({
   source:           z.string().optional().nullable(),
   platform:         z.string().optional().nullable(),
   reference:        z.string().optional().nullable(),
+  referenceType:    z.enum(['CLIENT', 'EMPLOYEE', 'LEAD']).optional().nullable(),
+  referenceId:      z.string().optional().nullable(),
   links:            z.array(z.string().url()).optional().default([]),
   sendingDate:      z.string().optional().nullable(),
   followUpDate:     z.string().optional().nullable(),

@@ -64,10 +64,14 @@ export async function POST(request, { params }) {
       notes,
     }).save()
 
-    const newPaid = (invoice.paidAmount || 0) + amount
+    const newPaid = Math.min((invoice.paidAmount || 0) + amount, invoice.total)
+    const balance = invoice.total - newPaid
     let newStatus = invoice.status
-    if (newPaid > 0 && newPaid < invoice.total) newStatus = 'PARTIALLY_PAID'
-    // PAID status is only set via Payment Confirmations — never directly here
+    if (balance <= 0.01) {
+      newStatus = 'PAID'
+    } else if (newPaid > 0) {
+      newStatus = 'PARTIALLY_PAID'
+    }
 
     await Invoice.findByIdAndUpdate(params.id, { paidAmount: newPaid, status: newStatus })
 

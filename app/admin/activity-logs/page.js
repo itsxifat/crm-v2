@@ -391,7 +391,7 @@ export default function ActivityLogsPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
             <Activity className="w-5 h-5 text-gray-500" />

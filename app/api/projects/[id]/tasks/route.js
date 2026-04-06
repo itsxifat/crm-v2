@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
-import { Task, Comment, Attachment, Timesheet } from '@/models'
+import { Task, Comment, Attachment, Timesheet, Employee, Freelancer, Client } from '@/models'
 import { z } from 'zod'
 
 const createTaskSchema = z.object({
@@ -32,6 +32,19 @@ export async function GET(request, { params }) {
 
     const filter = { projectId: params.id }
     if (status) filter.status = status
+
+    const { role } = session.user
+    if (role === 'EMPLOYEE') {
+      const employee = await Employee.findOne({ userId: session.user.id }).lean()
+      if (employee) filter.assignedEmployeeId = employee._id
+      else filter._id = null // no employee record → show nothing
+    } else if (role === 'FREELANCER') {
+      const freelancer = await Freelancer.findOne({ userId: session.user.id }).lean()
+      if (freelancer) filter.assignedFreelancerId = freelancer._id
+      else filter._id = null
+    } else if (role === 'CLIENT') {
+      filter.isClientVisible = true
+    }
 
     const tasks = await Task.find(filter)
       .sort({ status: 1, position: 1, createdAt: 1 })

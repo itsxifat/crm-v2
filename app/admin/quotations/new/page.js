@@ -54,7 +54,7 @@ function ItemCard({ item, idx, onChange, onRemove }) {
       </div>
 
       {/* Venture + Category + Service */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div>
           <label className={labelCls}>Venture</label>
           <select value={item.venture} onChange={e => upd('venture', e.target.value)} className={inputCls}>
@@ -81,7 +81,7 @@ function ItemCard({ item, idx, onChange, onRemove }) {
       </div>
 
       {/* Qty + Rate + Amount */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div>
           <label className={labelCls}>Quantity</label>
           <input type="number" min="1" value={item.quantity} onChange={e => upd('quantity', e.target.value)}
@@ -136,9 +136,10 @@ function NewQuotationForm() {
   const [validUntil, setValidUntil] = useState('')
 
   // Misc
-  const [currency, setCurrency] = useState('BDT')
-  const [notes, setNotes]       = useState('')
-  const [terms, setTerms]       = useState('')
+  const [currency, setCurrency]           = useState('BDT')
+  const [notes, setNotes]                 = useState('')
+  const [terms, setTerms]                 = useState('')
+  const [itemPriceOnly, setItemPriceOnly] = useState(false)
 
   // Computed
   const subtotal  = items.reduce((s, i) => s + (Number(i.amount) || 0), 0)
@@ -205,6 +206,7 @@ function NewQuotationForm() {
         issueDate, validUntil: validUntil || null,
         taxRate: Number(taxRate), discount: Number(discount),
         currency, notes: notes || null, terms: terms || null,
+        itemPriceOnly,
       }
       const res  = await fetch('/api/quotations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       const json = await res.json()
@@ -240,9 +242,9 @@ function NewQuotationForm() {
         </button>
       </div>
 
-      <div className="grid grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left column: Source + Recipient */}
-        <div className="col-span-2 space-y-6">
+        <div className="lg:col-span-2 space-y-6">
 
           {/* Source selector */}
           <div className="bg-white border border-gray-100 rounded-xl p-5 space-y-4">
@@ -356,7 +358,7 @@ function NewQuotationForm() {
               <select value={currency} onChange={e => setCurrency(e.target.value)}
                 className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-gray-900">
                 <option value="BDT">BDT (৳)</option>
-                <option value="USD">USD ($)</option>
+                <option value="USD">USD (৳)</option>
                 <option value="EUR">EUR (€)</option>
                 <option value="GBP">GBP (£)</option>
               </select>
@@ -390,6 +392,11 @@ function NewQuotationForm() {
               <span className="text-sm font-semibold text-gray-700">Total</span>
               <span className="text-base font-bold text-gray-900">{fmt(total)}</span>
             </div>
+            <label className="flex items-center gap-2 pt-2 cursor-pointer select-none">
+              <input type="checkbox" checked={itemPriceOnly} onChange={e => setItemPriceOnly(e.target.checked)}
+                className="w-4 h-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900 cursor-pointer" />
+              <span className="text-xs text-gray-600">Send price item-wise only <span className="text-gray-400">(hide total on PDF)</span></span>
+            </label>
           </div>
         </div>
       </div>

@@ -13,6 +13,11 @@ const DEFAULT_CONFIG = {
   leadPlatforms: [],   // e.g. ['Facebook', 'LinkedIn', 'WhatsApp']
   leadCategories: [],  // e.g. ['Website', 'App', 'Branding']
   leadServices:  [],   // e.g. ['EnStudio', 'EnTech'] (sister concern)
+  companyItemCategories: [
+    'Laptop', 'Desktop', 'Monitor', 'Keyboard', 'Mouse', 'Headphone',
+    'Mobile Phone', 'SIM Card', 'Access Card', 'Office Key', 'Locker Key',
+    'Desk', 'Chair', 'Hard Disk', 'Pen Drive', 'Webcam', 'Other',
+  ],
   ventures: [
     { id: 'ENSTUDIO', label: 'Enstudio', description: 'Creative Services', active: true },
     { id: 'ENTECH',   label: 'Entech',   description: 'Web & Tech',         active: true },
@@ -89,7 +94,10 @@ export async function GET() {
       return NextResponse.json({ data: DEFAULT_CONFIG })
     }
 
-    return NextResponse.json({ data: JSON.parse(setting.value) })
+    const saved = JSON.parse(setting.value)
+    // Merge with DEFAULT_CONFIG so fields added after initial save (e.g. ventures) always have a fallback
+    const merged = { ...DEFAULT_CONFIG, ...saved }
+    return NextResponse.json({ data: merged })
   } catch (err) {
     console.error('[GET /api/config]', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

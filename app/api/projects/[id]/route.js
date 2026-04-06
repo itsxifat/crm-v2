@@ -91,7 +91,8 @@ export async function PUT(request, { params }) {
 
     if (!project) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     const data = project.toJSON()
-    data.profit = (data.budget ?? 0) - (data.discount ?? 0) - (data.approvedExpenses ?? 0)
+    data.profit    = (data.paidAmount ?? 0) - (data.approvedExpenses ?? 0)
+    data.dueAmount = Math.max(0, (data.budget ?? 0) - (data.discount ?? 0) - (data.paidAmount ?? 0))
     return NextResponse.json({ data })
   } catch (err) {
     console.error('[PUT /api/projects/:id]', err)

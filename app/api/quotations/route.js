@@ -73,7 +73,7 @@ export async function POST(request) {
       sourceType, leadId, clientId,
       recipientName, recipientCompany, recipientEmail, recipientPhone, recipientAddress,
       items = [], issueDate, validUntil, taxRate = 0, discount = 0,
-      notes, terms, currency = 'BDT',
+      notes, terms, currency = 'BDT', itemPriceOnly = false,
     } = body
 
     if (!sourceType || !['LEAD', 'CLIENT'].includes(sourceType))
@@ -88,9 +88,9 @@ export async function POST(request) {
       return { description: item.description, venture: item.venture || null, service: item.service || null, quantity: qty, rate, amount: qty * rate }
     })
 
-    const subtotal  = processedItems.reduce((s, i) => s + i.amount, 0)
-    const taxAmount = subtotal * (Number(taxRate) / 100)
-    const total     = subtotal + taxAmount - Number(discount)
+    const subtotal  = Math.round(processedItems.reduce((s, i) => s + i.amount, 0) * 100) / 100
+    const taxAmount = Math.round(subtotal * ((Number(taxRate) || 0) / 100) * 100) / 100
+    const total     = Math.round((subtotal + taxAmount - (Number(discount) || 0)) * 100) / 100
 
     const quotation = await new Quotation({
       sourceType,
@@ -102,6 +102,7 @@ export async function POST(request) {
       validUntil: validUntil ? new Date(validUntil) : null,
       subtotal, taxRate: Number(taxRate), taxAmount, discount: Number(discount), total,
       currency, notes: notes || null, terms: terms || null,
+      itemPriceOnly: !!itemPriceOnly,
       createdBy: session.user.id,
     }).save()
 

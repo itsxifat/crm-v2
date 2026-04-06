@@ -151,10 +151,10 @@ export default function ClientsPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-gray-900">Clients</h1>
-          <p className="text-sm text-gray-400 mt-0.5">Manage client accounts and relationships</p>
+          <h1 className="text-2xl font-bold text-gray-900">Clients</h1>
+          <p className="text-sm text-gray-500 mt-0.5">Manage client accounts and relationships</p>
         </div>
         <button
           onClick={() => { setEditingClient(null); setModalOpen(true) }}
@@ -175,51 +175,51 @@ export default function ClientsPage() {
       )}
 
       {/* Table */}
-      <div className="bg-white rounded-xl border border-gray-100">
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm">
         {/* Toolbar */}
-        <div className="px-5 py-3.5 border-b border-gray-100 flex items-center justify-between gap-4">
+        <div className="px-4 sm:px-6 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
           <SearchInput
             value={search}
             onChange={(v) => { setSearch(v); setPage(1) }}
             placeholder="Search by name, email, company…"
-            className="w-72"
+            className="w-full sm:w-80"
           />
           <span className="text-sm text-gray-400">{meta.total} client{meta.total !== 1 ? 's' : ''}</span>
         </div>
 
         {loading ? (
           <div className="flex items-center justify-center py-20">
-            <div className="w-7 h-7 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+            <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : clients.length === 0 ? (
           <div className="text-center py-20">
-            <Users className="w-10 h-10 text-gray-200 mx-auto mb-3" />
-            <p className="text-sm text-gray-500 font-medium">No clients found</p>
-            {search && <p className="text-gray-400 text-xs mt-1">Try a different search term</p>}
+            <Users className="w-12 h-12 text-gray-200 mx-auto mb-3" />
+            <p className="text-gray-500 font-medium">No clients found</p>
+            {search && <p className="text-gray-400 text-sm mt-1">Try a different search term</p>}
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1050px]">
               <thead>
-                <tr className="border-b border-gray-100 bg-gray-50/60">
-                  <th className="px-5 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">Client</th>
-                  <th className="px-5 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">Company</th>
-                  <th className="px-5 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">Contact</th>
-                  <th className="px-5 py-3 text-center text-xs font-medium text-gray-400 uppercase tracking-wide">Projects</th>
-                  <th className="px-5 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wide">Revenue</th>
-                  <th className="px-5 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wide">Outstanding</th>
-                  <th className="px-5 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">Joined</th>
-                  <th className="px-5 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">Status</th>
-                  <th className="px-5 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">KYC</th>
-                  <th className="px-5 py-3 w-12" />
+                <tr className="border-b border-gray-100 bg-gray-50">
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Client</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Company</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Contact</th>
+                  <th className="px-6 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide">Projects</th>
+                  <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Revenue</th>
+                  <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Outstanding</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Joined</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">KYC</th>
+                  <th className="px-6 py-3 w-12" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {clients.map((client) => {
                   const isActive = client.userId?.isActive
                   return (
-                    <tr key={client.id} className="hover:bg-gray-50/60 transition-colors group">
-                      <td className="px-5 py-3.5">
+                    <tr key={client.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
                           <Avatar name={client.userId?.name} src={client.userId?.avatar} size="sm" />
                           <div>
@@ -237,7 +237,7 @@ export default function ClientsPage() {
                           </div>
                         </div>
                       </td>
-                      <td className="px-5 py-3.5">
+                      <td className="px-6 py-4">
                         {client.company ? (
                           <div className="flex items-center gap-1.5">
                             <Building2 className="w-3.5 h-3.5 text-gray-300 shrink-0" />
@@ -252,7 +252,7 @@ export default function ClientsPage() {
                           </a>
                         )}
                       </td>
-                      <td className="px-5 py-3.5">
+                      <td className="px-6 py-4">
                         {client.userId?.phone ? (
                           <div className="flex items-center gap-1.5 text-xs text-gray-600">
                             <Phone className="w-3.5 h-3.5 text-gray-300" />
@@ -263,30 +263,30 @@ export default function ClientsPage() {
                           <p className="text-xs text-gray-400 mt-0.5">{client.country}</p>
                         )}
                       </td>
-                      <td className="px-5 py-3.5 text-center">
+                      <td className="px-6 py-4 text-center">
                         <p className="text-sm font-medium text-gray-800">{client.activeProjectCount ?? 0}</p>
                         <p className="text-xs text-gray-400">active</p>
                       </td>
-                      <td className="px-5 py-3.5 text-right">
+                      <td className="px-6 py-4 text-right">
                         <p className="text-sm font-semibold text-gray-900"><TkAmt value={client.totalRevenue} /></p>
                       </td>
-                      <td className="px-5 py-3.5 text-right">
+                      <td className="px-6 py-4 text-right">
                         {client.outstandingBalance > 0 ? (
                           <TkAmt value={client.outstandingBalance} className="text-sm font-medium text-amber-600" />
                         ) : (
                           <span className="text-sm text-gray-300">—</span>
                         )}
                       </td>
-                      <td className="px-5 py-3.5">
+                      <td className="px-6 py-4">
                         <p className="text-xs text-gray-500">{fmtDate(client.createdAt)}</p>
                       </td>
-                      <td className="px-5 py-3.5">
+                      <td className="px-6 py-4">
                         <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${isActive ? 'text-green-700' : 'text-gray-400'}`}>
                           <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-green-500' : 'bg-gray-300'}`} />
                           {isActive ? 'Active' : 'Inactive'}
                         </span>
                       </td>
-                      <td className="px-5 py-3.5">
+                      <td className="px-6 py-4">
                         {(() => {
                           const s = client.kyc?.status ?? 'NOT_SUBMITTED'
                           const MAP = {
@@ -299,7 +299,7 @@ export default function ClientsPage() {
                           return <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${MAP[s]}`}>{LABELS[s]}</span>
                         })()}
                       </td>
-                      <td className="px-5 py-3.5 text-right">
+                      <td className="px-6 py-4 text-right">
                         <RowMenu client={client} onEdit={openEdit} onDeactivate={handleDeactivate} />
                       </td>
                     </tr>
@@ -311,7 +311,7 @@ export default function ClientsPage() {
         )}
 
         {meta.pages > 1 && (
-          <div className="px-5 py-4 border-t border-gray-100">
+          <div className="px-6 py-4 border-t border-gray-100">
             <Pagination page={meta.page} pages={meta.pages} onChange={setPage} />
           </div>
         )}

@@ -69,7 +69,7 @@ export default function QuotationsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-gray-900">Quotations</h1>
           <p className="text-sm text-gray-400 mt-0.5">{total} quotation{total !== 1 ? 's' : ''}</p>

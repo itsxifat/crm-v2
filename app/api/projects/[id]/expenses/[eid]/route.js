@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
-import { Project, ProjectExpense, Transaction } from '@/models'
+import { Project, ProjectExpense, Transaction, FreelancerAssignment, Freelancer } from '@/models'
 
 // PATCH /api/projects/:id/expenses/:eid  — approve or reject
 export async function PATCH(request, { params }) {
@@ -57,6 +57,18 @@ export async function PATCH(request, { params }) {
       expense.syncedToAccounts      = true
       expense.accountsTransactionId = txn._id
       await Project.findByIdAndUpdate(params.id, { $inc: { approvedExpenses: expense.amount } })
+
+      // If this expense was created from a FreelancerAssignment payment request, mark it paid
+      const linkedAssignment = await FreelancerAssignment.findOne({ expenseId: expense._id })
+      if (linkedAssignment) {
+        linkedAssignment.paymentStatus = 'PAID'
+        linkedAssignment.approvedAt    = new Date()
+        linkedAssignment.approvedBy    = session.user.id
+        await linkedAssignment.save()
+        await Freelancer.findByIdAndUpdate(linkedAssignment.freelancerId, {
+          $inc: { withdrawableBalance: linkedAssignment.paymentAmount },
+        })
+      }
     } else {
       expense.status = 'REJECTED'
     }

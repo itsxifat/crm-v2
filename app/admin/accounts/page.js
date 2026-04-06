@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useSession } from 'next-auth/react'
+import { useSearchParams } from 'next/navigation'
 import {
   TrendingUp, TrendingDown, DollarSign, AlertCircle,
   Plus, Pencil, Trash2, X, Loader2, Clock, CheckCircle2, XCircle,
@@ -27,7 +27,6 @@ const INCOME_CATEGORIES  = ['Project Revenue', 'Retainer', 'Consulting', 'Produc
 const EXPENSE_CATEGORIES = ['Payroll', 'Freelancer Payment', 'Agency Payment', 'Vendor Payment', 'Equipment', 'Employee Expense', 'Software', 'Marketing', 'Office', 'Travel', 'Tax', 'Other Expense']
 const CURRENCY_OPTIONS   = ['BDT']
 const PAYMENT_METHODS    = ['CASH', 'BANK_TRANSFER', 'CARD', 'CHEQUE', 'ONLINE', 'OTHER']
-const TABS               = ['Overview', 'Transactions', 'Payment Confirmations', 'Payment Requests', 'Withdrawals', 'P&L Report']
 
 const VENTURE_COLORS = {
   ENSTUDIO: 'bg-purple-100 text-purple-700',
@@ -106,7 +105,7 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
 
   const { register, control, handleSubmit, watch, reset, setValue, formState: { errors, isSubmitting } } = useForm({
     resolver: zodResolver(txSchema),
-    defaultValues: { type: 'INCOME', currency: 'USD', date: new Date().toISOString().slice(0,10) },
+    defaultValues: { type: 'INCOME', currency: 'BDT', date: new Date().toISOString().slice(0,10) },
   })
   const type       = watch('type')
   const category   = watch('category')
@@ -126,7 +125,7 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
     if (open) {
       fetch('/api/projects?limit=200').then(r => r.json()).then(j => setProjects(j.data ?? []))
       fetch('/api/invoices?limit=200').then(r => r.json()).then(j => setInvoices((j.data ?? []).filter(inv => !['PAID','CANCELLED','DRAFT'].includes(inv.status))))
-      fetch('/api/users?limit=100').then(r => r.json()).then(j => setUsers(j.data ?? []))
+      fetch('/api/users?limit=200&roles=EMPLOYEE,MANAGER,SUPER_ADMIN').then(r => r.json()).then(j => setUsers(j.data ?? []))
       fetch('/api/freelancers?limit=200&type=FREELANCER').then(r => r.json()).then(j => setFreelancers(j.data ?? []))
       fetch('/api/freelancers?limit=200&type=AGENCY').then(r => r.json()).then(j => setAgencies(j.data ?? []))
       fetch('/api/employees?limit=200').then(r => r.json()).then(j => setEmployees(j.data ?? []))
@@ -205,7 +204,7 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
             <label className={lc}>Amount (BDT) *</label>
             <div className="flex gap-2 items-center">
               <span className="text-sm font-medium text-gray-500 border border-gray-200 rounded-lg px-3 py-2 bg-gray-50">BDT</span>
-              <input type="number" step="0.01" placeholder="0.00" {...register('amount')}
+              <input type="number" step="0.01" min="0" placeholder="0.00" {...register('amount')} onKeyDown={e => { if (e.key === '-' || e.key === 'e') e.preventDefault() }}
                 className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900" />
             </div>
             {errors.amount && <p className="mt-1 text-xs text-red-500">{errors.amount.message}</p>}
@@ -1014,18 +1013,11 @@ function TrendPill({ change, invert = false }) {
   )
 }
 
-const TAB_PARAM_MAP = {
-  transactions:  'Transactions',
-  income:        'Transactions',
-  expense:       'Transactions',
-  confirmations: 'Payment Confirmations',
-  requests:      'Payment Requests',
-}
 
-export default function AccountsPage() {
+function AccountsContent() {
   const { data: session }  = useSession()
-  const searchParams = useSearchParams()
-  const [tab,        setTab]        = useState(() => TAB_PARAM_MAP[searchParams?.get('tab')] ?? 'Overview')
+  const searchParams       = useSearchParams()
+  const activeTab          = searchParams.get('tab') || 'overview'
   const [summary,    setSummary]    = useState(null)
   const [dashStats,  setDashStats]  = useState(null)
   const [drillKey,   setDrillKey]   = useState(null)
@@ -1075,12 +1067,7 @@ export default function AccountsPage() {
   const [rejectNote,       setRejectNote]       = useState('')
 
   // Filters
-  const [txType,    setTxType]    = useState(() => {
-    const p = searchParams?.get('tab')
-    if (p === 'income')  return 'INCOME'
-    if (p === 'expense') return 'EXPENSE'
-    return ''
-  })
+  const [txType,    setTxType]    = useState('')
   const [txPage,    setTxPage]    = useState(1)
   const [period,    setPeriod]    = useState('month')
   const [startDate, setStartDate] = useState(() => {
@@ -1091,17 +1078,7 @@ export default function AccountsPage() {
   const [plStart,   setPlStart]   = useState(() => `${new Date().getFullYear()}-01-01`)
   const [plEnd,     setPlEnd]     = useState(() => new Date().toISOString().slice(0, 10))
 
-  // ── Sync tab/filter when URL ?tab= param changes ─────────────────────────
-  useEffect(() => {
-    const p = searchParams?.get('tab')
-    const mappedTab = TAB_PARAM_MAP[p] ?? 'Overview'
-    setTab(mappedTab)
-    if (p === 'income')  setTxType('INCOME')
-    else if (p === 'expense') setTxType('EXPENSE')
-    else if (p === 'transactions') setTxType('')
-  }, [searchParams])
-
-  // ── Loaders ──────────────────────────────────────────────────────────────
+// ── Loaders ──────────────────────────────────────────────────────────────
 
   const loadSummary = useCallback(async () => {
     try {
@@ -1203,16 +1180,6 @@ export default function AccountsPage() {
     }
   }, [])
 
-  useEffect(() => { loadSummary() },      [loadSummary])
-  useEffect(() => {
-    fetch('/api/dashboard/stats')
-      .then(r => r.json())
-      .then(j => { if (j.data) setDashStats(j.data) })
-      .catch(() => {})
-  }, [])
-  useEffect(() => { loadTransactions() }, [loadTransactions])
-  useEffect(() => { if (tab === 'P&L Report')              loadPL() },                   [tab, loadPL])
-
   const loadWithdrawals = useCallback(async () => {
     setWdLoading(true)
     try {
@@ -1224,7 +1191,21 @@ export default function AccountsPage() {
     finally { setWdLoading(false) }
   }, [wdStatus])
 
-  useEffect(() => { if (tab === 'Withdrawals') loadWithdrawals() }, [tab, loadWithdrawals])
+  useEffect(() => { if (activeTab === 'overview') loadSummary() },             [activeTab, loadSummary])
+  useEffect(() => {
+    if (activeTab === 'overview') {
+      fetch('/api/dashboard/stats')
+        .then(r => r.json())
+        .then(j => { if (j.data) setDashStats(j.data) })
+        .catch(() => {})
+    }
+  }, [activeTab])
+  useEffect(() => { if (activeTab === 'transactions')  loadTransactions()         }, [activeTab, loadTransactions])
+  useEffect(() => { if (activeTab === 'confirmations') loadPaymentConfirmations() }, [activeTab, loadPaymentConfirmations])
+  useEffect(() => { if (activeTab === 'requests')      loadPaymentRequests()      }, [activeTab, loadPaymentRequests])
+  useEffect(() => { if (activeTab === 'withdrawals')   { loadWithdrawals(); loadEditRequests() } }, [activeTab, loadWithdrawals, loadEditRequests])
+  useEffect(() => { if (activeTab === 'pl')            loadPL()                   }, [activeTab, loadPL])
+
 
   async function handleApproveWithdrawal(wd) {
     setApprovingWd(wd.id ?? wd._id)
@@ -1261,9 +1242,6 @@ export default function AccountsPage() {
     } catch (err) { toast.error(err.message) }
     finally { setRejectingWd(null) }
   }
-  useEffect(() => { if (tab === 'Payment Requests')        loadPaymentRequests() },       [tab, loadPaymentRequests])
-  useEffect(() => { if (tab === 'Payment Requests')        loadEditRequests() },          [tab, loadEditRequests])
-  useEffect(() => { if (tab === 'Payment Confirmations')   loadPaymentConfirmations() },  [tab, loadPaymentConfirmations])
 
   // ── Actions ───────────────────────────────────────────────────────────────
 
@@ -1331,6 +1309,13 @@ export default function AccountsPage() {
 
   // ── Render ────────────────────────────────────────────────────────────────
 
+  const tabBtnCls = (t) =>
+    `px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
+      activeTab === t
+        ? 'bg-gray-900 text-white border-gray-900'
+        : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400 hover:text-gray-800'
+    }`
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -1339,120 +1324,49 @@ export default function AccountsPage() {
           <h1 className="text-2xl font-bold text-gray-900">Accounts</h1>
           <p className="text-sm text-gray-400 mt-0.5">Track income, expenses and financial health</p>
         </div>
-        <button
-          onClick={() => { setEditingTx(null); setModalOpen(true) }}
-          className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 transition-colors"
-        >
-          <Plus className="w-4 h-4" /> Add Transaction
-        </button>
-      </div>
-
-      {/* Date range selector */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <span className="text-sm text-gray-500 font-medium">Period</span>
-        <DatePicker value={startDate || null} onChange={v => setStartDate(v ?? '')} />
-        <span className="text-gray-400 text-sm">to</span>
-        <DatePicker value={endDate || null} onChange={v => setEndDate(v ?? '')} />
-        {(startDate || endDate) && (
+        {(activeTab === 'overview' || activeTab === 'transactions') && (
           <button
-            onClick={() => { setStartDate(''); setEndDate('') }}
-            className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1.5 rounded hover:bg-gray-100 transition-colors"
+            onClick={() => { setEditingTx(null); setModalOpen(true) }}
+            className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 transition-colors"
           >
-            Clear
+            <Plus className="w-4 h-4" /> Add Transaction
           </button>
         )}
       </div>
 
-      {/* Tabs */}
-      <div className="flex border-b border-gray-200 gap-1">
-        {TABS.map((t) => (
-          <button key={t} onClick={() => setTab(t)}
-            className={`px-4 py-2.5 text-sm font-medium transition-colors whitespace-nowrap ${
-              tab === t
-                ? 'border-b-2 border-gray-900 text-gray-900 -mb-px'
-                : 'text-gray-400 hover:text-gray-600'
-            }`}>
-            {t}
-          </button>
-        ))}
-      </div>
-
-      {/* ── OVERVIEW ── */}
-      {tab === 'Overview' && (
+      {/* ── OVERVIEW tab ── */}
+      {activeTab === 'overview' && (
         <div className="space-y-6">
+          {/* Date range selector */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className="text-sm text-gray-500 font-medium">Period</span>
+            <DatePicker value={startDate || null} onChange={v => setStartDate(v ?? '')} />
+            <span className="text-gray-400 text-sm">to</span>
+            <DatePicker value={endDate || null} onChange={v => setEndDate(v ?? '')} />
+            {(startDate || endDate) && (
+              <button
+                onClick={() => { setStartDate(''); setEndDate('') }}
+                className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1.5 rounded hover:bg-gray-100 transition-colors"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+
           {loading ? <Spinner /> : summary ? (
             <>
-              {/* ── Monthly financial metric cards (dashboard-style) ── */}
               {(() => {
                 const f = dashStats?.financials ?? {}
                 const fmtVal = (n) => n == null ? '—' : `BDT ${Number(n).toLocaleString('en-BD', { minimumFractionDigits: 0 })}`
-
                 const CARDS = [
-                  {
-                    label:  'Monthly Income',
-                    value:  fmtVal(f.income?.value),
-                    prev:   `vs ${fmtVal(f.income?.prevValue)} last month`,
-                    change: f.income?.change,
-                    icon:   TrendingUp,
-                    bg:     'bg-green-50',
-                    color:  'text-green-600',
-                  },
-                  {
-                    label:  'Monthly Expense',
-                    value:  fmtVal(f.expense?.value),
-                    prev:   `vs ${fmtVal(f.expense?.prevValue)} last month`,
-                    change: f.expense?.change,
-                    invert: true,
-                    icon:   TrendingDown,
-                    bg:     'bg-red-50',
-                    color:  'text-red-500',
-                  },
-                  {
-                    label:  'Net Profit',
-                    value:  fmtVal(f.profit?.value),
-                    prev:   `vs ${fmtVal(f.profit?.prevValue)} last month`,
-                    change: f.profit?.change,
-                    icon:   DollarSign,
-                    bg:     'bg-blue-50',
-                    color:  'text-blue-600',
-                  },
-                  {
-                    label:  'Gross Margin',
-                    value:  `${f.grossMargin?.value ?? 0}%`,
-                    prev:   `was ${f.grossMargin?.prevValue ?? 0}% last month`,
-                    change: f.grossMargin?.value != null && f.grossMargin?.prevValue != null
-                              ? (f.grossMargin.value - f.grossMargin.prevValue) : null,
-                    icon:   Percent,
-                    bg:     'bg-purple-50',
-                    color:  'text-purple-600',
-                  },
-                  {
-                    label:  'Expense Ratio',
-                    value:  `${f.expenseRatio?.value ?? 0}%`,
-                    prev:   `was ${f.expenseRatio?.prevValue ?? 0}% last month`,
-                    change: f.expenseRatio?.value != null && f.expenseRatio?.prevValue != null
-                              ? (f.expenseRatio.value - f.expenseRatio.prevValue) : null,
-                    invert: true,
-                    icon:   BarChart2,
-                    bg:     'bg-orange-50',
-                    color:  'text-orange-500',
-                  },
-                  {
-                    label:  'Transactions',
-                    value:  f.transactions?.value ?? 0,
-                    prev:   `${f.transactions?.prevValue ?? 0} last month`,
-                    change: f.transactions?.change,
-                    icon:   FileTextIcon,
-                    bg:     'bg-indigo-50',
-                    color:  'text-indigo-600',
-                  },
+                  { label: 'Monthly Income',  value: fmtVal(f.income?.value),  prev: `vs ${fmtVal(f.income?.prevValue)} last month`,  change: f.income?.change,  icon: TrendingUp,   bg: 'bg-green-50',  color: 'text-green-600' },
+                  { label: 'Monthly Expense', value: fmtVal(f.expense?.value), prev: `vs ${fmtVal(f.expense?.prevValue)} last month`, change: f.expense?.change, invert: true, icon: TrendingDown, bg: 'bg-red-50',    color: 'text-red-500' },
+                  { label: 'Net Profit',      value: fmtVal(f.profit?.value),  prev: `vs ${fmtVal(f.profit?.prevValue)} last month`,  change: f.profit?.change,  icon: DollarSign,   bg: 'bg-blue-50',   color: 'text-blue-600' },
+                  { label: 'Gross Margin',    value: `${f.grossMargin?.value ?? 0}%`,  prev: `was ${f.grossMargin?.prevValue ?? 0}% last month`,  change: f.grossMargin?.value  != null && f.grossMargin?.prevValue  != null ? (f.grossMargin.value  - f.grossMargin.prevValue)  : null, icon: Percent,      bg: 'bg-purple-50', color: 'text-purple-600' },
+                  { label: 'Expense Ratio',   value: `${f.expenseRatio?.value ?? 0}%`, prev: `was ${f.expenseRatio?.prevValue ?? 0}% last month`, change: f.expenseRatio?.value != null && f.expenseRatio?.prevValue != null ? (f.expenseRatio.value - f.expenseRatio.prevValue) : null, invert: true, icon: BarChart2, bg: 'bg-orange-50', color: 'text-orange-500' },
+                  { label: 'Transactions',    value: f.transactions?.value ?? 0,       prev: `${f.transactions?.prevValue ?? 0} last month`,      change: f.transactions?.change,  icon: FileTextIcon, bg: 'bg-indigo-50', color: 'text-indigo-600' },
                 ]
-
-                const monthOptions = Array.from({ length: 6 }, (_, i) => ({
-                  key:   getDrillKey(i),
-                  label: getMonthLabel(i),
-                }))
-
+                const monthOptions = Array.from({ length: 6 }, (_, i) => ({ key: getDrillKey(i), label: getMonthLabel(i) }))
                 return (
                   <>
                     <div className="grid grid-cols-2 xl:grid-cols-3 gap-4">
@@ -1473,249 +1387,150 @@ export default function AccountsPage() {
                         )
                       })}
                     </div>
-
-                    {/* Month chips → drill into daily calendar */}
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-xs text-gray-400 mr-1">Drill down by month:</span>
                       {monthOptions.map(m => (
-                        <button
-                          key={m.key}
-                          onClick={() => setDrillKey(prev => prev === m.key ? null : m.key)}
-                          className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
-                            drillKey === m.key
-                              ? 'bg-gray-900 text-white border-gray-900'
-                              : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400 hover:text-gray-800'
-                          }`}
-                        >
+                        <button key={m.key} onClick={() => setDrillKey(prev => prev === m.key ? null : m.key)} className={tabBtnCls(drillKey === m.key ? 'overview' : '__none__')}>
                           {m.label}
                         </button>
                       ))}
                     </div>
-
-                    {/* Daily drill-down */}
-                    {drillKey && (
-                      <CalendarDrillDown
-                        drillKey={drillKey}
-                        onClose={() => setDrillKey(null)}
-                      />
-                    )}
+                    {drillKey && <CalendarDrillDown drillKey={drillKey} onClose={() => setDrillKey(null)} />}
                   </>
                 )
               })()}
-
             </>
           ) : null}
         </div>
       )}
 
-      {/* ── TRANSACTIONS ── */}
-      {tab === 'Transactions' && (
-        <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-3 flex-wrap">
-            <div className="flex gap-1">
-              {['', 'INCOME', 'EXPENSE'].map((t) => (
-                <button key={t || 'all'} onClick={() => { setTxType(t); setTxPage(1) }}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                    txType === t
-                      ? 'bg-gray-900 text-white'
-                      : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
-                  }`}>
-                  {t || 'All'}
+      {/* ── TRANSACTIONS tab ── */}
+      {activeTab === 'transactions' && (
+        <div className="space-y-4">
+          {/* Filters */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className="text-sm text-gray-500 font-medium">Period</span>
+            <DatePicker value={startDate || null} onChange={v => { setStartDate(v ?? ''); setTxPage(1) }} />
+            <span className="text-gray-400 text-sm">to</span>
+            <DatePicker value={endDate || null} onChange={v => { setEndDate(v ?? ''); setTxPage(1) }} />
+            {(startDate || endDate) && (
+              <button onClick={() => { setStartDate(''); setEndDate(''); setTxPage(1) }} className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1.5 rounded hover:bg-gray-100 transition-colors">Clear</button>
+            )}
+            <div className="flex gap-1 ml-auto">
+              {[['', 'All'], ['INCOME', 'Income'], ['EXPENSE', 'Expense']].map(([v, l]) => (
+                <button key={v} onClick={() => { setTxType(v); setTxPage(1) }}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${txType === v ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'}`}>
+                  {l}
                 </button>
               ))}
             </div>
-            <span className="ml-auto text-sm text-gray-400">{txMeta.total} transaction{txMeta.total !== 1 ? 's' : ''}</span>
           </div>
 
-          {txLoading ? <Spinner /> : txList.length === 0 ? (
-            <div className="text-center py-16">
-              <DollarSign className="w-10 h-10 text-gray-200 mx-auto mb-3" />
-              <p className="text-sm text-gray-400">No transactions found</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[900px]">
-                <thead>
-                  <tr className="border-b border-gray-100">
-                    <th className="px-4 py-3 text-left text-xs text-gray-400 uppercase tracking-wide">TXN ID</th>
-                    <th className="px-4 py-3 text-left text-xs text-gray-400 uppercase tracking-wide">Date / Time</th>
-                    <th className="px-4 py-3 text-left text-xs text-gray-400 uppercase tracking-wide">Description</th>
-                    <th className="px-4 py-3 text-left text-xs text-gray-400 uppercase tracking-wide">Category</th>
-                    <th className="px-4 py-3 text-left text-xs text-gray-400 uppercase tracking-wide">Type</th>
-                    <th className="px-4 py-3 text-left text-xs text-gray-400 uppercase tracking-wide">People</th>
-                    <th className="px-4 py-3 text-left text-xs text-gray-400 uppercase tracking-wide">Payment</th>
-                    <th className="px-4 py-3 text-right text-xs text-gray-400 uppercase tracking-wide">Amount</th>
-                    <th className="px-4 py-3" />
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {txList.map((tx) => {
-                    const txDate = new Date(tx.date)
-                    const entryDate = new Date(tx.createdAt)
-                    return (
-                      <tr key={tx.id} className="hover:bg-gray-50 transition-colors">
-                        <td className="px-4 py-3">
-                          <span className="text-xs font-mono text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
-                            {tx.txnId ?? '—'}
-                          </span>
+          <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+            {txLoading ? <Spinner /> : txList.length === 0 ? (
+              <div className="text-center py-16 text-gray-400 text-sm">No transactions found</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm min-w-[700px]">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-100">
+                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Date</th>
+                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Type</th>
+                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Category</th>
+                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Description</th>
+                      <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">Amount</th>
+                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Method</th>
+                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Ref</th>
+                      <th className="px-4 py-3" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {txList.map(tx => (
+                      <tr key={tx.id ?? tx._id} className="hover:bg-gray-50/50 transition-colors">
+                        <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtDate(tx.date)}</td>
+                        <td className="px-4 py-3"><StatusDot status={tx.type} /></td>
+                        <td className="px-4 py-3 text-xs text-gray-600">{tx.category}</td>
+                        <td className="px-4 py-3 text-xs text-gray-700 max-w-[200px] truncate">{tx.description}</td>
+                        <td className={`px-4 py-3 text-right text-sm font-semibold whitespace-nowrap ${tx.type === 'INCOME' ? 'text-green-600' : 'text-red-500'}`}>
+                          {tx.type === 'INCOME' ? '+' : '-'}{fmt(tx.amount)}
                         </td>
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          <p className="text-sm text-gray-700">{txDate.toLocaleDateString('en-BD', { day:'2-digit', month:'short', year:'numeric' })}</p>
-                          <p className="text-xs text-gray-400">Entered: {entryDate.toLocaleString('en-BD', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })}</p>
-                        </td>
-                        <td className="px-4 py-3 max-w-[200px]">
-                          <p className="text-sm font-medium text-gray-900 truncate">{tx.description}</p>
-                          {tx.vendor    && <p className="text-xs text-gray-400">Vendor: {tx.vendor}</p>}
-                          {tx.reference && <p className="text-xs text-gray-400">Ref: {tx.reference}</p>}
-                          {tx.projectId?.name && (
-                            <p className="text-xs text-gray-400">
-                              {tx.projectId.projectCode ? `[${tx.projectId.projectCode}] ` : ''}{tx.projectId.name}
-                            </p>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{tx.category}</td>
-                        <td className="px-4 py-3">
-                          <StatusDot status={tx.type} />
+                        <td className="px-4 py-3 text-xs text-gray-500">{tx.paymentMethod?.replace(/_/g, ' ') ?? '—'}</td>
+                        <td className="px-4 py-3 text-xs text-gray-500">
+                          {tx.receiptUrl ? (
+                            <a href={tx.receiptUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-blue-600 hover:underline">
+                              <Paperclip className="w-3 h-3" /> Receipt
+                            </a>
+                          ) : tx.txnId ? (
+                            <span className="font-mono text-xs">{tx.txnId}</span>
+                          ) : '—'}
                         </td>
                         <td className="px-4 py-3">
-                          {tx.paidBy?.name && <p className="text-xs text-gray-600">Paid by: <span className="font-medium">{tx.paidBy.name}</span></p>}
-                          {tx.accountManager?.name && <p className="text-xs text-gray-600">Acc. Mgr: <span className="font-medium">{tx.accountManager.name}</span></p>}
-                          {tx.createdBy?.name && <p className="text-xs text-gray-400">Entry by: {tx.createdBy.name}</p>}
-                        </td>
-                        <td className="px-4 py-3">
-                          {tx.paymentMethod && (
-                            <p className="text-xs text-gray-500">{tx.paymentMethod.replace('_',' ')}</p>
-                          )}
-                          {tx.receiptUrl && <DocPreview url={tx.receiptUrl} compact />}
-                        </td>
-                        <td className={`px-4 py-3 text-sm font-bold text-right whitespace-nowrap ${tx.type === 'INCOME' ? 'text-green-600' : 'text-red-500'}`}>
-                          {tx.type === 'INCOME' ? '+' : '-'}<TkAmt value={tx.amount} decimals={2} />
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            <button onClick={() => { setEditingTx(tx); setModalOpen(true) }}
-                              className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors">
+                          <div className="flex items-center gap-1 justify-end">
+                            <button onClick={() => { setEditingTx(tx); setModalOpen(true) }} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">
                               <Pencil className="w-3.5 h-3.5" />
                             </button>
-                            <button onClick={() => handleDelete(tx)}
-                              className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors">
+                            <button onClick={() => handleDelete(tx)} className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors">
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
                         </td>
                       </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {txMeta.pages > 1 && (
-            <div className="px-6 py-4 border-t border-gray-100">
-              <Pagination page={txMeta.page} pages={txMeta.pages} onChange={(p) => setTxPage(p)} />
-            </div>
-          )}
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {txMeta.pages > 1 && (
+              <div className="px-4 py-3 border-t border-gray-100">
+                <Pagination meta={txMeta} page={txPage} onPageChange={setTxPage} />
+              </div>
+            )}
+          </div>
         </div>
       )}
 
-      {/* ── PAYMENT CONFIRMATIONS ── */}
-      {tab === 'Payment Confirmations' && (
+      {/* ── PAYMENT CONFIRMATIONS tab ── */}
+      {activeTab === 'confirmations' && (
         <div className="space-y-4">
-          <div className="bg-white rounded-xl border border-gray-100 px-5 py-3 flex items-center gap-3 flex-wrap">
-            <span className="text-sm text-gray-500">Status:</span>
-            <div className="flex gap-1">
-              {['PENDING_CONFIRMATION', 'CONFIRMED', 'REJECTED'].map(s => (
-                <button key={s} onClick={() => { setPcStatus(s); setPcPage(1) }}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                    pcStatus === s ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
-                  }`}>
-                  {s === 'PENDING_CONFIRMATION' ? 'Pending' : s.charAt(0) + s.slice(1).toLowerCase()}
-                </button>
-              ))}
-            </div>
+          <div className="flex gap-2">
+            {[['PENDING_CONFIRMATION', 'Pending'], ['CONFIRMED', 'Confirmed'], ['REJECTED', 'Rejected'], ['', 'All']].map(([v, l]) => (
+              <button key={v} onClick={() => { setPcStatus(v); setPcPage(1) }}
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${pcStatus === v ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'}`}>
+                {l}
+              </button>
+            ))}
           </div>
 
-          {pcLoading ? <Spinner /> : pcList.length === 0 ? (
-            <div className="bg-white rounded-xl border border-gray-100 py-16 text-center text-sm text-gray-400">
-              No payment confirmations found
-            </div>
-          ) : (
-            <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-gray-100">
-                    <th className="px-5 py-3 text-left text-xs text-gray-400 uppercase tracking-wide">Project</th>
-                    <th className="px-5 py-3 text-left text-xs text-gray-400 uppercase tracking-wide">Invoice</th>
-                    <th className="px-5 py-3 text-left text-xs text-gray-400 uppercase tracking-wide">Submitted By</th>
-                    <th className="px-5 py-3 text-left text-xs text-gray-400 uppercase tracking-wide">Client</th>
-                    <th className="px-5 py-3 text-left text-xs text-gray-400 uppercase tracking-wide">Amount</th>
-                    <th className="px-5 py-3 text-left text-xs text-gray-400 uppercase tracking-wide">Method</th>
-                    <th className="px-5 py-3 text-left text-xs text-gray-400 uppercase tracking-wide">Date</th>
-                    <th className="px-5 py-3 text-left text-xs text-gray-400 uppercase tracking-wide">Proof</th>
-                    <th className="px-5 py-3 text-left text-xs text-gray-400 uppercase tracking-wide">Status</th>
-                    <th className="px-5 py-3" />
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {pcList.map(pc => {
-                    const statusLabel = {
-                      PENDING_CONFIRMATION: 'Pending',
-                      CONFIRMED:            'Confirmed',
-                      REJECTED:             'Rejected',
-                    }[pc.status] ?? pc.status
-                    const project = pc.projectId
-                    const client  = pc.clientId?.userId
-                    return (
-                      <tr key={pc.id} className="hover:bg-gray-50">
-                        <td className="px-5 py-3">
-                          <p className="text-sm font-medium text-gray-900">{project?.name ?? '—'}</p>
-                          {project?.projectCode && (
-                            <p className="text-xs font-mono text-gray-400">{project.projectCode}</p>
-                          )}
+          <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+            {pcLoading ? <Spinner /> : pcList.length === 0 ? (
+              <div className="text-center py-16 text-gray-400 text-sm">No payment confirmations found</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm min-w-[600px]">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-100">
+                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Project</th>
+                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Client</th>
+                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Invoice</th>
+                      <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">Amount</th>
+                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Status</th>
+                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Submitted By</th>
+                      <th className="px-4 py-3" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {pcList.map(pc => (
+                      <tr key={pc.id ?? pc._id} className="hover:bg-gray-50/50 transition-colors">
+                        <td className="px-4 py-3">
+                          <p className="text-xs font-medium text-gray-800">{pc.projectId?.name ?? '—'}</p>
+                          {pc.projectId?.projectCode && <p className="text-xs text-gray-400">{pc.projectId.projectCode}</p>}
                         </td>
-                        <td className="px-5 py-3">
-                          {pc.invoiceId ? (
-                            <Link href={`/admin/invoices/${pc.invoiceId.id ?? pc.invoiceId._id}`}
-                              className="text-xs font-mono text-blue-600 hover:text-blue-800 font-medium">
-                              {pc.invoiceId.invoiceNumber}
-                            </Link>
-                          ) : <span className="text-xs text-gray-400">—</span>}
-                        </td>
-                        <td className="px-5 py-3">
-                          {pc.submittedBy ? (
-                            <div className="flex items-center gap-2">
-                              <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center shrink-0">
-                                {pc.submittedBy.name?.charAt(0).toUpperCase()}
-                              </div>
-                              <span className="text-sm text-gray-700">{pc.submittedBy.name}</span>
-                            </div>
-                          ) : <span className="text-xs text-gray-400">—</span>}
-                        </td>
-                        <td className="px-5 py-3 text-sm text-gray-600">{client?.name ?? '—'}</td>
-                        <td className="px-5 py-3 text-sm font-semibold text-gray-900">
-                          {pc.currency} {Number(pc.amount).toLocaleString()}
-                        </td>
-                        <td className="px-5 py-3 text-sm text-gray-500">{pc.paymentMethod?.replace('_', ' ')}</td>
-                        <td className="px-5 py-3 text-sm text-gray-500">{fmtDate(pc.paymentDate)}</td>
-                        <td className="px-5 py-3">
-                          {pc.receiptUrl ? (
-                            <a href={pc.receiptUrl} target="_blank" rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline">
-                              <Paperclip className="w-3 h-3" /> View
-                            </a>
-                          ) : <span className="text-xs text-gray-400">—</span>}
-                        </td>
-                        <td className="px-5 py-3">
-                          <StatusDot status={pc.status} />
-                          {pc.status === 'CONFIRMED' && pc.confirmedBy?.name && (
-                            <p className="text-xs text-gray-400 mt-0.5">by {pc.confirmedBy.name}</p>
-                          )}
-                          {pc.status === 'REJECTED' && pc.rejectionNote && (
-                            <p className="text-xs text-gray-400 mt-0.5 max-w-xs truncate">{pc.rejectionNote}</p>
-                          )}
-                        </td>
-                        <td className="px-5 py-3 text-right">
+                        <td className="px-4 py-3 text-xs text-gray-600">{pc.clientId?.userId?.name ?? '—'}</td>
+                        <td className="px-4 py-3 text-xs text-gray-500">{pc.invoiceId?.invoiceNumber ?? '—'}</td>
+                        <td className="px-4 py-3 text-right text-sm font-semibold text-gray-800 whitespace-nowrap">{fmt(pc.amount)}</td>
+                        <td className="px-4 py-3"><StatusDot status={pc.status} /></td>
+                        <td className="px-4 py-3 text-xs text-gray-500">{pc.submittedBy?.name ?? '—'}</td>
+                        <td className="px-4 py-3">
                           {pc.status === 'PENDING_CONFIRMATION' && (
                             <button onClick={() => setConfirmingPc(pc)}
                               className="px-3 py-1.5 text-xs font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors">
@@ -1724,436 +1539,301 @@ export default function AccountsPage() {
                           )}
                         </td>
                       </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-              {pcMeta.pages > 1 && (
-                <div className="px-5 py-4 border-t border-gray-100">
-                  <Pagination page={pcPage} pages={pcMeta.pages} onPageChange={setPcPage} />
-                </div>
-              )}
-            </div>
-          )}
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {pcMeta.pages > 1 && (
+              <div className="px-4 py-3 border-t border-gray-100">
+                <Pagination meta={pcMeta} page={pcPage} onPageChange={setPcPage} />
+              </div>
+            )}
+          </div>
         </div>
       )}
 
-      {/* ── PAYMENT REQUESTS ── */}
-      {tab === 'Payment Requests' && (
+      {/* ── PAYMENT REQUESTS tab ── */}
+      {activeTab === 'requests' && (
         <div className="space-y-4">
+          <div className="flex gap-2">
+            {[['PENDING', 'Pending'], ['APPROVED', 'Approved'], ['REJECTED', 'Rejected'], ['', 'All']].map(([v, l]) => (
+              <button key={v} onClick={() => { setPrStatus(v); setPrPage(1) }}
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${prStatus === v ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'}`}>
+                {l}
+              </button>
+            ))}
+          </div>
 
-          {/* ── Owner: Pending Edit Requests panel ── */}
-          {editRequests.length > 0 && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl overflow-hidden">
-              <div className="px-5 py-3 border-b border-amber-200 flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 text-amber-600" />
-                <span className="text-sm font-semibold text-amber-800">Pending Edit Requests ({editRequests.length})</span>
+          <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+            {prLoading ? <Spinner /> : prList.length === 0 ? (
+              <div className="text-center py-16 text-gray-400 text-sm">No payment requests found</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm min-w-[640px]">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-100">
+                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Title</th>
+                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Category</th>
+                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Project</th>
+                      <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">Amount</th>
+                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Status</th>
+                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Submitted By</th>
+                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Date</th>
+                      <th className="px-4 py-3" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {prList.map(pr => (
+                      <tr key={pr.id ?? pr._id} className="hover:bg-gray-50/50 transition-colors">
+                        <td className="px-4 py-3 text-xs font-medium text-gray-800 max-w-[160px] truncate">{pr.title ?? pr.description ?? '—'}</td>
+                        <td className="px-4 py-3 text-xs text-gray-600">{pr.category ?? '—'}</td>
+                        <td className="px-4 py-3 text-xs text-gray-500">{pr.projectId?.name ?? '—'}</td>
+                        <td className="px-4 py-3 text-right text-sm font-semibold text-gray-800 whitespace-nowrap">{fmt(pr.amount)}</td>
+                        <td className="px-4 py-3"><StatusDot status={pr.status} /></td>
+                        <td className="px-4 py-3 text-xs text-gray-500">{pr.submittedBy?.name ?? '—'}</td>
+                        <td className="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">{fmtDate(pr.date ?? pr.createdAt)}</td>
+                        <td className="px-4 py-3">
+                          {pr.status === 'PENDING' && (
+                            <button onClick={() => setApprovingPr(pr)}
+                              className="px-3 py-1.5 text-xs font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors">
+                              Review
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-              <div className="divide-y divide-amber-100">
+            )}
+            {prMeta.pages > 1 && (
+              <div className="px-4 py-3 border-t border-gray-100">
+                <Pagination meta={prMeta} page={prPage} onPageChange={setPrPage} />
+              </div>
+            )}
+          </div>
+
+          {/* Edit Requests section for owners */}
+          {editRequests.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+              <p className="text-sm font-semibold text-amber-800 mb-3">Pending Edit Requests ({editRequests.length})</p>
+              <div className="space-y-2">
                 {editRequests.map(er => (
-                  <div key={er.id} className="px-5 py-3 flex items-start gap-4">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900">{er.requesterId?.name ?? 'Unknown'}</p>
-                      <p className="text-xs text-gray-500 mt-0.5">Item ID: <span className="font-mono">{String(er.itemId)}</span></p>
-                      <p className="text-xs text-gray-600 mt-1 italic">"{er.reason}"</p>
-                      <p className="text-xs text-gray-400 mt-0.5">{fmtDate(er.createdAt)}</p>
+                  <div key={er.id ?? er._id} className="bg-white rounded-lg border border-amber-100 px-4 py-3 flex items-center justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-medium text-gray-800">{er.requesterId?.name ?? '—'} wants to edit an expense</p>
+                      {er.reason && <p className="text-xs text-gray-500 mt-0.5">{er.reason}</p>}
                     </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      {rejectingEr?.id === er.id ? (
-                        <div className="flex items-center gap-2">
-                          <input
-                            value={rejectNote}
-                            onChange={e => setRejectNote(e.target.value)}
-                            placeholder="Rejection note…"
-                            className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-gray-900 w-44"
-                          />
-                          <button onClick={() => handleRejectEditRequest(er, rejectNote)}
-                            className="px-2.5 py-1.5 text-xs font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors">
-                            Confirm
-                          </button>
-                          <button onClick={() => { setRejectingEr(null); setRejectNote('') }}
-                            className="px-2.5 py-1.5 text-xs text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50">
-                            Cancel
-                          </button>
-                        </div>
-                      ) : (
-                        <>
-                          <button onClick={() => { setRejectingEr(er); setRejectNote('') }}
-                            className="px-3 py-1.5 text-xs font-medium text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-1">
-                            <XCircle className="w-3.5 h-3.5" /> Reject
-                          </button>
-                          <button onClick={() => handleApproveEditRequest(er)}
-                            className="px-3 py-1.5 text-xs font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 transition-colors flex items-center gap-1">
-                            <CheckCircle2 className="w-3.5 h-3.5" /> Approve & Get OTP
-                          </button>
-                        </>
-                      )}
+                    <div className="flex gap-2 shrink-0">
+                      <button onClick={() => handleApproveEditRequest(er)}
+                        className="px-3 py-1.5 text-xs font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-800">
+                        Approve
+                      </button>
+                      <button onClick={() => setRejectingEr(er)}
+                        className="px-3 py-1.5 text-xs font-medium border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50">
+                        Reject
+                      </button>
                     </div>
                   </div>
                 ))}
               </div>
             </div>
           )}
-
-          <div className="bg-white rounded-xl border border-gray-100 px-5 py-3 flex items-center gap-3 flex-wrap">
-            <span className="text-sm text-gray-500">Status:</span>
-            <div className="flex gap-1">
-              {['PENDING', 'APPROVED', 'REJECTED'].map(s => (
-                <button key={s} onClick={() => { setPrStatus(s); setPrPage(1) }}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                    prStatus === s ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
-                  }`}>
-                  {s}
-                </button>
-              ))}
-            </div>
-            <span className="ml-auto text-sm text-gray-400">{prMeta.total} request{prMeta.total !== 1 ? 's' : ''}</span>
-          </div>
-
-          <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-            {prLoading ? <Spinner /> : prList.length === 0 ? (
-              <div className="text-center py-16">
-                <Clock className="w-10 h-10 text-gray-200 mx-auto mb-3" />
-                <p className="text-sm text-gray-400">No {prStatus.toLowerCase()} payment requests</p>
-              </div>
-            ) : (
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-gray-100">
-                    <th className="px-5 py-3 text-left text-xs text-gray-400 uppercase tracking-wide">Request</th>
-                    <th className="px-5 py-3 text-left text-xs text-gray-400 uppercase tracking-wide">Project</th>
-                    <th className="px-5 py-3 text-left text-xs text-gray-400 uppercase tracking-wide">Category</th>
-                    <th className="px-5 py-3 text-left text-xs text-gray-400 uppercase tracking-wide">Submitted By</th>
-                    <th className="px-5 py-3 text-left text-xs text-gray-400 uppercase tracking-wide">Date</th>
-                    <th className="px-5 py-3 text-right text-xs text-gray-400 uppercase tracking-wide">Amount</th>
-                    <th className="px-5 py-3 text-left text-xs text-gray-400 uppercase tracking-wide">Files</th>
-                    <th className="px-5 py-3" />
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {prList.map(e => {
-                    const isLocked   = (e.status === 'APPROVED' || e.status === 'REJECTED') && !editUnlocked.has(e.id)
-                    // Find an approved (but OTP not yet used) edit request for this expense
-                    const approvedEr = editRequests.find(er => String(er.itemId) === e.id && er.status === 'APPROVED' && !er.otpUsed)
-                    return (
-                      <tr key={e.id} className="hover:bg-gray-50 transition-colors">
-                        <td className="px-5 py-3">
-                          <p className="text-sm font-medium text-gray-900">{e.title}</p>
-                          {e.notes && <p className="text-xs text-gray-400 mt-0.5 truncate max-w-xs">{e.notes}</p>}
-                        </td>
-                        <td className="px-5 py-3">
-                          {e.projectId ? (
-                            <Link href={`/admin/projects/${e.projectId?.id ?? e.projectId?._id ?? e.projectId}`}
-                              className="text-sm text-blue-600 hover:underline font-medium">
-                              {e.projectId.name ?? '—'}
-                            </Link>
-                          ) : <span className="text-sm text-gray-400">—</span>}
-                          {e.venture && (
-                            <span className={`ml-2 px-1.5 py-0.5 text-xs font-medium rounded ${VENTURE_COLORS[e.venture] ?? 'bg-gray-100 text-gray-500'}`}>
-                              {e.venture}
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-5 py-3 text-sm text-gray-600">{e.category}</td>
-                        <td className="px-5 py-3 text-sm text-gray-700">{e.submittedBy?.name ?? '—'}</td>
-                        <td className="px-5 py-3 text-sm text-gray-500">{fmtDate(e.date)}</td>
-                        <td className="px-5 py-3 text-sm font-semibold text-gray-900 text-right"><TkAmt value={e.amount} decimals={2} /></td>
-                        <td className="px-5 py-3">
-                          <div className="flex items-center gap-1.5">
-                            {e.invoiceUrl && <DocPreview url={e.invoiceUrl} compact />}
-                            {e.receiptUrl && <DocPreview url={e.receiptUrl} compact />}
-                            {!e.invoiceUrl && !e.receiptUrl && <span className="text-xs text-gray-300">—</span>}
-                          </div>
-                        </td>
-                        <td className="px-5 py-3 text-right">
-                          {prStatus === 'PENDING' ? (
-                            <button onClick={() => setApprovingPr(e)}
-                              className="px-3 py-1.5 text-xs font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 transition-colors">
-                              Review
-                            </button>
-                          ) : isLocked ? (
-                            <div className="flex items-center justify-end gap-1.5">
-                              <button onClick={() => setEditRequestModal(e)}
-                                className="px-2.5 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors whitespace-nowrap">
-                                Request Edit
-                              </button>
-                              {approvedEr && (
-                                <button onClick={() => setOtpModal({ requestId: approvedEr.id, expenseId: e.id })}
-                                  className="px-2.5 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors whitespace-nowrap">
-                                  Enter OTP
-                                </button>
-                              )}
-                            </div>
-                          ) : (
-                            <button onClick={() => setApprovingPr(e)}
-                              className="px-3 py-1.5 text-xs font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 transition-colors">
-                              Edit
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            )}
-
-            {prMeta.pages > 1 && (
-              <div className="px-5 py-4 border-t border-gray-100">
-                <Pagination page={prMeta.page} pages={prMeta.pages} onChange={(p) => setPrPage(p)} />
-              </div>
-            )}
-          </div>
         </div>
       )}
 
-      {/* ── WITHDRAWALS ── */}
-      {tab === 'Withdrawals' && (() => {
-        const WD_STATUS_COLORS = {
-          PENDING:  'bg-yellow-100 text-yellow-700',
-          APPROVED: 'bg-green-100 text-green-700',
-          PAID:     'bg-teal-100 text-teal-700',
-          REJECTED: 'bg-red-100 text-red-600',
-        }
-        const ic = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900'
-        return (
-          <div className="space-y-4">
-            {/* Filter */}
-            <div className="flex items-center gap-3">
-              <span className="text-sm text-gray-500">Filter by status</span>
-              <Select value={wdStatus} onChange={v => setWdStatus(v ?? '')}
-                options={[
-                  { value: 'PENDING',  label: 'Pending' },
-                  { value: 'APPROVED', label: 'Approved' },
-                  { value: 'REJECTED', label: 'Rejected' },
-                ]}
-                placeholder="All"
-                size="sm"
-              />
-            </div>
+      {/* ── WITHDRAWALS tab ── */}
+      {activeTab === 'withdrawals' && (
+        <div className="space-y-4">
+          <div className="flex gap-2">
+            {[['', 'All'], ['PENDING', 'Pending'], ['APPROVED', 'Approved'], ['REJECTED', 'Rejected']].map(([v, l]) => (
+              <button key={v} onClick={() => setWdStatus(v)}
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${wdStatus === v ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'}`}>
+                {l}
+              </button>
+            ))}
+          </div>
 
-            <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-              {wdLoading ? (
-                <div className="flex justify-center py-12">
-                  <div className="w-6 h-6 border-2 border-gray-300 border-t-gray-700 rounded-full animate-spin" />
-                </div>
-              ) : wdList.length === 0 ? (
-                <div className="py-16 text-center text-gray-400 text-sm">No withdrawal requests found</div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[800px]">
-                    <thead>
-                      <tr className="border-b border-gray-100 bg-gray-50/50">
-                        {['Freelancer', 'Project', 'Amount', 'Method', 'Details', 'Requested', 'Status', 'Actions'].map(h => (
-                          <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">{h}</th>
-                        ))}
+          <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+            {wdLoading ? <Spinner /> : wdList.length === 0 ? (
+              <div className="text-center py-16 text-gray-400 text-sm">No withdrawal requests found</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm min-w-[640px]">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-100">
+                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Freelancer</th>
+                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Project</th>
+                      <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">Amount</th>
+                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Status</th>
+                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Requested</th>
+                      <th className="px-4 py-3" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {wdList.map(wd => (
+                      <tr key={wd.id ?? wd._id} className="hover:bg-gray-50/50 transition-colors">
+                        <td className="px-4 py-3">
+                          <p className="text-xs font-medium text-gray-800">{wd.freelancerId?.userId?.name ?? '—'}</p>
+                          {wd.freelancerId?.userId?.email && <p className="text-xs text-gray-400">{wd.freelancerId.userId.email}</p>}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-gray-500">{wd.projectId?.name ?? '—'}</td>
+                        <td className="px-4 py-3 text-right text-sm font-semibold text-gray-800 whitespace-nowrap">{fmt(wd.amount)}</td>
+                        <td className="px-4 py-3"><StatusDot status={wd.status} /></td>
+                        <td className="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">{fmtDate(wd.createdAt)}</td>
+                        <td className="px-4 py-3">
+                          {wd.status === 'PENDING' && (
+                            <div className="flex gap-1.5 justify-end">
+                              <button onClick={() => setWdApproveModal(wd)}
+                                className="px-3 py-1.5 text-xs font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors">
+                                Approve
+                              </button>
+                              <button
+                                onClick={async () => {
+                                  const note = window.prompt('Rejection reason (optional):') ?? ''
+                                  setWdNote(note)
+                                  await handleRejectWithdrawal(wd.id ?? wd._id)
+                                }}
+                                className="px-3 py-1.5 text-xs font-medium border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors">
+                                Reject
+                              </button>
+                            </div>
+                          )}
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50">
-                      {wdList.map(wd => {
-                        const wdId   = wd.id ?? wd._id
-                        const flName = wd.freelancerId?.userId?.name ?? '—'
-                        const flEmail = wd.freelancerId?.userId?.email ?? ''
-                        return (
-                          <tr key={wdId} className="hover:bg-gray-50/50 transition-colors">
-                            <td className="px-4 py-3.5">
-                              <p className="text-sm font-medium text-gray-900">{flName}</p>
-                              {flEmail && <p className="text-xs text-gray-400">{flEmail}</p>}
-                            </td>
-                            <td className="px-4 py-3.5">
-                              {wd.projectId ? (
-                                <div>
-                                  <p className="text-sm text-gray-700">{wd.projectId.name}</p>
-                                  {wd.projectId.projectCode && <p className="text-xs text-gray-400 font-mono">{wd.projectId.projectCode}</p>}
-                                </div>
-                              ) : <span className="text-gray-400 text-sm">—</span>}
-                            </td>
-                            <td className="px-4 py-3.5 text-sm font-semibold text-gray-900">
-                              <TkAmt value={wd.amount} decimals={2} />
-                            </td>
-                            <td className="px-4 py-3.5 text-sm text-gray-600">{wd.method}</td>
-                            <td className="px-4 py-3.5 text-sm text-gray-500 max-w-[150px] truncate" title={wd.paymentDetails ?? ''}>
-                              {wd.paymentDetails ?? '—'}
-                            </td>
-                            <td className="px-4 py-3.5 text-sm text-gray-500">
-                              {fmtDate(wd.createdAt)}
-                            </td>
-                            <td className="px-4 py-3.5">
-                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${WD_STATUS_COLORS[wd.status] ?? 'bg-gray-100 text-gray-600'}`}>
-                                {wd.status}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3.5">
-                              {wd.status === 'PENDING' && (
-                                <div className="flex items-center gap-1.5">
-                                  <button
-                                    onClick={() => { setWdApproveModal(wd); setWdApproveNote('') }}
-                                    className="flex items-center gap-1 px-2.5 py-1 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 transition-colors"
-                                  >
-                                    <CheckCircle2 className="w-3 h-3" /> Approve
-                                  </button>
-                                  <button
-                                    onClick={() => handleRejectWithdrawal(wdId)}
-                                    disabled={rejectingWd === wdId}
-                                    className="flex items-center gap-1 px-2.5 py-1 border border-gray-200 text-red-600 text-xs font-medium rounded-lg hover:bg-red-50 disabled:opacity-50 transition-colors"
-                                  >
-                                    {rejectingWd === wdId ? <Loader2 className="w-3 h-3 animate-spin" /> : <XCircle className="w-3 h-3" />}
-                                    Reject
-                                  </button>
-                                </div>
-                              )}
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-
-            {/* Approve Modal */}
-            {wdApproveModal && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-                <div className="bg-white rounded-xl border border-gray-200 w-full max-w-md p-6 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-base font-semibold text-gray-900">Approve Withdrawal</h3>
-                    <button onClick={() => setWdApproveModal(null)} className="p-1 rounded-lg hover:bg-gray-100">
-                      <X className="w-4 h-4 text-gray-400" />
-                    </button>
-                  </div>
-                  <div className="bg-gray-50 rounded-lg px-4 py-3 space-y-1">
-                    <p className="text-sm font-semibold text-gray-900">
-                      {wdApproveModal.freelancerId?.userId?.name ?? '—'}
-                    </p>
-                    <p className="text-xs text-gray-500">Amount: <TkAmt value={wdApproveModal.amount} decimals={2} /></p>
-                    <p className="text-xs text-gray-500">Method: {wdApproveModal.method}</p>
-                    {wdApproveModal.paymentDetails && (
-                      <p className="text-xs text-gray-500">Details: {wdApproveModal.paymentDetails}</p>
-                    )}
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Note (optional)</label>
-                    <textarea value={wdApproveNote} onChange={e => setWdApproveNote(e.target.value)}
-                      rows={2} placeholder="Add a note…"
-                      className={`${ic} resize-none`} />
-                  </div>
-                  <div className="flex gap-2 justify-end">
-                    <button onClick={() => setWdApproveModal(null)}
-                      className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">
-                      Cancel
-                    </button>
-                    <button
-                      onClick={() => handleApproveWithdrawal(wdApproveModal)}
-                      disabled={approvingWd === (wdApproveModal.id ?? wdApproveModal._id)}
-                      className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center gap-2"
-                    >
-                      {approvingWd === (wdApproveModal.id ?? wdApproveModal._id) && <Loader2 className="w-4 h-4 animate-spin" />}
-                      <CheckCircle2 className="w-4 h-4" /> Confirm Approval
-                    </button>
-                  </div>
-                </div>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>
-        )
-      })()}
 
-      {/* ── P&L REPORT ── */}
-      {tab === 'P&L Report' && (
-        <div className="space-y-6">
-          <div className="bg-white rounded-xl border border-gray-100 p-4 flex items-center gap-3 flex-wrap">
-            <span className="text-sm text-gray-700">Report period:</span>
-            <DatePicker value={plStart || null} onChange={v => setPlStart(v ?? '')} />
-            <span className="text-gray-400">to</span>
-            <DatePicker value={plEnd || null} onChange={v => setPlEnd(v ?? '')} />
-            <button onClick={loadPL} disabled={plLoading}
-              className="px-4 py-1.5 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 disabled:opacity-60 transition-colors">
-              {plLoading ? 'Loading…' : 'Generate'}
-            </button>
-          </div>
-
-          {plLoading ? <Spinner /> : plReport ? (
-            <>
-              {/* P&L stats row */}
-              <div className="flex items-center gap-0 divide-x divide-gray-200 bg-white border border-gray-100 rounded-xl px-2 py-4">
-                <div className="flex-1 px-6 text-center">
-                  <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">Total Income</p>
-                  <p className="text-xl font-bold text-green-600"><TkAmt value={plReport.summary.totalIncome} decimals={2} /></p>
+          {/* Approve withdrawal modal */}
+          {wdApproveModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+              <div className="bg-white rounded-xl border border-gray-200 w-full max-w-md p-6 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-base font-semibold text-gray-900">Approve Withdrawal</h3>
+                  <button onClick={() => setWdApproveModal(null)} className="p-1 rounded-lg hover:bg-gray-100">
+                    <X className="w-5 h-5 text-gray-400" />
+                  </button>
                 </div>
-                <div className="flex-1 px-6 text-center">
-                  <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">Total Expense</p>
-                  <p className="text-xl font-bold text-red-500"><TkAmt value={plReport.summary.totalExpense} decimals={2} /></p>
+                <div className="bg-gray-50 rounded-lg p-4 text-sm space-y-1">
+                  <p className="font-medium text-gray-800">{wdApproveModal.freelancerId?.userId?.name ?? '—'}</p>
+                  <p className="text-gray-500">{wdApproveModal.projectId?.name ?? '—'}</p>
+                  <p className="text-lg font-bold text-gray-900 mt-2">{fmt(wdApproveModal.amount)}</p>
                 </div>
-                <div className="flex-1 px-6 text-center">
-                  <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">Net Profit</p>
-                  <p className={`text-xl font-bold ${plReport.summary.netProfit >= 0 ? 'text-gray-900' : 'text-red-500'}`}>
-                    <TkAmt value={plReport.summary.netProfit} decimals={2} />
-                  </p>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Note (optional)</label>
+                  <textarea value={wdApproveNote} onChange={e => setWdApproveNote(e.target.value)} rows={2}
+                    placeholder="Add a note…"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 resize-none" />
                 </div>
-                <div className="flex-1 px-6 text-center">
-                  <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">Profit Margin</p>
-                  <p className={`text-xl font-bold ${plReport.summary.margin >= 0 ? 'text-gray-900' : 'text-red-500'}`}>
-                    {plReport.summary.margin?.toFixed(1)}%
-                  </p>
+                <div className="flex gap-2 justify-end">
+                  <button onClick={() => setWdApproveModal(null)} className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
+                  <button onClick={() => handleApproveWithdrawal(wdApproveModal)} disabled={!!approvingWd}
+                    className="px-4 py-2 text-sm font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-60 flex items-center gap-2">
+                    {approvingWd && <Loader2 className="w-4 h-4 animate-spin" />}
+                    Approve
+                  </button>
                 </div>
               </div>
-
-              {plReport.rows.length === 0 ? (
-                <div className="bg-white rounded-xl border border-gray-100 p-12 text-center">
-                  <p className="text-sm text-gray-400">No transactions in this period</p>
-                </div>
-              ) : (
-                <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-gray-100">
-                        <th className="px-6 py-3 text-left text-xs text-gray-400 uppercase tracking-wide">Month</th>
-                        <th className="px-6 py-3 text-right text-xs text-gray-400 uppercase tracking-wide">Income</th>
-                        <th className="px-6 py-3 text-right text-xs text-gray-400 uppercase tracking-wide">Expenses</th>
-                        <th className="px-6 py-3 text-right text-xs text-gray-400 uppercase tracking-wide">Net Profit</th>
-                        <th className="px-6 py-3 text-right text-xs text-gray-400 uppercase tracking-wide">Margin</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {plReport.rows.map((row) => {
-                        const margin = row.totalIncome > 0 ? (row.netProfit / row.totalIncome) * 100 : 0
-                        return (
-                          <tr key={row.month} className="hover:bg-gray-50 transition-colors">
-                            <td className="px-6 py-3 text-sm font-medium text-gray-900">{fmtMonth(row.month)}</td>
-                            <td className="px-6 py-3 text-sm text-green-600 font-medium text-right">{fmt(row.totalIncome)}</td>
-                            <td className="px-6 py-3 text-sm text-red-500 font-medium text-right">{fmt(row.totalExpense)}</td>
-                            <td className={`px-6 py-3 text-sm font-semibold text-right ${row.netProfit >= 0 ? 'text-gray-900' : 'text-red-600'}`}>
-                              {fmt(row.netProfit)}
-                            </td>
-                            <td className="px-6 py-3 text-sm text-gray-500 text-right">{margin.toFixed(1)}%</td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                    <tfoot>
-                      <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold">
-                        <td className="px-6 py-3 text-sm text-gray-700">Total</td>
-                        <td className="px-6 py-3 text-sm text-green-700 text-right">{fmt(plReport.summary.totalIncome)}</td>
-                        <td className="px-6 py-3 text-sm text-red-600 text-right">{fmt(plReport.summary.totalExpense)}</td>
-                        <td className={`px-6 py-3 text-sm text-right ${plReport.summary.netProfit >= 0 ? 'text-gray-900' : 'text-red-700'}`}>
-                          {fmt(plReport.summary.netProfit)}
-                        </td>
-                        <td className="px-6 py-3 text-sm text-gray-600 text-right">{plReport.summary.margin?.toFixed(1)}%</td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-              )}
-            </>
-          ) : (
-            <div className="bg-white rounded-xl border border-gray-100 p-12 text-center">
-              <p className="text-sm text-gray-400">Select a date range and click Generate</p>
             </div>
           )}
         </div>
       )}
 
+      {/* ── P&L REPORT tab ── */}
+      {activeTab === 'pl' && (
+        <div className="space-y-6">
+          {/* Date range */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className="text-sm text-gray-500 font-medium">Period</span>
+            <DatePicker value={plStart || null} onChange={v => setPlStart(v ?? '')} />
+            <span className="text-gray-400 text-sm">to</span>
+            <DatePicker value={plEnd || null} onChange={v => setPlEnd(v ?? '')} />
+            <button onClick={loadPL}
+              className="px-3 py-1.5 text-xs font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors">
+              Apply
+            </button>
+          </div>
+
+          {plLoading ? <Spinner /> : plReport ? (
+            <>
+              {/* Summary cards */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                {[
+                  { label: 'Total Income',  value: fmt(plReport.summary?.totalIncome),  color: 'text-green-600', bg: 'bg-green-50', icon: TrendingUp },
+                  { label: 'Total Expense', value: fmt(plReport.summary?.totalExpense), color: 'text-red-500',   bg: 'bg-red-50',   icon: TrendingDown },
+                  { label: 'Net Profit',    value: fmt(plReport.summary?.netProfit),    color: plReport.summary?.netProfit >= 0 ? 'text-blue-600' : 'text-red-600', bg: 'bg-blue-50', icon: DollarSign },
+                  { label: 'Margin',        value: `${(plReport.summary?.margin ?? 0).toFixed(1)}%`, color: 'text-purple-600', bg: 'bg-purple-50', icon: Percent },
+                ].map(c => {
+                  const Icon = c.icon
+                  return (
+                    <div key={c.label} className="bg-white border border-gray-100 rounded-xl p-5">
+                      <div className={`w-9 h-9 rounded-lg ${c.bg} flex items-center justify-center mb-3`}>
+                        <Icon className={`w-4 h-4 ${c.color}`} />
+                      </div>
+                      <p className={`text-xl font-bold ${c.color}`}>{c.value}</p>
+                      <p className="text-sm text-gray-500 mt-0.5">{c.label}</p>
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Monthly breakdown */}
+              {plReport.rows?.length > 0 && (
+                <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+                  <div className="px-4 py-3 border-b border-gray-100">
+                    <p className="text-sm font-semibold text-gray-800">Monthly Breakdown</p>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-gray-50 border-b border-gray-100">
+                          <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Month</th>
+                          <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">Income</th>
+                          <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">Expense</th>
+                          <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">Net Profit</th>
+                          <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">Margin</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {plReport.rows.map(row => {
+                          const margin = row.totalIncome > 0 ? ((row.netProfit / row.totalIncome) * 100).toFixed(1) : '0.0'
+                          return (
+                            <tr key={row.month} className="hover:bg-gray-50/50">
+                              <td className="px-4 py-3 text-sm font-medium text-gray-700">{fmtMonth(row.month)}</td>
+                              <td className="px-4 py-3 text-right text-sm font-semibold text-green-600">{fmt(row.totalIncome)}</td>
+                              <td className="px-4 py-3 text-right text-sm font-semibold text-red-500">{fmt(row.totalExpense)}</td>
+                              <td className={`px-4 py-3 text-right text-sm font-bold ${row.netProfit >= 0 ? 'text-blue-600' : 'text-red-600'}`}>{fmt(row.netProfit)}</td>
+                              <td className="px-4 py-3 text-right text-xs text-gray-500">{margin}%</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-gray-50 border-t-2 border-gray-200">
+                          <td className="px-4 py-3 text-sm font-bold text-gray-800">Total</td>
+                          <td className="px-4 py-3 text-right text-sm font-bold text-green-600">{fmt(plReport.summary?.totalIncome)}</td>
+                          <td className="px-4 py-3 text-right text-sm font-bold text-red-500">{fmt(plReport.summary?.totalExpense)}</td>
+                          <td className={`px-4 py-3 text-right text-sm font-bold ${plReport.summary?.netProfit >= 0 ? 'text-blue-600' : 'text-red-600'}`}>{fmt(plReport.summary?.netProfit)}</td>
+                          <td className="px-4 py-3 text-right text-xs text-gray-500">{(plReport.summary?.margin ?? 0).toFixed(1)}%</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="text-center py-16 text-gray-400 text-sm">Select a date range and click Apply to generate the report</div>
+          )}
+        </div>
+      )}
+
+      {/* ── Modals ── */}
       <TransactionModal
         open={modalOpen}
         onOpenChange={setModalOpen}
@@ -2176,7 +1856,7 @@ export default function AccountsPage() {
           payment={confirmingPc}
           currentUser={session?.user}
           onClose={() => setConfirmingPc(null)}
-          onDone={() => { loadPaymentConfirmations(); loadSummary(); loadTransactions() }}
+          onDone={() => { loadPaymentConfirmations(); loadSummary() }}
         />
       )}
 
@@ -2184,7 +1864,7 @@ export default function AccountsPage() {
         <RequestEditModal
           expense={editRequestModal}
           onClose={() => setEditRequestModal(null)}
-          onSubmitted={() => loadEditRequests()}
+          onSubmitted={() => { setEditRequestModal(null) }}
         />
       )}
 
@@ -2192,7 +1872,7 @@ export default function AccountsPage() {
         <OtpVerifyModal
           requestId={otpModal.requestId}
           expenseId={otpModal.expenseId}
-          onVerified={(id) => setEditUnlocked(prev => new Set([...prev, id]))}
+          onVerified={() => { setOtpModal(null); setEditUnlocked(prev => new Set([...prev, otpModal.expenseId])) }}
           onClose={() => setOtpModal(null)}
         />
       )}
@@ -2204,6 +1884,33 @@ export default function AccountsPage() {
           onClose={() => setOwnerOtpModal(null)}
         />
       )}
+
+      {rejectingEr && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-xl border border-gray-200 w-full max-w-sm p-6 space-y-4">
+            <h3 className="text-base font-semibold text-gray-900">Reject Edit Request</h3>
+            <textarea value={rejectNote} onChange={e => setRejectNote(e.target.value)} rows={3}
+              placeholder="Reason for rejection (optional)…"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 resize-none" />
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => { setRejectingEr(null); setRejectNote('') }} className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
+              <button onClick={() => handleRejectEditRequest(rejectingEr, rejectNote)}
+                className="px-4 py-2 text-sm font-medium bg-red-600 text-white rounded-lg hover:bg-red-700">
+                Reject
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
+  )
+}
+
+export default function AccountsPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-[60vh]"><div className="w-7 h-7 border-2 border-gray-300 border-t-gray-700 rounded-full animate-spin" /></div>}>
+      <AccountsContent />
+    </Suspense>
   )
 }

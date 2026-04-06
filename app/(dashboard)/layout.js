@@ -1,8 +1,9 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { redirect } from 'next/navigation'
-import Sidebar from '@/components/layout/Sidebar'
 import Header  from '@/components/layout/Header'
+import PendingApproval from '@/components/layout/PendingApproval'
+import DashboardShell from '@/components/layout/DashboardShell'
 
 export default async function DashboardLayout({ children }) {
   const session = await getServerSession(authOptions)
@@ -22,17 +23,23 @@ export default async function DashboardLayout({ children }) {
     redirect(portals[session.user.role])
   }
 
-  return (
-    <div className="flex h-screen bg-gray-50 overflow-hidden">
-      <Sidebar />
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+  // Employees/Managers who haven't been HR-approved yet see only a waiting screen
+  const staffRoles = ['EMPLOYEE', 'MANAGER']
+  if (staffRoles.includes(session.user.role) && session.user.profileStatus !== 'APPROVED') {
+    return (
+      <div className="flex h-screen flex-col bg-gray-50">
         <Header />
-        <main className="flex-1 overflow-y-auto scrollbar-thin">
-          <div className="p-6">
-            {children}
-          </div>
-        </main>
+        <PendingApproval
+          name={session.user.name}
+          profileStatus={session.user.profileStatus}
+        />
       </div>
-    </div>
+    )
+  }
+
+  return (
+    <DashboardShell>
+      {children}
+    </DashboardShell>
   )
 }

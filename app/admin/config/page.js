@@ -1,8 +1,16 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Plus, Trash2, Pencil, Save, X, ChevronRight, Settings2, Loader2 } from 'lucide-react'
+import { Plus, Trash2, Pencil, Save, X, ChevronRight, Settings2, Loader2, Building2, Check } from 'lucide-react'
 import toast from 'react-hot-toast'
+
+// Auto-generate short code from department name
+function autoShortCode(name) {
+  if (!name) return ''
+  const words = name.trim().split(/[\s&\/\-_]+/).filter(Boolean)
+  if (words.length === 1) return words[0].slice(0, 3).toUpperCase()
+  return words.map(w => w[0]).join('').toUpperCase()
+}
 
 // ─── Inline editable tag ──────────────────────────────────────────────────────
 
@@ -208,6 +216,205 @@ function LeadOptionList({ label, description, items, onChange }) {
   )
 }
 
+// ─── Departments Section ──────────────────────────────────────────────────────
+
+function DepartmentsSection() {
+  const [departments, setDepartments] = useState([])
+  const [loading,     setLoading]     = useState(true)
+  const [saving,      setSaving]      = useState(false)
+  const [deleting,    setDeleting]    = useState(null)
+  const [editing,     setEditing]     = useState(null) // dept object being edited
+  const [form,        setForm]        = useState({ name: '', shortCode: '', description: '' })
+  const [codeManual,  setCodeManual]  = useState(false)
+
+  function loadDepts() {
+    setLoading(true)
+    fetch('/api/departments')
+      .then(r => r.json())
+      .then(j => setDepartments(j.data ?? []))
+      .catch(() => toast.error('Failed to load departments'))
+      .finally(() => setLoading(false))
+  }
+  useEffect(() => { loadDepts() }, [])
+
+  function handleNameChange(v) {
+    setForm(f => ({ ...f, name: v, shortCode: codeManual ? f.shortCode : autoShortCode(v) }))
+  }
+  function handleCodeChange(v) {
+    setCodeManual(true)
+    setForm(f => ({ ...f, shortCode: v.toUpperCase() }))
+  }
+
+  function startEdit(dept) {
+    setEditing(dept)
+    setForm({ name: dept.name, shortCode: dept.shortCode, description: dept.description ?? '' })
+    setCodeManual(true)
+  }
+
+  function cancelEdit() {
+    setEditing(null)
+    setForm({ name: '', shortCode: '', description: '' })
+    setCodeManual(false)
+  }
+
+  async function handleSave(e) {
+    e.preventDefault()
+    if (!form.name.trim()) return
+    setSaving(true)
+    try {
+      const isEdit = !!editing
+      const url    = isEdit ? `/api/departments/${editing.id}` : '/api/departments'
+      const method = isEdit ? 'PUT' : 'POST'
+      const res    = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: form.name, shortCode: form.shortCode, description: form.description }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Failed')
+      toast.success(isEdit ? 'Department updated' : 'Department added')
+      cancelEdit()
+      loadDepts()
+    } catch (err) {
+      toast.error(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleDelete(id, name) {
+    if (!confirm(`Deactivate "${name}"? Existing employees will keep their current department code.`)) return
+    setDeleting(id)
+    try {
+      const res  = await fetch(`/api/departments/${id}`, { method: 'DELETE' })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Failed')
+      toast.success('Department deactivated')
+      loadDepts()
+    } catch (err) {
+      toast.error(err.message)
+    } finally {
+      setDeleting(null)
+    }
+  }
+
+  const ic = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500'
+  const lc = 'block text-xs font-medium text-gray-600 mb-1'
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-base font-semibold text-gray-900">Departments</h2>
+        <p className="text-sm text-gray-400 mt-0.5">
+          Manage departments used for employee grouping. Short codes appear in employee IDs.
+        </p>
+      </div>
+
+      <div className="bg-white border border-gray-100 rounded-xl p-5 space-y-5">
+        {/* Add / Edit form */}
+        <form onSubmit={handleSave} className="space-y-3">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+            {editing ? `Editing: ${editing.name}` : 'Add New Department'}
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="sm:col-span-1">
+              <label className={lc}>Department Name *</label>
+              <input
+                required
+                value={form.name}
+                onChange={e => handleNameChange(e.target.value)}
+                placeholder="e.g. Human Resources"
+                className={ic}
+              />
+            </div>
+            <div>
+              <label className={lc}>Short Code *</label>
+              <input
+                required
+                value={form.shortCode}
+                onChange={e => handleCodeChange(e.target.value)}
+                placeholder="e.g. HR"
+                maxLength={6}
+                className={`${ic} font-mono uppercase tracking-widest`}
+              />
+              <p className="text-[10px] text-gray-400 mt-0.5">Auto-generated · you can edit</p>
+            </div>
+            <div>
+              <label className={lc}>Description</label>
+              <input
+                value={form.description}
+                onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+                placeholder="Optional"
+                className={ic}
+              />
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button type="submit" disabled={saving}
+              className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-60 transition-colors">
+              {saving
+                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                : editing ? <Check className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+              {saving ? 'Saving…' : editing ? 'Save Changes' : 'Add Department'}
+            </button>
+            {editing && (
+              <button type="button" onClick={cancelEdit}
+                className="px-3 py-2 text-sm text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+                Cancel
+              </button>
+            )}
+          </div>
+        </form>
+
+        {/* Departments list */}
+        <div>
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+            Active Departments
+          </p>
+          {loading ? (
+            <div className="flex justify-center py-6">
+              <Loader2 className="w-5 h-5 animate-spin text-gray-300" />
+            </div>
+          ) : departments.length === 0 ? (
+            <p className="text-xs text-gray-400 italic py-4 text-center">No departments yet — add one above.</p>
+          ) : (
+            <div className="divide-y divide-gray-50 border border-gray-100 rounded-xl overflow-hidden">
+              {departments.map(dept => (
+                <div key={dept.id}
+                  className={`flex items-center justify-between px-4 py-3 transition-colors ${editing?.id === dept.id ? 'bg-blue-50' : 'bg-white hover:bg-gray-50/60'}`}>
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="font-mono text-xs font-bold text-gray-500 bg-gray-100 border border-gray-200 px-2 py-0.5 rounded shrink-0 min-w-[40px] text-center">
+                      {dept.shortCode}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-800">{dept.name}</p>
+                      {dept.description && (
+                        <p className="text-xs text-gray-400 truncate">{dept.description}</p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0 ml-3">
+                    <button onClick={() => startEdit(dept)}
+                      className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button onClick={() => handleDelete(dept.id, dept.name)} disabled={deleting === dept.id}
+                      className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-40">
+                      {deleting === dept.id
+                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        : <Trash2 className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function ConfigPage() {
@@ -391,6 +598,25 @@ export default function ConfigPage() {
           />
         </div>
       </div>
+
+      {/* Company Item Categories */}
+      <div className="space-y-4">
+        <div>
+          <h2 className="text-base font-semibold text-gray-900">Company Item Categories</h2>
+          <p className="text-sm text-gray-400 mt-0.5">
+            Item name presets shown when adding company-provided assets to an employee profile.
+          </p>
+        </div>
+        <LeadOptionList
+          label="Item Categories"
+          description="Suggested item names (e.g. Laptop, SIM Card, Access Card)"
+          items={config?.companyItemCategories ?? []}
+          onChange={v => updateLeadOption('companyItemCategories', v)}
+        />
+      </div>
+
+      {/* Departments */}
+      <DepartmentsSection />
 
       {/* Info */}
       <div className="text-xs text-gray-400 bg-gray-50 rounded-xl p-4">

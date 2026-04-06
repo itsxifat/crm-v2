@@ -10,7 +10,7 @@ import {
   Send, Trash2, UserCheck, Calendar, DollarSign, TrendingUp,
   Clock, Tag, User, Building2, PhoneCall, AtSign, ExternalLink,
   Activity, PhoneIncoming, MailOpen, CalendarClock, FileText, CheckSquare,
-  FileEdit, Plus,
+  FileEdit, Plus, RefreshCw,
 } from 'lucide-react'
 import Badge from '@/components/ui/Badge'
 import Avatar from '@/components/ui/Avatar'
@@ -30,6 +30,7 @@ const ACTIVITY_ICONS = {
   meeting: CalendarClock,
   note:    FileText,
   task:    CheckSquare,
+  update:  RefreshCw,
 }
 
 const ACTIVITY_COLORS = {
@@ -38,6 +39,7 @@ const ACTIVITY_COLORS = {
   meeting: 'bg-green-50 text-green-600',
   note:    'bg-yellow-50 text-yellow-600',
   task:    'bg-orange-50 text-orange-600',
+  update:  'bg-gray-100 text-gray-500',
 }
 
 function fmtDateTime(d) {
@@ -179,7 +181,7 @@ export default function LeadDetailPage() {
       <div className="space-y-4 animate-pulse">
         <div className="h-8 w-48 bg-gray-200 rounded" />
         <div className="h-48 bg-gray-100 rounded-xl" />
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {[1,2,3].map((i) => <div key={i} className="h-32 bg-gray-100 rounded-xl" />)}
         </div>
       </div>
@@ -490,7 +492,11 @@ export default function LeadDetailPage() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm text-gray-700">{act.note}</p>
-                        <p className="text-xs text-gray-400 mt-0.5 capitalize">{act.type} · {fmtDateTime(act.createdAt)}</p>
+                        <p className="text-xs text-gray-400 mt-0.5 capitalize">
+                          {act.type}
+                          {act.createdByName && <span className="font-medium text-gray-500"> · {act.createdByName}</span>}
+                          {' · '}{fmtDateTime(act.createdAt)}
+                        </p>
                       </div>
                     </div>
                   )

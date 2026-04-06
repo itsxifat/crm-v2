@@ -6,7 +6,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import {
   Bell, Search, LogOut, User, Settings, ChevronDown,
-  CheckCheck, Loader2,
+  CheckCheck, Loader2, Menu,
 } from 'lucide-react'
 import Image from 'next/image'
 import { cn, getInitials, getRoleLabel } from '@/lib/utils'
@@ -30,7 +30,7 @@ const fmtAgo = (d) => {
   return `${Math.floor(hrs / 24)}d ago`
 }
 
-export default function Header() {
+export default function Header({ onMenuClick }) {
   const { data: session } = useSession()
   const router            = useRouter()
 
@@ -107,9 +107,18 @@ export default function Header() {
   const user = session?.user
 
   return (
-    <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6 shrink-0 z-30">
+    <header className="h-16 bg-white border-b border-gray-200 flex items-center gap-3 px-4 sm:px-6 shrink-0 z-30">
+      {/* Hamburger – mobile only */}
+      <button
+        onClick={onMenuClick}
+        className="lg:hidden p-2 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors shrink-0"
+        aria-label="Open menu"
+      >
+        <Menu className="w-5 h-5" />
+      </button>
+
       {/* Left – Search */}
-      <div className="flex-1 max-w-md">
+      <div className="flex-1 lg:flex-none lg:w-72">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
           <input
@@ -123,7 +132,7 @@ export default function Header() {
       </div>
 
       {/* Right – Notifications + Profile */}
-      <div className="flex items-center gap-2 ml-4">
+      <div className="flex items-center gap-2 ml-auto">
 
         {/* Notifications */}
         <div className="relative" ref={notifRef}>
@@ -140,7 +149,7 @@ export default function Header() {
           </button>
 
           {notifOpen && (
-            <div className="absolute right-0 top-full mt-1.5 w-80 bg-white rounded-xl border border-gray-200 shadow-lg z-50 animate-fade-in overflow-hidden">
+            <div className="absolute right-0 top-full mt-1.5 w-80 max-w-[calc(100vw-1rem)] bg-white rounded-xl border border-gray-200 shadow-lg z-50 animate-fade-in overflow-hidden">
               {/* Header */}
               <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
                 <p className="text-sm font-semibold text-gray-900">Notifications</p>

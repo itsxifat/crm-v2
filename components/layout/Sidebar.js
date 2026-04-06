@@ -4,14 +4,16 @@ import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import { cn } from '@/lib/utils'
-import { sessionCan } from '@/lib/permissions'
+import { canDo } from '@/lib/rbac'
 import {
   LayoutDashboard, Users, UserCheck, Briefcase, ClipboardList,
-  FileText, DollarSign, TrendingUp, Settings, Settings2,
-  Calendar, Clock, FolderOpen, FileSignature,
+  FileText, DollarSign, TrendingUp, Settings2,
+  Calendar, Clock, FileSignature,
   BarChart3, UserCog, Building2, ChevronLeft, ChevronRight,
   ArrowRightLeft, ArrowDownLeft, ArrowUpRight as ArrowUpRightIcon,
   CheckCircle, Inbox, ChevronDown, ShieldCheck, Activity, Bell, UserCircle,
+  PieChart, Wallet, Landmark, Globe, Receipt, CreditCard, Percent,
+  BellRing, Mail, KeyRound, LineChart, Store, X,
 } from 'lucide-react'
 import Image from 'next/image'
 import { useState } from 'react'
@@ -27,151 +29,100 @@ import { useState } from 'react'
 // Items can have `children` (sub-links, collapsible).
 // `href` on a parent = the base path used for active detection.
 // `tab` on children = query param appended as ?tab=value
+// `basePath` on items with tabs = the path portion for active detection.
 
-// permKey maps to CustomRole.permissions module keys.
-// If set, EMPLOYEE visibility is also gated by sessionCan(user, permKey, 'view').
-// SUPER_ADMIN and MANAGER always see all items in their roles array.
+// `permission` — flat RBAC permission string (e.g. 'sales.leads.view').
+// When set, item visibility is gated by canDo(session, permission) for all
+// non-SUPER_ADMIN roles. SUPER_ADMIN always sees everything.
 
 const NAV_SECTIONS = [
   {
     label: 'Main',
     roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
     items: [
-      { href: '/admin', label: 'Dashboard', icon: LayoutDashboard, exact: true, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permKey: 'dashboard' },
+      { href: '/admin', label: 'Dashboard', icon: LayoutDashboard, exact: true, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'dashboard.view' },
     ],
   },
   {
-    label: 'CRM',
+    label: 'Sales',
     roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
     items: [
-      { href: '/admin/leads',   label: 'Leads',   icon: TrendingUp, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permKey: 'leads' },
-      { href: '/admin/clients', label: 'Clients', icon: UserCheck,  roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permKey: 'clients' },
+      { href: '/admin/leads',      label: 'Leads',      icon: TrendingUp,    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'sales.leads.view' },
+      { href: '/admin/clients',    label: 'Customers',  icon: UserCheck,     roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'sales.customers.view' },
+      { href: '/admin/quotations', label: 'Quotations', icon: FileSignature, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'sales.quotations.view' },
+      { href: '/admin/invoices',   label: 'Invoices',   icon: FileText,      roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'sales.invoices.view' },
     ],
   },
   {
-    label: 'Work',
+    label: 'Projects',
     roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
     items: [
-      { href: '/admin/projects', label: 'Projects', icon: Briefcase,     roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permKey: 'projects' },
-      { href: '/admin/tasks',    label: 'Tasks',    icon: ClipboardList, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'] },
+      { href: '/admin/projects', label: 'Projects', icon: Briefcase,     roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'projects.view' },
+      { href: '/admin/tasks',    label: 'Tasks',    icon: ClipboardList, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'tasks.view' },
     ],
   },
   {
     label: 'Finance',
     roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
     items: [
-      {
-        href: '/admin/invoices',
-        label: 'Invoices',
-        icon: FileText,
-        roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
-        permKey: 'invoices',
-      },
-      {
-        href: '/admin/quotations',
-        label: 'Quotations',
-        icon: FileSignature,
-        roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
-      },
-      {
-        href: '/admin/accounts',
-        label: 'Accounts',
-        icon: DollarSign,
-        roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
-        permKey: 'accounts',
-        children: [
-          {
-            href: '/admin/accounts?tab=transactions',
-            tab: 'transactions',
-            label: 'Transactions',
-            icon: ArrowRightLeft,
-            roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
-            permKey: 'accounts',
-          },
-          {
-            href: '/admin/accounts?tab=income',
-            tab: 'income',
-            label: 'Income',
-            icon: ArrowDownLeft,
-            roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
-            permKey: 'accounts',
-          },
-          {
-            href: '/admin/accounts?tab=expense',
-            tab: 'expense',
-            label: 'Expense',
-            icon: ArrowUpRightIcon,
-            roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
-            permKey: 'accounts',
-          },
-          {
-            href: '/admin/accounts?tab=confirmations',
-            tab: 'confirmations',
-            label: 'Payment Confirmations',
-            icon: CheckCircle,
-            roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
-            permKey: 'accounts',
-          },
-          {
-            href: '/admin/accounts?tab=requests',
-            tab: 'requests',
-            label: 'Payment Requests',
-            icon: Inbox,
-            roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
-          },
-        ],
-      },
+      { href: '/admin/accounts',                   label: 'Overview',              icon: PieChart,       roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'finance.overview.view', exact: true },
+      { href: '/admin/accounts?tab=transactions',  label: 'Transactions',          icon: ArrowRightLeft, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'finance.transactions.view', basePath: '/admin/accounts', tab: 'transactions' },
+      { href: '/admin/accounts?tab=confirmations', label: 'Payment Confirmations', icon: CheckCircle,    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'finance.payments.confirm',  basePath: '/admin/accounts', tab: 'confirmations' },
+      { href: '/admin/accounts?tab=requests',      label: 'Payment Requests',      icon: Inbox,          roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'finance.payments.request',  basePath: '/admin/accounts', tab: 'requests' },
+      { href: '/admin/accounts?tab=withdrawals',   label: 'Withdrawals',           icon: Wallet,         roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'finance.withdrawals.view',  basePath: '/admin/accounts', tab: 'withdrawals' },
+      { href: '/admin/accounts?tab=pl',            label: 'P&L Report',            icon: LineChart,      roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'finance.reports.view',      basePath: '/admin/accounts', tab: 'pl' },
     ],
   },
   {
-    label: 'People',
+    label: 'HR & People',
     roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
     items: [
-      { href: '/admin/employees',   label: 'Employees',           icon: Users,       roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permKey: 'employees' },
-      { href: '/admin/freelancers', label: 'Freelancers', icon: UserCog,   roles: ['SUPER_ADMIN', 'MANAGER'] },
-      { href: '/admin/vendors',     label: 'Vendors',     icon: Building2, roles: ['SUPER_ADMIN', 'MANAGER'] },
-      { href: '/admin/roles',       label: 'Roles & Permissions', icon: ShieldCheck, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permKey: 'roles' },
-    ],
-  },
-  {
-    label: 'HR',
-    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
-    items: [
-      { href: '/admin/attendance', label: 'Attendance', icon: Calendar, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'] },
-      { href: '/admin/leaves',     label: 'Leaves',     icon: Clock,    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'] },
-    ],
-  },
-  {
-    label: 'Documents',
-    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
-    items: [
-      { href: '/admin/agreements', label: 'Agreements', icon: FileSignature, roles: ['SUPER_ADMIN', 'MANAGER'] },
-      { href: '/admin/documents',  label: 'Documents',  icon: FolderOpen,    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'] },
+      { href: '/admin/employees',   label: 'Employees',           icon: Users,       roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'hr.employees.view' },
+      { href: '/admin/freelancers', label: 'Freelancers',         icon: UserCog,     roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'hr.freelancers.manage' },
+      { href: '/admin/vendors',     label: 'Vendors',             icon: Building2,   roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'hr.vendors.manage' },
+      { href: '/admin/agencies',    label: 'Agencies',            icon: Landmark,    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'hr.agencies.manage' },
+      { href: '/admin/attendance',  label: 'Attendance',          icon: Calendar,    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'hr.attendance.view' },
+      { href: '/admin/leaves',      label: 'Leaves',              icon: Clock,       roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'hr.leaves.view' },
+      { href: '/admin/roles',       label: 'Roles & Permissions', icon: ShieldCheck, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'hr.roles.manage' },
     ],
   },
   {
     label: 'Analytics',
-    roles: ['SUPER_ADMIN', 'MANAGER'],
+    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
     items: [
-      { href: '/admin/reports', label: 'Reports', icon: BarChart3, roles: ['SUPER_ADMIN', 'MANAGER'] },
+      { href: '/admin/reports', label: 'Reports', icon: BarChart3, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'analytics.reports.view' },
     ],
   },
   {
     label: 'System',
-    roles: ['SUPER_ADMIN', 'MANAGER'],
+    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
     items: [
-      { href: '/admin/activity-logs', label: 'Activity Logs',  icon: Activity,  roles: ['SUPER_ADMIN', 'MANAGER'] },
-      { href: '/admin/config',        label: 'Configuration',  icon: Settings2, roles: ['SUPER_ADMIN'] },
-      { href: '/admin/settings',      label: 'Settings',       icon: Settings,  roles: ['SUPER_ADMIN'] },
+      {
+        href: '/admin/config',
+        label: 'Configuration',
+        icon: Settings2,
+        roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
+        permission: 'system.config.view',
+        children: [
+          { href: '/admin/config?tab=company',       tab: 'company',       label: 'Company Settings',        icon: Building2,  roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'system.config.view' },
+          { href: '/admin/config?tab=business',      tab: 'business',      label: 'Business Profile',        icon: Globe,      roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'system.config.view' },
+          { href: '/admin/config?tab=invoice',       tab: 'invoice',       label: 'Invoice Settings',        icon: Receipt,    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'system.config.view' },
+          { href: '/admin/config?tab=payment',       tab: 'payment',       label: 'Payment Methods',         icon: CreditCard, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'system.config.view' },
+          { href: '/admin/config?tab=tax',           tab: 'tax',           label: 'Tax & VAT Setup',         icon: Percent,    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'system.config.view' },
+          { href: '/admin/config?tab=notifications', tab: 'notifications', label: 'Notification Settings',   icon: BellRing,   roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'system.config.view' },
+          { href: '/admin/config?tab=email',         tab: 'email',         label: 'Email / SMS Config',      icon: Mail,       roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'system.config.view' },
+          { href: '/admin/config?tab=api',           tab: 'api',           label: 'API Keys / Integrations', icon: KeyRound,   roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'system.config.view' },
+        ],
+      },
+      { href: '/admin/activity-logs', label: 'Activity Logs', icon: Activity, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'system.logs.view' },
     ],
   },
   {
     label: 'Account',
     roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
     items: [
-      { href: '/admin/profile',       label: 'My Profile',    icon: UserCircle, roles: ['EMPLOYEE'] },
-      { href: '/admin/account',       label: 'My Account',    icon: UserCog,    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'] },
-      { href: '/admin/notifications', label: 'Notifications', icon: Bell,       roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'] },
+      { href: '/admin/account',       label: 'My Account',    icon: UserCog, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'account.profile.view' },
+      { href: '/admin/notifications', label: 'Notifications', icon: Bell,    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'account.notifications.view' },
     ],
   },
 ]
@@ -209,9 +160,8 @@ function NavGroup({ item, role, sessionUser, pathname, searchParams, collapsed }
 
   const visibleChildren = item.children.filter(c => {
     if (!c.roles.includes(role)) return false
-    if (role === 'EMPLOYEE' && c.permKey && sessionUser?.permissions) {
-      return sessionCan(sessionUser, c.permKey, 'view')
-    }
+    if (role === 'SUPER_ADMIN') return true
+    if (c.permission) return canDo({ user: sessionUser }, c.permission)
     return true
   })
 
@@ -287,37 +237,38 @@ function NavGroup({ item, role, sessionUser, pathname, searchParams, collapsed }
 
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
 
-export default function Sidebar() {
+export default function Sidebar({ mobileOpen = false, onMobileClose }) {
   const pathname          = usePathname()
   const searchParams      = useSearchParams()
   const { data: session } = useSession()
   const [collapsed, setCollapsed] = useState(false)
   const role = session?.user?.role
 
+  // Close mobile sidebar on route change
+  const prevPathname = useState(pathname)[0]
+
   function isActive(item) {
-    if (item.exact) return pathname === item.href
-    return pathname === item.href || pathname.startsWith(`${item.href}/`)
+    if (item.exact) return pathname === item.href.split('?')[0] && !searchParams?.get('tab')
+    const pathToCheck = item.basePath ?? item.href.split('?')[0]
+    const onBasePath  = pathname === pathToCheck || pathname.startsWith(`${pathToCheck}/`)
+    if (item.tab) {
+      return onBasePath && searchParams?.get('tab') === item.tab
+    }
+    return onBasePath
   }
 
   function itemVisible(item) {
     if (!item.roles.includes(role)) return false
-    // For EMPLOYEE with a custom role, check permKey if present
-    if (role === 'EMPLOYEE' && item.permKey && session?.user?.permissions) {
-      return sessionCan(session.user, item.permKey, 'view')
-    }
+    if (role === 'SUPER_ADMIN') return true
+    if (item.permission) return canDo(session, item.permission)
     return true
   }
 
-  return (
-    <aside
-      className={cn(
-        'h-screen bg-white border-r border-gray-200 flex flex-col transition-all duration-300 ease-in-out shrink-0',
-        collapsed ? 'w-16' : 'w-[260px]'
-      )}
-    >
+  const sidebarContent = (isMobile = false) => (
+    <>
       {/* Logo */}
       <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200 shrink-0">
-        {!collapsed && (
+        {(!collapsed || isMobile) && (
           <div className="flex items-center min-w-0">
             <Image
               src="/en-logo.png"
@@ -329,7 +280,7 @@ export default function Sidebar() {
             />
           </div>
         )}
-        {collapsed && (
+        {collapsed && !isMobile && (
           <div className="mx-auto flex items-center justify-center">
             <Image
               src="/en-logo.png"
@@ -341,14 +292,21 @@ export default function Sidebar() {
             />
           </div>
         )}
-        {!collapsed && (
+        {isMobile ? (
+          <button
+            onClick={onMobileClose}
+            className="p-1.5 rounded-md text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors shrink-0"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        ) : !collapsed ? (
           <button
             onClick={() => setCollapsed(true)}
             className="p-1.5 rounded-md text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors shrink-0"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
-        )}
+        ) : null}
       </div>
 
       {/* Navigation */}
@@ -361,14 +319,14 @@ export default function Sidebar() {
 
           return (
             <div key={section.label} className="mb-4">
-              {!collapsed && (
+              {(!collapsed || isMobile) && (
                 <p className="text-2xs font-semibold text-gray-400 uppercase tracking-wider px-3 mb-1">
                   {section.label}
                 </p>
               )}
               <ul className="space-y-0.5">
                 {visibleItems.map((item) => (
-                  <li key={item.href}>
+                  <li key={item.href} onClick={isMobile ? onMobileClose : undefined}>
                     {item.children ? (
                       <NavGroup
                         item={item}
@@ -376,10 +334,10 @@ export default function Sidebar() {
                         sessionUser={session?.user}
                         pathname={pathname}
                         searchParams={searchParams}
-                        collapsed={collapsed}
+                        collapsed={collapsed && !isMobile}
                       />
                     ) : (
-                      <NavItem item={item} active={isActive(item)} collapsed={collapsed} />
+                      <NavItem item={item} active={isActive(item)} collapsed={collapsed && !isMobile} />
                     )}
                   </li>
                 ))}
@@ -387,11 +345,10 @@ export default function Sidebar() {
             </div>
           )
         })}
-
       </nav>
 
-      {/* Collapse toggle */}
-      {collapsed && (
+      {/* Collapse toggle (desktop only) */}
+      {collapsed && !isMobile && (
         <div className="px-3 pb-4">
           <button
             onClick={() => setCollapsed(false)}
@@ -401,6 +358,30 @@ export default function Sidebar() {
           </button>
         </div>
       )}
-    </aside>
+    </>
+  )
+
+  return (
+    <>
+      {/* Desktop sidebar */}
+      <aside
+        className={cn(
+          'hidden lg:flex h-screen bg-white border-r border-gray-200 flex-col transition-all duration-300 ease-in-out shrink-0',
+          collapsed ? 'w-16' : 'w-[260px]'
+        )}
+      >
+        {sidebarContent(false)}
+      </aside>
+
+      {/* Mobile sidebar drawer */}
+      <aside
+        className={cn(
+          'fixed inset-y-0 left-0 z-30 w-[260px] bg-white border-r border-gray-200 flex flex-col transition-transform duration-300 ease-in-out lg:hidden',
+          mobileOpen ? 'translate-x-0' : '-translate-x-full'
+        )}
+      >
+        {sidebarContent(true)}
+      </aside>
+    </>
   )
 }

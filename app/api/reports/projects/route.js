@@ -42,12 +42,13 @@ export async function GET(request) {
     const rows = projects.map(p => {
       const pid      = p._id.toString()
       const budget     = p.budget ?? 0
+      const discount   = p.discount ?? 0
       const actualCost = p.actualCost ?? 0
       const invoiced   = invoiceMap[pid]?.invoiced  ?? 0
       const collected  = invoiceMap[pid]?.collected ?? 0
-      const profit     = budget > 0 ? budget - actualCost : invoiced - actualCost
+      const profit     = budget > 0 ? budget - discount - actualCost : invoiced - actualCost
       const margin     = budget > 0
-        ? budget > 0 ? (profit / budget) * 100 : 0
+        ? (profit / budget) * 100
         : invoiced > 0 ? (profit / invoiced) * 100 : 0
 
       return {
@@ -56,6 +57,7 @@ export async function GET(request) {
         client:    p.clientId?.userId?.name ?? 'Unknown',
         status:    p.status,
         budget,
+        discount,
         actualCost,
         invoiced,
         collected,
