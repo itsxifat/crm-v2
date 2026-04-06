@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbo",
-    "build": "next build",
-    "start": "next start",
+    "build": "node --require ./patch-readlink.cjs node_modules/.bin/next build",
+    "start": "node --require ./patch-readlink.cjs node_modules/.bin/next start",
     "lint": "next lint",
     "db:seed": "node scripts/seed.js"
   },

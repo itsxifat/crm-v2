@@ -5,6 +5,7 @@ import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { User, Employee, Task, Leave, CustomRole } from '@/models'
 import { normalizeDeptCode } from '@/models/Employee'
+import { blindIndex } from '@/lib/encryption'
 import { z } from 'zod'
 import bcrypt from 'bcryptjs'
 import { sendEmployeeLoginEmail } from '@/lib/mailer'
@@ -81,18 +82,16 @@ export async function GET(request) {
     }
 
     if (search) {
+      // name/email/phone are encrypted — search by blind index (exact match only) or employeeId
+      const emailToken = blindIndex(search, 'users', 'email')
+      const phoneToken = blindIndex(search, 'users', 'phone')
       const matchingUsers = await User.find({
-        $or: [
-          { name:  { $regex: search, $options: 'i' } },
-          { email: { $regex: search, $options: 'i' } },
-        ],
-      }).select('_id').lean()
+        $or: [{ emailIdx: emailToken }, { phoneIdx: phoneToken }],
+      }).select('_id').select('+emailIdx +phoneIdx').lean()
       const userIds = matchingUsers.map(u => u._id)
       filter.$or = [
-        { userId:      { $in: userIds } },
-        { position:    { $regex: search, $options: 'i' } },
-        { department:  { $regex: search, $options: 'i' } },
-        { employeeId:  { $regex: search, $options: 'i' } },
+        { userId:     { $in: userIds } },
+        { employeeId: { $regex: search, $options: 'i' } },
       ]
     }
 
@@ -163,7 +162,8 @@ export async function POST(request) {
             bloodGroup, emergencyContacts, address, nidNumber, appointmentLetterUrl, agreementUrl, panelAccessGranted,
             customRoleId } = parsed.data
 
-    const existing = await User.findOne({ email }).lean()
+    const emailToken = blindIndex(email, 'users', 'email')
+    const existing = await User.findOne({ emailIdx: emailToken }).select('+emailIdx').lean()
     if (existing) return NextResponse.json({ error: 'User with this email already exists' }, { status: 409 })
 
     const rawPw    = password ?? Math.random().toString(36).slice(-8) + 'A1!'

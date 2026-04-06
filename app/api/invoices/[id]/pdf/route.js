@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
-import { Invoice, InvoiceItem, Payment } from '@/models'
+import { Invoice, Payment } from '@/models'
 
 function formatCurrency(amount, currency = 'BDT') {
   const n = amount ?? 0
@@ -33,7 +33,7 @@ export async function GET(request, { params }) {
     if (!invoice) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
     const [items, payments] = await Promise.all([
-      InvoiceItem.find({ invoiceId: params.id }).sort({ createdAt: 1 }),
+      Promise.resolve(Array.isArray(invoice.toJSON().items) ? invoice.toJSON().items : []),
       Payment.find({ invoiceId: params.id }).sort({ createdAt: -1 }),
     ])
 

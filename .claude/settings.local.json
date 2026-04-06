@@ -39,7 +39,9 @@
       "Bash(ls -la /e/En-Tech/internel/en-crm/app/api/invoices/[id]/)",
       "Bash(node -e ':*)",
       "Bash(mkdir -p \"e:/En-Tech/internel/en-crm/app/api/client/invoices/[id]\")",
-      "Bash(mkdir -p \"e:/En-Tech/internel/en-crm/app/client/invoices/[id]\")"
+      "Bash(mkdir -p \"e:/En-Tech/internel/en-crm/app/client/invoices/[id]\")",
+      "Read(//tmp/**)",
+      "Bash(curl -s -o /dev/null -w '%{http_code}' -c /tmp/cookies.txt -b /tmp/cookies.txt -H 'User-Agent: Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\)' 'http://localhost:3000/api/leads?page=1&limit=20')"
     ]
   }
 }

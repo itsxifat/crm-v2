@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import {
   Mail, Plus, Trash2, Pencil, Save, X, Check, Loader2,
   Eye, EyeOff, Send, ChevronDown, ChevronUp, ShieldCheck,
-  MessageCircle,
+  MessageCircle, ExternalLink,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/utils'
@@ -860,6 +860,24 @@ export default function SettingsPage() {
             ))}
           </div>
         )}
+
+        {/* Instance connection notice */}
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs text-amber-800 space-y-2">
+          <p className="font-semibold">Instance must be connected first</p>
+          <p className="text-amber-700">
+            Before this account can send messages, the WhatsApp instance must be linked to a phone number on the{' '}
+            <strong>Enfinito Cloud dashboard</strong>. If you see "WhatsApp instance is not connected yet" when testing,
+            go to your Enfinito Cloud instance page, scan the QR code with WhatsApp, and then retry.
+          </p>
+          <a
+            href="https://api.enfinito.cloud"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-amber-800 font-medium hover:underline"
+          >
+            Open Enfinito Cloud Dashboard <ExternalLink className="w-3 h-3" />
+          </a>
+        </div>
 
         {/* Info box */}
         <div className="bg-green-50 border border-green-100 rounded-xl p-4 text-xs text-green-800 space-y-1.5">

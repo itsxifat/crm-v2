@@ -41,9 +41,11 @@ export async function GET(request) {
     if (roles) filter.role = { $in: roles.split(',').map(r => r.trim()) }
     else if (role) filter.role = role
     if (search) {
+      const emailToken = blindIndex(search.toLowerCase(), 'users', 'email')
+      const phoneToken = blindIndex(search, 'users', 'phone')
       filter.$or = [
-        { name:  { $regex: search, $options: 'i' } },
-        { email: { $regex: search, $options: 'i' } },
+        { emailIdx: emailToken },
+        { phoneIdx: phoneToken },
       ]
     }
 

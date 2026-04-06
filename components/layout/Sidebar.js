@@ -16,7 +16,7 @@ import {
   BellRing, Mail, KeyRound, LineChart, Store, X,
 } from 'lucide-react'
 import Image from 'next/image'
-import { useState } from 'react'
+import { useState, Suspense } from 'react'
 
 // ─── Role definitions ─────────────────────────────────────────────────────────
 // SUPER_ADMIN : full access
@@ -110,10 +110,10 @@ const NAV_SECTIONS = [
           { href: '/admin/config?tab=payment',       tab: 'payment',       label: 'Payment Methods',         icon: CreditCard, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'system.config.view' },
           { href: '/admin/config?tab=tax',           tab: 'tax',           label: 'Tax & VAT Setup',         icon: Percent,    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'system.config.view' },
           { href: '/admin/config?tab=notifications', tab: 'notifications', label: 'Notification Settings',   icon: BellRing,   roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'system.config.view' },
-          { href: '/admin/config?tab=email',         tab: 'email',         label: 'Email / SMS Config',      icon: Mail,       roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'system.config.view' },
           { href: '/admin/config?tab=api',           tab: 'api',           label: 'API Keys / Integrations', icon: KeyRound,   roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'system.config.view' },
         ],
       },
+      { href: '/admin/settings',     label: 'Email / WhatsApp', icon: Mail,     roles: ['SUPER_ADMIN'],                        permission: 'system.config.view' },
       { href: '/admin/activity-logs', label: 'Activity Logs', icon: Activity, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'system.logs.view' },
     ],
   },
@@ -235,17 +235,14 @@ function NavGroup({ item, role, sessionUser, pathname, searchParams, collapsed }
   )
 }
 
-// ─── Sidebar ──────────────────────────────────────────────────────────────────
+// ─── SidebarContent (needs useSearchParams → wrapped in Suspense) ─────────────
 
-export default function Sidebar({ mobileOpen = false, onMobileClose }) {
+function SidebarContent({ mobileOpen, onMobileClose }) {
   const pathname          = usePathname()
   const searchParams      = useSearchParams()
   const { data: session } = useSession()
   const [collapsed, setCollapsed] = useState(false)
   const role = session?.user?.role
-
-  // Close mobile sidebar on route change
-  const prevPathname = useState(pathname)[0]
 
   function isActive(item) {
     if (item.exact) return pathname === item.href.split('?')[0] && !searchParams?.get('tab')
@@ -383,5 +380,15 @@ export default function Sidebar({ mobileOpen = false, onMobileClose }) {
         {sidebarContent(true)}
       </aside>
     </>
+  )
+}
+
+// ─── Sidebar ──────────────────────────────────────────────────────────────────
+
+export default function Sidebar({ mobileOpen = false, onMobileClose }) {
+  return (
+    <Suspense fallback={null}>
+      <SidebarContent mobileOpen={mobileOpen} onMobileClose={onMobileClose} />
+    </Suspense>
   )
 }

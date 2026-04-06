@@ -6,6 +6,7 @@ import connectDB from '@/lib/mongodb'
 import { User, Client, Lead, Quotation } from '@/models'
 import { LeadActivity } from '@/models/Lead'
 import bcrypt from 'bcryptjs'
+import { blindIndex } from '@/lib/encryption'
 
 // POST /api/leads/[id]/convert
 export async function POST(request, { params }) {
@@ -33,7 +34,8 @@ export async function POST(request, { params }) {
     // Check if user already exists with this email
     let user = null
     if (lead.email) {
-      user = await User.findOne({ email: lead.email }).lean()
+      const emailToken = blindIndex(lead.email, 'users', 'email')
+      user = await User.findOne({ emailIdx: emailToken }).select('+emailIdx').lean()
     }
 
     // Create user if not exists

@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
-import { Invoice, InvoiceItem } from '@/models'
+import { Invoice } from '@/models'
 import { logActivity } from '@/lib/logActivity'
 
 // POST /api/invoices/[id]/send

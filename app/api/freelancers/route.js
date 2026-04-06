@@ -6,6 +6,7 @@ import connectDB from '@/lib/mongodb'
 import { User, Freelancer } from '@/models'
 import bcrypt from 'bcryptjs'
 import crypto from 'crypto'
+import { blindIndex } from '@/lib/encryption'
 import { sendFreelancerInviteEmail } from '@/lib/mailer'
 import { sendFreelancerInviteWhatsApp } from '@/lib/whatsapp'
 
@@ -38,12 +39,11 @@ export async function GET(request) {
     }
 
     if (search) {
+      const emailToken = blindIndex(search.toLowerCase(), 'users', 'email')
+      const phoneToken = blindIndex(search, 'users', 'phone')
       const matchingUsers = await User.find({
-        $or: [
-          { name:  { $regex: search, $options: 'i' } },
-          { email: { $regex: search, $options: 'i' } },
-        ],
-      }).select('_id').lean()
+        $or: [{ emailIdx: emailToken }, { phoneIdx: phoneToken }],
+      }).select('_id').select('+emailIdx +phoneIdx').lean()
       const userIds = matchingUsers.map(u => u._id)
       filter.$or = [
         { userId: { $in: userIds } },
@@ -128,7 +128,8 @@ export async function POST(request) {
       ? (contactPerson?.name ?? agencyInfo?.agencyName ?? 'Agency')
       : name
 
-    const existing = await User.findOne({ email: email.toLowerCase() }).lean()
+    const emailToken = blindIndex(email.toLowerCase(), 'users', 'email')
+    const existing = await User.findOne({ emailIdx: emailToken }).select('+emailIdx').lean()
     if (existing) return NextResponse.json({ error: 'A user with this email already exists' }, { status: 409 })
 
     // Generate a random secure password (user will set their own)

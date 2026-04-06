@@ -11,6 +11,7 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import connectDB from '@/lib/mongodb'
 import { User, Setting } from '@/models'
+import { blindIndex } from '@/lib/encryption'
 
 const ADMIN_EMAIL    = 'admin@enfinito.com'
 const ADMIN_PASSWORD = 'enfinito1234'
@@ -31,7 +32,8 @@ export async function GET() {
   const bcrypt = (await import('bcryptjs')).default
 
   // Create or reset the super admin account
-  const existing = await User.findOne({ email: ADMIN_EMAIL })
+  const emailToken = blindIndex(ADMIN_EMAIL, 'users', 'email')
+  const existing = await User.findOne({ emailIdx: emailToken }).select('+emailIdx')
 
   if (existing) {
     // Reset password back to default (idempotent re-visit)

@@ -1,4 +1,4 @@
-import { withAuth } from 'next-auth/middleware'
+import { getToken } from 'next-auth/jwt'
 import { NextResponse } from 'next/server'
 
 // ── Security headers applied to EVERY response ────────────────────────────────
@@ -126,10 +126,9 @@ function hasAccess(role, pathname) {
 }
 
 // ── Main middleware ───────────────────────────────────────────────────────────
-export default withAuth(
-  function middleware(req) {
+export default async function middleware(req) {
     const { pathname } = req.nextUrl
-    const token        = req.nextauth.token
+    const token        = await getToken({ req, secret: process.env.NEXTAUTH_SECRET })
     const ip           = getIP(req)
     const ua           = req.headers.get('user-agent') || ''
 
@@ -171,7 +170,13 @@ export default withAuth(
       }
     }
 
-    // ── 3. Public page routes ────────────────────────────────────────────────
+    // ── 3a. Public API routes (no auth, no redirect) ─────────────────────────
+    const publicApiRoutes = ['/api/gain', '/api/auth/']
+    if (publicApiRoutes.some(r => pathname.startsWith(r))) {
+      return addSecurityHeaders(NextResponse.next())
+    }
+
+    // ── 3b. Public page routes ───────────────────────────────────────────────
     const publicRoutes = ['/login', '/register', '/forgot-password', '/reset-password', '/freelancer/invite']
     if (publicRoutes.some(r => pathname.startsWith(r))) {
       if (token) {
@@ -198,18 +203,14 @@ export default withAuth(
       return addSecurityHeaders(NextResponse.next())
     }
 
-    // ── 6. Role-based access ─────────────────────────────────────────────────
-    if (!hasAccess(role, pathname)) {
+    // ── 6. Role-based access (page routes only — API routes handle their own auth)
+    if (!pathname.startsWith('/api/') && !hasAccess(role, pathname)) {
       const dashboard = ROLE_DASHBOARDS[role] || '/admin'
       return addSecurityHeaders(NextResponse.redirect(new URL(dashboard, req.url)))
     }
 
     return addSecurityHeaders(NextResponse.next())
-  },
-  {
-    callbacks: { authorized: () => true },
-  }
-)
+}
 
 export const config = {
   matcher: [
