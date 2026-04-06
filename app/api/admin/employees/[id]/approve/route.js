@@ -5,6 +5,7 @@ import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { User, Employee } from '@/models'
 import { sendEmployeeApprovedEmail } from '@/lib/mailer'
+import { sendEmployeeApprovedWhatsApp } from '@/lib/whatsapp'
 
 // POST /api/admin/employees/[id]/approve
 // body: { action: 'approve' | 'reject', notes?: string }
@@ -48,11 +49,14 @@ export async function POST(request, { params }) {
     await emp.save()
 
     // Notify employee
-    const user = await User.findById(emp.userId).select('name email').lean()
+    const user = await User.findById(emp.userId).select('name email phone').lean()
     if (user && action === 'approve') {
       sendEmployeeApprovedEmail({ to: user.email, name: user.name }).catch(err =>
         console.error('[approve] email failed:', err.message)
       )
+      if (user.phone) {
+        sendEmployeeApprovedWhatsApp({ to: user.phone, name: user.name })
+      }
     }
 
     return NextResponse.json({

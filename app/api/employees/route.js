@@ -8,6 +8,7 @@ import { normalizeDeptCode } from '@/models/Employee'
 import { z } from 'zod'
 import bcrypt from 'bcryptjs'
 import { sendEmployeeLoginEmail } from '@/lib/mailer'
+import { sendEmployeeLoginWhatsApp } from '@/lib/whatsapp'
 
 const createEmployeeSchema = z.object({
   name:                 z.string().min(1, 'Name is required'),
@@ -182,10 +183,13 @@ export async function POST(request) {
       { path: 'customRoleId', select: 'id title department color' },
     ])
 
-    // Fire-and-forget login credentials email
+    // Fire-and-forget login credentials email + WhatsApp
     sendEmployeeLoginEmail({ to: email, name, password: rawPw }).catch(err =>
       console.error('[POST /api/employees] login email failed:', err.message)
     )
+    if (phone) {
+      sendEmployeeLoginWhatsApp({ to: phone, name, password: rawPw })
+    }
 
     return NextResponse.json({ data: employee, tempPassword: password ? undefined : rawPw }, { status: 201 })
   } catch (err) {

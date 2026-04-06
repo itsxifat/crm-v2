@@ -6,6 +6,7 @@ import connectDB from '@/lib/mongodb'
 import { User, Client, Project, Invoice } from '@/models'
 import bcrypt from 'bcryptjs'
 import { sendClientWelcomeEmail } from '@/lib/mailer'
+import { sendClientWelcomeWhatsApp } from '@/lib/whatsapp'
 import { canAccess } from '@/lib/permissions'
 
 // GET /api/clients
@@ -166,7 +167,7 @@ export async function POST(request) {
 
     await client.populate({ path: 'userId', select: 'id name email avatar phone' })
 
-    // Send welcome email only for brand-new users
+    // Send welcome email + WhatsApp only for brand-new users
     let emailSent = false
     if (isNewUser) {
       try {
@@ -180,6 +181,16 @@ export async function POST(request) {
         emailSent = true
       } catch (mailErr) {
         console.warn('[POST /api/clients] Email failed:', mailErr.message)
+      }
+
+      if (phone) {
+        sendClientWelcomeWhatsApp({
+          to:         phone,
+          name:       name.trim(),
+          clientCode: client.clientCode,
+          password:   rawPw,
+          phone:      phone,
+        })
       }
     }
 

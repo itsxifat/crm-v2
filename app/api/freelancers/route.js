@@ -7,6 +7,7 @@ import { User, Freelancer } from '@/models'
 import bcrypt from 'bcryptjs'
 import crypto from 'crypto'
 import { sendFreelancerInviteEmail } from '@/lib/mailer'
+import { sendFreelancerInviteWhatsApp } from '@/lib/whatsapp'
 
 const STAFF_ROLES = ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE']
 
@@ -194,6 +195,17 @@ export async function POST(request) {
       emailSent = true
     } catch (emailErr) {
       console.error('[POST /api/freelancers] email send failed:', emailErr)
+    }
+
+    // Fire-and-forget WhatsApp (requires phone number)
+    if (phone) {
+      sendFreelancerInviteWhatsApp({
+        to:       phone,
+        name:     displayName,
+        link:     inviteLink,
+        type,
+        password: randomPassword,
+      })
     }
 
     const response = { data: freelancer, emailSent }

@@ -6,6 +6,7 @@ import connectDB from '@/lib/mongodb'
 import { User, Employee } from '@/models'
 import { calcProfileCompletion } from '@/models/Employee'
 import { sendProfileCompleteToHR } from '@/lib/mailer'
+import { sendProfileCompleteToHRWhatsApp } from '@/lib/whatsapp'
 import { z } from 'zod'
 
 const profileSchema = z.object({
@@ -128,7 +129,7 @@ export async function PUT(request) {
     if (pct === 100 && wasBelow100) {
       const user    = await User.findById(session.user.id).select('name email').lean()
       const appUrl  = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-      const hrUsers = await User.find({ role: { $in: ['SUPER_ADMIN', 'MANAGER'] } }).select('email').lean()
+      const hrUsers = await User.find({ role: { $in: ['SUPER_ADMIN', 'MANAGER'] } }).select('email phone').lean()
 
       hrUsers.forEach(hr => {
         sendProfileCompleteToHR({
@@ -137,6 +138,15 @@ export async function PUT(request) {
           employeeEmail: user.email,
           profileUrl:    `${appUrl}/admin/employees/${emp._id}`,
         }).catch(err => console.error('[profile complete HR notify]', err.message))
+
+        if (hr.phone) {
+          sendProfileCompleteToHRWhatsApp({
+            to:            hr.phone,
+            employeeName:  user.name,
+            employeeEmail: user.email,
+            profileUrl:    `${appUrl}/admin/employees/${emp._id}`,
+          })
+        }
       })
     }
 

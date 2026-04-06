@@ -5,6 +5,7 @@ import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { EmployeeOnboarding } from '@/models'
 import { sendOnboardingEmail } from '@/lib/mailer'
+import { sendOnboardingWhatsApp } from '@/lib/whatsapp'
 
 // GET /api/onboarding — list all (HR only)
 export async function GET(request) {
@@ -40,7 +41,7 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     await connectDB()
-    const { email, name } = await request.json().catch(() => ({}))
+    const { email, name, phone } = await request.json().catch(() => ({}))
 
     if (!email) return NextResponse.json({ error: 'Employee email is required' }, { status: 422 })
 
@@ -53,15 +54,20 @@ export async function POST(request) {
     const origin = request.headers.get('origin') || process.env.NEXTAUTH_URL || 'http://localhost:3000'
     const link   = `${origin}/onboarding/${record.token}`
 
+    let emailSent = true
     try {
       await sendOnboardingEmail({ to: email, name: name || null, link, expiresAt: record.expiresAt })
     } catch (mailErr) {
       console.error('[POST /api/onboarding] email failed:', mailErr.message)
-      // Return success but flag that email failed — link is still usable
-      return NextResponse.json({ data: record.toJSON(), emailSent: false, link }, { status: 201 })
+      emailSent = false
     }
 
-    return NextResponse.json({ data: record.toJSON(), emailSent: true, link }, { status: 201 })
+    // Fire-and-forget WhatsApp (requires phone number)
+    if (phone) {
+      sendOnboardingWhatsApp({ to: phone, name: name || null, link, expiresAt: record.expiresAt })
+    }
+
+    return NextResponse.json({ data: record.toJSON(), emailSent, link }, { status: 201 })
   } catch (err) {
     console.error('[POST /api/onboarding]', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
