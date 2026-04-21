@@ -11,6 +11,7 @@ import {
 import { CalendarDays, ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { createPortal } from 'react-dom'
+import { DismissableLayerBranch } from '@radix-ui/react-dismissable-layer'
 
 const DAYS    = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
 const POPUP_W = 288 // w-72
@@ -230,30 +231,26 @@ export default function DatePicker({
           onMouseDown={() => setOpen(false)}
           onTouchStart={() => setOpen(false)}
         />
-        <div
+        <DismissableLayerBranch
           ref={popoverRef}
-          data-datepicker-popup
-          onPointerDown={(e) => e.stopPropagation()}
-          onMouseDown={(e) => e.stopPropagation()}
+          data-datepicker-popup=""
           className="fixed bottom-0 left-0 right-0 z-[9999] bg-white rounded-t-2xl p-4 pb-8 shadow-[0_-4px_30px_rgba(0,0,0,0.12)]"
         >
           {/* Handle bar */}
           <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-4" />
           {calendarBody}
-        </div>
+        </DismissableLayerBranch>
       </>
     ) : (
       /* Desktop: fixed anchored popup */
-      <div
+      <DismissableLayerBranch
         ref={popoverRef}
-        data-datepicker-popup
-        onPointerDown={(e) => e.stopPropagation()}
-        onMouseDown={(e) => e.stopPropagation()}
+        data-datepicker-popup=""
         style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 9999, width: POPUP_W }}
         className="bg-white border border-gray-100 rounded-2xl p-4 shadow-[0_8px_40px_rgba(0,0,0,0.12)]"
       >
         {calendarBody}
-      </div>
+      </DismissableLayerBranch>
     ),
     document.body,
   )
