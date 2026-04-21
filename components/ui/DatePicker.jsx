@@ -233,6 +233,8 @@ export default function DatePicker({
         <div
           ref={popoverRef}
           data-datepicker-popup
+          onPointerDown={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
           className="fixed bottom-0 left-0 right-0 z-[9999] bg-white rounded-t-2xl p-4 pb-8 shadow-[0_-4px_30px_rgba(0,0,0,0.12)]"
         >
           {/* Handle bar */}
@@ -245,6 +247,8 @@ export default function DatePicker({
       <div
         ref={popoverRef}
         data-datepicker-popup
+        onPointerDown={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
         style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 9999, width: POPUP_W }}
         className="bg-white border border-gray-100 rounded-2xl p-4 shadow-[0_8px_40px_rgba(0,0,0,0.12)]"
       >
