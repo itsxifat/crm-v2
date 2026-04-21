@@ -26,9 +26,20 @@ export default function Modal({
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
         <Dialog.Content
+          onPointerDownOutside={(e) => {
+            const orig = e.detail?.originalEvent
+            const byTarget = orig?.target?.closest?.('[data-datepicker-popup]')
+            const byCoords = orig ? document.elementFromPoint(orig.clientX, orig.clientY)?.closest('[data-datepicker-popup]') : null
+            if (byTarget || byCoords || document.querySelector('[data-datepicker-popup]')) e.preventDefault()
+          }}
+          onFocusOutside={(e) => {
+            if (document.querySelector('[data-datepicker-popup]')) e.preventDefault()
+          }}
           onInteractOutside={(e) => {
-            const target = e.detail?.originalEvent?.target
-            if (target?.closest?.('[data-datepicker-popup]')) e.preventDefault()
+            const orig = e.detail?.originalEvent
+            const byTarget = orig?.target?.closest?.('[data-datepicker-popup]')
+            const byCoords = orig ? document.elementFromPoint(orig.clientX, orig.clientY)?.closest('[data-datepicker-popup]') : null
+            if (byTarget || byCoords || document.querySelector('[data-datepicker-popup]')) e.preventDefault()
           }}
           className={cn(
             'fixed left-[50%] top-[50%] z-50 translate-x-[-50%] translate-y-[-50%]',

@@ -55,6 +55,26 @@ const QuotationSchema = new mongoose.Schema(
   }
 )
 
+QuotationSchema.pre('save', async function (next) {
+  if (this.quotationNumber) return next()
+  try {
+    const last = await mongoose.model('Quotation').findOne(
+      { quotationNumber: { $exists: true, $ne: null } },
+      { quotationNumber: 1 },
+      { sort: { createdAt: -1 } }
+    ).lean()
+    let nextNum = 1
+    if (last?.quotationNumber) {
+      const match = last.quotationNumber.match(/(\d+)$/)
+      if (match) nextNum = parseInt(match[1], 10) + 1
+    }
+    this.quotationNumber = `QT-${String(nextNum).padStart(5, '0')}`
+    next()
+  } catch (err) {
+    next(err)
+  }
+})
+
 QuotationSchema.plugin(encryptionPlugin, {
   collection: 'quotations',
   fields: [
