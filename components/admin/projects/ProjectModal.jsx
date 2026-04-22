@@ -7,7 +7,6 @@ import { z } from 'zod'
 import { X, Loader2, Briefcase } from 'lucide-react'
 import toast from 'react-hot-toast'
 import Select from '@/components/ui/Select'
-import DatePicker from '@/components/ui/DatePicker'
 
 const schema = z.object({
   name:        z.string().min(1, 'Project name is required'),
@@ -203,15 +202,13 @@ export default function ProjectModal({ project, onClose, onSave }) {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
-              <Controller name="startDate" control={control} render={({ field }) => (
-                <DatePicker value={field.value || null} onChange={v => field.onChange(v ?? '')} />
-              )} />
+              <input type="date" {...register('startDate')}
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
-              <Controller name="endDate" control={control} render={({ field }) => (
-                <DatePicker value={field.value || null} onChange={v => field.onChange(v ?? '')} />
-              )} />
+              <input type="date" {...register('endDate')}
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" />
             </div>
           </div>
 

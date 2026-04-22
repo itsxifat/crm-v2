@@ -9,7 +9,6 @@ import toast from 'react-hot-toast'
 import { Plus, X, Loader2, Send, Trash2 } from 'lucide-react'
 import Modal from '@/components/ui/Modal'
 import Select from '@/components/ui/Select'
-import DatePicker from '@/components/ui/DatePicker'
 
 const schema = z.object({
   name:             z.string().min(1, 'Name is required'),
@@ -533,15 +532,11 @@ export default function LeadModal({ open, onClose, lead, onSuccess }) {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className={lc}>Sending Date</label>
-              <Controller name="sendingDate" control={control} render={({ field }) => (
-                <DatePicker value={field.value} onChange={field.onChange} placeholder="Pick sending date…" />
-              )} />
+              <input type="date" {...register('sendingDate')} className={ic()} />
             </div>
             <div>
               <label className={lc}>Follow-up Date</label>
-              <Controller name="followUpDate" control={control} render={({ field }) => (
-                <DatePicker value={field.value} onChange={field.onChange} placeholder="Pick follow-up date…" />
-              )} />
+              <input type="date" {...register('followUpDate')} className={ic()} />
             </div>
             <div>
               <label className={lc}>Deal Value (৳)</label>
