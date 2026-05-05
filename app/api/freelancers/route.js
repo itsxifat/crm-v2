@@ -61,18 +61,43 @@ export async function GET(request) {
       .sort({ createdAt: -1 })
       .populate({ path: 'userId', select: 'id name email avatar phone isActive' })
 
-    if (!isFreelancerRole) {
-      query = query.populate({ path: 'pricing.categoryId', select: 'id name unit defaultPrice' })
-    }
-
     const [freelancers, total] = await Promise.all([
       query,
       Freelancer.countDocuments(filter),
     ])
 
+    // pricing is stored as an encrypted blob (Mixed type); Mongoose 8 strictPopulate
+    // cannot resolve sub-paths of Mixed fields, so we manually populate categoryId
+    // references after decryption. The list view only shows hourlyRate/rateType anyway,
+    // but we still resolve categories so the edit modal can prefill correctly.
+    let categoryMap = {}
+    if (!isFreelancerRole) {
+      const { PricingCategory } = await import('@/models')
+      const categoryIds = [
+        ...new Set(
+          freelancers.flatMap(f =>
+            Array.isArray(f.pricing)
+              ? f.pricing.map(p => p?.categoryId?.toString()).filter(Boolean)
+              : []
+          )
+        ),
+      ]
+      if (categoryIds.length > 0) {
+        const cats = await PricingCategory.find({ _id: { $in: categoryIds } }).lean()
+        categoryMap = Object.fromEntries(cats.map(c => [c._id.toString(), c]))
+      }
+    }
+
     const data = freelancers.map(f => {
       const obj = f.toJSON()
-      if (isFreelancerRole) delete obj.pricing
+      if (isFreelancerRole) {
+        delete obj.pricing
+      } else if (Array.isArray(obj.pricing)) {
+        obj.pricing = obj.pricing.map(p => ({
+          ...p,
+          categoryId: p?.categoryId ? (categoryMap[p.categoryId.toString()] ?? p.categoryId) : null,
+        }))
+      }
       return obj
     })
 
