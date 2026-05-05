@@ -1,0 +1,75 @@
+export const dynamic = 'force-dynamic'
+import { NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
+import connectDB from '@/lib/mongodb'
+import { EmployeeOnboarding } from '@/models'
+import { sendOnboardingEmail } from '@/lib/mailer'
+import { sendOnboardingWhatsApp } from '@/lib/whatsapp'
+
+// GET /api/onboarding — list all (HR only)
+export async function GET(request) {
+  try {
+    const session = await getServerSession(authOptions)
+    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    if (!['SUPER_ADMIN', 'MANAGER'].includes(session.user.role))
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+
+    await connectDB()
+    const { searchParams } = new URL(request.url)
+    const status = searchParams.get('status')
+    const filter = status ? { status } : {}
+
+    const items = await EmployeeOnboarding.find(filter)
+      .sort({ createdAt: -1 })
+      .populate('createdBy', 'name')
+      .populate('hrData.customRoleId', 'id title department color')
+
+    return NextResponse.json({ data: items.map(i => i.toJSON()) })
+  } catch (err) {
+    console.error('[GET /api/onboarding]', err)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
+// POST /api/onboarding — create onboarding link (HR only)
+export async function POST(request) {
+  try {
+    const session = await getServerSession(authOptions)
+    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    if (!['SUPER_ADMIN', 'MANAGER'].includes(session.user.role))
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+
+    await connectDB()
+    const { email, name, phone } = await request.json().catch(() => ({}))
+
+    if (!email) return NextResponse.json({ error: 'Employee email is required' }, { status: 422 })
+
+    const record = await new EmployeeOnboarding({
+      email,
+      createdBy: session.user.id,
+    }).save()
+
+    // Send onboarding email
+    const origin = request.headers.get('origin') || process.env.NEXTAUTH_URL || 'http://localhost:3000'
+    const link   = `${origin}/onboarding/${record.token}`
+
+    let emailSent = true
+    try {
+      await sendOnboardingEmail({ to: email, name: name || null, link, expiresAt: record.expiresAt })
+    } catch (mailErr) {
+      console.error('[POST /api/onboarding] email failed:', mailErr.message)
+      emailSent = false
+    }
+
+    // Fire-and-forget WhatsApp (requires phone number)
+    if (phone) {
+      sendOnboardingWhatsApp({ to: phone, name: name || null, link, expiresAt: record.expiresAt })
+    }
+
+    return NextResponse.json({ data: record.toJSON(), emailSent, link }, { status: 201 })
+  } catch (err) {
+    console.error('[POST /api/onboarding]', err)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
