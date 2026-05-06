@@ -156,7 +156,18 @@ export async function POST(request) {
 
     const emailToken = blindIndex(email.toLowerCase(), 'users', 'email')
     const existing = await User.findOne({ emailIdx: emailToken }).select('+emailIdx').lean()
-    if (existing) return NextResponse.json({ error: 'A user with this email already exists' }, { status: 409 })
+    if (existing) {
+      // Check for orphaned user: User exists but has no Freelancer document.
+      // This happens when a previous POST created the User but crashed before
+      // saving the Freelancer. Clean up the orphan and allow re-creation.
+      const orphanFreelancer = await Freelancer.findOne({ userId: existing._id }).lean()
+      if (!orphanFreelancer && existing.role === 'FREELANCER') {
+        await User.deleteOne({ _id: existing._id })
+        // fall through to create fresh user + freelancer below
+      } else {
+        return NextResponse.json({ error: 'A user with this email already exists' }, { status: 409 })
+      }
+    }
 
     const cfg = await getConfig()
     const requireVerification = cfg.verification?.freelancer !== false
@@ -210,7 +221,14 @@ export async function POST(request) {
       }
     }
 
-    const freelancer = await new Freelancer(freelancerData).save()
+    let freelancer
+    try {
+      freelancer = await new Freelancer(freelancerData).save()
+    } catch (freelancerErr) {
+      // Roll back the user we just created so the email isn't permanently blocked.
+      await User.deleteOne({ _id: user._id }).catch(() => {})
+      throw freelancerErr
+    }
     await freelancer.populate({ path: 'userId', select: 'id name email avatar phone isActive' })
 
     let emailSent = false
