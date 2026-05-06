@@ -262,6 +262,9 @@ export async function POST(request) {
     }, { status: 201 })
   } catch (err) {
     console.error('[POST /api/freelancers]', err)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return NextResponse.json({
+      error: 'Internal server error',
+      ...(process.env.NODE_ENV === 'development' && { detail: err.message, stack: err.stack }),
+    }, { status: 500 })
   }
 }
