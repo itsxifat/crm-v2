@@ -143,7 +143,7 @@ export default function FreelancerModal({ open, onOpenChange, freelancer, onSave
     const method = isEdit ? 'PUT' : 'POST'
     const res    = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     const json   = await res.json()
-    if (!res.ok) throw new Error(json.error ?? 'Failed to save')
+    if (!res.ok) throw new Error(json.detail ?? json.error ?? 'Failed to save')
     onSaved(json.data)
     onOpenChange(false)
   }
