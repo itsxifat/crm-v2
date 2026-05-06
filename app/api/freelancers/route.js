@@ -178,8 +178,8 @@ export async function POST(request) {
     const hashedPassword = await bcrypt.hash(randomPassword, 12)
 
     // Invite token is only needed when the verification flow is active
-    const inviteToken       = requireVerification ? crypto.randomBytes(32).toString('hex') : null
-    const inviteTokenExpiry = requireVerification ? new Date(Date.now() + 48 * 60 * 60 * 1000) : null
+    const inviteToken       = requireVerification ? crypto.randomBytes(32).toString('hex') : undefined
+    const inviteTokenExpiry = requireVerification ? new Date(Date.now() + 48 * 60 * 60 * 1000) : undefined
 
     const user = await new User({
       email:    email.toLowerCase(),

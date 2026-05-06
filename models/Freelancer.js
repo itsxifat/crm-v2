@@ -55,8 +55,8 @@ const FreelancerSchema = new mongoose.Schema(
       designation: { type: String, default: null }, // encrypted
     },
 
-    inviteToken:       { type: String, sparse: true, unique: true, default: null },
-    inviteTokenExpiry: { type: Date, default: null },
+    inviteToken:       { type: String, sparse: true, unique: true },
+    inviteTokenExpiry: { type: Date },
     inviteAccepted:    { type: Boolean, default: false },
   },
   {
