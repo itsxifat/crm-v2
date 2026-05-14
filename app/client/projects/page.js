@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { FolderOpen, Search, Filter, ArrowRight, Clock, ChevronRight } from 'lucide-react'
+import { FolderOpen, Search, Clock, ChevronRight } from 'lucide-react'
 
 const STATUS_OPTIONS = ['ALL', 'PLANNING', 'IN_PROGRESS', 'ON_HOLD', 'COMPLETED', 'CANCELLED']
 
@@ -22,20 +22,6 @@ function StatusBadge({ status }) {
   )
 }
 
-function PriorityBadge({ priority }) {
-  const map = {
-    LOW:    { label: 'Low',    bg: 'bg-gray-100',  text: 'text-gray-600' },
-    MEDIUM: { label: 'Medium', bg: 'bg-blue-100',  text: 'text-blue-600' },
-    HIGH:   { label: 'High',   bg: 'bg-orange-100',text: 'text-orange-600' },
-    URGENT: { label: 'Urgent', bg: 'bg-red-100',   text: 'text-red-600' },
-  }
-  const s = map[priority] || map.MEDIUM
-  return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${s.bg} ${s.text}`}>
-      {s.label}
-    </span>
-  )
-}
 
 export default function ClientProjectsPage() {
   const [projects, setProjects] = useState([])
@@ -69,16 +55,17 @@ export default function ClientProjectsPage() {
   if (loading) {
     return (
       <div>
-        <div className="flex items-center justify-between mb-6">
-          <div className="h-7 bg-gray-200 rounded animate-pulse w-32" />
-        </div>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {[...Array(6)].map((_, i) => (
-            <div key={i} className="bg-white rounded-2xl border border-gray-100 p-6 animate-pulse">
-              <div className="h-5 bg-gray-200 rounded w-3/4 mb-3" />
-              <div className="h-3 bg-gray-200 rounded w-full mb-2" />
-              <div className="h-3 bg-gray-200 rounded w-2/3 mb-4" />
-              <div className="h-2 bg-gray-200 rounded-full w-full" />
+        <div className="h-7 bg-gray-200 rounded animate-pulse w-32 mb-6" />
+        <div className="bg-white rounded-2xl border border-gray-100 divide-y divide-gray-50">
+          {[...Array(5)].map((_, i) => (
+            <div key={i} className="flex items-center gap-4 p-4 animate-pulse">
+              <div className="flex-1 min-w-0">
+                <div className="h-4 bg-gray-200 rounded w-1/3 mb-2" />
+                <div className="h-2 bg-gray-200 rounded-full w-full" />
+              </div>
+              <div className="h-5 bg-gray-200 rounded-full w-20 flex-shrink-0" />
+              <div className="h-3 bg-gray-200 rounded w-16 flex-shrink-0 hidden sm:block" />
+              <div className="w-4 h-4 bg-gray-200 rounded flex-shrink-0" />
             </div>
           ))}
         </div>
@@ -133,7 +120,7 @@ export default function ClientProjectsPage() {
         </div>
       </div>
 
-      {/* Projects Grid */}
+      {/* Projects List */}
       {filtered.length === 0 ? (
         <div className="bg-white rounded-2xl border border-gray-100 p-16 text-center">
           <FolderOpen className="w-14 h-14 text-gray-200 mx-auto mb-4" />
@@ -143,62 +130,46 @@ export default function ClientProjectsPage() {
           </p>
         </div>
       ) : (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm divide-y divide-gray-50">
           {filtered.map((project) => {
             const totalTasks = project._count?.tasks || 0
             const completedTasks = project.completedTaskCount || 0
             const progress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0
-            const nextMilestone = project.nextMilestone
 
             return (
               <Link key={project.id} href={`/client/projects/${project.id}`}>
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 hover:shadow-md hover:border-blue-100 transition-all duration-200 h-full flex flex-col">
-                  <div className="flex items-start justify-between mb-2">
-                    <h3 className="font-semibold text-gray-900 text-base flex-1 pr-2 line-clamp-2">{project.name}</h3>
-                    <StatusBadge status={project.status} />
-                  </div>
-
-                  <div className="flex items-center gap-2 mb-3">
-                    <PriorityBadge priority={project.priority} />
-                    {project.endDate && (
-                      <span className="text-xs text-gray-400 flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        {new Date(project.endDate).toLocaleDateString()}
-                      </span>
-                    )}
-                  </div>
-
-                  {project.description && (
-                    <p className="text-sm text-gray-500 mb-4 line-clamp-2 flex-1">{project.description}</p>
-                  )}
-
-                  <div className="mt-auto">
-                    <div className="mb-3">
-                      <div className="flex justify-between text-xs text-gray-500 mb-1.5">
-                        <span>Progress</span>
-                        <span className="font-semibold text-gray-700">{progress}%</span>
-                      </div>
-                      <div className="w-full bg-gray-100 rounded-full h-2">
+                <div className="flex items-center gap-4 px-5 py-4 hover:bg-gray-50 transition-colors group">
+                  {/* Name + progress */}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-900 truncate">{project.name}</p>
+                    <div className="flex items-center gap-2 mt-1.5">
+                      <div className="flex-1 max-w-xs bg-gray-100 rounded-full h-1.5">
                         <div
-                          className="bg-blue-500 h-2 rounded-full transition-all"
+                          className="bg-blue-500 h-1.5 rounded-full transition-all"
                           style={{ width: `${progress}%` }}
                         />
                       </div>
-                    </div>
-
-                    {nextMilestone && (
-                      <div className="text-xs text-gray-500 bg-blue-50 rounded-lg px-3 py-2 flex items-center gap-2">
-                        <Clock className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
-                        <span className="line-clamp-1">Next: {nextMilestone.title}</span>
-                      </div>
-                    )}
-
-                    <div className="flex items-center justify-end mt-3">
-                      <span className="text-xs text-blue-600 font-medium flex items-center gap-0.5 hover:gap-1.5 transition-all">
-                        View details <ChevronRight className="w-3.5 h-3.5" />
-                      </span>
+                      <span className="text-xs text-gray-400 flex-shrink-0">{progress}%</span>
                     </div>
                   </div>
+
+                  {/* Due date */}
+                  {project.endDate ? (
+                    <span className="hidden sm:flex items-center gap-1 text-xs text-gray-400 flex-shrink-0">
+                      <Clock className="w-3 h-3" />
+                      {new Date(project.endDate).toLocaleDateString()}
+                    </span>
+                  ) : (
+                    <span className="hidden sm:block w-20" />
+                  )}
+
+                  {/* Status */}
+                  <div className="flex-shrink-0">
+                    <StatusBadge status={project.status} />
+                  </div>
+
+                  {/* Arrow */}
+                  <ChevronRight className="w-4 h-4 text-gray-300 flex-shrink-0 group-hover:text-blue-500 transition-colors" />
                 </div>
               </Link>
             )

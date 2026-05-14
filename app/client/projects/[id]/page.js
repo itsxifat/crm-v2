@@ -24,20 +24,6 @@ function StatusBadge({ status }) {
   )
 }
 
-function PriorityBadge({ priority }) {
-  const map = {
-    LOW:    { label: 'Low',    bg: 'bg-gray-100',    text: 'text-gray-500' },
-    MEDIUM: { label: 'Medium', bg: 'bg-blue-50',     text: 'text-blue-600' },
-    HIGH:   { label: 'High',   bg: 'bg-orange-100',  text: 'text-orange-600' },
-    URGENT: { label: 'Urgent', bg: 'bg-red-100',     text: 'text-red-600' },
-  }
-  const p = map[priority] || map.MEDIUM
-  return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${p.bg} ${p.text}`}>
-      {p.label}
-    </span>
-  )
-}
 
 function TaskStatusBadge({ status }) {
   const map = {
@@ -150,7 +136,6 @@ export default function ClientProjectDetailPage() {
             <div className="flex items-center gap-3 mb-2 flex-wrap">
               <h1 className="text-2xl font-bold text-gray-900">{project.name}</h1>
               <StatusBadge status={project.status} />
-              {project.priority && <PriorityBadge priority={project.priority} />}
             </div>
             {project.description && (
               <p className="text-gray-500 text-sm max-w-2xl">{project.description}</p>
@@ -364,12 +349,6 @@ export default function ClientProjectDetailPage() {
                 <span className="text-sm text-gray-500">Status</span>
                 <StatusBadge status={project.status} />
               </div>
-              {project.priority && (
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-gray-500">Priority</span>
-                  <PriorityBadge priority={project.priority} />
-                </div>
-              )}
               {project.startDate && (
                 <div className="flex justify-between">
                   <span className="text-sm text-gray-500">Start Date</span>

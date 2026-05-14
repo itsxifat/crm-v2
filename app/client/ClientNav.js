@@ -12,10 +12,10 @@ import {
 import NotificationBell from '@/components/shared/NotificationBell'
 
 const navLinks = [
-  { href: '/client',           label: 'Dashboard', icon: LayoutDashboard, exact: true },
+  { href: '/client',           label: 'Dashboard',   icon: LayoutDashboard, exact: true },
   { href: '/client/projects',  label: 'My Projects', icon: FolderOpen },
   { href: '/client/invoices',  label: 'Invoices',    icon: FileText },
-  { href: '/client/documents', label: 'Documents',   icon: Files },
+  // { href: '/client/documents', label: 'Documents',   icon: Files }, // temporarily disabled
 ]
 
 export default function ClientNav({ user }) {

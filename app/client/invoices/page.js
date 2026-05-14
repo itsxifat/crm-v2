@@ -10,17 +10,17 @@ const STATUS_OPTIONS = [
   { value: 'PARTIALLY_PAID',label: 'Partial' },
   { value: 'PAID',          label: 'Paid' },
   { value: 'OVERDUE',       label: 'Overdue' },
-  { value: 'DRAFT',         label: 'Draft' },
 ]
 
 const STATUS_MAP = {
-  DRAFT:          { label: 'Draft',             bg: 'bg-gray-100',   text: 'text-gray-700' },
   SENT:           { label: 'Awaiting Payment',  bg: 'bg-blue-100',   text: 'text-blue-700' },
   PARTIALLY_PAID: { label: 'Partial',           bg: 'bg-yellow-100', text: 'text-yellow-700' },
   PAID:           { label: 'Paid',              bg: 'bg-green-100',  text: 'text-green-700' },
   OVERDUE:        { label: 'Overdue',           bg: 'bg-red-100',    text: 'text-red-700' },
   CANCELLED:      { label: 'Cancelled',         bg: 'bg-gray-100',   text: 'text-gray-500' },
 }
+
+const fmtAmt = (n) => `৳ ${(n ?? 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })}`
 
 function StatusBadge({ status }) {
   const s = STATUS_MAP[status] ?? STATUS_MAP.DRAFT
@@ -80,7 +80,7 @@ export default function ClientInvoicesPage() {
           </div>
           <div>
             <p className="text-xs text-gray-500">Total Paid</p>
-            <p className="text-base font-bold text-gray-900">${totalPaid.toLocaleString()}</p>
+            <p className="text-base font-bold text-gray-900">{fmtAmt(totalPaid)}</p>
           </div>
         </div>
         <div className="bg-white border border-gray-100 rounded-xl p-4 flex items-center gap-3">
@@ -89,7 +89,7 @@ export default function ClientInvoicesPage() {
           </div>
           <div>
             <p className="text-xs text-gray-500">Pending</p>
-            <p className="text-base font-bold text-gray-900">${totalPending.toLocaleString()}</p>
+            <p className="text-base font-bold text-gray-900">{fmtAmt(totalPending)}</p>
           </div>
         </div>
         <div className="bg-white border border-gray-100 rounded-xl p-4 flex items-center gap-3 col-span-2 sm:col-span-1">
@@ -168,6 +168,11 @@ export default function ClientInvoicesPage() {
                   <td className="px-5 py-3.5">
                     <p className="text-sm font-semibold text-gray-900">{inv.invoiceNumber}</p>
                     <p className="text-xs text-gray-400 mt-0.5">{new Date(inv.issueDate).toLocaleDateString()}</p>
+                    {inv.clientInfo && (
+                      <p className="text-xs text-blue-500 mt-0.5">
+                        {inv.clientInfo.clientCode}{inv.clientInfo.company ? ` · ${inv.clientInfo.company}` : ''}
+                      </p>
+                    )}
                   </td>
                   <td className="px-5 py-3.5 hidden sm:table-cell">
                     <p className="text-sm text-gray-600 truncate max-w-[140px]">{inv.projectId?.name ?? '—'}</p>
@@ -178,9 +183,9 @@ export default function ClientInvoicesPage() {
                     </p>
                   </td>
                   <td className="px-5 py-3.5">
-                    <p className="text-sm font-bold text-gray-900">${(inv.total ?? 0).toLocaleString()}</p>
+                    <p className="text-sm font-bold text-gray-900">{fmtAmt(inv.total)}</p>
                     {inv.paidAmount > 0 && inv.paidAmount < inv.total && (
-                      <p className="text-xs text-green-600 mt-0.5">${inv.paidAmount.toLocaleString()} paid</p>
+                      <p className="text-xs text-green-600 mt-0.5">{fmtAmt(inv.paidAmount)} paid</p>
                     )}
                   </td>
                   <td className="px-5 py-3.5">

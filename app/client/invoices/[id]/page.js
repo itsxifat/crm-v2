@@ -6,7 +6,7 @@ import Link from 'next/link'
 import toast from 'react-hot-toast'
 import {
   ArrowLeft, CheckCircle, Clock, AlertCircle, XCircle,
-  FileText, CreditCard, X, Upload,
+  FileText, CreditCard, X, Upload, Download,
 } from 'lucide-react'
 import { useConfig } from '@/lib/useConfig'
 
@@ -211,6 +211,15 @@ export default function ClientInvoiceDetailPage() {
             <StatusIcon className="w-3.5 h-3.5" />
             {status.label}
           </span>
+          <a
+            href={`/api/client/invoices/${id}/pdf`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 px-4 py-2 border border-gray-200 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors"
+          >
+            <Download className="w-4 h-4" />
+            Download PDF
+          </a>
           {canPay && (
             <button onClick={() => setShowPayModal(true)}
               className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 transition-colors">

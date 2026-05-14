@@ -4,8 +4,8 @@ import connectDB from '@/lib/mongodb'
 import { Client, Project, Invoice, Milestone, Task } from '@/models'
 import Link from 'next/link'
 import {
-  FolderOpen, FileText, DollarSign,
-  ArrowRight, Clock, CheckCircle, AlertCircle, TrendingUp
+  FolderOpen, FileText, DollarSign, AlertCircle,
+  ArrowRight, Clock, TrendingUp
 } from 'lucide-react'
 import ProgressBar from '@/components/portals/ProgressBar'
 
@@ -59,20 +59,32 @@ export default async function ClientDashboard() {
 
   if (!client) return <div className="text-center py-20 text-gray-500">Client profile not found.</div>
 
+  const allClients = await Client.find({ userId: session.user.id })
+    .select('_id clientCode company')
+    .lean()
+
+  const clientIds = allClients.map(c => c._id)
+  const clientMap = Object.fromEntries(
+    allClients.map(c => [c._id.toString(), { clientCode: c.clientCode, company: c.company }])
+  )
   const clientId = client._id
 
-  const [activeProjects, invoices, allProjects, pendingInvoicesCount, paidAgg] = await Promise.all([
+  const [activeProjects, invoices, allProjects, pendingInvoicesCount, paidAgg, dueAgg] = await Promise.all([
     Project.find({ clientId, status: { $in: ['PLANNING', 'IN_PROGRESS', 'ON_HOLD'] } })
       .sort({ updatedAt: -1 })
       .limit(4)
       .lean(),
-    Invoice.find({ clientId, status: { $ne: 'CANCELLED' } })
+    Invoice.find({ clientId: { $in: clientIds }, status: { $nin: ['CANCELLED', 'DRAFT'] } })
       .sort({ createdAt: -1 })
       .limit(5)
       .lean(),
     Project.countDocuments({ clientId, status: { $in: ['PLANNING', 'IN_PROGRESS', 'ON_HOLD'] } }),
-    Invoice.countDocuments({ clientId, status: { $in: ['SENT', 'OVERDUE', 'PARTIALLY_PAID'] } }),
-    Invoice.aggregate([{ $match: { clientId, status: 'PAID' } }, { $group: { _id: null, total: { $sum: '$total' } } }]),
+    Invoice.countDocuments({ clientId: { $in: clientIds }, status: { $in: ['SENT', 'OVERDUE', 'PARTIALLY_PAID'] } }),
+    Invoice.aggregate([{ $match: { clientId: { $in: clientIds }, status: 'PAID' } }, { $group: { _id: null, total: { $sum: '$total' } } }]),
+    Invoice.aggregate([
+      { $match: { clientId: { $in: clientIds }, status: { $in: ['SENT', 'OVERDUE', 'PARTIALLY_PAID'] } } },
+      { $group: { _id: null, due: { $sum: { $subtract: ['$total', { $ifNull: ['$paidAmount', 0] }] } } } },
+    ]),
   ])
 
   // Enrich projects with task statuses and milestones
@@ -90,19 +102,21 @@ export default async function ClientDashboard() {
   }))
 
   const paidTotal = paidAgg[0]?.total ?? 0
+  const dueTotal  = dueAgg[0]?.due   ?? 0
   const pendingInvoices = pendingInvoicesCount
 
   const stats = [
-    { label: 'Active Projects',   value: allProjects,                              icon: FolderOpen,    color: 'blue' },
-    { label: 'Pending Invoices',  value: pendingInvoices,                          icon: FileText,      color: 'yellow' },
-    { label: 'Total Paid',        value: `$${paidTotal.toLocaleString()}`,          icon: DollarSign,    color: 'green' },
-
+    { label: 'Active Projects',   value: allProjects,                                                                    icon: FolderOpen,  color: 'blue'   },
+    { label: 'Pending Invoices',  value: pendingInvoices,                                                                icon: FileText,    color: 'yellow' },
+    { label: 'Total Paid',        value: `৳ ${paidTotal.toLocaleString('en-BD', { minimumFractionDigits: 2 })}`,         icon: DollarSign,  color: 'green'  },
+    { label: 'Due Balance',       value: `৳ ${dueTotal.toLocaleString('en-BD',  { minimumFractionDigits: 2 })}`,         icon: AlertCircle, color: 'red'    },
   ]
 
   const colorMap = {
-    blue:   { bg: 'bg-blue-50',   icon: 'text-blue-600',   ring: 'ring-blue-100' },
+    blue:   { bg: 'bg-blue-50',   icon: 'text-blue-600',   ring: 'ring-blue-100'  },
     green:  { bg: 'bg-green-50',  icon: 'text-green-600',  ring: 'ring-green-100' },
     yellow: { bg: 'bg-yellow-50', icon: 'text-yellow-600', ring: 'ring-yellow-100' },
+    red:    { bg: 'bg-red-50',    icon: 'text-red-500',    ring: 'ring-red-100'    },
   }
 
   return (
@@ -117,7 +131,7 @@ export default async function ClientDashboard() {
               <p className="text-blue-200 mt-1 text-sm">{client.company}</p>
             )}
           </div>
-          <div className="hidden sm:block w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center">
+          <div className="hidden sm:flex w-16 h-16 bg-white/10 rounded-2xl items-center justify-center">
             <TrendingUp className="w-8 h-8 text-white" />
           </div>
         </div>
@@ -127,7 +141,7 @@ export default async function ClientDashboard() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {stats.map(({ label, value, icon: Icon, color }) => {
           const c = colorMap[color]
           return (
@@ -242,12 +256,18 @@ export default async function ClientDashboard() {
                     <td className="px-6 py-4">
                       <p className="text-sm font-medium text-gray-900">{invoice.invoiceNumber}</p>
                       <p className="text-xs text-gray-400">{new Date(invoice.issueDate).toLocaleDateString()}</p>
+                      {allClients.length > 1 && (() => {
+                        const info = clientMap[invoice.clientId?.toString()]
+                        return info ? (
+                          <p className="text-xs text-blue-500 mt-0.5">{info.clientCode}{info.company ? ` · ${info.company}` : ''}</p>
+                        ) : null
+                      })()}
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-600">
                       {invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : '—'}
                     </td>
                     <td className="px-6 py-4">
-                      <p className="text-sm font-semibold text-gray-900">${invoice.total.toLocaleString()}</p>
+                      <p className="text-sm font-semibold text-gray-900">৳ {invoice.total.toLocaleString('en-BD', { minimumFractionDigits: 2 })}</p>
                     </td>
                     <td className="px-6 py-4">
                       <InvoiceStatusBadge status={invoice.status} />

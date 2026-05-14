@@ -43,7 +43,8 @@
       "Read(//tmp/**)",
       "Bash(curl -s -o /dev/null -w '%{http_code}' -c /tmp/cookies.txt -b /tmp/cookies.txt -H 'User-Agent: Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\)' 'http://localhost:3000/api/leads?page=1&limit=20')",
       "Bash(Get-ChildItem -Path \"c:\\\\Projects\\\\crm\" -Directory)",
-      "Bash(Select-Object Name)"
+      "Bash(Select-Object Name)",
+      "Bash(grep -rn \"'\\\\$\\\\|\\\\\" \\\\$\\\\|\\\\`\\\\$\\\\|৳\\\\|fmtAmt\\\\|formatCurrency\\\\|toLocaleString\\\\|currency\\\\|amount\\\\|budget\\\\|paid\\\\|due\\\\|price\\\\|total\\\\|subtotal\\\\|discount\\\\|balance\" /home/sifat-hosen/projects/crm/app/client --include=\"*.js\" --include=\"*.jsx\")"
     ]
   }
 }

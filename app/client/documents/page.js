@@ -1,3 +1,11 @@
+// Documents feature is temporarily disabled in the client portal.
+// To re-enable: uncomment the code below and restore the nav link in ClientNav.js.
+
+export default function ClientDocumentsPage() {
+  return null
+}
+
+/*
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -178,3 +186,4 @@ export default function ClientDocumentsPage() {
     </div>
   )
 }
+*/
