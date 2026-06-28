@@ -1,6 +1,4 @@
 import mongoose from 'mongoose'
-import { encryptionPlugin } from '@/lib/encryptionPlugin'
-
 const SocialLinkSchema = new mongoose.Schema({
   platform: { type: String },
   url:       { type: String },
@@ -73,38 +71,13 @@ ClientSchema.pre('save', async function () {
   const yy     = String(now.getFullYear()).slice(-2)
   const mm     = String(now.getMonth() + 1).padStart(2, '0')
   const prefix = `ENCL-${yy}${mm}`
-  const count  = await mongoose.model('Client').countDocuments({ clientCode: { $regex: `^${prefix}` } })
+  // Global running serial — counts ALL clients ever coded, NOT just this month's,
+  // so the number never resets to 001 when the month changes.
+  const count  = await mongoose.model('Client').countDocuments({ clientCode: { $regex: '^ENCL-' } })
   const seq    = count + 1
   const letter = String.fromCharCode(65 + Math.floor((seq - 1) / 999))
   const num    = ((seq - 1) % 999) + 1
   this.clientCode = `${prefix}${letter}${String(num).padStart(3, '0')}`
-})
-
-ClientSchema.plugin(encryptionPlugin, {
-  collection: 'clients',
-  fields: [
-    { path: 'company'          },
-    { path: 'companyPhone'     },
-    { path: 'companyEmail'     },
-    { path: 'contactPerson'    },
-    { path: 'designation'      },
-    { path: 'businessType'     },
-    { path: 'industry'         },
-    { path: 'altPhone'         },
-    { path: 'timezone'         },
-    { path: 'address'          },
-    { path: 'city'             },
-    { path: 'country'          },
-    { path: 'vatNumber'        },
-    { path: 'website'          },
-    { path: 'socialLinks',     type: 'array'  },
-    { path: 'logo'             },
-    { path: 'notes'            },
-    { path: 'kyc.documentNumber' },
-    { path: 'kyc.primaryDoc'     },
-    { path: 'kyc.additionalDocs',type: 'array' },
-    { path: 'kyc.remarks'        },
-  ],
 })
 
 if (mongoose.models.Client) delete mongoose.models.Client

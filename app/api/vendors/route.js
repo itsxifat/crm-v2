@@ -4,6 +4,9 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Vendor, VendorPayment, Purchase } from '@/models'
+import { searchEncrypted } from '@/lib/searchMatch'
+import { logActivity } from '@/lib/logActivity'
+import { maskList, VENDOR_PII } from '@/lib/pii'
 import { z } from 'zod'
 
 const createVendorSchema = z.object({
@@ -36,19 +39,19 @@ export async function GET(request) {
     const limit  = parseInt(searchParams.get('limit') ?? '20', 10)
     const skip   = (page - 1) * limit
 
-    const filter = {}
+    // company/contactName/email are encrypted → DB regex can't match; filter in JS
+    let vendors, total
     if (search) {
-      filter.$or = [
-        { company:     { $regex: search, $options: 'i' } },
-        { contactName: { $regex: search, $options: 'i' } },
-        { email:       { $regex: search, $options: 'i' } },
-      ]
+      ;({ docs: vendors, total } = await searchEncrypted(Vendor, {
+        baseFilter: {}, search, fields: ['company', 'contactName', 'email'],
+        page, limit, sort: { createdAt: -1 },
+      }))
+    } else {
+      ;[vendors, total] = await Promise.all([
+        Vendor.find({}).skip(skip).limit(limit).sort({ createdAt: -1 }),
+        Vendor.countDocuments({}),
+      ])
     }
-
-    const [vendors, total] = await Promise.all([
-      Vendor.find(filter).skip(skip).limit(limit).sort({ createdAt: -1 }),
-      Vendor.countDocuments(filter),
-    ])
 
     const vendorIds = vendors.map(v => v._id)
     const [purchaseCounts, purchaseTotals, payments] = await Promise.all([
@@ -78,7 +81,7 @@ export async function GET(request) {
     })
 
     return NextResponse.json({
-      data: enriched,
+      data: maskList(session, enriched, VENDOR_PII),
       meta: { page, limit, total, pages: Math.ceil(total / limit) },
     })
   } catch (err) {
@@ -107,6 +110,17 @@ export async function POST(request) {
     }
 
     const vendor = await new Vendor(parsed.data).save()
+
+    logActivity({
+      userId:   session.user.id,
+      userRole: session.user.role,
+      action:   'CREATE',
+      entity:   'VENDOR',
+      entityId: vendor._id.toString(),
+      changes:  JSON.stringify({ name: vendor.name ?? vendor.companyName ?? null }),
+      request,
+    })
+
     return NextResponse.json({ data: vendor }, { status: 201 })
   } catch (err) {
     console.error('[POST /api/vendors]', err)

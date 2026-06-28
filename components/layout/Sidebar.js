@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
 import { canDo } from '@/lib/rbac'
 import {
   LayoutDashboard, Users, UserCheck, Briefcase, ClipboardList,
-  FileText, DollarSign, TrendingUp, Settings2,
+  FileText, TrendingUp, Settings2,
   Calendar, Clock, FileSignature,
   BarChart3, UserCog, Building2, ChevronLeft, ChevronRight,
   ArrowRightLeft, ArrowDownLeft, ArrowUpRight as ArrowUpRightIcon,
@@ -16,7 +16,16 @@ import {
   BellRing, Mail, KeyRound, LineChart, Store, X, MessageCircle, ShieldAlert,
 } from 'lucide-react'
 import Image from 'next/image'
-import { useState, Suspense } from 'react'
+import { useState, useEffect, Suspense } from 'react'
+
+const ROLE_LABELS = {
+  SUPER_ADMIN: 'Super Admin',
+  MANAGER:     'Manager',
+  EMPLOYEE:    'Employee',
+  FREELANCER:  'Freelancer',
+  CLIENT:      'Client',
+  VENDOR:      'Vendor',
+}
 
 // ─── Role definitions ─────────────────────────────────────────────────────────
 // SUPER_ADMIN : full access
@@ -49,6 +58,7 @@ const NAV_SECTIONS = [
     items: [
       { href: '/admin/leads',      label: 'Leads',      icon: TrendingUp,    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'sales.leads.view' },
       { href: '/admin/clients',    label: 'Customers',  icon: UserCheck,     roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'sales.customers.view' },
+      { href: '/admin/password-requests', label: 'Password Resets', icon: KeyRound, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'sales.customers.passwordReset' },
       { href: '/admin/quotations', label: 'Quotations', icon: FileSignature, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'sales.quotations.view' },
       { href: '/admin/invoices',   label: 'Invoices',   icon: FileText,      roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'sales.invoices.view' },
     ],
@@ -135,15 +145,23 @@ function NavItem({ item, active, collapsed }) {
     <Link
       href={item.href}
       title={collapsed ? item.label : undefined}
+      aria-current={active ? 'page' : undefined}
       className={cn(
-        'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors duration-150',
+        'group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors duration-150',
         active
-          ? 'bg-gray-900 text-white'
-          : 'text-gray-600 hover:bg-gray-900 hover:text-white',
-        collapsed && 'justify-center'
+          ? 'bg-gray-900 text-white shadow-sm'
+          : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900',
+        collapsed && 'justify-center px-0'
       )}
     >
-      <Icon className="w-4 h-4 shrink-0" />
+      {/* active accent bar (collapsed mode, where there's no label) */}
+      {active && collapsed && (
+        <span className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-gray-900" />
+      )}
+      <Icon className={cn(
+        'w-[18px] h-[18px] shrink-0 transition-colors',
+        active ? 'text-white' : 'text-gray-400 group-hover:text-gray-700'
+      )} />
       {!collapsed && <span className="truncate">{item.label}</span>}
     </Link>
   )
@@ -174,41 +192,46 @@ function NavGroup({ item, role, sessionUser, pathname, searchParams, collapsed }
   const parentActive   = isOnBasePath && !currentTab
 
   if (collapsed) {
+    const activeNow = parentActive || anyChildActive
     return (
       <Link
         href={item.href}
         title={item.label}
         className={cn(
-          'flex items-center justify-center px-3 py-2.5 rounded-lg text-sm font-medium transition-colors duration-150',
-          (parentActive || anyChildActive)
-            ? 'bg-gray-900 text-white'
-            : 'text-gray-600 hover:bg-gray-900 hover:text-white'
+          'group relative flex items-center justify-center py-2.5 rounded-lg text-sm font-medium transition-colors duration-150',
+          activeNow
+            ? 'bg-gray-900 text-white shadow-sm'
+            : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
         )}
       >
-        <Icon className="w-4 h-4 shrink-0" />
+        {activeNow && <span className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-gray-900" />}
+        <Icon className={cn('w-[18px] h-[18px] shrink-0', activeNow ? 'text-white' : 'text-gray-400 group-hover:text-gray-700')} />
       </Link>
     )
   }
 
+  const groupActive = parentActive || anyChildActive
   return (
     <div>
       <div className={cn(
-        'flex items-center rounded-lg text-sm font-medium transition-colors duration-150',
-        (parentActive || anyChildActive)
-          ? 'bg-gray-100 text-gray-900'
-          : 'text-gray-600 hover:bg-gray-900 hover:text-white'
+        'group flex items-center rounded-lg text-sm font-medium transition-colors duration-150',
+        groupActive ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
       )}>
         <Link href={item.href} className="flex items-center gap-3 flex-1 px-3 py-2.5 min-w-0">
-          <Icon className="w-4 h-4 shrink-0" />
+          <Icon className={cn('w-[18px] h-[18px] shrink-0', groupActive ? 'text-gray-900' : 'text-gray-400 group-hover:text-gray-700')} />
           <span className="truncate">{item.label}</span>
         </Link>
-        <button onClick={() => setOpen(o => !o)} className="px-2.5 py-2.5 shrink-0">
+        <button
+          onClick={() => setOpen(o => !o)}
+          aria-label={open ? `Collapse ${item.label}` : `Expand ${item.label}`}
+          className="px-2.5 py-2.5 shrink-0 text-gray-400 hover:text-gray-700"
+        >
           <ChevronDown className={cn('w-3.5 h-3.5 transition-transform duration-200', open && 'rotate-180')} />
         </button>
       </div>
 
-      {open && (
-        <ul className="mt-0.5 ml-3 pl-3 border-l border-gray-200 space-y-0.5">
+      <div className={cn('grid transition-all duration-200 ease-in-out', open ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0')}>
+        <ul className="overflow-hidden mt-0.5 ml-[1.4rem] pl-3 border-l border-gray-200 space-y-0.5">
           {visibleChildren.map(child => {
             const CIcon  = child.icon
             const active = isChildActive(child)
@@ -216,21 +239,22 @@ function NavGroup({ item, role, sessionUser, pathname, searchParams, collapsed }
               <li key={child.href}>
                 <Link
                   href={child.href}
+                  aria-current={active ? 'page' : undefined}
                   className={cn(
-                    'flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-medium transition-colors duration-150',
+                    'group/c flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-medium transition-colors duration-150',
                     active
-                      ? 'bg-gray-900 text-white'
-                      : 'text-gray-500 hover:bg-gray-900 hover:text-white'
+                      ? 'bg-gray-900 text-white shadow-sm'
+                      : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900'
                   )}
                 >
-                  <CIcon className="w-3.5 h-3.5 shrink-0" />
+                  <CIcon className={cn('w-3.5 h-3.5 shrink-0', active ? 'text-white' : 'text-gray-400 group-hover/c:text-gray-700')} />
                   <span className="truncate">{child.label}</span>
                 </Link>
               </li>
             )
           })}
         </ul>
-      )}
+      </div>
     </div>
   )
 }
@@ -240,9 +264,18 @@ function NavGroup({ item, role, sessionUser, pathname, searchParams, collapsed }
 function SidebarContent({ mobileOpen, onMobileClose }) {
   const pathname          = usePathname()
   const searchParams      = useSearchParams()
-  const { data: session } = useSession()
+  const { data: session, status } = useSession()
   const [collapsed, setCollapsed] = useState(false)
   const role = session?.user?.role
+
+  // Restore + persist the collapsed preference across reloads.
+  useEffect(() => {
+    if (localStorage.getItem('sidebar:collapsed') === '1') setCollapsed(true)
+  }, [])
+  const setCollapsedPersist = (val) => {
+    setCollapsed(val)
+    try { localStorage.setItem('sidebar:collapsed', val ? '1' : '0') } catch {}
+  }
 
   function isActive(item) {
     if (item.exact) return pathname === item.href.split('?')[0] && !searchParams?.get('tab')
@@ -280,11 +313,11 @@ function SidebarContent({ mobileOpen, onMobileClose }) {
         {collapsed && !isMobile && (
           <div className="mx-auto flex items-center justify-center">
             <Image
-              src="/en-logo.png"
+              src="/en-icon.png"
               alt="Enfinito"
-              width={28}
-              height={28}
-              className="w-7 h-7 object-contain block"
+              width={32}
+              height={32}
+              className="w-8 h-8 object-contain block"
               onError={e => { e.currentTarget.style.display = 'none' }}
             />
           </div>
@@ -298,7 +331,8 @@ function SidebarContent({ mobileOpen, onMobileClose }) {
           </button>
         ) : !collapsed ? (
           <button
-            onClick={() => setCollapsed(true)}
+            onClick={() => setCollapsedPersist(true)}
+            title="Collapse sidebar"
             className="p-1.5 rounded-md text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors shrink-0"
           >
             <ChevronLeft className="w-4 h-4" />
@@ -307,8 +341,28 @@ function SidebarContent({ mobileOpen, onMobileClose }) {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto py-3 px-3">
-        {NAV_SECTIONS.map((section) => {
+      <nav className="flex-1 overflow-y-auto py-3 px-3 [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-gray-200 hover:[&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-track]:bg-transparent">
+        {/* Session still resolving on the client → show a skeleton instead of an empty (blank) sidebar */}
+        {status === 'loading' ? (
+          <div className="space-y-2 px-1 animate-pulse">
+            {Array.from({ length: 7 }).map((_, i) => (
+              <div key={i} className="h-9 rounded-lg bg-gray-100" />
+            ))}
+          </div>
+        ) : !role ? (
+          // Authenticated server-side but the client has no session (cookie didn't arrive / fetch failed)
+          (!collapsed || isMobile) && (
+            <div className="px-2 py-6 text-center space-y-3">
+              <p className="text-xs text-gray-400">Couldn’t load your session.</p>
+              <button
+                onClick={() => window.location.reload()}
+                className="text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg px-3 py-1.5 transition-colors"
+              >
+                Reload
+              </button>
+            </div>
+          )
+        ) : NAV_SECTIONS.map((section) => {
           if (!section.roles.includes(role)) return null
 
           const visibleItems = section.items.filter(item => itemVisible(item))
@@ -344,17 +398,48 @@ function SidebarContent({ mobileOpen, onMobileClose }) {
         })}
       </nav>
 
-      {/* Collapse toggle (desktop only) */}
-      {collapsed && !isMobile && (
-        <div className="px-3 pb-4">
-          <button
-            onClick={() => setCollapsed(false)}
-            className="w-full flex justify-center p-2.5 rounded-lg text-gray-400 hover:text-white hover:bg-gray-900 transition-colors"
-          >
-            <ChevronRight className="w-4 h-4" />
-          </button>
-        </div>
-      )}
+      {/* Footer: user identity + collapse toggle */}
+      {(() => {
+        const showCollapsed = collapsed && !isMobile
+        const name    = session?.user?.name || 'User'
+        const initial = name.trim().charAt(0).toUpperCase() || 'U'
+        const roleLbl = ROLE_LABELS[role] ?? role ?? ''
+        return (
+          <div className="border-t border-gray-200 p-3 shrink-0">
+            {showCollapsed ? (
+              <div className="flex flex-col items-center gap-2">
+                <Link href="/admin/account" title={`${name} · ${roleLbl}`}
+                  className="w-9 h-9 rounded-full bg-gray-900 text-white flex items-center justify-center text-sm font-semibold hover:bg-gray-700 transition-colors">
+                  {initial}
+                </Link>
+                <button
+                  onClick={() => setCollapsedPersist(false)}
+                  title="Expand sidebar"
+                  className="w-full flex justify-center p-2 rounded-lg text-gray-400 hover:text-gray-900 hover:bg-gray-100 transition-colors"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            ) : (
+              <Link
+                href="/admin/account"
+                onClick={isMobile ? onMobileClose : undefined}
+                className="flex items-center gap-3 px-1.5 py-1 rounded-lg hover:bg-gray-100 transition-colors group"
+                title="My Account"
+              >
+                <div className="w-9 h-9 rounded-full bg-gray-900 text-white flex items-center justify-center text-sm font-semibold shrink-0">
+                  {initial}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-gray-900 truncate">{name}</p>
+                  <p className="text-xs text-gray-400 truncate">{roleLbl}</p>
+                </div>
+                <UserCircle className="w-4 h-4 text-gray-300 group-hover:text-gray-500 shrink-0 transition-colors" />
+              </Link>
+            )}
+          </div>
+        )
+      })()}
     </>
   )
 

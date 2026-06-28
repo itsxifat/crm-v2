@@ -1,6 +1,4 @@
 import mongoose from 'mongoose'
-import { encryptionPlugin } from '@/lib/encryptionPlugin'
-
 const FreelancerSchema = new mongoose.Schema(
   {
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
@@ -67,39 +65,6 @@ const FreelancerSchema = new mongoose.Schema(
     },
   }
 )
-
-FreelancerSchema.plugin(encryptionPlugin, {
-  collection: 'freelancers',
-  fields: [
-    { path: 'skills'          },
-    { path: 'bio'             },
-    { path: 'portfolioLinks'  },
-    { path: 'rateType'        },
-    { path: 'hourlyRate',     type: 'number' },
-    { path: 'pricing',        type: 'array'  },
-    // Bank
-    { path: 'paymentMethod.bank.bankName'      },
-    { path: 'paymentMethod.bank.accountNumber' },
-    { path: 'paymentMethod.bank.accountName'   },
-    { path: 'paymentMethod.bank.routingNumber' },
-    { path: 'paymentMethod.bank.swiftCode'     },
-    { path: 'paymentMethod.bank.branch'        },
-    { path: 'paymentMethod.bank.division'      },
-    // bKash
-    { path: 'paymentMethod.bkash.accountName'   },
-    { path: 'paymentMethod.bkash.accountNumber' },
-    // Agency
-    { path: 'agencyInfo.agencyName' },
-    { path: 'agencyInfo.phone'      },
-    { path: 'agencyInfo.address'    },
-    { path: 'agencyInfo.type'       },
-    // Contact person
-    { path: 'contactPerson.name'        },
-    { path: 'contactPerson.phone'       },
-    { path: 'contactPerson.email'       },
-    { path: 'contactPerson.designation' },
-  ],
-})
 
 if (mongoose.models.Freelancer) delete mongoose.models.Freelancer
 export default mongoose.model('Freelancer', FreelancerSchema)

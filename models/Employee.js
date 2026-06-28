@@ -1,6 +1,4 @@
 import mongoose from 'mongoose'
-import { encryptionPlugin } from '@/lib/encryptionPlugin'
-
 const EmployeeSchema = new mongoose.Schema(
   {
     userId:          { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
@@ -161,43 +159,6 @@ export function calcProfileCompletion(emp) {
 }
 
 // Encryption plugin runs after the employeeId hook (registered later = runs after)
-EmployeeSchema.plugin(encryptionPlugin, {
-  collection: 'employees',
-  fields: [
-    // Identity & role
-    { path: 'venture'      },
-    { path: 'department'   },
-    { path: 'position'     },
-    { path: 'designation'  },
-    // Financial
-    { path: 'salary',             type: 'number' },
-    // Contact PII
-    { path: 'phone'          },
-    { path: 'secondaryPhone' },
-    { path: 'homePhone'      },
-    { path: 'companyPhone'   },
-    { path: 'companyWebmail' },
-    // Location
-    { path: 'address'        },
-    // Identity docs
-    { path: 'nidNumber'      },
-    { path: 'passportNumber' },
-    // Personal
-    { path: 'bloodGroup'     },
-    { path: 'nationality'    },
-    // Dates
-    { path: 'dateOfBirth',        type: 'date'   },
-    // Composite arrays
-    { path: 'emergencyContacts',  type: 'array'  },
-    { path: 'companyItems',       type: 'array'  },
-    { path: 'documents',          type: 'array'  },
-    // Document URLs
-    { path: 'appointmentLetterUrl' },
-    { path: 'agreementUrl'         },
-    // Notes
-    { path: 'hrNotes'              },
-  ],
-})
 
 if (mongoose.models.Employee) delete mongoose.models.Employee
 export default mongoose.model('Employee', EmployeeSchema)

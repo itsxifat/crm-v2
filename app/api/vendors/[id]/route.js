@@ -2,8 +2,11 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
+import { requireManager } from '@/lib/rbac'
+import { maskDoc, VENDOR_PII } from '@/lib/pii'
 import connectDB from '@/lib/mongodb'
 import { Vendor, VendorPayment, Purchase, Agreement, Document } from '@/models'
+import { logActivity } from '@/lib/logActivity'
 import { z } from 'zod'
 
 const updateVendorSchema = z.object({
@@ -21,7 +24,8 @@ const updateVendorSchema = z.object({
 export async function GET(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    const denied = requireManager(session)
+    if (denied) return denied
 
     await connectDB()
 
@@ -39,7 +43,7 @@ export async function GET(request, { params }) {
     const totalPurchased = purchases.filter(p => p.status !== 'cancelled').reduce((sum, p) => sum + p.totalAmount, 0)
 
     return NextResponse.json({
-      data: { ...vendor.toJSON(), purchases, payments, agreements, documents, totalPaid, totalPurchased },
+      data: maskDoc(session, { ...vendor.toJSON(), purchases, payments, agreements, documents, totalPaid, totalPurchased }, VENDOR_PII),
     })
   } catch (err) {
     console.error('[GET /api/vendors/[id]]', err)
@@ -67,6 +71,17 @@ export async function PUT(request, { params }) {
     }
 
     const vendor = await Vendor.findByIdAndUpdate(params.id, parsed.data, { new: true })
+
+    logActivity({
+      userId:   session.user.id,
+      userRole: session.user.role,
+      action:   'UPDATE',
+      entity:   'VENDOR',
+      entityId: params.id,
+      changes:  JSON.stringify({ name: vendor?.name ?? vendor?.companyName ?? null }),
+      request,
+    })
+
     return NextResponse.json({ data: vendor })
   } catch (err) {
     console.error('[PUT /api/vendors/[id]]', err)
@@ -78,14 +93,26 @@ export async function PUT(request, { params }) {
 export async function DELETE(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    const denied = requireManager(session)
+    if (denied) return denied
 
     if (session.user.role !== 'SUPER_ADMIN') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
     await connectDB()
-    await Vendor.findByIdAndDelete(params.id)
+    const deleted = await Vendor.findByIdAndDelete(params.id)
+
+    logActivity({
+      userId:   session.user.id,
+      userRole: session.user.role,
+      action:   'DELETE',
+      entity:   'VENDOR',
+      entityId: params.id,
+      changes:  deleted ? JSON.stringify({ name: deleted.name ?? deleted.companyName ?? null }) : null,
+      request,
+    })
+
     return NextResponse.json({ success: true })
   } catch (err) {
     console.error('[DELETE /api/vendors/[id]]', err)

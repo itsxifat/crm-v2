@@ -5,6 +5,7 @@ import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Transaction, Invoice } from '@/models'
 import { canAccess } from '@/lib/permissions'
+import { logActivity } from '@/lib/logActivity'
 import { z } from 'zod'
 
 const transactionSchema = z.object({
@@ -47,22 +48,27 @@ export async function GET(request) {
     const limit     = parseInt(searchParams.get('limit') ?? '50', 10)
     const type      = searchParams.get('type')
     const category  = searchParams.get('category')
+    const subcategory = searchParams.get('subcategory')
     const startDate = searchParams.get('startDate')
     const endDate   = searchParams.get('endDate')
     const skip      = (page - 1) * limit
 
+    // category & subcategory are plain fields — match by direct equality.
+    // (subcategory is stored in the `expenseCategory` field for both income & expense.)
     const filter = {}
-    if (type)     filter.type     = type
-    if (category) filter.category = category
+    if (type)        filter.type            = type
+    if (category)    filter.category        = category
+    if (subcategory) filter.expenseCategory = subcategory
     if (startDate || endDate) {
       filter.date = {}
       if (startDate) filter.date.$gte = new Date(startDate)
       if (endDate)   filter.date.$lte = new Date(new Date(endDate).setHours(23, 59, 59, 999))
     }
 
+    const sort = { date: -1, createdAt: -1 }
+
     const [transactions, total] = await Promise.all([
-      Transaction.find(filter)
-        .skip(skip).limit(limit).sort({ date: -1, createdAt: -1 })
+      Transaction.find(filter).skip(skip).limit(limit).sort(sort)
         .populate('paidBy',         'name avatar')
         .populate('accountManager', 'name avatar')
         .populate('createdBy',      'name')
@@ -96,12 +102,8 @@ export async function POST(request) {
 
     const { date, ...rest } = parsed.data
 
-    // txnId required if no receipt
-    if (!rest.receiptUrl && !rest.txnId) {
-      return NextResponse.json({
-        error: 'Transaction ID is required when no receipt is attached',
-      }, { status: 422 })
-    }
+    // txnId, receipt, reference, project etc. are all optional —
+    // the pre-save hook auto-generates a txnId when none is provided.
 
     // Strip empty strings to null
     const clean = Object.fromEntries(
@@ -137,6 +139,16 @@ export async function POST(request) {
       { path: 'createdBy',      select: 'name' },
       { path: 'projectId',      select: 'name projectCode venture' },
     ])
+
+    logActivity({
+      userId:   session.user.id,
+      userRole: session.user.role,
+      action:   'CREATE',
+      entity:   'TRANSACTION',
+      entityId: transaction._id.toString(),
+      changes:  JSON.stringify({ type: clean.type, amount: clean.amount, category: clean.category }),
+      request,
+    })
 
     return NextResponse.json({ data: transaction.toJSON() }, { status: 201 })
   } catch (err) {

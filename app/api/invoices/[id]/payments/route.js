@@ -4,6 +4,8 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Invoice, Payment, Transaction, Project } from '@/models'
+import { requireStaff } from '@/lib/rbac'
+import { logActivity } from '@/lib/logActivity'
 import { z } from 'zod'
 
 const paymentSchema = z.object({
@@ -18,7 +20,8 @@ const paymentSchema = z.object({
 export async function GET(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    const denied  = requireStaff(session)
+    if (denied) return denied
 
     await connectDB()
 
@@ -101,6 +104,16 @@ export async function POST(request, { params }) {
         await proj.save()
       }
     }
+
+    logActivity({
+      userId:   session.user.id,
+      userRole: session.user.role,
+      action:   'PAYMENT',
+      entity:   'INVOICE',
+      entityId: params.id,
+      changes:  JSON.stringify({ invoiceNumber: invoice.invoiceNumber, amount, method, status: newStatus }),
+      request,
+    })
 
     return NextResponse.json({ data: payment, invoiceStatus: newStatus, paidAmount: newPaid }, { status: 201 })
   } catch (err) {

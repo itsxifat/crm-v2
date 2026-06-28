@@ -4,6 +4,10 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Lead, Employee } from '@/models'
+import { requirePerm } from '@/lib/rbac'
+import { maskList, LEAD_PII } from '@/lib/pii'
+import { searchEncrypted } from '@/lib/searchMatch'
+import { logActivity } from '@/lib/logActivity'
 import { z } from 'zod'
 
 const createLeadSchema = z.object({
@@ -36,7 +40,8 @@ const createLeadSchema = z.object({
 export async function GET(request) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    const denied  = requirePerm(session, 'sales.leads.view')   // admin-only leads pipeline (PII)
+    if (denied) return denied
 
     await connectDB()
 
@@ -52,11 +57,11 @@ export async function GET(request) {
     const dateTo   = searchParams.get('dateTo')
     const skip     = (page - 1) * limit
 
+    // status/priority are NOT encrypted → safe DB filters. platform/source ARE
+    // encrypted → must be matched in JS (DB equality can't match ciphertext).
     const filter = {}
     if (status)   filter.status   = status
     if (priority) filter.priority = priority
-    if (platform) filter.platform = platform
-    if (source)   filter.source   = source
 
     if (dateFrom || dateTo) {
       filter.createdAt = {}
@@ -64,34 +69,35 @@ export async function GET(request) {
       if (dateTo)   filter.createdAt.$lte = new Date(dateTo + 'T23:59:59.999Z')
     }
 
-    if (search) {
-      filter.$or = [
-        { name:      { $regex: search, $options: 'i' } },
-        { email:     { $regex: search, $options: 'i' } },
-        { company:   { $regex: search, $options: 'i' } },
-        { phone:     { $regex: search, $options: 'i' } },
-        { reference: { $regex: search, $options: 'i' } },
-        { location:  { $regex: search, $options: 'i' } },
-      ]
-    }
-
     // Employees only see leads assigned to them
     if (session.user.role === 'EMPLOYEE') {
       const employee = await Employee.findOne({ userId: session.user.id }).lean()
-      if (employee) filter.assignedToId = employee._id
+      filter.assignedToId = employee?._id ?? null
     }
 
-    const [leads, total] = await Promise.all([
-      Lead.find(filter)
-        .skip(skip)
-        .limit(limit)
-        .sort({ createdAt: -1 })
-        .populate({ path: 'assignedToId', populate: { path: 'userId', select: 'name avatar' } }),
-      Lead.countDocuments(filter),
-    ])
+    const populate = { path: 'assignedToId', populate: { path: 'userId', select: 'name avatar' } }
+
+    let leads, total
+    if (search || platform || source) {
+      // name/email/company/phone/reference/location + platform/source are encrypted
+      ;({ docs: leads, total } = await searchEncrypted(Lead, {
+        baseFilter: filter,
+        search,
+        fields: ['name', 'email', 'company', 'phone', 'reference', 'location'],
+        equals: [{ field: 'platform', value: platform }, { field: 'source', value: source }],
+        page, limit, sort: { createdAt: -1 }, populate,
+      }))
+    } else {
+      ;[leads, total] = await Promise.all([
+        Lead.find(filter).skip(skip).limit(limit).sort({ createdAt: -1 }).populate(populate),
+        Lead.countDocuments(filter),
+      ])
+    }
+
+    const data = maskList(session, leads.map(l => (l.toJSON ? l.toJSON() : l)), LEAD_PII)
 
     return NextResponse.json({
-      data: leads,
+      data,
       meta: { page, limit, total, pages: Math.ceil(total / limit) },
     })
   } catch (err) {
@@ -104,12 +110,8 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-
-    const allowedRoles = ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE']
-    if (!allowedRoles.includes(session.user.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const denied  = requirePerm(session, 'sales.leads.create')
+    if (denied) return denied
 
     await connectDB()
 
@@ -124,6 +126,17 @@ export async function POST(request) {
     if (data.sendingDate)  data.sendingDate  = new Date(data.sendingDate)
 
     const lead = await new Lead(data).save()
+
+    logActivity({
+      userId:   session.user.id,
+      userRole: session.user.role,
+      action:   'CREATE',
+      entity:   'LEAD',
+      entityId: lead._id.toString(),
+      changes:  JSON.stringify({ name: parsed.data.name, status: lead.status }),
+      request,
+    })
+
     return NextResponse.json({ data: lead }, { status: 201 })
   } catch (err) {
     console.error('[POST /api/leads]', err)

@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
+import { requireStaff } from '@/lib/rbac'
 import connectDB from '@/lib/mongodb'
 import Lead, { LeadActivity } from '@/models/Lead'
 import { z } from 'zod'
@@ -15,7 +16,8 @@ const activitySchema = z.object({
 export async function GET(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    const denied = requireStaff(session)
+    if (denied) return denied
 
     await connectDB()
 
@@ -31,7 +33,8 @@ export async function GET(request, { params }) {
 export async function POST(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    const denied = requireStaff(session)
+    if (denied) return denied
 
     await connectDB()
 

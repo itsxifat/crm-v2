@@ -42,7 +42,7 @@ const EmployeeOnboardingSchema = new mongoose.Schema(
 
     // ── HR fills ───────────────────────────────────────────────────────────────
     hrData: {
-      venture:              { type: String, enum: ['ENSTUDIO', 'ENTECH', 'ENMARK', null], default: null },
+      venture:              { type: String, default: null, trim: true },
       department:           { type: String, default: null },
       position:             { type: String, default: null },
       designation:          { type: String, default: null },

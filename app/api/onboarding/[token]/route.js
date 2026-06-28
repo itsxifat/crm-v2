@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import connectDB from '@/lib/mongodb'
 import { EmployeeOnboarding, User, Employee } from '@/models'
-import { blindIndex } from '@/lib/encryption'
+import { ciEquals } from '@/lib/searchMatch'
 
 // GET /api/onboarding/[token] — public: validate token & return prefill data
 export async function GET(request, { params }) {
@@ -69,8 +69,7 @@ export async function PATCH(request, { params }) {
     const bcrypt = (await import('bcryptjs')).default
     const userEmail = email || record.email
 
-    const emailToken = blindIndex(userEmail, 'users', 'email')
-    let user = await User.findOne({ emailIdx: emailToken }).select('+emailIdx')
+    let user = await User.findOne({ email: ciEquals(userEmail) })
     if (!user) {
       user = await new User({
         name:     name  || 'Employee',

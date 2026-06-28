@@ -3,8 +3,9 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
-import { Client, Invoice, Payment } from '@/models'
+import { Invoice, Payment } from '@/models'
 import { getConfig } from '@/lib/getConfig'
+import { getMyCompanyIds } from '@/lib/clientAccess'
 
 function formatCurrency(amount, currency = 'BDT') {
   const n = amount ?? 0
@@ -28,10 +29,8 @@ export async function GET(_, { params }) {
 
     await connectDB()
 
-    const clients = await Client.find({ userId: session.user.id }).select('_id').lean()
-    if (!clients.length) return NextResponse.json({ error: 'Client not found' }, { status: 404 })
-
-    const clientIds = clients.map(c => c._id)
+    const clientIds = await getMyCompanyIds(session.user.id)
+    if (!clientIds.length) return NextResponse.json({ error: 'Client not found' }, { status: 404 })
 
     const invoice = await Invoice.findOne({ _id: params.id, clientId: { $in: clientIds }, status: { $ne: 'DRAFT' } })
       .populate({ path: 'clientId', populate: { path: 'userId', select: 'name email phone' } })

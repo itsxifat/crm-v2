@@ -2,14 +2,17 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
+import { requirePerm } from '@/lib/rbac'
 import connectDB from '@/lib/mongodb'
 import { Quotation } from '@/models'
+import { logActivity } from '@/lib/logActivity'
 
 // GET /api/quotations/[id]
 export async function GET(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    const denied = requirePerm(session, 'sales.quotations.view')
+    if (denied) return denied
     await connectDB()
 
     const q = await Quotation.findById(params.id)
@@ -29,9 +32,8 @@ export async function GET(request, { params }) {
 export async function PUT(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-    if (!['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'].includes(session.user.role))
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const denied = requirePerm(session, 'sales.quotations.update')
+    if (denied) return denied
 
     await connectDB()
 
@@ -64,6 +66,17 @@ export async function PUT(request, { params }) {
     }, { new: true })
 
     if (!q) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+    logActivity({
+      userId:   session.user.id,
+      userRole: session.user.role,
+      action:   'UPDATE',
+      entity:   'QUOTATION',
+      entityId: params.id,
+      changes:  JSON.stringify({ quotationNumber: q.quotationNumber, total: q.total }),
+      request,
+    })
+
     return NextResponse.json({ data: q.toJSON() })
   } catch (err) {
     console.error('[PUT /api/quotations/[id]]', err)
@@ -75,11 +88,21 @@ export async function PUT(request, { params }) {
 export async function DELETE(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-    if (session.user.role !== 'SUPER_ADMIN')
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const denied = requirePerm(session, 'sales.quotations.delete')
+    if (denied) return denied
     await connectDB()
-    await Quotation.findByIdAndDelete(params.id)
+    const deleted = await Quotation.findByIdAndDelete(params.id)
+
+    logActivity({
+      userId:   session.user.id,
+      userRole: session.user.role,
+      action:   'DELETE',
+      entity:   'QUOTATION',
+      entityId: params.id,
+      changes:  deleted ? JSON.stringify({ quotationNumber: deleted.quotationNumber }) : null,
+      request,
+    })
+
     return NextResponse.json({ success: true })
   } catch (err) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

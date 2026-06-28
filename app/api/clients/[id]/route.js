@@ -2,14 +2,18 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
+import { requirePerm } from '@/lib/rbac'
+import { maskDoc, CLIENT_PII } from '@/lib/pii'
 import connectDB from '@/lib/mongodb'
 import { User, Client, Project, Invoice, Agreement, Document } from '@/models'
+import { logActivity } from '@/lib/logActivity'
 
 // GET /api/clients/[id]
 export async function GET(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    const denied = requirePerm(session, 'sales.customers.view')
+    if (denied) return denied
     await connectDB()
 
     const client = await Client.findById(params.id)
@@ -37,7 +41,7 @@ export async function GET(request, { params }) {
     const activeProjectCount = projects.filter(p => ['IN_PROGRESS','ACTIVE'].includes(p.status)).length
 
     return NextResponse.json({
-      data: {
+      data: maskDoc(session, {
         ...client.toJSON(),
         linkedClients,
         projects:   projects.map(p => p.toJSON()),
@@ -47,7 +51,7 @@ export async function GET(request, { params }) {
         totalRevenue,
         outstandingBalance,
         activeProjectCount,
-      },
+      }, CLIENT_PII),
     })
   } catch (err) {
     console.error('[GET /api/clients/[id]]', err)
@@ -59,9 +63,8 @@ export async function GET(request, { params }) {
 export async function PUT(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-    if (!['SUPER_ADMIN','MANAGER'].includes(session.user.role))
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const denied = requirePerm(session, 'sales.customers.update')
+    if (denied) return denied
     await connectDB()
 
     const body = await request.json()
@@ -93,6 +96,16 @@ export async function PUT(request, { params }) {
       .populate({ path: 'userId', select: 'id name email avatar phone isActive' })
       .populate('kyc.reviewedBy', 'name')
 
+    logActivity({
+      userId:   session.user.id,
+      userRole: session.user.role,
+      action:   'UPDATE',
+      entity:   'CLIENT',
+      entityId: params.id,
+      changes:  JSON.stringify({ clientCode: updated.clientCode, company: updated.company ?? null }),
+      request,
+    })
+
     return NextResponse.json({ data: updated.toJSON() })
   } catch (err) {
     console.error('[PUT /api/clients/[id]]', err)
@@ -104,15 +117,25 @@ export async function PUT(request, { params }) {
 export async function DELETE(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-    if (session.user.role !== 'SUPER_ADMIN')
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const denied = requirePerm(session, 'sales.customers.delete')
+    if (denied) return denied
     await connectDB()
 
     const client = await Client.findById(params.id).lean()
     if (!client) return NextResponse.json({ error: 'Client not found' }, { status: 404 })
 
     await User.findByIdAndUpdate(client.userId, { isActive: false })
+
+    logActivity({
+      userId:   session.user.id,
+      userRole: session.user.role,
+      action:   'DEACTIVATE',
+      entity:   'CLIENT',
+      entityId: params.id,
+      changes:  JSON.stringify({ clientCode: client.clientCode, isActive: false }),
+      request,
+    })
+
     return NextResponse.json({ success: true, message: 'Client deactivated' })
   } catch (err) {
     console.error('[DELETE /api/clients/[id]]', err)

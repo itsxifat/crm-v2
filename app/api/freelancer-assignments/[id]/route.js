@@ -118,6 +118,7 @@ export async function PATCH(req, { params }) {
         date:        new Date(),
         notes:       assignment.paymentNotes ?? null,
         freelancerId: assignment.freelancerId,
+        paidToName:   displayName,
         submittedBy:  session.user.id,
         status:       'PENDING',
       })

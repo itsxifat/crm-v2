@@ -7,12 +7,12 @@ import Link from 'next/link'
 import toast from 'react-hot-toast'
 import {
   ArrowLeft, Pencil, Trash2, Plus, CheckCircle2, Circle,
-  DollarSign, TrendingUp, TrendingDown, Loader2, X, Paperclip,
+  Wallet, TrendingUp, TrendingDown, Loader2, X, Paperclip,
   CreditCard, Clock, Calendar, Users, Tag, Flag, BarChart2,
   ChevronRight, MoreHorizontal, Check, AlertTriangle, FileText,
   BookOpen, MessageSquare, Send, Pencil as PencilIcon, Building2,
 } from 'lucide-react'
-import { STATUS_META, EXPENSE_CATEGORIES } from '@/lib/ventures'
+import { STATUS_META } from '@/lib/ventures'
 import { useConfig } from '@/lib/useConfig'
 import Image from 'next/image'
 import FileUpload from '@/components/ui/FileUpload'
@@ -247,11 +247,13 @@ function TaskModal({ projectId, task, onClose, onSaved }) {
 // ─── ExpenseModal ─────────────────────────────────────────────────────────────
 
 function ExpenseModal({ projectId, onClose, onSaved }) {
+  const { expenseCategories, loading: configLoading } = useConfig()
   const [form, setForm] = useState({
-    title: '', amount: '', category: EXPENSE_CATEGORIES[0],
+    title: '', amount: '', category: '', subcategory: '',
     date: new Date().toISOString().slice(0,10), notes: '', invoiceUrl: '',
+    payeeType: '', // '', freelancer, agency, vendor, employee, other
     freelancerId: '', agencyId: '', vendorId: '', paidToEmployeeId: '',
-    paidToName: '', conveyanceType: 'employee',
+    paidToName: '',
   })
   const [saving,      setSaving]      = useState(false)
   const [freelancers, setFreelancers] = useState([])
@@ -259,13 +261,16 @@ function ExpenseModal({ projectId, onClose, onSaved }) {
   const [vendors,     setVendors]     = useState([])
   const [employees,   setEmployees]   = useState([])
 
-  const cat = form.category
-  const isFreelancer      = cat === 'Freelancer Payment'
-  const isAgency          = cat === 'Agency Payment'
-  const isVendor          = cat === 'Vendor Payment'
-  const isEmployeeExpense = cat === 'Employee Expense'
-  const isEquipment       = cat === 'Equipment'
-  const isTravel          = cat === 'Travel'
+  // subcategories belong to the selected parent category
+  const subcategories = expenseCategories.find(c => c.label === form.category)?.subcategories ?? []
+  const PAYEE_TYPES = [
+    { id: '',           label: 'None' },
+    { id: 'freelancer', label: 'Freelancer' },
+    { id: 'agency',     label: 'Agency' },
+    { id: 'vendor',     label: 'Vendor' },
+    { id: 'employee',   label: 'Employee' },
+    { id: 'other',      label: 'Other' },
+  ]
 
   useEffect(() => {
     // Always fetch assigned freelancers for this project
@@ -279,20 +284,18 @@ function ExpenseModal({ projectId, onClose, onSaved }) {
     fetch('/api/employees?limit=200').then(r => r.json()).then(j => setEmployees(j.data ?? []))
   }, [projectId])
 
-  function resetEntityFields() {
-    setForm(f => ({ ...f, freelancerId: '', agencyId: '', vendorId: '', paidToEmployeeId: '', paidToName: '', conveyanceType: 'employee' }))
+  function setPayeeType(t) {
+    setForm(f => ({ ...f, payeeType: t, freelancerId: '', agencyId: '', vendorId: '', paidToEmployeeId: '', paidToName: '' }))
   }
 
   async function save() {
     if (!form.title || !form.amount) { toast.error('Title and amount required'); return }
-    if (isFreelancer      && !form.freelancerId)                                        { toast.error('Select a freelancer'); return }
-    if (isAgency          && !form.agencyId)                                             { toast.error('Select an agency'); return }
-    if (isVendor          && !form.vendorId)                                             { toast.error('Select a vendor'); return }
-    if (isEquipment       && !form.vendorId)                                             { toast.error('Select a vendor for this equipment'); return }
-    if (isEmployeeExpense && !form.paidToEmployeeId)                                     { toast.error('Select an employee'); return }
-    if (isTravel && form.conveyanceType === 'employee'  && !form.paidToEmployeeId)       { toast.error('Select an employee'); return }
-    if (isTravel && form.conveyanceType === 'freelancer' && !form.freelancerId)          { toast.error('Select a freelancer'); return }
-    if (isTravel && form.conveyanceType === 'other'      && !form.paidToName?.trim())    { toast.error('Enter a name'); return }
+    if (!form.category) { toast.error('Select a category'); return }
+    if (form.payeeType === 'freelancer' && !form.freelancerId)     { toast.error('Select a freelancer'); return }
+    if (form.payeeType === 'agency'     && !form.agencyId)         { toast.error('Select an agency'); return }
+    if (form.payeeType === 'vendor'     && !form.vendorId)         { toast.error('Select a vendor'); return }
+    if (form.payeeType === 'employee'   && !form.paidToEmployeeId) { toast.error('Select an employee'); return }
+    if (form.payeeType === 'other'      && !form.paidToName?.trim()) { toast.error('Enter a name'); return }
     setSaving(true)
     try {
       const res = await fetch(`/api/projects/${projectId}/expenses`, {
@@ -300,6 +303,7 @@ function ExpenseModal({ projectId, onClose, onSaved }) {
         body: JSON.stringify({
           ...form,
           amount:           Number(form.amount),
+          subcategory:      form.subcategory      || null,
           invoiceUrl:       form.invoiceUrl       || null,
           freelancerId:     form.freelancerId     || null,
           agencyId:         form.agencyId         || null,
@@ -338,17 +342,45 @@ function ExpenseModal({ projectId, onClose, onSaved }) {
             <DatePicker value={form.date || null} onChange={v => setForm(f => ({ ...f, date: v ?? '' }))} />
           </div>
           <div className="col-span-2">
-            <label className="block text-xs font-medium text-gray-500 mb-1">Category</label>
-            <Select value={form.category}
-              onChange={v => { setForm(f => ({ ...f, category: v ?? EXPENSE_CATEGORIES[0] })); resetEntityFields() }}
-              options={EXPENSE_CATEGORIES.map(c => ({ value: c, label: c }))}
+            <label className="block text-xs font-medium text-gray-500 mb-1">Category *</label>
+            <Select
+              value={form.category}
+              onChange={v => setForm(f => ({ ...f, category: v ?? '', subcategory: '' }))}
+              options={expenseCategories.map(c => ({ value: c.label, label: c.label }))}
               placeholder="Select category…"
+              disabled={configLoading || expenseCategories.length === 0}
+            />
+            {!configLoading && expenseCategories.length === 0 && (
+              <p className="mt-1 text-xs text-amber-600">No expense categories configured in Config → Finance.</p>
+            )}
+          </div>
+          <div className="col-span-2">
+            <label className="block text-xs font-medium text-gray-500 mb-1">Subcategory</label>
+            <Select
+              value={form.subcategory}
+              onChange={v => setForm(f => ({ ...f, subcategory: v ?? '' }))}
+              options={subcategories.map(s => ({ value: s, label: s }))}
+              placeholder={!form.category ? 'Select category first…' : subcategories.length === 0 ? 'No subcategories' : 'Select subcategory…'}
+              disabled={!form.category || subcategories.length === 0}
             />
           </div>
 
-          {isFreelancer && (
-            <div className="col-span-2">
-              <label className="block text-xs font-medium text-gray-500 mb-1">Freelancer *</label>
+          <div className="col-span-2 space-y-2">
+            <label className="block text-xs font-medium text-gray-500 mb-1">Paid to <span className="text-gray-400 font-normal">(optional)</span></label>
+            <div className="flex flex-wrap gap-1.5">
+              {PAYEE_TYPES.map(t => (
+                <button key={t.id || 'none'} type="button"
+                  onClick={() => setPayeeType(t.id)}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                    form.payeeType === t.id
+                      ? 'bg-gray-900 text-white border-gray-900'
+                      : 'border-gray-200 text-gray-600 hover:border-gray-400'
+                  }`}>
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            {form.payeeType === 'freelancer' && (
               <Select value={form.freelancerId} onChange={v => setForm(f => ({ ...f, freelancerId: v ?? '' }))}
                 options={freelancers.map(a => ({
                   value: a.freelancerId?.id ?? a.freelancerId,
@@ -356,12 +388,8 @@ function ExpenseModal({ projectId, onClose, onSaved }) {
                 }))}
                 placeholder="Select freelancer…"
               />
-            </div>
-          )}
-
-          {isAgency && (
-            <div className="col-span-2">
-              <label className="block text-xs font-medium text-gray-500 mb-1">Agency *</label>
+            )}
+            {form.payeeType === 'agency' && (
               <Select value={form.agencyId} onChange={v => setForm(f => ({ ...f, agencyId: v ?? '' }))}
                 options={agencies.map(a => ({
                   value: a.freelancerId?.id ?? a.freelancerId,
@@ -369,14 +397,8 @@ function ExpenseModal({ projectId, onClose, onSaved }) {
                 }))}
                 placeholder="Select agency…"
               />
-            </div>
-          )}
-
-          {(isVendor || isEquipment) && (
-            <div className="col-span-2">
-              <label className="block text-xs font-medium text-gray-500 mb-1">
-                {isEquipment ? 'Purchased from (Vendor) *' : 'Vendor *'}
-              </label>
+            )}
+            {form.payeeType === 'vendor' && (
               <Select value={form.vendorId} onChange={v => setForm(f => ({ ...f, vendorId: v ?? '' }))}
                 options={vendors.map(v => ({
                   value: v.id,
@@ -384,50 +406,8 @@ function ExpenseModal({ projectId, onClose, onSaved }) {
                 }))}
                 placeholder="Select vendor…"
               />
-            </div>
-          )}
-
-          {isTravel && (
-            <div className="col-span-2 space-y-2">
-              <label className="block text-xs font-medium text-gray-500 mb-1">Conveyance paid to *</label>
-              <div className="flex gap-2">
-                {['employee', 'freelancer', 'other'].map(t => (
-                  <button key={t} type="button"
-                    onClick={() => setForm(f => ({ ...f, conveyanceType: t, paidToEmployeeId: '', freelancerId: '', paidToName: '' }))}
-                    className={`flex-1 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                      form.conveyanceType === t
-                        ? 'bg-gray-900 text-white border-gray-900'
-                        : 'border-gray-200 text-gray-600 hover:border-gray-400'
-                    }`}>
-                    {t.charAt(0).toUpperCase() + t.slice(1)}
-                  </button>
-                ))}
-              </div>
-              {form.conveyanceType === 'employee' && (
-                <Select value={form.paidToEmployeeId} onChange={v => setForm(f => ({ ...f, paidToEmployeeId: v ?? '' }))}
-                  options={employees.filter(e => e.userId?.id).map(e => ({ value: e.id, label: `${e.userId.name}${e.designation ? ` — ${e.designation}` : ''}` }))}
-                  placeholder="Select employee…"
-                />
-              )}
-              {form.conveyanceType === 'freelancer' && (
-                <Select value={form.freelancerId} onChange={v => setForm(f => ({ ...f, freelancerId: v ?? '' }))}
-                  options={[...freelancers, ...agencies].map(a => ({
-                    value: a.freelancerId?.id ?? a.freelancerId,
-                    label: a.freelancerId?.agencyInfo?.agencyName ?? a.freelancerId?.userId?.name ?? 'Unknown',
-                  }))}
-                  placeholder="Select freelancer / agency…"
-                />
-              )}
-              {form.conveyanceType === 'other' && (
-                <input value={form.paidToName} onChange={e => setForm(f => ({ ...f, paidToName: e.target.value }))}
-                  placeholder="Enter name…" className={ic} />
-              )}
-            </div>
-          )}
-
-          {isEmployeeExpense && (
-            <div className="col-span-2">
-              <label className="block text-xs font-medium text-gray-500 mb-1">Employee *</label>
+            )}
+            {form.payeeType === 'employee' && (
               <Select value={form.paidToEmployeeId} onChange={v => setForm(f => ({ ...f, paidToEmployeeId: v ?? '' }))}
                 options={employees.filter(e => e.userId?.id).map(e => ({
                   value: e.id,
@@ -435,8 +415,12 @@ function ExpenseModal({ projectId, onClose, onSaved }) {
                 }))}
                 placeholder="Select employee…"
               />
-            </div>
-          )}
+            )}
+            {form.payeeType === 'other' && (
+              <input value={form.paidToName} onChange={e => setForm(f => ({ ...f, paidToName: e.target.value }))}
+                placeholder="Enter name…" className={ic} />
+            )}
+          </div>
 
           <div className="col-span-2">
             <label className="block text-xs font-medium text-gray-500 mb-1">Notes</label>
@@ -1349,7 +1333,9 @@ export default function ProjectDetailPage() {
                   {project.expenses.map(e => (
                     <tr key={e.id ?? e._id} className="hover:bg-gray-50/50">
                       <td className="px-5 py-3 text-sm text-gray-800">{e.title}</td>
-                      <td className="px-5 py-3 text-sm text-gray-400 whitespace-nowrap">{e.category}</td>
+                      <td className="px-5 py-3 text-sm text-gray-400 whitespace-nowrap">
+                        {e.category}{e.subcategory ? ` / ${e.subcategory}` : ''}
+                      </td>
                       <td className="px-5 py-3 text-sm text-gray-900 whitespace-nowrap">BDT {Number(e.amount).toLocaleString()}</td>
                       <td className="px-5 py-3 text-sm text-gray-400 whitespace-nowrap">{fmtDate(e.date)}</td>
                       <td className="px-5 py-3 whitespace-nowrap">

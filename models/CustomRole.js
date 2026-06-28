@@ -5,7 +5,8 @@ const CustomRoleSchema = new mongoose.Schema(
     department:  { type: String, required: true, trim: true },
     title:       { type: String, required: true, trim: true },
     description: { type: String, default: null },
-    venture:     { type: String, enum: ['ENSTUDIO', 'ENTECH', 'ENMARK', null], default: null },
+    // Venture IDs are dynamic (configured in Settings → crm_config), so no static enum.
+    venture:     { type: String, default: null, trim: true },
     color:       { type: String, default: '#6366f1' },
     isActive:    { type: Boolean, default: true },
     createdBy:   { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },

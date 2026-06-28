@@ -1,6 +1,4 @@
 import mongoose from 'mongoose'
-import { encryptionPlugin } from '@/lib/encryptionPlugin'
-
 const QuotationSchema = new mongoose.Schema(
   {
     quotationNumber: { type: String, unique: true, sparse: true },
@@ -73,26 +71,6 @@ QuotationSchema.pre('save', async function (next) {
   } catch (err) {
     next(err)
   }
-})
-
-QuotationSchema.plugin(encryptionPlugin, {
-  collection: 'quotations',
-  fields: [
-    { path: 'recipientName'    },
-    { path: 'recipientCompany' },
-    { path: 'recipientEmail'   },
-    { path: 'recipientPhone'   },
-    { path: 'recipientAddress' },
-    { path: 'items',           type: 'array'  },
-    { path: 'subtotal',        type: 'number' },
-    { path: 'taxRate',         type: 'number' },
-    { path: 'taxAmount',       type: 'number' },
-    { path: 'discount',        type: 'number' },
-    { path: 'total',           type: 'number' },
-    { path: 'currency'         },
-    { path: 'notes'            },
-    { path: 'terms'            },
-  ],
 })
 
 if (mongoose.models.Quotation) delete mongoose.models.Quotation

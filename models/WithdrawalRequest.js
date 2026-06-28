@@ -1,6 +1,4 @@
 import mongoose from 'mongoose'
-import { encryptionPlugin } from '@/lib/encryptionPlugin'
-
 const WithdrawalRequestSchema = new mongoose.Schema(
   {
     freelancerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Freelancer', required: true },
@@ -32,17 +30,5 @@ const WithdrawalRequestSchema = new mongoose.Schema(
     },
   }
 )
-
-WithdrawalRequestSchema.plugin(encryptionPlugin, {
-  collection: 'withdrawalrequests',
-  fields: [
-    { path: 'amount',         type: 'number' },
-    { path: 'method'          },
-    { path: 'details'         },
-    { path: 'paymentDetails'  },
-    { path: 'adminNote'       },
-    { path: 'allocations',    type: 'array'  },
-  ],
-})
 
 export default mongoose.models.WithdrawalRequest ?? mongoose.model('WithdrawalRequest', WithdrawalRequestSchema)

@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
+import { requireStaff } from '@/lib/rbac'
 import connectDB from '@/lib/mongodb'
 import Lead from '@/models/Lead'
 
@@ -9,7 +10,8 @@ import Lead from '@/models/Lead'
 export async function POST(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    const denied = requireStaff(session)
+    if (denied) return denied
 
     const { text } = await request.json()
     if (!text?.trim()) return NextResponse.json({ error: 'Comment text is required' }, { status: 422 })
@@ -44,7 +46,8 @@ export async function POST(request, { params }) {
 export async function DELETE(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    const denied = requireStaff(session)
+    if (denied) return denied
 
     const { searchParams } = new URL(request.url)
     const commentId = searchParams.get('commentId')

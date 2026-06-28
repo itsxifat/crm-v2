@@ -3,7 +3,8 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
-import { Client, Document } from '@/models'
+import { Document } from '@/models'
+import { resolveActiveClient } from '@/lib/clientAccess'
 
 export async function GET(request) {
   try {
@@ -13,7 +14,8 @@ export async function GET(request) {
 
     await connectDB()
 
-    const client = await Client.findOne({ userId: session.user.id }).lean()
+    const { client, error } = await resolveActiveClient(session)
+    if (error === 'SELECT_COMPANY') return NextResponse.json({ error: 'SELECT_COMPANY' }, { status: 409 })
     if (!client) return NextResponse.json({ error: 'Client not found' }, { status: 404 })
 
     const { searchParams } = new URL(request.url)

@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   Plus, Pencil, Trash2, X, Loader2, ShieldCheck,
   Search, ChevronDown, ChevronRight,
-  LayoutDashboard, TrendingUp, Briefcase, Wallet, Users, BarChart2, Settings2, CircleUser,
+  LayoutDashboard, TrendingUp, Briefcase, Wallet, Users, BarChart2, Settings2, CircleUser, EyeOff,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import Select from '@/components/ui/Select'
@@ -21,6 +21,7 @@ const MODULE_META = {
   hr:        { Icon: Users,           ring: 'ring-violet-200',  bg: 'bg-violet-50',  text: 'text-violet-600',  bar: 'bg-violet-500' },
   analytics: { Icon: BarChart2,       ring: 'ring-pink-200',    bg: 'bg-pink-50',    text: 'text-pink-600',    bar: 'bg-pink-500' },
   system:    { Icon: Settings2,       ring: 'ring-slate-200',   bg: 'bg-slate-50',   text: 'text-slate-600',   bar: 'bg-slate-500' },
+  pii:       { Icon: EyeOff,          ring: 'ring-rose-200',    bg: 'bg-rose-50',    text: 'text-rose-600',    bar: 'bg-rose-500' },
   account:   { Icon: CircleUser,      ring: 'ring-teal-200',    bg: 'bg-teal-50',    text: 'text-teal-600',    bar: 'bg-teal-500' },
 }
 

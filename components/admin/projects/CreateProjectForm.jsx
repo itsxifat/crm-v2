@@ -6,7 +6,7 @@ import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import {
-  Loader2, ArrowLeft, Building2, Calendar, Users, DollarSign,
+  Loader2, ArrowLeft, Building2, Calendar, Users, Wallet,
   ChevronDown, Tag, FileText, Zap, RefreshCw,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -336,7 +336,7 @@ export default function CreateProjectForm({ project }) {
       </SectionCard>
 
       {/* ── Financials ── */}
-      <SectionCard icon={DollarSign} title="Financials">
+      <SectionCard icon={Wallet} title="Financials">
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <Field label="Budget (৳)">

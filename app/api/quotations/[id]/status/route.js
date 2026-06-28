@@ -3,8 +3,10 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
-import { Quotation } from '@/models'
+import { Quotation, Lead, LeadActivity } from '@/models'
 import { createNotification } from '@/lib/createNotification'
+import { logActivity } from '@/lib/logActivity'
+import { requirePerm } from '@/lib/rbac'
 
 const TRANSITIONS = {
   DRAFT:    ['SENT'],
@@ -17,9 +19,8 @@ const TRANSITIONS = {
 export async function PATCH(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-    if (!['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'].includes(session.user.role))
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const denied = requirePerm(session, 'sales.quotations.update')
+    if (denied) return denied
 
     await connectDB()
 
@@ -37,6 +38,36 @@ export async function PATCH(request, { params }) {
     if (status === 'REJECTED' && !q.rejectedAt) q.rejectedAt = new Date()
     if (status === 'DRAFT')                     { q.sentAt = null; q.acceptedAt = null; q.rejectedAt = null }
     await q.save()
+
+    // When a lead-sourced quotation is sent, advance the lead to PROPOSAL_SENT.
+    // Only advance from earlier stages so we never regress a lead already in
+    // NEGOTIATION / WON / LOST.
+    if (status === 'SENT' && q.sourceType === 'LEAD' && q.leadId) {
+      const lead = await Lead.findById(q.leadId)
+      if (lead && ['NEW', 'CONTACTED'].includes(lead.status)) {
+        const before = lead.status
+        lead.status = 'PROPOSAL_SENT'
+        await lead.save()
+
+        await new LeadActivity({
+          leadId:        lead._id,
+          type:          'update',
+          note:          `Status: ${before} → PROPOSAL_SENT (quotation ${q.quotationNumber} sent)`,
+          createdById:   session.user.id,
+          createdByName: session.user.name ?? session.user.email ?? 'Unknown',
+        }).save()
+
+        logActivity({
+          userId:   session.user.id,
+          userRole: session.user.role,
+          action:   'STATUS_CHANGE',
+          entity:   'LEAD',
+          entityId: lead._id.toString(),
+          changes:  `Status: ${before} → PROPOSAL_SENT (quotation ${q.quotationNumber} sent)`,
+          request,
+        })
+      }
+    }
 
     // Notify creator if changed by someone else
     if (q.createdBy && q.createdBy.toString() !== session.user.id) {

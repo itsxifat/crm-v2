@@ -7,7 +7,7 @@ import {
   TrendingUp,
   Users,
   Briefcase,
-  DollarSign,
+  Wallet,
   Clock,
   CheckCircle2,
   AlertCircle,
@@ -30,7 +30,7 @@ async function getDashboardStats() {
     recentLeads,
     recentProjects,
     pendingTasks,
-    monthlyRevenueAgg,
+    monthlyRevenueInvoices,
     recentTransactions,
   ] = await Promise.all([
     Lead.countDocuments(),
@@ -43,10 +43,9 @@ async function getDashboardStats() {
       .populate({ path: 'clientId', populate: { path: 'userId', select: 'name' } })
       .lean(),
     Task.countDocuments({ status: { $in: ['TODO', 'IN_PROGRESS'] } }),
-    Invoice.aggregate([
-      { $match: { status: 'PAID', issueDate: { $gte: thisMonth } } },
-      { $group: { _id: null, total: { $sum: '$total' } } },
-    ]),
+    // aggregate() bypasses Mongoose post-find decryption hooks — Invoice.total is encrypted,
+    // so $sum returns 0. Sum decrypted lean docs in JS instead.
+    Invoice.find({ status: 'PAID', issueDate: { $gte: thisMonth } }).select('total').lean(),
     Transaction.find().sort({ createdAt: -1 }).limit(5).lean(),
   ])
 
@@ -59,7 +58,7 @@ async function getDashboardStats() {
     recentLeads:        recentLeads.map(l => ({ ...l, id: l._id.toString() })),
     recentProjects:     recentProjects.map(p => ({ ...p, id: p._id.toString() })),
     pendingTasks,
-    monthlyRevenue:     monthlyRevenueAgg[0]?.total ?? 0,
+    monthlyRevenue:     monthlyRevenueInvoices.reduce((s, i) => s + (Number(i.total) || 0), 0),
     recentTransactions: recentTransactions.map(t => ({ ...t, id: t._id.toString() })),
   }
 }
@@ -118,7 +117,7 @@ export default async function DashboardPage() {
     {
       label:   'Monthly Revenue',
       value:   formatCurrency(stats.monthlyRevenue),
-      icon:    DollarSign,
+      icon:    Wallet,
       color:   'text-emerald-600',
       bg:      'bg-emerald-50',
       href:    '/finance',

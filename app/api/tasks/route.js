@@ -3,8 +3,11 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
-import { Task, Project, Employee, Freelancer, Client, Comment, Attachment } from '@/models'
+import { Task, Project, Employee, Freelancer, Comment, Attachment } from '@/models'
+import { resolveActiveClient } from '@/lib/clientAccess'
 import { createNotification } from '@/lib/createNotification'
+import { searchEncrypted } from '@/lib/searchMatch'
+import { logActivity } from '@/lib/logActivity'
 import { z } from 'zod'
 
 const createTaskSchema = z.object({
@@ -37,40 +40,50 @@ export async function GET(request) {
     const search    = searchParams.get('search')
     const skip      = (page - 1) * limit
 
+    // title/description are encrypted → DB regex can't match them (handled in JS below)
     const filter = {}
     if (projectId) filter.projectId = projectId
     if (status)    filter.status    = status
-    if (search)    filter.title     = { $regex: search, $options: 'i' }
 
     if (session.user.role === 'FREELANCER') {
       const freelancer = await Freelancer.findOne({ userId: session.user.id }).lean()
-      if (freelancer) filter.assignedFreelancerId = freelancer._id
+      filter.assignedFreelancerId = freelancer?._id ?? null
     }
 
     if (session.user.role === 'EMPLOYEE') {
       const employee = await Employee.findOne({ userId: session.user.id }).lean()
-      if (employee) filter.assignedEmployeeId = employee._id
+      filter.assignedEmployeeId = employee?._id ?? null
     }
 
     if (session.user.role === 'CLIENT') {
       filter.isClientVisible = true
-      const client = await Client.findOne({ userId: session.user.id }).lean()
-      if (client) {
-        const clientProjects = await Project.find({ clientId: client._id }).distinct('_id')
-        filter.projectId = { $in: clientProjects }
-      }
+      const { clientId } = await resolveActiveClient(session)
+      const clientProjects = clientId
+        ? await Project.find({ clientId }).distinct('_id')
+        : []
+      filter.projectId = { $in: clientProjects }
     }
 
-    const [tasks, total] = await Promise.all([
-      Task.find(filter)
-        .skip(skip)
-        .limit(limit)
-        .sort({ position: 1, createdAt: -1 })
-        .populate({ path: 'projectId', select: 'id name' })
-        .populate({ path: 'assignedEmployeeId', populate: { path: 'userId', select: 'name avatar' } })
-        .populate({ path: 'assignedFreelancerId', populate: { path: 'userId', select: 'name avatar' } }),
-      Task.countDocuments(filter),
-    ])
+    const sort = { position: 1, createdAt: -1 }
+    const populate = [
+      { path: 'projectId', select: 'id name' },
+      { path: 'assignedEmployeeId', populate: { path: 'userId', select: 'name avatar' } },
+      { path: 'assignedFreelancerId', populate: { path: 'userId', select: 'name avatar' } },
+    ]
+
+    let tasks, total
+    if (search) {
+      ;({ docs: tasks, total } = await searchEncrypted(Task, {
+        baseFilter: filter, search, fields: ['title', 'description'],
+        page, limit, sort, populate,
+      }))
+    } else {
+      ;[tasks, total] = await Promise.all([
+        Task.find(filter).skip(skip).limit(limit).sort(sort)
+          .populate(populate[0]).populate(populate[1]).populate(populate[2]),
+        Task.countDocuments(filter),
+      ])
+    }
 
     const taskIds = tasks.map(t => t._id)
     const [commentCounts, attachmentCounts] = await Promise.all([
@@ -139,6 +152,16 @@ export async function POST(request) {
         link:    `/admin/tasks`,
       })
     }
+
+    logActivity({
+      userId:   session.user.id,
+      userRole: session.user.role,
+      action:   'CREATE',
+      entity:   'TASK',
+      entityId: task._id.toString(),
+      changes:  JSON.stringify({ title: task.title, project: task.projectId?.name ?? null }),
+      request,
+    })
 
     return NextResponse.json({ data: task }, { status: 201 })
   } catch (err) {

@@ -4,6 +4,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Project, ProjectExpense, ProjectRenewal, Task, Milestone, Employee, Invoice } from '@/models'
+import { logActivity } from '@/lib/logActivity'
 import mongoose from 'mongoose'
 
 // Resolve whether the current session user can view project financials.
@@ -141,6 +142,17 @@ export async function PUT(request, { params }) {
     data.profit           = (data.paidAmount ?? 0) - (data.approvedExpenses ?? 0)
     data.contractedProfit = (data.budget ?? 0) - (data.discount ?? 0) - (data.approvedExpenses ?? 0)
     data.dueAmount        = Math.max(0, (data.budget ?? 0) - (data.discount ?? 0) - (data.paidAmount ?? 0))
+
+    logActivity({
+      userId:   session.user.id,
+      userRole: session.user.role,
+      action:   'UPDATE',
+      entity:   'PROJECT',
+      entityId: params.id,
+      changes:  JSON.stringify({ name: project.name, status: project.status }),
+      request,
+    })
+
     return NextResponse.json({ data })
   } catch (err) {
     console.error('[PUT /api/projects/:id]', err)
@@ -149,7 +161,7 @@ export async function PUT(request, { params }) {
 }
 
 // DELETE /api/projects/:id
-export async function DELETE(_, { params }) {
+export async function DELETE(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
     if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
@@ -165,6 +177,17 @@ export async function DELETE(_, { params }) {
       Task.deleteMany({ projectId: params.id }),
       Milestone.deleteMany({ projectId: params.id }),
     ])
+
+    logActivity({
+      userId:   session.user.id,
+      userRole: session.user.role,
+      action:   'DELETE',
+      entity:   'PROJECT',
+      entityId: params.id,
+      changes:  JSON.stringify({ name: project.name }),
+      request,
+    })
+
     return NextResponse.json({ success: true })
   } catch (err) {
     console.error('[DELETE /api/projects/:id]', err)

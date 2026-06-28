@@ -1,6 +1,4 @@
 import mongoose from 'mongoose'
-import { encryptionPlugin } from '@/lib/encryptionPlugin'
-
 const AuditLogSchema = new mongoose.Schema(
   {
     userId:    { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
@@ -24,18 +22,5 @@ const AuditLogSchema = new mongoose.Schema(
 // TTL index — auto-delete after 356 days; keep time-based indexes plaintext
 AuditLogSchema.index({ createdAt: 1 }, { expireAfterSeconds: 30758400 })
 AuditLogSchema.index({ userId: 1, createdAt: -1 })
-
-AuditLogSchema.plugin(encryptionPlugin, {
-  collection: 'auditlogs',
-  fields: [
-    { path: 'userRole'  },
-    { path: 'action'    },
-    { path: 'entity'    },
-    { path: 'entityId'  },
-    { path: 'changes'   },
-    { path: 'ipAddress' },
-    { path: 'userAgent' },
-  ],
-})
 
 export default mongoose.models.AuditLog ?? mongoose.model('AuditLog', AuditLogSchema)

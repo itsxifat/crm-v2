@@ -4,6 +4,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Task, Comment, Attachment, Timesheet, Employee, Freelancer, Client } from '@/models'
+import { canAccess } from '@/lib/permissions'
 import { z } from 'zod'
 
 const createTaskSchema = z.object({
@@ -82,6 +83,8 @@ export async function POST(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
     if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    if (!canAccess(session, 'tasks', 'create'))
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     await connectDB()
 

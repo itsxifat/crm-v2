@@ -10,7 +10,7 @@ import {
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/utils'
-import { invalidateConfigCache } from '@/lib/useConfig'
+import { invalidateConfigCache, normalizeCategories } from '@/lib/useConfig'
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -135,7 +135,7 @@ function AccountForm({ initial, onSave, onCancel, isSaving }) {
       </div>
       <label className="flex items-center gap-2.5 cursor-pointer w-fit">
         <div onClick={() => set('secure', !form.secure)} className={cn('w-9 h-5 rounded-full transition-colors relative cursor-pointer', form.secure ? 'bg-gray-900' : 'bg-gray-200')}>
-          <span className={cn('absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform', form.secure ? 'translate-x-4' : 'translate-x-0.5')} />
+          <span className={cn('absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform', form.secure ? 'translate-x-4' : 'translate-x-0')} />
         </div>
         <span className="text-xs text-gray-600">Use SSL/TLS (port 465)</span>
       </label>
@@ -369,7 +369,7 @@ function AddInput({ placeholder, onAdd }) {
   )
 }
 
-function ServiceSection({ service, onUpdate, onDelete }) {
+function ServiceSection({ service, onUpdate, onDelete, noun = 'service' }) {
   const [expanded,  setExpanded]  = useState(false)
   const [renaming,  setRenaming]  = useState(false)
   const [renameVal, setRenameVal] = useState('')
@@ -382,18 +382,19 @@ function ServiceSection({ service, onUpdate, onDelete }) {
     if (t && t !== service.label) onUpdate({ ...service, label: t })
     setRenaming(false)
   }
+  const subs = service.subcategories ?? []
   function addSubcat(name) {
-    if (service.subcategories.includes(name)) { toast.error('Already exists'); return }
-    onUpdate({ ...service, subcategories: [...service.subcategories, name] })
+    if (subs.includes(name)) { toast.error('Already exists'); return }
+    onUpdate({ ...service, subcategories: [...subs, name] })
   }
-  function deleteSubcat(name)        { onUpdate({ ...service, subcategories: service.subcategories.filter(s => s !== name) }) }
-  function renameSubcat(old, next)   { onUpdate({ ...service, subcategories: service.subcategories.map(s => s === old ? next : s) }) }
+  function deleteSubcat(name)        { onUpdate({ ...service, subcategories: subs.filter(s => s !== name) }) }
+  function renameSubcat(old, next)   { onUpdate({ ...service, subcategories: subs.map(s => s === old ? next : s) }) }
 
   return (
     <>
       {confirmDel && (
         <ConfirmModal
-          title="Delete service?"
+          title={`Delete ${noun}?`}
           message={`"${service.label}" and all its subcategories will be removed. This cannot be undone.`}
           confirmLabel="Delete"
           onConfirm={() => { setConfirmDel(false); onDelete(service.id) }}
@@ -417,7 +418,7 @@ function ServiceSection({ service, onUpdate, onDelete }) {
             ) : (
               <span className="text-sm font-medium text-gray-800 truncate">{service.label}</span>
             )}
-            <span className="text-xs text-gray-400 bg-gray-200 rounded-full px-2 py-0.5 shrink-0">{service.subcategories.length}</span>
+            <span className="text-xs text-gray-400 bg-gray-200 rounded-full px-2 py-0.5 shrink-0">{subs.length}</span>
           </div>
           <div className="flex items-center gap-1 ml-2 shrink-0" onClick={e => e.stopPropagation()}>
             <button onClick={startRename} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-white transition-colors" title="Rename"><Pencil className="w-3.5 h-3.5" /></button>
@@ -427,14 +428,33 @@ function ServiceSection({ service, onUpdate, onDelete }) {
         {expanded && (
           <div className="px-4 py-3 space-y-2">
             <div className="flex flex-wrap gap-1.5">
-              {service.subcategories.map(sub => <CfgTag key={sub} label={sub} onDelete={deleteSubcat} onRename={renameSubcat} />)}
-              {service.subcategories.length === 0 && <p className="text-xs text-gray-400 italic">No subcategories yet</p>}
+              {subs.map(sub => <CfgTag key={sub} label={sub} onDelete={deleteSubcat} onRename={renameSubcat} />)}
+              {subs.length === 0 && <p className="text-xs text-gray-400 italic">No subcategories yet</p>}
             </div>
             <AddInput placeholder="Add subcategory…" onAdd={addSubcat} />
           </div>
         )}
       </div>
     </>
+  )
+}
+
+function CategoryGroupManager({ items, onChange }) {
+  // Coerce any legacy shape (flat strings / objects missing subcategories) to the nested form
+  const list = normalizeCategories(items)
+  function addCategory(label) {
+    const id = label.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+    if (list.some(c => c.id === id || c.label.toLowerCase() === label.toLowerCase())) { toast.error('Category already exists'); return }
+    onChange([...list, { id, label, subcategories: [] }])
+  }
+  function updateCategory(updated) { onChange(list.map(c => c.id === updated.id ? updated : c)) }
+  function deleteCategory(id)      { onChange(list.filter(c => c.id !== id)) }
+  return (
+    <div className="space-y-2.5">
+      {list.map(c => <ServiceSection key={c.id} service={c} onUpdate={updateCategory} onDelete={deleteCategory} noun="category" />)}
+      {list.length === 0 && <p className="text-xs text-gray-400 italic py-2">No categories yet — add one below.</p>}
+      <div className="pt-1"><AddInput placeholder="Add category…" onAdd={addCategory} /></div>
+    </div>
   )
 }
 
@@ -1217,7 +1237,7 @@ function ConfigContent() {
                   </div>
                   <button type="button" disabled={verificationSaving} onClick={() => toggleVerification(key)} className="shrink-0 mt-0.5 disabled:opacity-50">
                     <div className={cn('w-10 h-5 rounded-full transition-colors relative', verification[key] ? 'bg-gray-900' : 'bg-gray-200')}>
-                      <span className={cn('absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform', verification[key] ? 'translate-x-5' : 'translate-x-0.5')} />
+                      <span className={cn('absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform', verification[key] ? 'translate-x-5' : 'translate-x-0')} />
                     </div>
                   </button>
                 </div>
@@ -1232,19 +1252,29 @@ function ConfigContent() {
       {activeTab === 'payment' && (
         <div className="space-y-8">
 
-          {/* Expense Categories */}
+          {/* Transaction Categories — each category owns its subcategories (parent → children) */}
           <div className="space-y-4">
             <div>
-              <h2 className="text-base font-bold text-gray-900 tracking-tight">Expense Categories</h2>
-              <p className="text-sm text-gray-400 mt-0.5">Define your own expense categories — these appear in the "Expense Category" dropdown when recording an expense transaction.</p>
+              <h2 className="text-base font-bold text-gray-900 tracking-tight">Transaction Categories</h2>
+              <p className="text-sm text-gray-400 mt-0.5">Add a category, then add subcategories under it. Picking a category in a transaction reveals its subcategories; spend on a subcategory rolls up into its parent in reports.</p>
             </div>
             {!configNeedsLoad && config ? (
-              <LeadOptionList
-                label="Categories"
-                description='Add tags like "Office Supplies", "Cloud Hosting", "Marketing Ads" etc.'
-                items={config.expenseCategories ?? []}
-                onChange={v => updateLeadOption('expenseCategories', v)}
-              />
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">Expense Categories</p>
+                  <CategoryGroupManager
+                    items={config.expenseCategories ?? []}
+                    onChange={v => updateLeadOption('expenseCategories', v)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">Income Categories</p>
+                  <CategoryGroupManager
+                    items={config.incomeCategories ?? []}
+                    onChange={v => updateLeadOption('incomeCategories', v)}
+                  />
+                </div>
+              </div>
             ) : (
               !configNeedsLoad && <div className="flex items-center justify-center py-10"><Loader2 className="w-5 h-5 animate-spin text-gray-300" /></div>
             )}

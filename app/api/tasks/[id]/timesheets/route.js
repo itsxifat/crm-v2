@@ -4,6 +4,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Task, Timesheet, Employee, Freelancer } from '@/models'
+import { canAccessTask } from '@/lib/taskAccess'
 import { z } from 'zod'
 
 const timesheetSchema = z.object({
@@ -19,6 +20,9 @@ export async function GET(request, { params }) {
     if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
 
     await connectDB()
+
+    if (!(await canAccessTask(session, params.id)))
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     const timesheets = await Timesheet.find({ taskId: params.id })
       .sort({ date: -1 })
@@ -40,6 +44,9 @@ export async function POST(request, { params }) {
     if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
 
     await connectDB()
+
+    if (!(await canAccessTask(session, params.id)))
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     const body   = await request.json()
     const parsed = timesheetSchema.safeParse(body)

@@ -4,12 +4,14 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Project, ProjectExpense } from '@/models'
+import { requireStaff } from '@/lib/rbac'
 
-// GET /api/projects/:id/expenses
+// GET /api/projects/:id/expenses — internal cost data, staff only
 export async function GET(_, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    const denied  = requireStaff(session)
+    if (denied) return denied
     await connectDB()
 
     const expenses = await ProjectExpense.find({ projectId: params.id })
@@ -28,7 +30,8 @@ export async function GET(_, { params }) {
 export async function POST(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    const denied  = requireStaff(session)
+    if (denied) return denied
     await connectDB()
 
     const project = await Project.findById(params.id)
@@ -41,10 +44,11 @@ export async function POST(request, { params }) {
 
     const expense = await new ProjectExpense({
       projectId:        params.id,
-      venture:          project.venture ?? 'ENTECH',
+      venture:          project.venture ?? null,
       title:            body.title,
       amount:           amount,
       category:         body.category,
+      subcategory:      body.subcategory ?? null,
       date:             body.date ? new Date(body.date) : new Date(),
       notes:            body.notes ?? null,
       invoiceUrl:       body.invoiceUrl ?? null,

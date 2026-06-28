@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Image from 'next/image'
+import Link from 'next/link'
 import { signIn } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useForm } from 'react-hook-form'
@@ -110,6 +111,11 @@ export default function LoginPage() {
                 </button>
               </div>
               {errors.password && <p className="text-xs text-red-500 mt-1">{errors.password.message}</p>}
+              <div className="text-right mt-1.5">
+                <Link href="/forgot-password" className="text-xs font-medium text-blue-600 hover:text-blue-700">
+                  Forgot password?
+                </Link>
+              </div>
             </div>
 
             <button type="submit" disabled={loading}

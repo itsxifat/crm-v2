@@ -1,6 +1,4 @@
 import mongoose from 'mongoose'
-import { encryptionPlugin } from '@/lib/encryptionPlugin'
-
 const LeaveSchema = new mongoose.Schema(
   {
     employeeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Employee', required: true },
@@ -24,14 +22,5 @@ const LeaveSchema = new mongoose.Schema(
     },
   }
 )
-
-LeaveSchema.plugin(encryptionPlugin, {
-  collection: 'leaves',
-  fields: [
-    { path: 'type'       },
-    { path: 'reason'     },
-    { path: 'approvedBy' },
-  ],
-})
 
 export default mongoose.models.Leave ?? mongoose.model('Leave', LeaveSchema)

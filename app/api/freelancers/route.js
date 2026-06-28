@@ -6,23 +6,20 @@ import connectDB from '@/lib/mongodb'
 import { User, Freelancer } from '@/models'
 import bcrypt from 'bcryptjs'
 import crypto from 'crypto'
-import { blindIndex } from '@/lib/encryption'
+import { ciEquals, ciContains } from '@/lib/searchMatch'
+import { requireStaff } from '@/lib/rbac'
+import { maskList, FREELANCER_PII } from '@/lib/pii'
 import { sendFreelancerInviteEmail, sendEmployeeLoginEmail } from '@/lib/mailer'
 import { sendFreelancerInviteWhatsApp } from '@/lib/whatsapp'
 import { getConfig } from '@/lib/getConfig'
-
-const STAFF_ROLES = ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE']
+import { logActivity } from '@/lib/logActivity'
 
 // GET /api/freelancers
 export async function GET(request) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-
-    const { role } = session.user
-    if (![...STAFF_ROLES, 'FREELANCER'].includes(role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const denied  = requireStaff(session)   // freelancer directory exposes bank details — staff only
+    if (denied) return denied
 
     await connectDB()
 
@@ -40,41 +37,26 @@ export async function GET(request) {
     }
 
     if (search) {
-      const emailToken = blindIndex(search.toLowerCase(), 'users', 'email')
-      const phoneToken = blindIndex(search, 'users', 'phone')
       const matchingUsers = await User.find({
-        $or: [{ emailIdx: emailToken }, { phoneIdx: phoneToken }],
-      }).select('_id').select('+emailIdx +phoneIdx').lean()
+        $or: [{ name: ciContains(search) }, { email: ciContains(search) }, { phone: ciContains(search) }],
+      }).select('_id').lean()
       const userIds = matchingUsers.map(u => u._id)
       filter.$or = [
         { userId: { $in: userIds } },
-        { skills: { $regex: search, $options: 'i' } },
-        { 'agencyInfo.agencyName': { $regex: search, $options: 'i' } },
+        { skills: ciContains(search) },
+        { 'agencyInfo.agencyName': ciContains(search) },
       ]
     }
 
-    const isFreelancerRole = role === 'FREELANCER'
-
-    let query = Freelancer.find(filter)
-      .skip(skip)
-      .limit(limit)
-      .sort({ createdAt: -1 })
-      .populate({ path: 'userId', select: 'id name email avatar phone isActive' })
-
-    if (!isFreelancerRole) {
-      query = query.populate({ path: 'pricing.categoryId', select: 'id name unit defaultPrice' })
-    }
-
     const [freelancers, total] = await Promise.all([
-      query,
+      Freelancer.find(filter)
+        .skip(skip).limit(limit).sort({ createdAt: -1 })
+        .populate({ path: 'userId', select: 'id name email avatar phone isActive' })
+        .populate({ path: 'pricing.categoryId', select: 'id name unit defaultPrice' }),
       Freelancer.countDocuments(filter),
     ])
 
-    const data = freelancers.map(f => {
-      const obj = f.toJSON()
-      if (isFreelancerRole) delete obj.pricing
-      return obj
-    })
+    const data = maskList(session, freelancers.map(f => f.toJSON()), FREELANCER_PII)
 
     return NextResponse.json({
       data,
@@ -129,8 +111,7 @@ export async function POST(request) {
       ? (contactPerson?.name ?? agencyInfo?.agencyName ?? 'Agency')
       : name
 
-    const emailToken = blindIndex(email.toLowerCase(), 'users', 'email')
-    const existing = await User.findOne({ emailIdx: emailToken }).select('+emailIdx').lean()
+    const existing = await User.findOne({ email: ciEquals(email) }).select('_id').lean()
     if (existing) return NextResponse.json({ error: 'A user with this email already exists' }, { status: 409 })
 
     const cfg = await getConfig()
@@ -187,6 +168,16 @@ export async function POST(request) {
 
     const freelancer = await new Freelancer(freelancerData).save()
     await freelancer.populate({ path: 'userId', select: 'id name email avatar phone isActive' })
+
+    logActivity({
+      userId:   session.user.id,
+      userRole: session.user.role,
+      action:   'CREATE',
+      entity:   'FREELANCER',
+      entityId: freelancer._id.toString(),
+      changes:  JSON.stringify({ name: displayName, type }),
+      request,
+    })
 
     let emailSent = false
 

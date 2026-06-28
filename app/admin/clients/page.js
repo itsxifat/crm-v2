@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import {
-  Users, DollarSign, TrendingUp, FolderOpen,
-  Plus, MoreHorizontal, Pencil, Trash2, Eye,
+  Users, Wallet, TrendingUp, FolderOpen,
+  Plus, MoreHorizontal, Pencil, Trash2, Eye, RotateCcw,
   Mail, Phone, Building2, Globe,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -41,7 +41,8 @@ function StatCard({ label, value, icon: Icon, color }) {
 
 // ─── Row Menu ─────────────────────────────────────────────────────────────────
 
-function RowMenu({ client, onEdit, onDeactivate }) {
+function RowMenu({ client, onEdit, onDeactivate, onReactivate }) {
+  const isActive = client.userId?.isActive !== false
   const [open, setOpen]   = useState(false)
   const [pos,  setPos]    = useState({ top: 0, left: 0 })
   const btnRef            = useRef(null)
@@ -82,10 +83,17 @@ function RowMenu({ client, onEdit, onDeactivate }) {
             className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
             <Pencil className="w-3.5 h-3.5" /> Edit
           </button>
-          <button onClick={() => { setOpen(false); onDeactivate(client) }}
-            className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50">
-            <Trash2 className="w-3.5 h-3.5" /> Deactivate
-          </button>
+          {isActive ? (
+            <button onClick={() => { setOpen(false); onDeactivate(client) }}
+              className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50">
+              <Trash2 className="w-3.5 h-3.5" /> Deactivate
+            </button>
+          ) : (
+            <button onClick={() => { setOpen(false); onReactivate(client) }}
+              className="w-full flex items-center gap-2 px-4 py-2 text-sm text-green-600 hover:bg-green-50">
+              <RotateCcw className="w-3.5 h-3.5" /> Reactivate
+            </button>
+          )}
         </div>
       )}
     </>
@@ -136,17 +144,25 @@ export default function ClientsPage() {
 
   function openEdit(client) { setEditingClient(client); setModalOpen(true) }
 
-  async function handleDeactivate(client) {
-    if (!confirm(`Deactivate ${client.userId?.name}? They will lose portal access.`)) return
+  async function setClientActive(client, isActive) {
+    const verb = isActive ? 'Reactivate' : 'Deactivate'
+    if (!confirm(`${verb} ${client.userId?.name}? ${isActive ? 'They will regain portal access.' : 'They will lose portal access.'}`)) return
     try {
-      const res = await fetch(`/api/clients/${client.id}`, { method: 'DELETE' })
+      const res = await fetch(`/api/clients/${client.id}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive }),
+      })
       if (!res.ok) throw new Error((await res.json()).error)
-      toast.success('Client deactivated')
+      toast.success(isActive ? 'Client reactivated' : 'Client deactivated')
       fetchClients()
     } catch (err) {
-      toast.error(err.message ?? 'Failed to deactivate')
+      toast.error(err.message ?? `Failed to ${verb.toLowerCase()}`)
     }
   }
+
+  const handleDeactivate = (client) => setClientActive(client, false)
+  const handleReactivate = (client) => setClientActive(client, true)
 
   return (
     <div className="space-y-6">
@@ -168,7 +184,7 @@ export default function ClientsPage() {
       {stats && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard label="Total Clients"   value={stats.totalClients}                                       icon={Users}      color="blue"   />
-          <StatCard label="Total Revenue"   value={fmt(stats.totalRevenue)}                                  icon={DollarSign} color="green"  />
+          <StatCard label="Total Revenue"   value={fmt(stats.totalRevenue)}                                  icon={Wallet} color="green"  />
           <StatCard label="Outstanding"     value={fmt(stats.outstandingBalance)}                            icon={TrendingUp} color="yellow" />
           <StatCard label="Active Projects" value={stats.activeProjectCount ?? 0}                            icon={FolderOpen} color="purple" />
         </div>
@@ -300,7 +316,7 @@ export default function ClientsPage() {
                         })()}
                       </td>
                       <td className="px-6 py-4 text-right">
-                        <RowMenu client={client} onEdit={openEdit} onDeactivate={handleDeactivate} />
+                        <RowMenu client={client} onEdit={openEdit} onDeactivate={handleDeactivate} onReactivate={handleReactivate} />
                       </td>
                     </tr>
                   )

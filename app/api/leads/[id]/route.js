@@ -2,10 +2,13 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
+import { requirePerm } from '@/lib/rbac'
+import { maskDoc, LEAD_PII } from '@/lib/pii'
 import connectDB from '@/lib/mongodb'
 import Lead, { LeadActivity } from '@/models/Lead'
 import Attachment from '@/models/Attachment'
 import Employee from '@/models/Employee'
+import { logActivity } from '@/lib/logActivity'
 import { z } from 'zod'
 
 const updateLeadSchema = z.object({
@@ -39,7 +42,8 @@ const updateLeadSchema = z.object({
 export async function GET(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    const denied = requirePerm(session, 'sales.leads.view')
+    if (denied) return denied
 
     await connectDB()
 
@@ -53,7 +57,7 @@ export async function GET(request, { params }) {
       Attachment.find({ leadId: params.id }).sort({ createdAt: -1 }),
     ])
 
-    return NextResponse.json({ data: { ...lead.toJSON(), activities, attachments } })
+    return NextResponse.json({ data: maskDoc(session, { ...lead.toJSON(), activities, attachments }, LEAD_PII) })
   } catch (err) {
     console.error('[GET /api/leads/[id]]', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -111,7 +115,8 @@ function buildChangeSummary(before, updates) {
 export async function PUT(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    const denied = requirePerm(session, 'sales.leads.update')
+    if (denied) return denied
 
     await connectDB()
 
@@ -144,6 +149,17 @@ export async function PUT(request, { params }) {
       }).save()
     }
 
+    const statusChanged = data.status && data.status !== before.status
+    logActivity({
+      userId:   session.user.id,
+      userRole: session.user.role,
+      action:   statusChanged ? 'STATUS_CHANGE' : 'UPDATE',
+      entity:   'LEAD',
+      entityId: params.id,
+      changes:  note ?? (statusChanged ? `Status: ${before.status} → ${data.status}` : null),
+      request,
+    })
+
     return NextResponse.json({ data: lead })
   } catch (err) {
     console.error('[PUT /api/leads/[id]]', err)
@@ -155,15 +171,22 @@ export async function PUT(request, { params }) {
 export async function DELETE(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-
-    const allowedRoles = ['SUPER_ADMIN', 'MANAGER']
-    if (!allowedRoles.includes(session.user.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const denied = requirePerm(session, 'sales.leads.delete')
+    if (denied) return denied
 
     await connectDB()
-    await Lead.findByIdAndDelete(params.id)
+    const deleted = await Lead.findByIdAndDelete(params.id)
+
+    logActivity({
+      userId:   session.user.id,
+      userRole: session.user.role,
+      action:   'DELETE',
+      entity:   'LEAD',
+      entityId: params.id,
+      changes:  deleted ? JSON.stringify({ name: deleted.name }) : null,
+      request,
+    })
+
     return NextResponse.json({ success: true })
   } catch (err) {
     console.error('[DELETE /api/leads/[id]]', err)

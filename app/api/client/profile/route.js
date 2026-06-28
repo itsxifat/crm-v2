@@ -4,8 +4,9 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { User } from '@/models'
+import { validateStrongPassword } from '@/lib/passwordPolicy'
 
-// PATCH /api/client/profile — change own password
+// PATCH /api/client/profile — set/change own password
 export async function PATCH(request) {
   try {
     const session = await getServerSession(authOptions)
@@ -14,10 +15,8 @@ export async function PATCH(request) {
 
     const { oldPassword, newPassword } = await request.json()
 
-    if (!oldPassword || !newPassword)
-      return NextResponse.json({ error: 'oldPassword and newPassword are required' }, { status: 422 })
-    if (newPassword.length < 8)
-      return NextResponse.json({ error: 'New password must be at least 8 characters' }, { status: 422 })
+    const pwError = validateStrongPassword(newPassword)
+    if (pwError) return NextResponse.json({ error: pwError }, { status: 422 })
 
     await connectDB()
     const bcrypt = (await import('bcryptjs')).default
@@ -25,10 +24,16 @@ export async function PATCH(request) {
     const user = await User.findById(session.user.id).select('+password')
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
-    const valid = await bcrypt.compare(oldPassword, user.password)
-    if (!valid) return NextResponse.json({ error: 'Current password is incorrect' }, { status: 400 })
+    // First-time set (just activated via OTP) doesn't require the old password —
+    // the authenticated session is sufficient. Voluntary changes still do.
+    if (!user.mustChangePassword) {
+      if (!oldPassword) return NextResponse.json({ error: 'Current password is required' }, { status: 422 })
+      const valid = await bcrypt.compare(oldPassword, user.password)
+      if (!valid) return NextResponse.json({ error: 'Current password is incorrect' }, { status: 400 })
+    }
 
-    user.password = await bcrypt.hash(newPassword, 10)
+    user.password = await bcrypt.hash(newPassword, 12)
+    user.mustChangePassword = false
     await user.save()
 
     return NextResponse.json({ success: true })

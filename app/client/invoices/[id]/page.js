@@ -6,8 +6,9 @@ import Link from 'next/link'
 import toast from 'react-hot-toast'
 import {
   ArrowLeft, CheckCircle, Clock, AlertCircle, XCircle,
-  FileText, CreditCard, X, Upload, Download,
+  FileText, CreditCard, X, Printer,
 } from 'lucide-react'
+import InvoicePrintView, { openInvoicePrint } from '@/components/shared/InvoicePrintView'
 import { useConfig } from '@/lib/useConfig'
 
 const fmtDate = (d) =>
@@ -22,7 +23,6 @@ const STATUS_MAP = {
   OVERDUE:        { label: 'Overdue',          bg: 'bg-red-100',     text: 'text-red-600',    icon: AlertCircle },
   CANCELLED:      { label: 'Cancelled',        bg: 'bg-gray-100',    text: 'text-gray-500',   icon: XCircle },
 }
-
 
 const CONFIRM_STATUS = {
   PENDING_CONFIRMATION: { label: 'Pending Approval', bg: 'bg-yellow-100', text: 'text-yellow-700' },
@@ -147,6 +147,7 @@ export default function ClientInvoiceDetailPage() {
 
   const [invoice,       setInvoice]       = useState(null)
   const [paymentReqs,   setPaymentReqs]   = useState([])
+  const [company,       setCompany]       = useState({})
   const [loading,       setLoading]       = useState(true)
   const [showPayModal,  setShowPayModal]  = useState(false)
 
@@ -173,6 +174,23 @@ export default function ClientInvoiceDetailPage() {
 
   useEffect(() => { load() }, [id])
 
+  // Company details for the invoice header — same source as the admin view
+  useEffect(() => {
+    fetch('/api/settings?group=company')
+      .then(r => r.json())
+      .then(j => {
+        const d = j.data ?? {}
+        setCompany({
+          name:    d.company_name    ?? '',
+          address: d.company_address ?? '',
+          phone:   d.company_phone   ?? '',
+          email:   d.company_email   ?? '',
+          website: d.company_website ?? '',
+        })
+      })
+      .catch(() => {})
+  }, [])
+
   if (loading) return (
     <div className="space-y-4 animate-pulse">
       <div className="h-6 bg-gray-100 rounded w-40" />
@@ -185,8 +203,9 @@ export default function ClientInvoiceDetailPage() {
 
   const status  = STATUS_MAP[invoice.status] ?? STATUS_MAP.DRAFT
   const StatusIcon = status.icon
-  const balance = (invoice.total ?? 0) - (invoice.paidAmount ?? 0)
   const canPay  = ['SENT', 'OVERDUE', 'PARTIALLY_PAID'].includes(invoice.status)
+  // Only confirmed payments appear in the invoice's "Transaction Details" table
+  const confirmedPayments = paymentReqs.filter(p => p.status === 'CONFIRMED')
 
   return (
     <div className="space-y-6">
@@ -211,15 +230,13 @@ export default function ClientInvoiceDetailPage() {
             <StatusIcon className="w-3.5 h-3.5" />
             {status.label}
           </span>
-          <a
-            href={`/api/client/invoices/${id}/pdf`}
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
+            onClick={() => openInvoicePrint(invoice.invoiceNumber)}
             className="flex items-center gap-1.5 px-4 py-2 border border-gray-200 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors"
           >
-            <Download className="w-4 h-4" />
-            Download PDF
-          </a>
+            <Printer className="w-4 h-4" />
+            Print / PDF
+          </button>
           {canPay && (
             <button onClick={() => setShowPayModal(true)}
               className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 transition-colors">
@@ -230,99 +247,12 @@ export default function ClientInvoiceDetailPage() {
         </div>
       </div>
 
-      {/* Invoice Info */}
-      <div className="bg-white border border-gray-100 rounded-2xl p-5 space-y-4">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
-          <div>
-            <p className="text-xs text-gray-400 mb-0.5">Issue Date</p>
-            <p className="font-medium text-gray-800">{fmtDate(invoice.issueDate)}</p>
-          </div>
-          <div>
-            <p className="text-xs text-gray-400 mb-0.5">Due Date</p>
-            <p className="font-medium text-gray-800">{fmtDate(invoice.dueDate)}</p>
-          </div>
-          <div>
-            <p className="text-xs text-gray-400 mb-0.5">Project</p>
-            <p className="font-medium text-gray-800">{invoice.projectId?.name ?? '—'}</p>
-          </div>
-          <div>
-            <p className="text-xs text-gray-400 mb-0.5">Currency</p>
-            <p className="font-medium text-gray-800">{invoice.currency ?? 'BDT'}</p>
-          </div>
-        </div>
-
-        {invoice.notes && (
-          <div className="border-t border-gray-50 pt-3">
-            <p className="text-xs text-gray-400 mb-1">Notes</p>
-            <p className="text-sm text-gray-600 whitespace-pre-line">{invoice.notes}</p>
-          </div>
-        )}
+      {/* Invoice — same layout as the admin panel */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <InvoicePrintView invoice={invoice} payments={confirmedPayments} company={company} />
       </div>
 
-      {/* Line Items */}
-      <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden">
-        <div className="px-5 py-3 border-b border-gray-50">
-          <h2 className="text-sm font-semibold text-gray-700">Items</h2>
-        </div>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-gray-50">
-              <th className="px-5 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Description</th>
-              <th className="px-5 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Qty</th>
-              <th className="px-5 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Rate</th>
-              <th className="px-5 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Amount</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-50">
-            {(invoice.items ?? []).map((item, i) => (
-              <tr key={i}>
-                <td className="px-5 py-3 text-gray-700">{item.description}</td>
-                <td className="px-5 py-3 text-right text-gray-600">{item.quantity}</td>
-                <td className="px-5 py-3 text-right text-gray-600">{fmtAmt(item.rate)}</td>
-                <td className="px-5 py-3 text-right font-medium text-gray-800">{fmtAmt(item.amount)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-
-        {/* Totals */}
-        <div className="border-t border-gray-100 px-5 py-4 space-y-1.5">
-          <div className="flex justify-between text-sm text-gray-600">
-            <span>Subtotal</span>
-            <span>{fmtAmt(invoice.subtotal)}</span>
-          </div>
-          {(invoice.taxRate > 0) && (
-            <div className="flex justify-between text-sm text-gray-600">
-              <span>Tax ({invoice.taxRate}%)</span>
-              <span>{fmtAmt(invoice.taxAmount)}</span>
-            </div>
-          )}
-          {(invoice.discount > 0) && (
-            <div className="flex justify-between text-sm text-green-600">
-              <span>Discount</span>
-              <span>-{fmtAmt(invoice.discount)}</span>
-            </div>
-          )}
-          <div className="flex justify-between text-base font-bold text-gray-900 border-t border-gray-100 pt-2 mt-2">
-            <span>Total</span>
-            <span>{fmtAmt(invoice.total)}</span>
-          </div>
-          {invoice.paidAmount > 0 && (
-            <>
-              <div className="flex justify-between text-sm text-green-600">
-                <span>Paid</span>
-                <span>{fmtAmt(invoice.paidAmount)}</span>
-              </div>
-              <div className="flex justify-between text-sm font-semibold text-gray-800">
-                <span>Balance Due</span>
-                <span>{fmtAmt(balance)}</span>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* Payment Requests */}
+      {/* Payment Submissions */}
       {paymentReqs.length > 0 && (
         <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden">
           <div className="px-5 py-3 border-b border-gray-50">

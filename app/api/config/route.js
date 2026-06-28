@@ -28,6 +28,10 @@ const DEFAULT_CONFIG = {
   companyItemCategories: [],
   ventures:              [],
   services:              {},
+  // Transaction taxonomy — each category owns its subcategories. Admin-defined, no defaults.
+  // Shape: [{ id, label, subcategories: string[] }]
+  expenseCategories:     [],
+  incomeCategories:      [],
   paymentMethods:        DEFAULT_PAYMENT_METHODS,
   verification: {
     freelancer:         true,

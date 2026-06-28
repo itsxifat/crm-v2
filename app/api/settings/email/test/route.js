@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { createTransporterFromAccount } from '@/lib/mailer'
+import { createTransporterFromAccount, buildTestEmailHtml } from '@/lib/mailer'
 
 // POST /api/settings/email/test
 // Body: { account: {...}, sendTo: "email@example.com" }
@@ -23,10 +23,10 @@ export async function POST(request) {
 
     await transporter.verify()
     await transporter.sendMail({
-      from: `"${account.fromName || 'EN-Tech CRM'}" <${account.user}>`,
+      from: `"${account.fromName || 'Enfinito'}" <${account.user}>`,
       to,
-      subject: 'EN-Tech CRM — Email Test',
-      html: `<p>This is a test email from <strong>${account.label || account.user}</strong>.<br>Your email configuration is working correctly.</p>`,
+      subject: 'Enfinito — Email Test',
+      html: buildTestEmailHtml({ label: account.label || account.user }),
     })
 
     return NextResponse.json({ ok: true, message: `Test email sent to ${to}` })

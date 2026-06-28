@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"slug":{"$numberInt":"1"}},"name":"slug_1","unique":true}],"uuid":"74d45340629c4e75b6331f0e436f35f5","collectionName":"legalpages","type":"collection"}

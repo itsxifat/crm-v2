@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"projectId":{"$numberInt":"1"},"createdAt":{"$numberInt":"1"}},"name":"projectId_1_createdAt_1","background":true}],"uuid":"3fccf8cc87194f9babb3d391791412c6","collectionName":"projectdiscussions","type":"collection"}

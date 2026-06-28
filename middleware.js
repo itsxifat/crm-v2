@@ -171,13 +171,13 @@ export default async function middleware(req) {
     }
 
     // ── 3a. Public API routes (no auth, no redirect) ─────────────────────────
-    const publicApiRoutes = ['/api/gain', '/api/auth/']
+    const publicApiRoutes = ['/api/gain', '/api/auth/', '/api/account-recovery']
     if (publicApiRoutes.some(r => pathname.startsWith(r))) {
       return addSecurityHeaders(NextResponse.next())
     }
 
     // ── 3b. Public page routes ───────────────────────────────────────────────
-    const publicRoutes = ['/login', '/register', '/forgot-password', '/reset-password', '/freelancer/invite']
+    const publicRoutes = ['/login', '/register', '/forgot-password', '/reset-password', '/activate', '/freelancer/invite']
     if (publicRoutes.some(r => pathname.startsWith(r))) {
       if (token) {
         const dashboard = ROLE_DASHBOARDS[token.role] || '/admin'
@@ -201,6 +201,20 @@ export default async function middleware(req) {
         return addSecurityHeaders(NextResponse.redirect(new URL('/admin/profile', req.url)))
       }
       return addSecurityHeaders(NextResponse.next())
+    }
+
+    // ── 5b. Client gates (page routes only): forced password change, then company selection
+    if (role === 'CLIENT' && !pathname.startsWith('/api/')) {
+      if (token.mustChangePassword) {
+        if (!pathname.startsWith('/client/change-password')) {
+          return addSecurityHeaders(NextResponse.redirect(new URL('/client/change-password', req.url)))
+        }
+      } else if (!token.activeClientId) {
+        // No active company selected (has 0 or >1) → send to the chooser.
+        if (!pathname.startsWith('/client/select-company')) {
+          return addSecurityHeaders(NextResponse.redirect(new URL('/client/select-company', req.url)))
+        }
+      }
     }
 
     // ── 6. Role-based access (page routes only — API routes handle their own auth)

@@ -3,8 +3,11 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
-import { Project, Client } from '@/models'
+import { Project } from '@/models'
+import { resolveActiveClient } from '@/lib/clientAccess'
 import { calcPeriodEnd } from '@/lib/ventures'
+import { searchEncrypted } from '@/lib/searchMatch'
+import { logActivity } from '@/lib/logActivity'
 import { z } from 'zod'
 
 const schema = z.object({
@@ -49,15 +52,12 @@ export async function GET(request) {
     if (projectType)    filter.projectType = projectType
     if (status)         filter.status      = status
     if (clientIdFilter) filter.clientId    = clientIdFilter
-    if (search) {
-      filter.$or = [
-        { name:        { $regex: search, $options: 'i' } },
-        { description: { $regex: search, $options: 'i' } },
-      ]
-    }
+
+    // Ownership scoping (kept separate from search so neither clobbers the other)
     if (session.user.role === 'CLIENT') {
-      const client = await Client.findOne({ userId: session.user.id }).lean()
-      if (client) filter.clientId = client._id
+      const { clientId } = await resolveActiveClient(session)
+      // No resolvable company → no projects (avoid leaking all projects)
+      filter.clientId = clientId ?? null
     }
     if (['EMPLOYEE','FREELANCER'].includes(session.user.role)) {
       filter.$or = [
@@ -66,25 +66,37 @@ export async function GET(request) {
       ]
     }
 
-    const [projects, total] = await Promise.all([
-      Project.find(filter)
-        .skip(skip).limit(limit).sort({ createdAt: -1 })
-        .populate({ path: 'clientId', populate: { path: 'userId', select: 'name avatar' } })
-        .populate('projectManagerId', 'name avatar'),
-      Project.countDocuments(filter),
-    ])
-
-    const enriched = projects.map(p => {
+    const populate = [
+      { path: 'clientId', populate: { path: 'userId', select: 'name avatar' } },
+      { path: 'projectManagerId', select: 'name avatar' },
+    ]
+    const enrich = (p) => {
       const j = p.toJSON()
       // cash-basis profit: what client paid minus what we spent
       j.profit = (j.paidAmount ?? 0) - (j.approvedExpenses ?? 0)
       // contracted profit: full budget value minus costs (regardless of payment)
       j.contractedProfit = (j.budget ?? 0) - (j.discount ?? 0) - (j.approvedExpenses ?? 0)
       return j
-    })
+    }
+
+    let projects, total
+    if (search) {
+      // name/description are encrypted → DB regex can't match; filter in JS
+      ;({ docs: projects, total } = await searchEncrypted(Project, {
+        baseFilter: filter, search, fields: ['name', 'description'],
+        page, limit, sort: { createdAt: -1 }, populate,
+      }))
+    } else {
+      ;[projects, total] = await Promise.all([
+        Project.find(filter)
+          .skip(skip).limit(limit).sort({ createdAt: -1 })
+          .populate(populate[0]).populate(populate[1]),
+        Project.countDocuments(filter),
+      ])
+    }
 
     return NextResponse.json({
-      data: enriched,
+      data: projects.map(enrich),
       meta: { page, limit, total, pages: Math.ceil(total / limit) },
     })
   } catch (err) {
@@ -132,6 +144,17 @@ export async function POST(request) {
     const j = project.toJSON()
     j.profit = (j.paidAmount ?? 0) - (j.approvedExpenses ?? 0)
     j.contractedProfit = (j.budget ?? 0) - (j.discount ?? 0) - (j.approvedExpenses ?? 0)
+
+    logActivity({
+      userId:   session.user.id,
+      userRole: session.user.role,
+      action:   'CREATE',
+      entity:   'PROJECT',
+      entityId: project._id.toString(),
+      changes:  JSON.stringify({ name: project.name, status: project.status }),
+      request,
+    })
+
     return NextResponse.json({ data: j }, { status: 201 })
   } catch (err) {
     console.error('[POST /api/projects]', err)

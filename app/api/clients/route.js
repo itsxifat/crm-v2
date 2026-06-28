@@ -4,18 +4,20 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { User, Client, Project, Invoice } from '@/models'
-import bcrypt from 'bcryptjs'
-import { sendClientWelcomeEmail } from '@/lib/mailer'
-import { sendClientWelcomeWhatsApp } from '@/lib/whatsapp'
-import { canAccess } from '@/lib/permissions'
-import { blindIndex } from '@/lib/encryption'
+import { sendClientActivationEmail } from '@/lib/mailer'
+import { requirePerm } from '@/lib/rbac'
+import { maskList, CLIENT_PII } from '@/lib/pii'
+import { ciContains } from '@/lib/searchMatch'
 import { getConfig } from '@/lib/getConfig'
+import { logActivity } from '@/lib/logActivity'
+import { findOrCreateClientUser, ensureMembership } from '@/lib/clientAccess'
 
 // GET /api/clients
 export async function GET(request) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    const denied  = requirePerm(session, 'sales.customers.view')   // admin-only client directory (PII)
+    if (denied) return denied
 
     await connectDB()
 
@@ -31,20 +33,20 @@ export async function GET(request) {
     if (priority)  filter.priority     = priority
     if (kycStatus) filter['kyc.status'] = kycStatus
     if (search) {
-      // email and phone are encrypted — use blind indexes for exact-match lookups
-      const emailToken = blindIndex(search.toLowerCase(), 'users', 'email')
-      const phoneToken = blindIndex(search, 'users', 'phone')
+      // Match the linked user (name/email/phone) OR client-level fields. All
+      // plaintext now, so substring search works directly — including company.
       const matchingUsers = await User.find({
         $or: [
-          { emailIdx: emailToken },
-          { phoneIdx: phoneToken },
+          { name:  ciContains(search) },
+          { email: ciContains(search) },
+          { phone: ciContains(search) },
         ],
       }).select('_id').lean()
       const userIds = matchingUsers.map(u => u._id)
-      // clientCode is not encrypted — regex still works on it
       filter.$or = [
         { userId:     { $in: userIds } },
-        { clientCode: { $regex: search, $options: 'i' } },
+        { clientCode: ciContains(search) },
+        { company:    ciContains(search) },
       ]
     }
 
@@ -82,7 +84,7 @@ export async function GET(request) {
     ])
 
     return NextResponse.json({
-      data: enriched,
+      data: maskList(session, enriched, CLIENT_PII),
       meta: { page, limit, total, pages: Math.ceil(total / limit) },
       stats: {
         totalClients,
@@ -101,9 +103,8 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-    if (!canAccess(session, 'clients', 'create'))
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const denied  = requirePerm(session, 'sales.customers.create')
+    if (denied) return denied
 
     await connectDB()
 
@@ -120,30 +121,12 @@ export async function POST(request) {
     if (!name?.trim()) return NextResponse.json({ error: 'Name is required' }, { status: 422 })
     if (!email?.trim()) return NextResponse.json({ error: 'Email is required' }, { status: 422 })
 
-    const emailToken = blindIndex(email.trim().toLowerCase(), 'users', 'email')
-    let user         = await User.findOne({ emailIdx: emailToken }).select('+emailIdx').lean()
-    let rawPw      = null
-    let isNewUser  = false
-
-    if (user) {
-      // Existing contact person — only allowed when explicitly linking a new company (parentClientId provided)
-      if (!parentClientId) {
-        return NextResponse.json({ error: 'A user with this email already exists. To add a linked company, select the parent client.' }, { status: 409 })
-      }
-      // Verify the parent client belongs to this user
-      const parentClient = await Client.findById(parentClientId).lean()
-      if (!parentClient) return NextResponse.json({ error: 'Parent client not found' }, { status: 404 })
-      if (parentClient.userId.toString() !== user._id.toString()) {
-        return NextResponse.json({ error: 'Parent client does not match this contact email' }, { status: 422 })
-      }
-    } else {
-      // New contact person — create User account
-      const chars    = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'
-      rawPw          = Array.from({ length: 10 }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
-      const hashedPw = await bcrypt.hash(rawPw, 12)
-      user           = await new User({ email: email.trim().toLowerCase(), password: hashedPw, name: name.trim(), role: 'CLIENT', phone, isActive: true }).save()
-      isNewUser      = true
-    }
+    // Find-or-create the owner by email. Existing email → just link them (no new
+    // account, no new credentials); new email → create a CLIENT account with NO
+    // password and a magic activation link (OTP + set-password on first access).
+    const { user, isNew: isNewUser, activationToken } = await findOrCreateClientUser({
+      email, name, phone, addedBy: session.user.id,
+    })
 
     const cfg = await getConfig()
     const requireKyc = cfg.verification?.clientKyc !== false
@@ -178,32 +161,35 @@ export async function POST(request) {
 
     await client.populate({ path: 'userId', select: 'id name email avatar phone' })
 
-    // Send welcome email + WhatsApp only for brand-new users
+    // Link the owner to this company (the new source of truth for access).
+    await ensureMembership({ userId: user._id, clientId: client._id, role: 'OWNER', addedBy: session.user.id })
+
+    // Brand-new users get a magic activation link (no password). Existing users
+    // linked to a new company are notified separately by the membership flow.
     let emailSent = false
-    if (isNewUser) {
+    if (isNewUser && activationToken) {
+      const activationLink = `${process.env.NEXT_PUBLIC_APP_URL}/activate/${activationToken}`
       try {
-        await sendClientWelcomeEmail({
-          to:         email.trim().toLowerCase(),
-          name:       name.trim(),
-          clientCode: client.clientCode,
-          password:   rawPw,
-          phone:      phone || null,
+        await sendClientActivationEmail({
+          to:   email.trim().toLowerCase(),
+          name: name.trim(),
+          link: activationLink,
         })
         emailSent = true
       } catch (mailErr) {
-        console.warn('[POST /api/clients] Email failed:', mailErr.message)
-      }
-
-      if (phone) {
-        sendClientWelcomeWhatsApp({
-          to:         phone,
-          name:       name.trim(),
-          clientCode: client.clientCode,
-          password:   rawPw,
-          phone:      phone,
-        })
+        console.warn('[POST /api/clients] Activation email failed:', mailErr.message)
       }
     }
+
+    logActivity({
+      userId:   session.user.id,
+      userRole: session.user.role,
+      action:   'CREATE',
+      entity:   'CLIENT',
+      entityId: client._id.toString(),
+      changes:  JSON.stringify({ name: name.trim(), clientCode: client.clientCode }),
+      request,
+    })
 
     return NextResponse.json({
       data:        client.toJSON(),

@@ -19,11 +19,15 @@ export async function GET(request) {
     const limit   = parseInt(searchParams.get('limit') ?? '20', 10)
     const status  = searchParams.get('status')
     const venture = searchParams.get('venture')
+    const category = searchParams.get('category')
+    const subcategory = searchParams.get('subcategory')
     const skip    = (page - 1) * limit
 
     const filter = {}
     if (status)  filter.status  = status
     if (venture) filter.venture = venture
+    if (category) filter.category = category
+    if (subcategory) filter.subcategory = subcategory
 
     const [expenses, total] = await Promise.all([
       ProjectExpense.find(filter)

@@ -4,6 +4,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Invoice } from '@/models'
+import { requirePerm } from '@/lib/rbac'
 
 // PAID is intentionally excluded from all manual transitions.
 // It is only set automatically when a payment is confirmed via Payment Confirmations.
@@ -19,9 +20,8 @@ const TRANSITIONS = {
 export async function PATCH(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-    if (!['SUPER_ADMIN','MANAGER'].includes(session.user.role))
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const denied = requirePerm(session, 'sales.invoices.update')
+    if (denied) return denied
     await connectDB()
 
     const { status, paidAmount } = await request.json()

@@ -4,7 +4,7 @@ import connectDB from '@/lib/mongodb'
 import { Client, Project, Invoice, Milestone, Task } from '@/models'
 import Link from 'next/link'
 import {
-  FolderOpen, FileText, DollarSign, AlertCircle,
+  FolderOpen, FileText, Wallet, AlertCircle,
   ArrowRight, Clock, TrendingUp
 } from 'lucide-react'
 import ProgressBar from '@/components/portals/ProgressBar'
@@ -69,7 +69,7 @@ export default async function ClientDashboard() {
   )
   const clientId = client._id
 
-  const [activeProjects, invoices, allProjects, pendingInvoicesCount, paidAgg, dueAgg] = await Promise.all([
+  const [activeProjects, invoices, allProjects, pendingInvoicesCount, paidInvoices, dueInvoices] = await Promise.all([
     Project.find({ clientId, status: { $in: ['PLANNING', 'IN_PROGRESS', 'ON_HOLD'] } })
       .sort({ updatedAt: -1 })
       .limit(4)
@@ -80,11 +80,11 @@ export default async function ClientDashboard() {
       .lean(),
     Project.countDocuments({ clientId, status: { $in: ['PLANNING', 'IN_PROGRESS', 'ON_HOLD'] } }),
     Invoice.countDocuments({ clientId: { $in: clientIds }, status: { $in: ['SENT', 'OVERDUE', 'PARTIALLY_PAID'] } }),
-    Invoice.aggregate([{ $match: { clientId: { $in: clientIds }, status: 'PAID' } }, { $group: { _id: null, total: { $sum: '$total' } } }]),
-    Invoice.aggregate([
-      { $match: { clientId: { $in: clientIds }, status: { $in: ['SENT', 'OVERDUE', 'PARTIALLY_PAID'] } } },
-      { $group: { _id: null, due: { $sum: { $subtract: ['$total', { $ifNull: ['$paidAmount', 0] }] } } } },
-    ]),
+    // aggregate() bypasses Mongoose post-find decryption hooks — Invoice.total/paidAmount are
+    // encrypted, so totals must be summed in JS over decrypted lean docs (not via $sum/$subtract).
+    Invoice.find({ clientId: { $in: clientIds }, status: 'PAID' }).select('total').lean(),
+    Invoice.find({ clientId: { $in: clientIds }, status: { $in: ['SENT', 'OVERDUE', 'PARTIALLY_PAID'] } })
+      .select('total paidAmount').lean(),
   ])
 
   // Enrich projects with task statuses and milestones
@@ -101,14 +101,14 @@ export default async function ClientDashboard() {
     milestones: milestonesByProject.filter(m => m.projectId.toString() === p._id.toString()),
   }))
 
-  const paidTotal = paidAgg[0]?.total ?? 0
-  const dueTotal  = dueAgg[0]?.due   ?? 0
+  const paidTotal = paidInvoices.reduce((s, i) => s + (Number(i.total) || 0), 0)
+  const dueTotal  = dueInvoices.reduce((s, i) => s + ((Number(i.total) || 0) - (Number(i.paidAmount) || 0)), 0)
   const pendingInvoices = pendingInvoicesCount
 
   const stats = [
     { label: 'Active Projects',   value: allProjects,                                                                    icon: FolderOpen,  color: 'blue'   },
     { label: 'Pending Invoices',  value: pendingInvoices,                                                                icon: FileText,    color: 'yellow' },
-    { label: 'Total Paid',        value: `৳ ${paidTotal.toLocaleString('en-BD', { minimumFractionDigits: 2 })}`,         icon: DollarSign,  color: 'green'  },
+    { label: 'Total Paid',        value: `৳ ${paidTotal.toLocaleString('en-BD', { minimumFractionDigits: 2 })}`,         icon: Wallet,  color: 'green'  },
     { label: 'Due Balance',       value: `৳ ${dueTotal.toLocaleString('en-BD',  { minimumFractionDigits: 2 })}`,         icon: AlertCircle, color: 'red'    },
   ]
 

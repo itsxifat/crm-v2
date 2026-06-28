@@ -6,7 +6,7 @@ import connectDB from '@/lib/mongodb'
 import { User } from '@/models'
 import bcrypt from 'bcryptjs'
 import { z } from 'zod'
-import { blindIndex } from '@/lib/encryption'
+import { ciEquals, ciContains } from '@/lib/searchMatch'
 
 const createUserSchema = z.object({
   email:    z.string().email(),
@@ -41,11 +41,10 @@ export async function GET(request) {
     if (roles) filter.role = { $in: roles.split(',').map(r => r.trim()) }
     else if (role) filter.role = role
     if (search) {
-      const emailToken = blindIndex(search.toLowerCase(), 'users', 'email')
-      const phoneToken = blindIndex(search, 'users', 'phone')
       filter.$or = [
-        { emailIdx: emailToken },
-        { phoneIdx: phoneToken },
+        { name:  ciContains(search) },
+        { email: ciContains(search) },
+        { phone: ciContains(search) },
       ]
     }
 
@@ -86,9 +85,7 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Validation failed', details: parsed.error.flatten() }, { status: 422 })
     }
 
-    // Email is encrypted; use the blind index for the duplicate check.
-    const emailToken = blindIndex(parsed.data.email, 'users', 'email')
-    const existing = await User.findOne({ emailIdx: emailToken }).select('_id').lean()
+    const existing = await User.findOne({ email: ciEquals(parsed.data.email) }).select('_id').lean()
     if (existing) {
       return NextResponse.json({ error: 'Email already in use' }, { status: 409 })
     }

@@ -4,6 +4,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Invoice, Payment } from '@/models'
+import { getMyCompanyIds } from '@/lib/clientAccess'
 
 function formatCurrency(amount, currency = 'BDT') {
   const n = amount ?? 0
@@ -31,6 +32,16 @@ export async function GET(request, { params }) {
       .populate({ path: 'projectId', select: 'name' })
 
     if (!invoice) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+    // Authorisation: staff may view any invoice; a client only their own; others denied.
+    // (Previously any authenticated user could fetch any invoice PDF by id — IDOR.)
+    const role = session.user.role
+    if (!['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'].includes(role)) {
+      const ownerId = String(invoice.clientId?._id ?? invoice.clientId ?? '')
+      const clientIds = role === 'CLIENT' ? await getMyCompanyIds(session.user.id) : []
+      if (!clientIds.some(id => String(id) === ownerId))
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
 
     const [items, payments] = await Promise.all([
       Promise.resolve(Array.isArray(invoice.toJSON().items) ? invoice.toJSON().items : []),

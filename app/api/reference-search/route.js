@@ -5,7 +5,8 @@ import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import Lead from '@/models/Lead'
 import { Client, Employee, User } from '@/models'
-import { blindIndex } from '@/lib/encryption'
+import { ciContains } from '@/lib/searchMatch'
+import { requireStaff } from '@/lib/rbac'
 
 // Fetch a batch, decrypt via Mongoose plugin, then filter in JS.
 // This is the only reliable approach for AES-GCM encrypted fields
@@ -20,7 +21,8 @@ function matchesQuery(value, q) {
 export async function GET(request) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    const denied  = requireStaff(session)   // global PII search — staff only
+    if (denied) return denied
 
     await connectDB()
 
@@ -29,12 +31,10 @@ export async function GET(request) {
 
     const qLower = q.toLowerCase()
 
-    // ── Blind-index exact matches (email + phone) on User ──────────────────
-    const emailToken = blindIndex(q, 'users', 'email')
-    const phoneToken = blindIndex(q, 'users', 'phone')
+    // ── Match users by name / email / phone (plaintext substring) ──────────
     const exactUsers = await User.find({
-      $or: [{ emailIdx: emailToken }, { phoneIdx: phoneToken }],
-    }).select('+emailIdx +phoneIdx').lean()
+      $or: [{ name: ciContains(q) }, { email: ciContains(q) }, { phone: ciContains(q) }],
+    }).select('name email phone').lean()
     const exactUserIds = new Set(exactUsers.map(u => u._id.toString()))
 
     // ── Leads ──────────────────────────────────────────────────────────────

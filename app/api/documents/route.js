@@ -4,12 +4,15 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Document } from '@/models'
+import { requireStaff } from '@/lib/rbac'
 
-// GET /api/documents
+// GET /api/documents — admin document library. External portals use their own
+// scoped endpoints (e.g. /api/client/documents), so this is staff-only.
 export async function GET(request) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    const denied  = requireStaff(session)
+    if (denied) return denied
 
     await connectDB()
 

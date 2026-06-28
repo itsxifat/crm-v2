@@ -7,7 +7,7 @@ import Link from 'next/link'
 import toast from 'react-hot-toast'
 import {
   ArrowLeft, Pencil, Phone, Mail, MapPin, Globe, MessageSquare,
-  Send, Trash2, UserCheck, Calendar, DollarSign, TrendingUp,
+  Send, Trash2, UserCheck, Calendar, Wallet, TrendingUp,
   Clock, Tag, User, Building2, PhoneCall, AtSign, ExternalLink,
   Activity, PhoneIncoming, MailOpen, CalendarClock, FileText, CheckSquare,
   FileEdit, Plus, RefreshCw,
@@ -15,6 +15,7 @@ import {
 import Badge from '@/components/ui/Badge'
 import Avatar from '@/components/ui/Avatar'
 import LeadModal from '@/components/admin/leads/LeadModal'
+import ConvertLeadModal from '@/components/admin/leads/ConvertLeadModal'
 import { formatCurrency, formatDate } from '@/lib/utils'
 
 function refHref(type, id) {
@@ -75,6 +76,7 @@ export default function LeadDetailPage() {
   const [quotations,  setQuotations]  = useState([])
   const [loading,     setLoading]     = useState(true)
   const [modalOpen,   setModalOpen]   = useState(false)
+  const [convertOpen, setConvertOpen] = useState(false)
 
   // Activity log form
   const [actType,    setActType]    = useState('note')
@@ -122,18 +124,7 @@ export default function LeadDetailPage() {
     }
   }
 
-  const handleConvert = async () => {
-    if (!confirm(`Convert "${lead?.name}" to a client? This will create a new user account.`)) return
-    try {
-      const res  = await fetch(`/api/leads/${id}/convert`, { method: 'POST' })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Conversion failed')
-      toast.success(`Lead converted! Temp password: ${data.data?.tempPassword ?? '—'}`)
-      router.push(`/admin/clients/${data.data?.clientId}`)
-    } catch (err) {
-      toast.error(err.message)
-    }
-  }
+  const handleConvert = () => setConvertOpen(true)
 
   const handleAddActivity = async (e) => {
     e.preventDefault()
@@ -356,7 +347,7 @@ export default function LeadDetailPage() {
               )}
               {lead.value && (
                 <div className="flex items-center gap-2 text-gray-800 font-semibold">
-                  <DollarSign className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                  <Wallet className="w-3.5 h-3.5 text-gray-400 shrink-0" />
                   {formatCurrency(lead.value)}
                 </div>
               )}
@@ -711,6 +702,14 @@ export default function LeadDetailPage() {
         onClose={() => setModalOpen(false)}
         lead={lead}
         onSuccess={() => { setModalOpen(false); fetchLead() }}
+      />
+
+      {/* Convert to client modal */}
+      <ConvertLeadModal
+        open={convertOpen}
+        onClose={() => setConvertOpen(false)}
+        lead={lead}
+        onSuccess={() => fetchLead()}
       />
     </div>
   )

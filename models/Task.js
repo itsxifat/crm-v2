@@ -1,6 +1,4 @@
 import mongoose from 'mongoose'
-import { encryptionPlugin } from '@/lib/encryptionPlugin'
-
 const TaskSchema = new mongoose.Schema(
   {
     projectId:            { type: mongoose.Schema.Types.ObjectId, ref: 'Project',    required: true },
@@ -34,15 +32,5 @@ const TaskSchema = new mongoose.Schema(
     },
   }
 )
-
-TaskSchema.plugin(encryptionPlugin, {
-  collection: 'tasks',
-  fields: [
-    { path: 'title'          },
-    { path: 'description'    },
-    { path: 'estimatedHours', type: 'number' },
-    { path: 'actualHours',    type: 'number' },
-  ],
-})
 
 export default mongoose.models.Task ?? mongoose.model('Task', TaskSchema)

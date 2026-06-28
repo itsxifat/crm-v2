@@ -4,6 +4,8 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Task, Comment, Attachment } from '@/models'
+import { canAccess } from '@/lib/permissions'
+import { logActivity } from '@/lib/logActivity'
 import { z } from 'zod'
 
 const statusSchema = z.object({
@@ -16,6 +18,8 @@ export async function PATCH(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
     if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    if (!canAccess(session, 'tasks', 'update'))
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     await connectDB()
 
@@ -37,6 +41,16 @@ export async function PATCH(request, { params }) {
       Comment.countDocuments({ taskId: params.id }),
       Attachment.countDocuments({ taskId: params.id }),
     ])
+
+    logActivity({
+      userId:   session.user.id,
+      userRole: session.user.role,
+      action:   'STATUS_CHANGE',
+      entity:   'TASK',
+      entityId: params.id,
+      changes:  JSON.stringify({ title: task?.title, status }),
+      request,
+    })
 
     return NextResponse.json({
       data: { ...task.toJSON(), _count: { comments: commentCount, attachments: attachmentCount } },

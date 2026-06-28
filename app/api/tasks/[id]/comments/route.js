@@ -4,6 +4,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Comment } from '@/models'
+import { canAccessTask, isStaff } from '@/lib/taskAccess'
 import { z } from 'zod'
 
 const commentSchema = z.object({
@@ -19,7 +20,14 @@ export async function GET(request, { params }) {
 
     await connectDB()
 
-    const comments = await Comment.find({ taskId: params.id })
+    if (!(await canAccessTask(session, params.id)))
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+
+    // Non-staff (assigned freelancer) never see internal comments.
+    const filter = { taskId: params.id }
+    if (!isStaff(session)) filter.isInternal = { $ne: true }
+
+    const comments = await Comment.find(filter)
       .sort({ createdAt: 1 })
       .populate({ path: 'authorId', select: 'id name avatar role' })
 
@@ -38,6 +46,9 @@ export async function POST(request, { params }) {
 
     await connectDB()
 
+    if (!(await canAccessTask(session, params.id)))
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+
     const body   = await request.json()
     const parsed = commentSchema.safeParse(body)
     if (!parsed.success) {
@@ -46,6 +57,8 @@ export async function POST(request, { params }) {
 
     const comment = await new Comment({
       ...parsed.data,
+      // Only staff may post internal (client/freelancer-hidden) comments.
+      isInternal: isStaff(session) ? parsed.data.isInternal : false,
       taskId:   params.id,
       authorId: session.user.id,
     }).save()

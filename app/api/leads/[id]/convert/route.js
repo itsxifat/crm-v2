@@ -6,7 +6,8 @@ import connectDB from '@/lib/mongodb'
 import { User, Client, Lead, Quotation } from '@/models'
 import { LeadActivity } from '@/models/Lead'
 import bcrypt from 'bcryptjs'
-import { blindIndex } from '@/lib/encryption'
+import { ciEquals } from '@/lib/searchMatch'
+import { logActivity } from '@/lib/logActivity'
 
 // POST /api/leads/[id]/convert
 export async function POST(request, { params }) {
@@ -21,6 +22,8 @@ export async function POST(request, { params }) {
 
     await connectDB()
 
+    const body = await request.json().catch(() => ({}))
+
     const lead = await Lead.findById(params.id).lean()
     if (!lead) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
 
@@ -28,37 +31,52 @@ export async function POST(request, { params }) {
       return NextResponse.json({ error: 'Lead has already been converted' }, { status: 400 })
     }
 
-    const tempPassword = Math.random().toString(36).slice(-8) + 'A1!'
-    const hashedPw     = await bcrypt.hash(tempPassword, 12)
-
-    // Check if user already exists with this email
-    let user = null
-    if (lead.email) {
-      const emailToken = blindIndex(lead.email, 'users', 'email')
-      user = await User.findOne({ emailIdx: emailToken }).select('+emailIdx').lean()
+    // Email is mandatory — it's the client's login identifier
+    const email = (body.email || lead.email || '').trim()
+    if (!email) {
+      return NextResponse.json({ error: 'Email is required for client login' }, { status: 400 })
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return NextResponse.json({ error: 'Invalid email address' }, { status: 400 })
     }
 
-    // Create user if not exists
-    if (!user) {
-      user = await new User({
-        email:    lead.email ?? `lead-${lead._id}@placeholder.com`,
-        password: hashedPw,
-        name:     lead.name,
-        role:     'CLIENT',
-        phone:    lead.phone,
-        isActive: true,
-      }).save()
+    // Don't silently hijack an existing account — make the admin pick a free email
+    const existing = await User.findOne({ email: ciEquals(email) }).lean()
+    if (existing) {
+      return NextResponse.json({ error: 'A user already exists with this email. Use a different email.' }, { status: 409 })
     }
 
-    // Create or reuse Client profile
-    let client = await Client.findOne({ userId: user._id }).lean()
-    if (!client) {
-      client = await new Client({
-        userId:   user._id,
-        company:  lead.company,
-        industry: lead.industry,
-      }).save()
-    }
+    // Use the admin-supplied password, otherwise auto-generate a temp one
+    const providedPassword = (body.password ?? '').trim()
+    const tempPassword     = providedPassword || (Math.random().toString(36).slice(-8) + 'A1!')
+    const hashedPw         = await bcrypt.hash(tempPassword, 12)
+    // Auto-generated passwords must always be changed; respect the flag otherwise
+    const mustChangePassword = providedPassword ? !!body.requirePasswordChange : true
+
+    const user = await new User({
+      email,
+      password: hashedPw,
+      name:     (body.name || lead.name || '').trim() || lead.name,
+      role:     'CLIENT',
+      phone:    (body.phone ?? lead.phone) || null,
+      isActive: true,
+      mustChangePassword,
+    }).save()
+
+    // Create the Client profile from the supplied details (falling back to lead data)
+    const client = await new Client({
+      userId:       user._id,
+      clientType:   body.clientType === 'INDIVIDUAL' ? 'INDIVIDUAL' : 'COMPANY',
+      company:      (body.company ?? lead.company) || null,
+      designation:  (body.designation ?? lead.designation) || null,
+      companyEmail: body.companyEmail || null,
+      companyPhone: body.companyPhone || null,
+      industry:     body.industry || null,
+      website:      body.website || null,
+      address:      body.address || null,
+      city:         (body.city ?? lead.location) || null,
+      country:      body.country || null,
+    }).save()
 
     // Mark lead as converted
     await Lead.findByIdAndUpdate(params.id, { convertedAt: new Date(), status: 'WON' })
@@ -74,10 +92,21 @@ export async function POST(request, { params }) {
       createdById: session.user.id,
     }).save()
 
+    logActivity({
+      userId:   session.user.id,
+      userRole: session.user.role,
+      action:   'CONVERT',
+      entity:   'LEAD',
+      entityId: params.id,
+      changes:  JSON.stringify({ name: lead.name, clientId: client._id.toString() }),
+      request,
+    })
+
     return NextResponse.json({
       data: {
         clientId:     client._id.toString(),
         userId:       user._id.toString(),
+        email,
         tempPassword,
         message: 'Lead successfully converted to client',
       },

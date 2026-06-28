@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import connectDB from '@/lib/mongodb'
 import { User, Setting } from '@/models'
-import { blindIndex } from '@/lib/encryption'
+import { ciEquals } from '@/lib/searchMatch'
 
 const ADMIN_EMAIL    = process.env.GAIN_ADMIN_EMAIL    || process.env.ADMIN_EMAIL    || 'admin@example.com'
 const ADMIN_PASSWORD = process.env.GAIN_ADMIN_PASSWORD || process.env.ADMIN_PASSWORD || null
@@ -39,8 +39,7 @@ export async function GET() {
   const bcrypt = (await import('bcryptjs')).default
 
   // Create or reset the super admin account
-  const emailToken = blindIndex(ADMIN_EMAIL, 'users', 'email')
-  const existing = await User.findOne({ emailIdx: emailToken }).select('+emailIdx')
+  const existing = await User.findOne({ email: ciEquals(ADMIN_EMAIL) })
 
   if (existing) {
     // Reset password back to default (idempotent re-visit)

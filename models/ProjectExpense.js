@@ -3,11 +3,13 @@ import mongoose from 'mongoose'
 const ProjectExpenseSchema = new mongoose.Schema(
   {
     projectId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Project', required: true },
-    venture:     { type: String, enum: ['ENSTUDIO','ENTECH','ENMARK'], default: null },
+    // Venture IDs are dynamic (configured in Settings → crm_config), so no static enum.
+    venture:     { type: String, default: null, trim: true },
 
     title:       { type: String, required: true, trim: true },
     amount:      { type: Number, required: true },
     category:    { type: String, required: true },
+    subcategory: { type: String, default: null },
     date:        { type: Date,   required: true },
     notes:       { type: String, default: null },
     invoiceUrl:  { type: String, default: null },          // invoice/receipt uploaded by submitter

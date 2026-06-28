@@ -4,12 +4,15 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Task } from '@/models'
+import { canAccess } from '@/lib/permissions'
 
 // PUT /api/projects/:id/tasks/:taskId
 export async function PUT(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
     if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    if (!canAccess(session, 'tasks', 'update'))
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     await connectDB()
 
     const body = await request.json()
@@ -42,6 +45,8 @@ export async function DELETE(_, { params }) {
   try {
     const session = await getServerSession(authOptions)
     if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    if (!canAccess(session, 'tasks', 'delete'))
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     await connectDB()
 
     const task = await Task.findOneAndDelete({ _id: params.taskId, projectId: params.id })

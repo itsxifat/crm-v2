@@ -4,6 +4,8 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { User, Freelancer, Task, Timesheet, WithdrawalRequest, Earning, Agreement, Document } from '@/models'
+import { requireStaff } from '@/lib/rbac'
+import { maskDoc, FREELANCER_PII } from '@/lib/pii'
 import { z } from 'zod'
 
 const updateSchema = z.object({
@@ -23,7 +25,8 @@ const updateSchema = z.object({
 export async function GET(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    const denied = requireStaff(session)   // exposes bank/payment details — staff only
+    if (denied) return denied
 
     await connectDB()
 
@@ -44,7 +47,7 @@ export async function GET(request, { params }) {
     ])
 
     return NextResponse.json({
-      data: { ...freelancer.toJSON(), tasks, timesheets, withdrawals, agreements, documents, earnings },
+      data: maskDoc(session, { ...freelancer.toJSON(), tasks, timesheets, withdrawals, agreements, documents, earnings }, FREELANCER_PII),
     })
   } catch (err) {
     console.error('[GET /api/freelancers/[id]]', err)

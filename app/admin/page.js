@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useSession } from 'next-auth/react'
 import {
-  TrendingUp, DollarSign, Briefcase, Users, FileText, AlertTriangle,
+  TrendingUp, Briefcase, Users, FileText, AlertTriangle,
   ArrowUpRight, ArrowDownRight, ChevronLeft, BarChart2, Plus, X,
   CheckCircle2, Wallet, UserCheck, FolderPlus, UserPlus, ReceiptText,
   Flag, Circle, Target, Layers, Activity, ShieldAlert, Zap, Clock,
@@ -17,13 +17,8 @@ import {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const fmt  = (n) => n == null ? '—' : `৳\u202f${Number(n).toLocaleString('en-BD', { maximumFractionDigits: 0 })}`
-const fmtK = (n) => {
-  if (n == null) return '—'
-  const abs = Math.abs(n)
-  if (abs >= 1_000_000) return `৳${(n / 1_000_000).toFixed(1)}M`
-  if (abs >= 1_000)     return `৳${(n / 1_000).toFixed(0)}K`
-  return `৳${n}`
-}
+// Full number with thousands separators (no K/M abbreviation — its rounding hid small changes like a 100 expense)
+const fmtK = (n) => n == null ? '—' : `৳ ${Number(n).toLocaleString('en-BD', { maximumFractionDigits: 0 })}`
 const fmtDate  = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '—'
 const daysLeft = (d) => d ? Math.ceil((new Date(d) - new Date()) / 86400000) : null
 
@@ -272,7 +267,7 @@ function RevenueChart({ data, onDrill }) {
           </defs>
           <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
           <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-          <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={v => fmtK(v)} width={48} />
+          <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={v => Number(v).toLocaleString('en-BD')} width={64} />
           <Tooltip content={<ChartTooltip />} />
           <Area dataKey="revenue" name="Revenue" type="monotone" stroke="#3b82f6" strokeWidth={1.5}
             fill="url(#gRev)" dot={false} activeDot={{ r: 3, fill: '#3b82f6' }}
@@ -641,7 +636,7 @@ export default function DashboardPage() {
     {
       title: 'Net Profit', value: fmtK(f.profit?.value),
       sub: `Margin ${f.grossMargin?.value ?? 0}%`, change: f.profit?.change,
-      icon: DollarSign, iconBg: 'bg-green-50', iconColor: 'text-green-600',
+      icon: Wallet, iconBg: 'bg-green-50', iconColor: 'text-green-600',
       href: '/admin/accounts',
     },
     {

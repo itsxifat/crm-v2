@@ -76,7 +76,7 @@ function WalletModal({ open, onOpenChange, freelancerId, balance, onDone }) {
 
   return (
     <Modal open={open} onOpenChange={onOpenChange} title="Wallet Adjustment" size="sm"
-      description={`Current balance: $${(balance ?? 0).toLocaleString()}`}>
+      description={`Current balance: ৳ ${(balance ?? 0).toLocaleString()}`}>
       <form id="wallet-form" onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Action</label>
@@ -510,8 +510,8 @@ export default function FreelancerDetailPage() {
 
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatBox label="Wallet Balance"   value={`$${(data.walletBalance ?? 0).toLocaleString()}`} color="green"  />
-        <StatBox label="Total Earned"     value={`$${totalEarned.toLocaleString()}`}               color="blue"   />
+        <StatBox label="Wallet Balance"   value={`৳ ${(data.walletBalance ?? 0).toLocaleString()}`} color="green"  />
+        <StatBox label="Total Earned"     value={`৳ ${totalEarned.toLocaleString()}`}               color="blue"   />
         <StatBox label="Hours Logged"     value={`${totalHours.toFixed(1)}h`}                      color="purple" />
         <StatBox label="Pending Payouts"  value={pendingPayouts}                                   color="yellow" />
       </div>

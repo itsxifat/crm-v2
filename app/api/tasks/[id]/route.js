@@ -4,6 +4,8 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Task, Timesheet, Comment, Attachment, Employee, Freelancer } from '@/models'
+import { canAccess } from '@/lib/permissions'
+import { logActivity } from '@/lib/logActivity'
 import { z } from 'zod'
 
 const updateTaskSchema = z.object({
@@ -90,6 +92,8 @@ export async function PUT(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
     if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    if (!canAccess(session, 'tasks', 'update'))
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     await connectDB()
 
@@ -110,6 +114,16 @@ export async function PUT(request, { params }) {
       Comment.countDocuments({ taskId: params.id }),
       Attachment.countDocuments({ taskId: params.id }),
     ])
+
+    logActivity({
+      userId:   session.user.id,
+      userRole: session.user.role,
+      action:   data.status ? 'STATUS_CHANGE' : 'UPDATE',
+      entity:   'TASK',
+      entityId: params.id,
+      changes:  JSON.stringify({ title: task?.title, ...(data.status ? { status: data.status } : {}) }),
+      request,
+    })
 
     return NextResponse.json({
       data: { ...task.toJSON(), _count: { comments: commentCount, attachments: attachmentCount } },
@@ -132,7 +146,18 @@ export async function DELETE(request, { params }) {
     }
 
     await connectDB()
-    await Task.findByIdAndDelete(params.id)
+    const deleted = await Task.findByIdAndDelete(params.id)
+
+    logActivity({
+      userId:   session.user.id,
+      userRole: session.user.role,
+      action:   'DELETE',
+      entity:   'TASK',
+      entityId: params.id,
+      changes:  deleted ? JSON.stringify({ title: deleted.title }) : null,
+      request,
+    })
+
     return NextResponse.json({ success: true })
   } catch (err) {
     console.error('[DELETE /api/tasks/[id]]', err)

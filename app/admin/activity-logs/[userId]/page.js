@@ -75,6 +75,14 @@ const ACTION_CONFIG = {
   STATUS_CHANGE: { label: 'Status Change', bg: 'bg-cyan-50',    text: 'text-cyan-700',    icon: Activity },
   APPROVE:       { label: 'Approve',       bg: 'bg-teal-50',    text: 'text-teal-700',    icon: Activity },
   REJECT:        { label: 'Reject',        bg: 'bg-orange-50',  text: 'text-orange-700',  icon: Activity },
+  CONVERT:       { label: 'Convert',       bg: 'bg-indigo-50',  text: 'text-indigo-700',  icon: Activity },
+  PAYMENT:       { label: 'Payment',       bg: 'bg-green-50',   text: 'text-green-700',   icon: Activity },
+  DEACTIVATE:    { label: 'Deactivate',    bg: 'bg-red-50',     text: 'text-red-700',     icon: Activity },
+  REACTIVATE:    { label: 'Reactivate',    bg: 'bg-emerald-50', text: 'text-emerald-700', icon: Activity },
+  MEMBER_ADD:    { label: 'Member Added',  bg: 'bg-blue-50',    text: 'text-blue-700',    icon: Activity },
+  MEMBER_REMOVE: { label: 'Member Removed',bg: 'bg-orange-50',  text: 'text-orange-700',  icon: Activity },
+  PASSWORD_RESET_APPROVE: { label: 'Reset Approved', bg: 'bg-teal-50',   text: 'text-teal-700',   icon: Activity },
+  PASSWORD_RESET_REJECT:  { label: 'Reset Rejected', bg: 'bg-red-50',    text: 'text-red-700',    icon: Activity },
 }
 
 function ActionBadge({ action }) {

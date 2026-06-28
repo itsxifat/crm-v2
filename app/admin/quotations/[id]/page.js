@@ -621,7 +621,7 @@ export default function QuotationDetailPage() {
                   <select value={currency} onChange={e => setCurrency(e.target.value)}
                     className="border border-gray-200 rounded-lg px-2 py-1 text-sm bg-white focus:outline-none">
                     <option value="BDT">BDT (৳)</option>
-                    <option value="USD">USD (৳)</option>
+                    <option value="USD">USD ($)</option>
                     <option value="EUR">EUR (€)</option>
                     <option value="GBP">GBP (£)</option>
                   </select>

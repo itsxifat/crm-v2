@@ -6,15 +6,16 @@ import Link from 'next/link'
 import toast from 'react-hot-toast'
 import {
   ArrowLeft, Mail, Phone, Globe, MapPin, Building2,
-  FolderOpen, FileText, FileCheck, DollarSign, Calendar,
+  FolderOpen, FileText, FileCheck, Wallet, Calendar,
   Pencil, CheckCircle, Clock, ShieldCheck, ExternalLink, Link2,
-  FileEdit, Plus,
+  FileEdit, Plus, Ban, RotateCcw,
 } from 'lucide-react'
 import Avatar from '@/components/ui/Avatar'
 import Badge from '@/components/ui/Badge'
 import ClientModal from '@/components/admin/clients/ClientModal'
+import ClientMembersPanel from '@/components/admin/clients/ClientMembersPanel'
 
-const TABS = ['Overview', 'Projects', 'Invoices', 'Proposals', 'Agreements', 'Documents', 'KYC']
+const TABS = ['Overview', 'People', 'Projects', 'Invoices', 'Proposals', 'Agreements', 'Documents', 'KYC']
 
 const KYC_STATUS_META = {
   NOT_SUBMITTED: { label: 'Not Submitted', color: 'bg-gray-100 text-gray-500' },
@@ -89,6 +90,23 @@ export default function ClientDetailPage() {
     load()
   }
 
+  async function toggleActive(isActive) {
+    const verb = isActive ? 'Reactivate' : 'Deactivate'
+    if (!confirm(`${verb} this client? ${isActive ? 'They will regain portal access.' : 'They will lose portal access.'}`)) return
+    try {
+      const res = await fetch(`/api/clients/${id}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive }),
+      })
+      if (!res.ok) throw new Error((await res.json()).error)
+      toast.success(isActive ? 'Client reactivated' : 'Client deactivated')
+      load()
+    } catch (err) {
+      toast.error(err.message ?? `Failed to ${verb.toLowerCase()}`)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -152,19 +170,36 @@ export default function ClientDetailPage() {
             </div>
           </div>
         </div>
-        <button
-          onClick={() => setEditOpen(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors"
-        >
-          <Pencil className="w-4 h-4" /> Edit
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setEditOpen(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            <Pencil className="w-4 h-4" /> Edit
+          </button>
+          {user?.isActive !== false ? (
+            <button
+              onClick={() => toggleActive(false)}
+              className="flex items-center gap-2 px-4 py-2 bg-white border border-red-200 text-red-600 text-sm font-medium rounded-lg hover:bg-red-50 transition-colors"
+            >
+              <Ban className="w-4 h-4" /> Deactivate
+            </button>
+          ) : (
+            <button
+              onClick={() => toggleActive(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-white border border-green-200 text-green-600 text-sm font-medium rounded-lg hover:bg-green-50 transition-colors"
+            >
+              <RotateCcw className="w-4 h-4" /> Reactivate
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatBox label="Active Projects"     value={activeProjectCount}                           color="blue"   />
-        <StatBox label="Total Revenue"       value={`$${(totalRevenue ?? 0).toLocaleString()}`}   color="green"  />
-        <StatBox label="Outstanding"         value={`$${(outstandingBalance ?? 0).toLocaleString()}`} color="yellow" />
+        <StatBox label="Total Revenue"       value={`৳ ${(totalRevenue ?? 0).toLocaleString()}`}   color="green"  />
+        <StatBox label="Outstanding"         value={`৳ ${(outstandingBalance ?? 0).toLocaleString()}`} color="yellow" />
         <StatBox label="Total Invoices"      value={invoices.length}                              color="purple" />
       </div>
 
@@ -243,6 +278,11 @@ export default function ClientDetailPage() {
                 {projects.length === 0 && <p className="text-sm text-gray-400">No projects yet</p>}
               </div>
             </div>
+          )}
+
+          {/* PEOPLE */}
+          {tab === 'People' && (
+            <ClientMembersPanel clientId={id} />
           )}
 
           {/* PROJECTS */}

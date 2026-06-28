@@ -3,9 +3,11 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
-import { Invoice, Client } from '@/models'
+import { Invoice } from '@/models'
+import { resolveActiveClient } from '@/lib/clientAccess'
 import { logActivity } from '@/lib/logActivity'
 import { canAccess } from '@/lib/permissions'
+import { requirePerm } from '@/lib/rbac'
 import mongoose from 'mongoose'
 
 // Helper: build a filter that matches a projectId in EITHER the new singular
@@ -18,6 +20,9 @@ export async function GET(request) {
   try {
     const session = await getServerSession(authOptions)
     if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    // Block FREELANCER/VENDOR (invoices: none); CLIENT (ro) is scoped to own below.
+    if (!canAccess(session, 'invoices', 'read'))
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     await connectDB()
 
     const { searchParams } = new URL(request.url)
@@ -41,10 +46,10 @@ export async function GET(request) {
       }
     }
 
-    // CLIENT role: only see their invoices
+    // CLIENT role: only see the active company's invoices
     if (session.user.role === 'CLIENT') {
-      const client = await Client.findOne({ userId: session.user.id }).lean()
-      if (client) filter.clientId = client._id
+      const { clientId } = await resolveActiveClient(session)
+      filter.clientId = clientId ?? null
     }
 
     const [invoices, total] = await Promise.all([
@@ -70,9 +75,8 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-    if (!canAccess(session, 'invoices', 'create'))
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const denied  = requirePerm(session, 'sales.invoices.create')
+    if (denied) return denied
     await connectDB()
 
     const body = await request.json()

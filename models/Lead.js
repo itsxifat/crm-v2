@@ -1,6 +1,4 @@
 import mongoose from 'mongoose'
-import { encryptionPlugin } from '@/lib/encryptionPlugin'
-
 const CommentSchema = new mongoose.Schema(
   {
     text:       { type: String, required: true },
@@ -85,41 +83,6 @@ const LeadSchema = new mongoose.Schema(
 
 LeadSchema.index({ status: 1, priority: 1 })
 LeadSchema.index({ assignedToId: 1 })
-
-LeadSchema.plugin(encryptionPlugin, {
-  collection: 'leads',
-  fields: [
-    { path: 'name'             },
-    { path: 'designation'      },
-    { path: 'email'            },
-    { path: 'phone'            },
-    { path: 'alternativePhone' },
-    { path: 'company'          },
-    { path: 'location'         },
-    { path: 'category'         },
-    { path: 'subcategory'      },
-    { path: 'service'          },
-    { path: 'source'           },
-    { path: 'platform'         },
-    { path: 'reference'        },
-    { path: 'referenceId'      },
-    { path: 'links',           type: 'array'  },
-    { path: 'value',           type: 'number' },
-    { path: 'notes'            },
-    { path: 'lostReason'       },
-    { path: 'comments',        type: 'array'  },
-    { path: 'businessCategory' },
-  ],
-})
-
-LeadActivitySchema.plugin(encryptionPlugin, {
-  collection: 'leadactivities',
-  fields: [
-    { path: 'type'          },
-    { path: 'note'          },
-    { path: 'createdByName' },
-  ],
-})
 
 export const LeadActivity = mongoose.models.LeadActivity ?? mongoose.model('LeadActivity', LeadActivitySchema)
 export default mongoose.models.Lead ?? mongoose.model('Lead', LeadSchema)

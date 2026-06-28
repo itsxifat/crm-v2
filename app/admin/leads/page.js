@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { TrendingUp, Plus, DollarSign, Trophy, XCircle, Users } from 'lucide-react'
+import { TrendingUp, Plus, Wallet, Trophy, XCircle, Users } from 'lucide-react'
 import toast from 'react-hot-toast'
 import StatsCard from '@/components/ui/StatsCard'
 import SearchInput from '@/components/ui/SearchInput'
@@ -167,7 +167,7 @@ export default function LeadsPage() {
         <StatsCard
           title="Pipeline Value"
           value={stats ? formatCurrency(stats.pipelineValue) : '—'}
-          icon={DollarSign}
+          icon={Wallet}
           color="emerald"
         />
       </div>

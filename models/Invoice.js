@@ -1,6 +1,4 @@
 import mongoose from 'mongoose'
-import { encryptionPlugin } from '@/lib/encryptionPlugin'
-
 const InvoiceSchema = new mongoose.Schema(
   {
     invoiceNumber: { type: String, unique: true, sparse: true },
@@ -55,22 +53,6 @@ InvoiceSchema.pre('validate', async function () {
 })
 
 InvoiceSchema.index({ projectId: 1 }, { unique: true, sparse: true })
-
-InvoiceSchema.plugin(encryptionPlugin, {
-  collection: 'invoices',
-  fields: [
-    { path: 'items',      type: 'array'  },
-    { path: 'subtotal',   type: 'number' },
-    { path: 'taxRate',    type: 'number' },
-    { path: 'taxAmount',  type: 'number' },
-    { path: 'discount',   type: 'number' },
-    { path: 'total',      type: 'number' },
-    { path: 'paidAmount', type: 'number' },
-    { path: 'currency'    },
-    { path: 'notes'       },
-    { path: 'terms'       },
-  ],
-})
 
 if (mongoose.models.Invoice) delete mongoose.models.Invoice
 export default mongoose.model('Invoice', InvoiceSchema)

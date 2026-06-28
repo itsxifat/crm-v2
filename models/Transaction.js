@@ -1,6 +1,4 @@
 import mongoose from 'mongoose'
-import { encryptionPlugin } from '@/lib/encryptionPlugin'
-
 const TransactionSchema = new mongoose.Schema(
   {
     txnId:    { type: String, unique: true, sparse: true, default: null },
@@ -48,21 +46,6 @@ TransactionSchema.pre('save', async function () {
   const prefix   = `TXN-${datePart}-`
   const count    = await mongoose.model('Transaction').countDocuments({ txnId: { $regex: `^${prefix}` } })
   this.txnId = `${prefix}${String(count + 1).padStart(4, '0')}`
-})
-
-TransactionSchema.plugin(encryptionPlugin, {
-  collection: 'transactions',
-  fields: [
-    { path: 'category'    },
-    { path: 'amount',     type: 'number' },
-    { path: 'currency'    },
-    { path: 'description' },
-    { path: 'reference'   },
-    { path: 'paidToName'  },
-    { path: 'vendor'          },
-    { path: 'expenseCategory' },
-    { path: 'receiptUrl'      },
-  ],
 })
 
 if (mongoose.models.Transaction) delete mongoose.models.Transaction

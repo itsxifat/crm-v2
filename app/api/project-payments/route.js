@@ -4,12 +4,14 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { ProjectPayment } from '@/models'
+import { requireStaff } from '@/lib/rbac'
 
 // GET /api/project-payments?status=&page=&limit=
 export async function GET(request) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    const denied  = requireStaff(session)   // admin payment-confirmations list (financial)
+    if (denied) return denied
     await connectDB()
 
     const { searchParams } = new URL(request.url)

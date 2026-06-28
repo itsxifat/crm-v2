@@ -5,17 +5,14 @@ import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Invoice } from '@/models'
 import { logActivity } from '@/lib/logActivity'
+import { requirePerm } from '@/lib/rbac'
 
 // POST /api/invoices/[id]/send
 export async function POST(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-
-    const allowedRoles = ['SUPER_ADMIN', 'MANAGER']
-    if (!allowedRoles.includes(session.user.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const denied  = requirePerm(session, 'sales.invoices.send')
+    if (denied) return denied
 
     await connectDB()
 

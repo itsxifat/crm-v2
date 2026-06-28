@@ -2,9 +2,12 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
+import { requireManager } from '@/lib/rbac'
+import { maskDoc, EMPLOYEE_PII } from '@/lib/pii'
 import connectDB from '@/lib/mongodb'
 import { User, Employee, Task, Leave, Attendance } from '@/models'
 import { generateEmployeeId } from '@/models/Employee'
+import { logActivity } from '@/lib/logActivity'
 import { z } from 'zod'
 
 const updateEmployeeSchema = z.object({
@@ -40,7 +43,8 @@ const updateEmployeeSchema = z.object({
 export async function GET(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    const denied = requireManager(session)
+    if (denied) return denied
 
     await connectDB()
 
@@ -62,7 +66,7 @@ export async function GET(request, { params }) {
     const completionRate  = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0
 
     return NextResponse.json({
-      data: { ...employee.toJSON(), tasks, attendance, leaves, completedTasks, totalTasks, completionRate },
+      data: maskDoc(session, { ...employee.toJSON(), tasks, attendance, leaves, completedTasks, totalTasks, completionRate }, EMPLOYEE_PII),
     })
   } catch (err) {
     console.error('[GET /api/employees/[id]]', err)
@@ -137,6 +141,16 @@ export async function PUT(request, { params }) {
       .populate({ path: 'userId', select: 'id name email avatar isActive' })
       .populate({ path: 'customRoleId', select: 'id title department color' })
 
+    logActivity({
+      userId:   session.user.id,
+      userRole: session.user.role,
+      action:   'UPDATE',
+      entity:   'EMPLOYEE',
+      entityId: params.id,
+      changes:  JSON.stringify({ name: updated?.userId?.name ?? null }),
+      request,
+    })
+
     return NextResponse.json({ data: updated })
   } catch (err) {
     console.error('[PUT /api/employees/[id]]', err)
@@ -181,7 +195,8 @@ export async function PATCH(request, { params }) {
 export async function DELETE(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    const denied = requireManager(session)
+    if (denied) return denied
 
     if (session.user.role !== 'SUPER_ADMIN') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
@@ -193,6 +208,17 @@ export async function DELETE(request, { params }) {
     if (!employee) return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
 
     await User.findByIdAndUpdate(employee.userId, { isActive: false })
+
+    logActivity({
+      userId:   session.user.id,
+      userRole: session.user.role,
+      action:   'DELETE',
+      entity:   'EMPLOYEE',
+      entityId: params.id,
+      changes:  JSON.stringify({ employeeId: employee.employeeId ?? null, deactivated: true }),
+      request,
+    })
+
     return NextResponse.json({ success: true, message: 'Employee deactivated' })
   } catch (err) {
     console.error('[DELETE /api/employees/[id]]', err)

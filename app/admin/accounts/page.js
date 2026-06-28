@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useSession } from 'next-auth/react'
 import { useSearchParams } from 'next/navigation'
 import {
-  TrendingUp, TrendingDown, DollarSign, AlertCircle,
+  TrendingUp, TrendingDown, Wallet, AlertCircle,
   Plus, Pencil, Trash2, X, Loader2, Clock, CheckCircle2, XCircle,
   Paperclip, ExternalLink, ArrowUpRight, ArrowDownRight, BarChart2, Percent, FileText as FileTextIcon, ChevronLeft,
 } from 'lucide-react'
@@ -24,8 +24,6 @@ import { useConfig } from '@/lib/useConfig'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const INCOME_CATEGORIES  = ['Project Revenue', 'Retainer', 'Consulting', 'Product Sale', 'Referral', 'Other Income']
-const EXPENSE_CATEGORIES = ['Payroll', 'Freelancer Payment', 'Agency Payment', 'Vendor Payment', 'Equipment', 'Employee Expense', 'Software', 'Marketing', 'Office', 'Travel', 'Tax', 'Other Expense']
 const CURRENCY_OPTIONS   = ['BDT']
 
 const VENTURE_COLORS = {
@@ -42,21 +40,14 @@ const txSchema = z.object({
   date:           z.string().min(1, 'Date required'),
   reference:      z.string().optional(),
   currency:       z.string().default('BDT'),
-  vendor:         z.string().optional(),
-  paidBy:         z.string().optional(),
   accountManager: z.string().optional(),
   paymentMethod:  z.string().optional(),
   projectId:      z.string().optional(),
+  invoiceId:      z.string().optional(),
   receiptUrl:     z.string().optional(),
   txnId:          z.string().optional(),
-  freelancerId:     z.string().optional(),
-  vendorId:         z.string().optional(),
-  agencyId:         z.string().optional(),
-  paidTo:           z.string().optional(),
-  paidToEmployeeId: z.string().optional(),
-  paidToName:       z.string().optional(),
-  conveyanceType:   z.string().optional(),
-  expenseCategory:  z.string().optional().nullable(),
+  expenseCategory:  z.string().optional().nullable(),  // subcategory (storage field)
+  who:              z.string().optional(),             // "kind:id" — optional person who made/received it
 })
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -92,7 +83,7 @@ function StatusDot({ status }) {
 // ─── Transaction Modal ────────────────────────────────────────────────────────
 
 function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
-  const { paymentMethods, expenseCategories } = useConfig()
+  const { paymentMethods, expenseCategories, incomeCategories } = useConfig()
   const isEdit = !!tx
   const [receiptUrl,  setReceiptUrl]  = useState('')
   const [projects,    setProjects]    = useState([])
@@ -101,9 +92,7 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
   const [freelancers, setFreelancers] = useState([])
   const [agencies,    setAgencies]    = useState([])
   const [employees,   setEmployees]   = useState([])
-  const [vendors,     setVendors]     = useState([])
   const [txnIdVal,    setTxnIdVal]    = useState('')
-  const [conveyanceType, setConveyanceType] = useState('employee')
 
   const { register, control, handleSubmit, watch, reset, setValue, formState: { errors, isSubmitting } } = useForm({
     resolver: zodResolver(txSchema),
@@ -111,17 +100,23 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
   })
   const type       = watch('type')
   const category   = watch('category')
-  const categories = type === 'INCOME' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES
+  const isExpense  = type === 'EXPENSE'
 
-  // Dynamic entity selectors
-  const isExpense           = type === 'EXPENSE'
-  const isFreelancerPayment = isExpense && category === 'Freelancer Payment'
-  const isAgencyPayment     = isExpense && category === 'Agency Payment'
-  const isPayroll           = isExpense && (category === 'Payroll' || category === 'Employee Salary')
-  const isVendorPayment     = isExpense && category === 'Vendor Payment'
-  const isEquipment         = isExpense && category === 'Equipment'
-  const isEmployeeExpense   = isExpense && category === 'Employee Expense'
-  const isTravel            = isExpense && category === 'Travel'
+  // Nested taxonomy from config — subcategories belong to the selected category
+  const baseCategories = isExpense ? expenseCategories : incomeCategories
+  const baseLabels     = baseCategories.map(c => c.label)
+  // Keep an already-saved value selectable even if it's not in the configured list
+  const categories    = (category && !baseLabels.includes(category)) ? [...baseLabels, category] : baseLabels
+  const subcategories = baseCategories.find(c => c.label === category)?.subcategories ?? []
+
+  // Optional "who made/received it" — any employee, staff user, or freelancer
+  const whoOptions = [
+    ...employees.filter(e => e.userId?.id).map(e => ({ value: `employee:${e.id}`, label: `${e.userId.name} · Employee` })),
+    ...freelancers.map(f => ({ value: `freelancer:${f.id}`, label: `${f.userId?.name ?? f.userId?.email ?? 'Freelancer'} · Freelancer` })),
+    ...agencies.map(a => ({ value: `agency:${a.id}`, label: `${a.agencyInfo?.agencyName ?? a.userId?.name ?? 'Agency'} · Agency` })),
+    ...users.map(u => ({ value: `user:${u.id}`, label: `${u.name} · Staff` })),
+  ]
+  const whoName = (val) => whoOptions.find(o => o.value === val)?.label?.split(' · ')[0] ?? null
 
   useEffect(() => {
     if (open) {
@@ -131,11 +126,14 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
       fetch('/api/freelancers?limit=200&type=FREELANCER').then(r => r.json()).then(j => setFreelancers(j.data ?? []))
       fetch('/api/freelancers?limit=200&type=AGENCY').then(r => r.json()).then(j => setAgencies(j.data ?? []))
       fetch('/api/employees?limit=200').then(r => r.json()).then(j => setEmployees(j.data ?? []))
-      fetch('/api/vendors?limit=200').then(r => r.json()).then(j => setVendors(j.data ?? []))
       const url = isEdit ? tx.receiptUrl ?? '' : ''
       setReceiptUrl(url)
       setTxnIdVal(isEdit ? tx.txnId ?? '' : '')
-      setConveyanceType('employee')
+      const editWho =
+        tx?.freelancerId     ? `freelancer:${tx.freelancerId}` :
+        tx?.agencyId         ? `agency:${tx.agencyId}` :
+        tx?.paidToEmployeeId ? `employee:${tx.paidToEmployeeId}` :
+        tx?.paidBy           ? `user:${tx.paidBy?.id ?? tx.paidBy}` : ''
       reset(isEdit ? {
         type:           tx.type,
         category:       tx.category,
@@ -144,8 +142,7 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
         date:           tx.date?.slice(0, 10),
         reference:      tx.reference ?? '',
         currency:       'BDT',
-        vendor:         tx.vendor ?? '',
-        paidBy:         tx.paidBy?.id ?? tx.paidBy ?? '',
+        who:            editWho,
         accountManager: tx.accountManager?.id ?? tx.accountManager ?? '',
         paymentMethod:   tx.paymentMethod ?? '',
         projectId:       tx.projectId?.id ?? tx.projectId ?? '',
@@ -158,11 +155,15 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
   }, [open, tx, isEdit, reset, currentUser])
 
   async function onSubmit(data) {
-    if (!receiptUrl && !txnIdVal.trim()) {
-      toast.error('Either upload a receipt OR enter a Transaction ID')
-      return
-    }
-    const body = { ...data, receiptUrl: receiptUrl || null, txnId: txnIdVal.trim() || null }
+    // Resolve the optional "who" selection into the matching reference + display name
+    const [whoKind, whoId] = (data.who ?? '').split(':')
+    const refs = { freelancerId: null, agencyId: null, paidToEmployeeId: null, paidBy: null }
+    if (whoKind === 'freelancer') refs.freelancerId     = whoId
+    else if (whoKind === 'agency') refs.agencyId         = whoId
+    else if (whoKind === 'employee') refs.paidToEmployeeId = whoId
+    else if (whoKind === 'user')   refs.paidBy           = whoId
+    const { who, ...rest } = data
+    const body = { ...rest, ...refs, paidToName: data.who ? whoName(data.who) : null, receiptUrl: receiptUrl || null, txnId: txnIdVal.trim() || null }
     Object.keys(body).forEach(k => { if (body[k] === '') body[k] = null })
     const url    = isEdit ? `/api/transactions/${tx.id}` : '/api/transactions'
     const method = isEdit ? 'PUT' : 'POST'
@@ -192,49 +193,42 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-3 gap-4">
           <div>
             <label className={lc}>Category *</label>
             <Controller name="category" control={control} render={({ field }) => (
-              <Select value={field.value} onChange={v => field.onChange(v ?? '')}
+              <Select value={field.value} onChange={v => { field.onChange(v ?? ''); setValue('expenseCategory', '') }}
                 options={categories.map(c => ({ value: c, label: c }))}
                 placeholder="Select…"
+                disabled={baseCategories.length === 0}
               />
             )} />
             {errors.category && <p className="mt-1 text-xs text-red-500">{errors.category.message}</p>}
+            {baseCategories.length === 0 && (
+              <p className="mt-1 text-xs text-amber-600">No {isExpense ? 'expense' : 'income'} categories in Config → Finance.</p>
+            )}
+          </div>
+          <div>
+            <label className={lc}>Subcategory</label>
+            <Controller name="expenseCategory" control={control} render={({ field }) => (
+              <Select value={field.value ?? ''} onChange={v => field.onChange(v ?? '')}
+                options={subcategories.map(c => ({ value: c, label: c }))}
+                placeholder={!category ? 'Select category first…' : subcategories.length === 0 ? 'No subcategories' : 'Select…'}
+                disabled={!category || subcategories.length === 0}
+              />
+            )} />
           </div>
           <div>
             <label className={lc}>Amount (BDT) *</label>
-            <div className="flex gap-2 items-center">
-              <span className="text-sm font-medium text-gray-500 border border-gray-200 rounded-lg px-3 py-2 bg-gray-50">BDT</span>
-              <input type="number" step="0.01" min="0" placeholder="0.00" {...register('amount')} onKeyDown={e => { if (e.key === '-' || e.key === 'e') e.preventDefault() }}
-                className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900" />
-            </div>
+            <input type="number" step="0.01" min="0" placeholder="0.00" {...register('amount')} onKeyDown={e => { if (e.key === '-' || e.key === 'e') e.preventDefault() }}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900" />
             {errors.amount && <p className="mt-1 text-xs text-red-500">{errors.amount.message}</p>}
           </div>
         </div>
 
-        {isExpense && (
-          <div>
-            <label className={lc}>Expense Category</label>
-            {expenseCategories.length > 0 ? (
-              <Controller name="expenseCategory" control={control} render={({ field }) => (
-                <Select value={field.value ?? ''} onChange={v => field.onChange(v ?? '')}
-                  options={expenseCategories.map(c => ({ value: c, label: c }))}
-                  placeholder="Select category…"
-                />
-              )} />
-            ) : (
-              <p className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
-                No categories configured — go to <strong>Config → Finance</strong> to add expense categories.
-              </p>
-            )}
-          </div>
-        )}
-
         <div>
-          <label className={lc}>Description *</label>
-          <input {...register('description')} placeholder="e.g. Invoice payment from Acme Corp" className={ic} />
+          <label className={lc}>Detailed Description *</label>
+          <textarea {...register('description')} rows={2} placeholder="What was this for? Who/where, and any context…" className={`${ic} resize-none`} />
           {errors.description && <p className="mt-1 text-xs text-red-500">{errors.description.message}</p>}
         </div>
 
@@ -255,99 +249,17 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
           </div>
         </div>
 
-        {/* Dynamic entity selectors based on category */}
-        {isFreelancerPayment && (
-          <div>
-            <label className={lc}>Freelancer *</label>
-            <Controller name="freelancerId" control={control} render={({ field }) => (
-              <Select value={field.value} onChange={v => field.onChange(v ?? '')}
-                options={freelancers.map(f => ({ value: f.id, label: `${f.userId?.name ?? f.id}${f.userId?.email ? ` — ${f.userId.email}` : ''}` }))}
-                placeholder="Select freelancer…"
-              />
-            )} />
-          </div>
-        )}
-        {isAgencyPayment && (
-          <div>
-            <label className={lc}>Agency *</label>
-            <Controller name="agencyId" control={control} render={({ field }) => (
-              <Select value={field.value} onChange={v => field.onChange(v ?? '')}
-                options={agencies.map(a => ({ value: a.id, label: a.agencyInfo?.agencyName ?? a.userId?.name ?? 'Unknown Agency' }))}
-                placeholder="Select agency…"
-              />
-            )} />
-          </div>
-        )}
-        {(isVendorPayment || isEquipment) && (
-          <div>
-            <label className={lc}>{isEquipment ? 'Purchased from (Vendor) *' : 'Vendor *'}</label>
-            <Controller name="vendorId" control={control} render={({ field }) => (
-              <Select value={field.value} onChange={v => field.onChange(v ?? '')}
-                options={vendors.map(v => ({ value: v.id, label: `${v.company}${v.serviceType ? ` — ${v.serviceType}` : ''}` }))}
-                placeholder="Select vendor…"
-              />
-            )} />
-          </div>
-        )}
-        {(isPayroll || isEmployeeExpense) && (
-          <div>
-            <label className={lc}>{isPayroll ? 'Employee *' : 'Employee *'}</label>
-            <Controller name="paidTo" control={control} render={({ field }) => (
-              <Select value={field.value} onChange={v => field.onChange(v ?? '')}
-                options={employees.filter(e => e.userId?.id).map(e => ({ value: e.id, label: `${e.userId.name}${e.designation ? ` — ${e.designation}` : ''}${isPayroll && e.salary ? ` (BDT ${Number(e.salary).toLocaleString()}/mo)` : ''}` }))}
-                placeholder="Select employee…"
-              />
-            )} />
-          </div>
-        )}
-        {isTravel && (
-          <div className="space-y-2">
-            <label className={lc}>Conveyance paid to *</label>
-            <div className="flex gap-2">
-              {['employee', 'freelancer', 'other'].map(t => (
-                <button key={t} type="button"
-                  onClick={() => { setConveyanceType(t); setValue('paidTo', ''); setValue('freelancerId', ''); setValue('paidToName', '') }}
-                  className={`flex-1 py-1.5 rounded-lg text-xs font-medium border transition-colors ${conveyanceType === t ? 'bg-gray-900 text-white border-gray-900' : 'border-gray-200 text-gray-600 hover:border-gray-400'}`}>
-                  {t.charAt(0).toUpperCase() + t.slice(1)}
-                </button>
-              ))}
-            </div>
-            {conveyanceType === 'employee' && (
-              <Controller name="paidTo" control={control} render={({ field }) => (
-                <Select value={field.value} onChange={v => field.onChange(v ?? '')}
-                  options={employees.filter(e => e.userId?.id).map(e => ({ value: e.id, label: `${e.userId.name}${e.designation ? ` — ${e.designation}` : ''}` }))}
-                  placeholder="Select employee…"
-                />
-              )} />
-            )}
-            {conveyanceType === 'freelancer' && (
-              <Controller name="freelancerId" control={control} render={({ field }) => (
-                <Select value={field.value} onChange={v => field.onChange(v ?? '')}
-                  options={[...freelancers, ...agencies].map(f => ({ value: f.id, label: f.agencyInfo?.agencyName ?? f.userId?.name ?? 'Unknown' }))}
-                  placeholder="Select freelancer / agency…"
-                />
-              )} />
-            )}
-            {conveyanceType === 'other' && (
-              <input {...register('paidToName')} placeholder="Enter name…" className={ic} />
-            )}
-          </div>
-        )}
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className={lc}>Vendor (manual)</label>
-            <input {...register('vendor')} placeholder="Vendor / Supplier name" className={ic} />
-          </div>
-          <div>
-            <label className={lc}>Paid By</label>
-            <Controller name="paidBy" control={control} render={({ field }) => (
-              <Select value={field.value} onChange={v => field.onChange(v ?? '')}
-                options={users.map(u => ({ value: u.id, label: u.name }))}
-                placeholder="Select person…"
-              />
-            )} />
-          </div>
+        <div>
+          <label className={lc}>
+            {isExpense ? 'Who made the expense' : 'Received from'}
+            <span className="text-gray-400 font-normal text-xs ml-1">(optional — pick a person, or describe in the note above)</span>
+          </label>
+          <Controller name="who" control={control} render={({ field }) => (
+            <Select value={field.value ?? ''} onChange={v => field.onChange(v ?? '')}
+              options={whoOptions}
+              placeholder="Select a person…"
+            />
+          )} />
         </div>
 
         <div className="grid grid-cols-2 gap-4">
@@ -367,8 +279,7 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
           <div>
             <label className={lc}>
               Transaction ID
-              {!receiptUrl && <span className="text-red-500 ml-1">*</span>}
-              {receiptUrl  && <span className="text-gray-400 text-xs ml-1">(optional — receipt uploaded)</span>}
+              <span className="text-gray-400 text-xs ml-1">(optional — auto-generated if blank)</span>
             </label>
             <input
               value={txnIdVal}
@@ -376,9 +287,6 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
               placeholder="e.g. TXN-REF-001"
               className={ic}
             />
-            {!receiptUrl && !txnIdVal && (
-              <p className="mt-1 text-xs text-amber-600">Required when no receipt is attached</p>
-            )}
           </div>
         </div>
 
@@ -411,15 +319,10 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
         )}
 
         <FileUpload
-          label={receiptUrl ? 'Receipt / Invoice ✓' : 'Receipt / Invoice'}
+          label={receiptUrl ? 'Receipt / Invoice ✓ (optional)' : 'Receipt / Invoice (optional)'}
           value={receiptUrl}
           onUploaded={url => setReceiptUrl(url)}
         />
-        <p className="text-xs text-gray-400 -mt-1">
-          {receiptUrl
-            ? 'Receipt uploaded — Transaction ID is optional'
-            : 'Upload receipt OR enter a Transaction ID above (one is required)'}
-        </p>
       </form>
       <ModalFooter>
         <button type="button" onClick={() => onOpenChange(false)}
@@ -510,7 +413,7 @@ function ApproveModal({ expense, onClose, onDone, currentUser }) {
             {/* Left: expense summary */}
             <div className="rounded-xl bg-gray-50 border border-gray-100 px-4 py-4 space-y-2">
               <p className="text-sm font-semibold text-gray-900">{expense.title}</p>
-              <p className="text-xs text-gray-500">{expense.category} · {fmtDate(expense.date)}</p>
+              <p className="text-xs text-gray-500">{expense.category}{expense.subcategory ? ` / ${expense.subcategory}` : ''} · {fmtDate(expense.date)}</p>
               <p className="text-xl font-bold text-gray-900"><TkAmt value={expense.amount} decimals={2} /></p>
               {expense.submittedBy?.name && (
                 <p className="text-xs text-gray-500">Submitted by: <span className="font-medium text-gray-700">{expense.submittedBy.name}</span></p>
@@ -789,7 +692,7 @@ function RequestEditModal({ expense, onClose, onSubmitted }) {
         </div>
         <div className="rounded-lg bg-gray-50 border border-gray-100 px-4 py-3 space-y-1">
           <p className="text-sm font-semibold text-gray-900">{expense.title}</p>
-          <p className="text-xs text-gray-500">{expense.category} · {fmtDate(expense.date)}</p>
+          <p className="text-xs text-gray-500">{expense.category}{expense.subcategory ? ` / ${expense.subcategory}` : ''} · {fmtDate(expense.date)}</p>
           <p className="text-sm font-bold text-gray-900"><TkAmt value={expense.amount} decimals={2} /></p>
         </div>
         <p className="text-xs text-gray-500">
@@ -1036,7 +939,7 @@ function TrendPill({ change, invert = false }) {
 
 
 function AccountsContent() {
-  const { paymentMethods } = useConfig()
+  const { paymentMethods, expenseCategories, incomeCategories } = useConfig()
   const fmtMethod = v => v ? (paymentMethods.find(m => m.value === v)?.label ?? v.replace(/_/g, ' ')) : '—'
   const { data: session }  = useSession()
   const searchParams       = useSearchParams()
@@ -1091,6 +994,8 @@ function AccountsContent() {
 
   // Filters
   const [txType,    setTxType]    = useState('')
+  const [txCategory, setTxCategory] = useState('')
+  const [txSubcategory, setTxSubcategory] = useState('')
   const [txPage,    setTxPage]    = useState(1)
   const [period,    setPeriod]    = useState('month')
   const [startDate, setStartDate] = useState(() => {
@@ -1124,6 +1029,8 @@ function AccountsContent() {
     try {
       const params = new URLSearchParams({ page: txPage, limit: 20 })
       if (txType)    params.set('type',      txType)
+      if (txCategory) params.set('category', txCategory)
+      if (txSubcategory) params.set('subcategory', txSubcategory)
       if (startDate) params.set('startDate', startDate)
       if (endDate)   params.set('endDate',   endDate)
       const res  = await fetch(`/api/transactions?${params}`)
@@ -1136,7 +1043,7 @@ function AccountsContent() {
     } finally {
       setTxLoading(false)
     }
-  }, [txPage, txType, startDate, endDate])
+  }, [txPage, txType, txCategory, txSubcategory, startDate, endDate])
 
   const loadPL = useCallback(async () => {
     setPlLoading(true)
@@ -1339,6 +1246,17 @@ function AccountsContent() {
         : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400 hover:text-gray-800'
     }`
 
+  // Nested taxonomy — subcategory options follow the chosen parent category
+  const txCatGroups = txType === 'INCOME'
+    ? incomeCategories
+    : txType === 'EXPENSE'
+      ? expenseCategories
+      : [...incomeCategories, ...expenseCategories]
+  const txCategoryOptions = [...new Set(txCatGroups.map(c => c.label))]
+  const txSubcategoryOptions = txCategory
+    ? (txCatGroups.find(c => c.label === txCategory)?.subcategories ?? [])
+    : [...new Set(txCatGroups.flatMap(c => c.subcategories ?? []))]
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -1384,7 +1302,7 @@ function AccountsContent() {
                 const CARDS = [
                   { label: 'Monthly Income',  value: fmtVal(f.income?.value),  prev: `vs ${fmtVal(f.income?.prevValue)} last month`,  change: f.income?.change,  icon: TrendingUp,   bg: 'bg-green-50',  color: 'text-green-600' },
                   { label: 'Monthly Expense', value: fmtVal(f.expense?.value), prev: `vs ${fmtVal(f.expense?.prevValue)} last month`, change: f.expense?.change, invert: true, icon: TrendingDown, bg: 'bg-red-50',    color: 'text-red-500' },
-                  { label: 'Net Profit',      value: fmtVal(f.profit?.value),  prev: `vs ${fmtVal(f.profit?.prevValue)} last month`,  change: f.profit?.change,  icon: DollarSign,   bg: 'bg-blue-50',   color: 'text-blue-600' },
+                  { label: 'Net Profit',      value: fmtVal(f.profit?.value),  prev: `vs ${fmtVal(f.profit?.prevValue)} last month`,  change: f.profit?.change,  icon: Wallet,   bg: 'bg-blue-50',   color: 'text-blue-600' },
                   { label: 'Gross Margin',    value: `${f.grossMargin?.value ?? 0}%`,  prev: `was ${f.grossMargin?.prevValue ?? 0}% last month`,  change: f.grossMargin?.value  != null && f.grossMargin?.prevValue  != null ? (f.grossMargin.value  - f.grossMargin.prevValue)  : null, icon: Percent,      bg: 'bg-purple-50', color: 'text-purple-600' },
                   { label: 'Expense Ratio',   value: `${f.expenseRatio?.value ?? 0}%`, prev: `was ${f.expenseRatio?.prevValue ?? 0}% last month`, change: f.expenseRatio?.value != null && f.expenseRatio?.prevValue != null ? (f.expenseRatio.value - f.expenseRatio.prevValue) : null, invert: true, icon: BarChart2, bg: 'bg-orange-50', color: 'text-orange-500' },
                   { label: 'Transactions',    value: f.transactions?.value ?? 0,       prev: `${f.transactions?.prevValue ?? 0} last month`,      change: f.transactions?.change,  icon: FileTextIcon, bg: 'bg-indigo-50', color: 'text-indigo-600' },
@@ -1439,9 +1357,26 @@ function AccountsContent() {
             {(startDate || endDate) && (
               <button onClick={() => { setStartDate(''); setEndDate(''); setTxPage(1) }} className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1.5 rounded hover:bg-gray-100 transition-colors">Clear</button>
             )}
+            <div className="w-48">
+              <Select
+                value={txCategory}
+                onChange={v => { setTxCategory(v ?? ''); setTxSubcategory(''); setTxPage(1) }}
+                options={txCategoryOptions.map(c => ({ value: c, label: c }))}
+                placeholder="All categories"
+              />
+            </div>
+            <div className="w-48">
+              <Select
+                value={txSubcategory}
+                onChange={v => { setTxSubcategory(v ?? ''); setTxPage(1) }}
+                options={txSubcategoryOptions.map(c => ({ value: c, label: c }))}
+                placeholder="All subcategories"
+                disabled={txSubcategoryOptions.length === 0}
+              />
+            </div>
             <div className="flex gap-1 ml-auto">
               {[['', 'All'], ['INCOME', 'Income'], ['EXPENSE', 'Expense']].map(([v, l]) => (
-                <button key={v} onClick={() => { setTxType(v); setTxPage(1) }}
+                <button key={v} onClick={() => { setTxType(v); setTxCategory(''); setTxSubcategory(''); setTxPage(1) }}
                   className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${txType === v ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'}`}>
                   {l}
                 </button>
@@ -1460,6 +1395,7 @@ function AccountsContent() {
                       <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Date</th>
                       <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Type</th>
                       <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Category</th>
+                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Source / Paid to</th>
                       <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Description</th>
                       <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">Amount</th>
                       <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Method</th>
@@ -1472,7 +1408,13 @@ function AccountsContent() {
                       <tr key={tx.id ?? tx._id} className="hover:bg-gray-50/50 transition-colors">
                         <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtDate(tx.date)}</td>
                         <td className="px-4 py-3"><StatusDot status={tx.type} /></td>
-                        <td className="px-4 py-3 text-xs text-gray-600">{tx.category}</td>
+                        <td className="px-4 py-3 text-xs text-gray-600">
+                          <span>{tx.category}</span>
+                          {tx.expenseCategory && <span className="block text-[11px] text-gray-400">{tx.expenseCategory}</span>}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-gray-600 max-w-[160px] truncate">
+                          {tx.paidToName ?? tx.vendor ?? tx.projectId?.name ?? tx.paidBy?.name ?? '—'}
+                        </td>
                         <td className="px-4 py-3 text-xs text-gray-700 max-w-[200px] truncate">{tx.description}</td>
                         <td className={`px-4 py-3 text-right text-sm font-semibold whitespace-nowrap ${tx.type === 'INCOME' ? 'text-green-600' : 'text-red-500'}`}>
                           {tx.type === 'INCOME' ? '+' : '-'}{fmt(tx.amount)}
@@ -1612,7 +1554,10 @@ function AccountsContent() {
                     {prList.map(pr => (
                       <tr key={pr.id ?? pr._id} className="hover:bg-gray-50/50 transition-colors">
                         <td className="px-4 py-3 text-xs font-medium text-gray-800 max-w-[160px] truncate">{pr.title ?? pr.description ?? '—'}</td>
-                        <td className="px-4 py-3 text-xs text-gray-600">{pr.category ?? '—'}</td>
+                        <td className="px-4 py-3 text-xs text-gray-600">
+                          <span>{pr.category ?? '—'}</span>
+                          {pr.subcategory && <span className="block text-[11px] text-gray-400">{pr.subcategory}</span>}
+                        </td>
                         <td className="px-4 py-3 text-xs text-gray-500">{pr.projectId?.name ?? '—'}</td>
                         <td className="px-4 py-3 text-right text-sm font-semibold text-gray-800 whitespace-nowrap">{fmt(pr.amount)}</td>
                         <td className="px-4 py-3"><StatusDot status={pr.status} /></td>
@@ -1791,7 +1736,7 @@ function AccountsContent() {
                 {[
                   { label: 'Total Income',  value: fmt(plReport.summary?.totalIncome),  color: 'text-green-600', bg: 'bg-green-50', icon: TrendingUp },
                   { label: 'Total Expense', value: fmt(plReport.summary?.totalExpense), color: 'text-red-500',   bg: 'bg-red-50',   icon: TrendingDown },
-                  { label: 'Net Profit',    value: fmt(plReport.summary?.netProfit),    color: plReport.summary?.netProfit >= 0 ? 'text-blue-600' : 'text-red-600', bg: 'bg-blue-50', icon: DollarSign },
+                  { label: 'Net Profit',    value: fmt(plReport.summary?.netProfit),    color: plReport.summary?.netProfit >= 0 ? 'text-blue-600' : 'text-red-600', bg: 'bg-blue-50', icon: Wallet },
                   { label: 'Margin',        value: `${(plReport.summary?.margin ?? 0).toFixed(1)}%`, color: 'text-purple-600', bg: 'bg-purple-50', icon: Percent },
                 ].map(c => {
                   const Icon = c.icon

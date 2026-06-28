@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"projectId":{"$numberInt":"1"},"vendorId":{"$numberInt":"1"}},"name":"projectId_1_vendorId_1","background":true,"unique":true}],"uuid":"e0e3b13198b54580bcfb2463816a6a5f","collectionName":"projectvendors","type":"collection"}

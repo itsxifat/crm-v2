@@ -29,9 +29,8 @@ export async function GET(request) {
       if (endDate)   dateFilter.date.$lte = new Date(endDate)
     }
 
-    // aggregate() bypasses Mongoose post-find hooks so encrypted amounts return 0 — use find().lean()
     const [allTx, receivableInvoices] = await Promise.all([
-      Transaction.find(dateFilter).select('type amount category').lean(),
+      Transaction.find(dateFilter).select('type amount category expenseCategory').lean(),
       Invoice.find({ status: { $in: ['SENT', 'PARTIALLY_PAID', 'OVERDUE'] } })
         .select('total paidAmount')
         .lean(),
@@ -39,17 +38,20 @@ export async function GET(request) {
 
     let totalRevenue = 0, totalExpenses = 0, incomeCount = 0, expenseCount = 0
     const expenseCategoryMap = {}, incomeCategoryMap = {}
+    const expenseSubcategoryMap = {}, incomeSubcategoryMap = {}
 
     for (const tx of allTx) {
       const amt = Number(tx.amount) || 0
       if (tx.type === 'INCOME') {
         totalRevenue += amt
         incomeCount++
-        if (tx.category) incomeCategoryMap[tx.category] = (incomeCategoryMap[tx.category] ?? 0) + amt
+        if (tx.category)        incomeCategoryMap[tx.category]           = (incomeCategoryMap[tx.category] ?? 0) + amt
+        if (tx.expenseCategory) incomeSubcategoryMap[tx.expenseCategory] = (incomeSubcategoryMap[tx.expenseCategory] ?? 0) + amt
       } else if (tx.type === 'EXPENSE') {
         totalExpenses += amt
         expenseCount++
-        if (tx.category) expenseCategoryMap[tx.category] = (expenseCategoryMap[tx.category] ?? 0) + amt
+        if (tx.category)        expenseCategoryMap[tx.category]            = (expenseCategoryMap[tx.category] ?? 0) + amt
+        if (tx.expenseCategory) expenseSubcategoryMap[tx.expenseCategory]  = (expenseSubcategoryMap[tx.expenseCategory] ?? 0) + amt
       }
     }
 
@@ -63,6 +65,12 @@ export async function GET(request) {
       .sort((a, b) => b.amount - a.amount)
     const incomeByCategory = Object.entries(incomeCategoryMap)
       .map(([category, amount]) => ({ category, amount }))
+      .sort((a, b) => b.amount - a.amount)
+    const expenseBySubcategory = Object.entries(expenseSubcategoryMap)
+      .map(([subcategory, amount]) => ({ subcategory, amount }))
+      .sort((a, b) => b.amount - a.amount)
+    const incomeBySubcategory = Object.entries(incomeSubcategoryMap)
+      .map(([subcategory, amount]) => ({ subcategory, amount }))
       .sort((a, b) => b.amount - a.amount)
 
     // Monthly breakdown for last 12 months
@@ -91,6 +99,8 @@ export async function GET(request) {
         monthlyData,
         expenseByCategory,
         incomeByCategory,
+        expenseBySubcategory,
+        incomeBySubcategory,
         grossMargin:        totalRevenue > 0 ? ((totalRevenue - totalExpenses) / totalRevenue * 100) : 0,
         expenseRatio:       totalRevenue > 0 ? (totalExpenses / totalRevenue * 100) : 0,
         ebitda:             netProfit,

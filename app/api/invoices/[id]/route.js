@@ -5,6 +5,8 @@ import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Invoice } from '@/models'
 import { logActivity } from '@/lib/logActivity'
+import { requirePerm } from '@/lib/rbac'
+import { maskDoc, INVOICE_PII } from '@/lib/pii'
 
 async function getPopulated(id) {
   return Invoice.findById(id)
@@ -16,7 +18,8 @@ async function getPopulated(id) {
 export async function GET(_, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    const denied  = requirePerm(session, 'sales.invoices.view')   // admin view; clients use /api/client/invoices
+    if (denied) return denied
     await connectDB()
     const invoice = await getPopulated(params.id)
     if (!invoice) return NextResponse.json({ error: 'Not found' }, { status: 404 })
@@ -27,7 +30,7 @@ export async function GET(_, { params }) {
       await invoice.save()
     }
 
-    return NextResponse.json({ data: invoice.toJSON() })
+    return NextResponse.json({ data: maskDoc(session, invoice.toJSON(), INVOICE_PII) })
   } catch (err) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
@@ -36,9 +39,8 @@ export async function GET(_, { params }) {
 export async function PUT(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-    if (!['SUPER_ADMIN','MANAGER'].includes(session.user.role))
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const denied = requirePerm(session, 'sales.invoices.update')
+    if (denied) return denied
     await connectDB()
 
     const body = await request.json()
@@ -92,9 +94,8 @@ export async function PUT(request, { params }) {
 export async function DELETE(_, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-    if (!['SUPER_ADMIN','MANAGER'].includes(session.user.role))
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const denied = requirePerm(session, 'sales.invoices.delete')
+    if (denied) return denied
     await connectDB()
     const invoice = await Invoice.findByIdAndDelete(params.id)
     if (!invoice) return NextResponse.json({ error: 'Not found' }, { status: 404 })

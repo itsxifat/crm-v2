@@ -5,11 +5,13 @@ import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { User, Employee, Task, Leave, CustomRole } from '@/models'
 import { normalizeDeptCode } from '@/models/Employee'
-import { blindIndex } from '@/lib/encryption'
+import { ciEquals, ciContains } from '@/lib/searchMatch'
 import { z } from 'zod'
 import bcrypt from 'bcryptjs'
 import { sendEmployeeLoginEmail } from '@/lib/mailer'
 import { sendEmployeeLoginWhatsApp } from '@/lib/whatsapp'
+import { logActivity } from '@/lib/logActivity'
+import { maskList, EMPLOYEE_PII } from '@/lib/pii'
 
 const createEmployeeSchema = z.object({
   name:                 z.string().min(1, 'Name is required'),
@@ -63,47 +65,42 @@ export async function GET(request) {
 
     const filter = {}
 
-    // Status filter
+    // Status filter (resigned is a plain boolean — DB filter is fine)
     if (status === 'active')   filter.resigned = { $ne: true }
     if (status === 'resigned') filter.resigned = true
 
-    // Department filter — accept both code (DEV) and full name (Development)
-    if (department) {
-      const code = normalizeDeptCode(department)
-      filter.department = code
-        ? { $regex: `^${code}$`, $options: 'i' }  // exact code match
-        : { $regex: department, $options: 'i' }    // fallback: raw substring
-    }
-
     // Year filter — match employeeId pattern [VENTURE_PREFIX]-[DEPT][YY][MM][SERIAL]
+    // (employeeId is NOT encrypted, so regex works here)
     if (year) {
       const yy = String(year).slice(-2)
       filter.employeeId = { $regex: `^EN[TM]?-[A-Z]{2,4}${yy}`, $options: 'i' }
     }
 
     if (search) {
-      // name/email/phone are encrypted — search by blind index (exact match only) or employeeId
-      const emailToken = blindIndex(search, 'users', 'email')
-      const phoneToken = blindIndex(search, 'users', 'phone')
       const matchingUsers = await User.find({
-        $or: [{ emailIdx: emailToken }, { phoneIdx: phoneToken }],
-      }).select('_id').select('+emailIdx +phoneIdx').lean()
+        $or: [{ name: ciContains(search) }, { email: ciContains(search) }, { phone: ciContains(search) }],
+      }).select('_id').lean()
       const userIds = matchingUsers.map(u => u._id)
       filter.$or = [
         { userId:     { $in: userIds } },
-        { employeeId: { $regex: search, $options: 'i' } },
+        { employeeId: ciContains(search) },
       ]
     }
 
+    // department is plaintext — accept a code (DEV) or full name (Development)
+    if (department) {
+      const code = normalizeDeptCode(department)
+      filter.department = code
+        ? { $regex: `^${code}$`, $options: 'i' }
+        : { $regex: department, $options: 'i' }
+    }
+
     const sortOpt = sortBy === 'employeeId' ? { employeeId: 1 } : { createdAt: -1 }
+    const popUser = { path: 'userId', select: 'id name email avatar phone isActive role' }
+    const popRole = { path: 'customRoleId', select: 'id title department color' }
 
     const [employees, total] = await Promise.all([
-      Employee.find(filter)
-        .skip(skip)
-        .limit(limit)
-        .sort(sortOpt)
-        .populate({ path: 'userId', select: 'id name email avatar phone isActive role' })
-        .populate({ path: 'customRoleId', select: 'id title department color' }),
+      Employee.find(filter).skip(skip).limit(limit).sort(sortOpt).populate(popUser).populate(popRole),
       Employee.countDocuments(filter),
     ])
 
@@ -130,7 +127,7 @@ export async function GET(request) {
     ])
 
     return NextResponse.json({
-      data: enriched,
+      data: maskList(session, enriched, EMPLOYEE_PII),
       meta: { page, limit, total, pages: Math.ceil(total / limit) },
       stats: { totalEmployees, activeTasks, onLeaveToday, departmentCount: departments.length, departments },
     })
@@ -162,8 +159,7 @@ export async function POST(request) {
             bloodGroup, emergencyContacts, address, nidNumber, appointmentLetterUrl, agreementUrl, panelAccessGranted,
             customRoleId } = parsed.data
 
-    const emailToken = blindIndex(email, 'users', 'email')
-    const existing = await User.findOne({ emailIdx: emailToken }).select('+emailIdx').lean()
+    const existing = await User.findOne({ email: ciEquals(email) }).select('_id').lean()
     if (existing) return NextResponse.json({ error: 'User with this email already exists' }, { status: 409 })
 
     const rawPw    = password ?? Math.random().toString(36).slice(-8) + 'A1!'
@@ -190,6 +186,16 @@ export async function POST(request) {
     if (phone) {
       sendEmployeeLoginWhatsApp({ to: phone, name, password: rawPw })
     }
+
+    logActivity({
+      userId:   session.user.id,
+      userRole: session.user.role,
+      action:   'CREATE',
+      entity:   'EMPLOYEE',
+      entityId: employee._id.toString(),
+      changes:  JSON.stringify({ name, role: role ?? 'EMPLOYEE', department }),
+      request,
+    })
 
     return NextResponse.json({ data: employee, tempPassword: password ? undefined : rawPw }, { status: 201 })
   } catch (err) {

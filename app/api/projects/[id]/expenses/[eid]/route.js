@@ -33,6 +33,7 @@ export async function PATCH(request, { params }) {
       const txn = await new Transaction({
         type:           'EXPENSE',
         category:       expense.category,
+        expenseCategory: expense.subcategory ?? null,
         description:    `[${project?.projectCode ?? project?.venture ?? ''}] ${expense.title}`,
         amount:         expense.amount,
         currency:       'BDT',
@@ -45,6 +46,12 @@ export async function PATCH(request, { params }) {
         accountManager: accountManager || session.user.id,
         createdBy:      session.user.id,
         vendor:         expense.vendor ?? null,
+        // carry who-it-was-paid-to detail from the project expense
+        freelancerId:     expense.freelancerId?.toString() ?? null,
+        agencyId:         expense.agencyId ?? null,
+        vendorId:         expense.vendorId?.toString() ?? null,
+        paidToEmployeeId: expense.paidToEmployeeId ?? null,
+        paidToName:       expense.paidToName ?? null,
       }).save()
 
       expense.syncedToAccounts      = true

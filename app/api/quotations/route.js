@@ -4,14 +4,16 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Quotation, Lead, Client } from '@/models'
+import { searchEncrypted } from '@/lib/searchMatch'
+import { logActivity } from '@/lib/logActivity'
+import { requirePerm } from '@/lib/rbac'
 
 // GET /api/quotations
 export async function GET(request) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-    if (!['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'].includes(session.user.role))
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const denied  = requirePerm(session, 'sales.quotations.view')
+    if (denied) return denied
 
     await connectDB()
 
@@ -28,28 +30,32 @@ export async function GET(request) {
     if (status)   filter.status   = status
     if (leadId)   filter.leadId   = leadId
     if (clientId) filter.clientId = clientId
+
+    const populate = [
+      { path: 'leadId',   select: 'name company' },
+      { path: 'clientId', select: 'company contactPerson' },
+      { path: 'createdBy', select: 'name avatar' },
+    ]
+
+    let quotations, total
     if (search) {
-      filter.$or = [
-        { quotationNumber:    { $regex: search, $options: 'i' } },
-        { recipientName:      { $regex: search, $options: 'i' } },
-        { recipientCompany:   { $regex: search, $options: 'i' } },
-        { recipientEmail:     { $regex: search, $options: 'i' } },
-      ]
+      // recipientName/Company/Email are encrypted; quotationNumber is plain — match all in JS
+      ;({ docs: quotations, total } = await searchEncrypted(Quotation, {
+        baseFilter: filter, search,
+        fields: ['quotationNumber', 'recipientName', 'recipientCompany', 'recipientEmail'],
+        page, limit, sort: { createdAt: -1 }, populate,
+      }))
+    } else {
+      ;[quotations, total] = await Promise.all([
+        Quotation.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit)
+          .populate(populate[0]).populate(populate[1]).populate(populate[2]),
+        Quotation.countDocuments(filter),
+      ])
     }
 
-    const [quotations, total] = await Promise.all([
-      Quotation.find(filter)
-        .sort({ createdAt: -1 })
-        .skip(skip).limit(limit)
-        .populate('leadId',   'name company')
-        .populate('clientId', 'company contactPerson')
-        .populate('createdBy', 'name avatar')
-        .lean(),
-      Quotation.countDocuments(filter),
-    ])
-
     return NextResponse.json({
-      data: quotations.map(q => ({ ...q, id: q._id.toString() })),
+      // hydrated docs (not .lean()) so populated Client.company decrypts correctly
+      data: quotations.map(q => q.toJSON()),
       meta: { page, limit, total, pages: Math.ceil(total / limit) },
     })
   } catch (err) {
@@ -62,9 +68,8 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-    if (!['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'].includes(session.user.role))
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const denied  = requirePerm(session, 'sales.quotations.create')
+    if (denied) return denied
 
     await connectDB()
 
@@ -105,6 +110,16 @@ export async function POST(request) {
       itemPriceOnly: !!itemPriceOnly,
       createdBy: session.user.id,
     }).save()
+
+    logActivity({
+      userId:   session.user.id,
+      userRole: session.user.role,
+      action:   'CREATE',
+      entity:   'QUOTATION',
+      entityId: quotation._id.toString(),
+      changes:  JSON.stringify({ quotationNumber: quotation.quotationNumber, total: quotation.total }),
+      request,
+    })
 
     return NextResponse.json({ data: quotation.toJSON() }, { status: 201 })
   } catch (err) {

@@ -8,6 +8,7 @@ import toast from 'react-hot-toast'
 import { Eye, Pencil, Trash2, UserCheck, MoreHorizontal, Phone, Mail, MapPin, MessageSquare, ChevronDown, Check } from 'lucide-react'
 import Badge from '@/components/ui/Badge'
 import Avatar from '@/components/ui/Avatar'
+import ConvertLeadModal from '@/components/admin/leads/ConvertLeadModal'
 import { formatCurrency, formatDate } from '@/lib/utils'
 
 const PRIORITY_STYLES = {
@@ -176,6 +177,7 @@ function ActionMenu({ lead, onEdit, onDelete, onConvert }) {
 
 export default function LeadsTable({ leads = [], onEdit, onRefresh, onStatusChange }) {
   const router = useRouter()
+  const [convertLead, setConvertLead] = useState(null)
 
   const handleDelete = async (lead) => {
     if (!confirm(`Delete lead "${lead.name}"? This cannot be undone.`)) return
@@ -189,19 +191,7 @@ export default function LeadsTable({ leads = [], onEdit, onRefresh, onStatusChan
     }
   }
 
-  const handleConvert = async (lead) => {
-    if (!confirm(`Convert "${lead.name}" to a client? This will create a new user account.`)) return
-    try {
-      const res  = await fetch(`/api/leads/${lead.id}/convert`, { method: 'POST' })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Conversion failed')
-      toast.success(`Lead converted! Temp password: ${data.data?.tempPassword ?? '—'}`)
-      onRefresh?.()
-      router.push(`/clients/${data.data?.clientId}`)
-    } catch (err) {
-      toast.error(err.message)
-    }
-  }
+  const handleConvert = (lead) => setConvertLead(lead)
 
   if (!leads.length) {
     return (
@@ -218,6 +208,7 @@ export default function LeadsTable({ leads = [], onEdit, onRefresh, onStatusChan
   }
 
   return (
+    <>
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
@@ -410,5 +401,13 @@ export default function LeadsTable({ leads = [], onEdit, onRefresh, onStatusChan
         </tbody>
       </table>
     </div>
+
+    <ConvertLeadModal
+      open={!!convertLead}
+      onClose={() => setConvertLead(null)}
+      lead={convertLead}
+      onSuccess={() => onRefresh?.()}
+    />
+    </>
   )
 }

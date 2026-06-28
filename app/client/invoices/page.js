@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { FileText, Search, DollarSign, Clock, CheckCircle, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react'
+import { FileText, Search, Wallet, Clock, CheckCircle, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react'
 
 const STATUS_OPTIONS = [
   { value: 'ALL',           label: 'All' },

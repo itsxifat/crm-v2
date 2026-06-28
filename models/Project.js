@@ -1,6 +1,4 @@
 import mongoose from 'mongoose'
-import { encryptionPlugin } from '@/lib/encryptionPlugin'
-
 const ProjectSchema = new mongoose.Schema(
   {
     projectCode: { type: String, unique: true, sparse: true },
@@ -100,24 +98,6 @@ ProjectSchema.virtual('dueAmount').get(function () {
 ProjectSchema.virtual('budgetUtilization').get(function () {
   if (!this.budget || this.budget === 0) return 0
   return Math.round((this.approvedExpenses / this.budget) * 100)
-})
-
-ProjectSchema.plugin(encryptionPlugin, {
-  collection: 'projects',
-  fields: [
-    { path: 'name'          },
-    { path: 'description'   },
-    { path: 'category'      },
-    { path: 'subcategory'   },
-    { path: 'currency'      },
-    { path: 'brief'         },
-    { path: 'tags'          },
-    { path: 'cancelReason'  },
-    { path: 'budget',           type: 'number' },
-    { path: 'discount',         type: 'number' },
-    { path: 'approvedExpenses', type: 'number' },
-    { path: 'paidAmount',       type: 'number' },
-  ],
 })
 
 if (mongoose.models.Project) delete mongoose.models.Project
