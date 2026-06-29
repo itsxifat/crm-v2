@@ -1617,7 +1617,7 @@ function AccountsContent() {
       {activeTab === 'withdrawals' && (
         <div className="space-y-4">
           <div className="flex gap-2">
-            {[['', 'All'], ['PENDING', 'Pending'], ['APPROVED', 'Approved'], ['REJECTED', 'Rejected']].map(([v, l]) => (
+            {[['', 'All'], ['PENDING', 'Pending'], ['PAID', 'Paid'], ['REJECTED', 'Rejected']].map(([v, l]) => (
               <button key={v} onClick={() => setWdStatus(v)}
                 className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${wdStatus === v ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'}`}>
                 {l}

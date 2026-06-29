@@ -436,7 +436,12 @@ export default function FreelancerDetailPage() {
   async function handleWithdrawal(requestId, action) {
     setApproving(requestId)
     try {
-      const res  = await fetch(`/api/freelancers/${id}/withdrawals?requestId=${requestId}`, {
+      // Use the canonical settlement route so an approval here does the SAME work
+      // as the Accounts page: records a Transaction + ProjectExpense, marks the
+      // assignments PAID and adjusts the wallet. (The old per-freelancer route only
+      // flipped status + an unused balance field, so payments looked done here but
+      // showed unpaid everywhere else.)
+      const res  = await fetch(`/api/admin/withdrawal-requests/${requestId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action }),

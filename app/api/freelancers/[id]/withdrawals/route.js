@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
-import { Freelancer, WithdrawalRequest } from '@/models'
+import { WithdrawalRequest } from '@/models'
 import { z } from 'zod'
 
 const approvalSchema = z.object({
@@ -50,31 +50,17 @@ export async function PATCH(request, { params }) {
       return NextResponse.json({ error: 'Validation failed', details: parsed.error.flatten() }, { status: 422 })
     }
 
-    const { action, adminNote } = parsed.data
-
-    const withdrawal = await WithdrawalRequest.findById(requestId).lean()
-    if (!withdrawal) return NextResponse.json({ error: 'Withdrawal not found' }, { status: 404 })
-    if (withdrawal.status !== 'PENDING') {
-      return NextResponse.json({ error: 'Withdrawal already processed' }, { status: 400 })
-    }
-
-    const newStatus = action === 'approve' ? 'APPROVED' : 'REJECTED'
-
-    const updated = await WithdrawalRequest.findByIdAndUpdate(
-      requestId,
-      { status: newStatus, adminNote: adminNote ?? null, processedBy: session.user.id, processedAt: new Date() },
-      { new: true }
+    // DEPRECATED settlement path. This route used to only flip the status and
+    // adjust an unused `walletBalance` field — it did NOT record a Transaction or
+    // ProjectExpense, mark the assignments PAID, or touch `withdrawableBalance`.
+    // That made a withdrawal look settled here while showing unpaid in Accounts,
+    // the wallet and the freelancer's panel. All approvals now go through the
+    // canonical route, which does the full settlement atomically.
+    void requestId; void action; void adminNote
+    return NextResponse.json(
+      { error: 'Process this withdrawal from the Accounts → Withdrawals queue (PATCH /api/admin/withdrawal-requests/[id]).' },
+      { status: 410 },
     )
-
-    // Deduct from wallet on approval
-    if (action === 'approve') {
-      const freelancer = await Freelancer.findById(params.id).lean()
-      if (freelancer && freelancer.walletBalance >= withdrawal.amount) {
-        await Freelancer.findByIdAndUpdate(params.id, { walletBalance: freelancer.walletBalance - withdrawal.amount })
-      }
-    }
-
-    return NextResponse.json({ data: updated })
   } catch (err) {
     console.error('[PATCH /api/freelancers/[id]/withdrawals]', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

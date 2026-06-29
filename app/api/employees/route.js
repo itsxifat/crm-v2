@@ -143,7 +143,8 @@ export async function POST(request) {
     const session = await getServerSession(authOptions)
     if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
 
-    if (session.user.role !== 'SUPER_ADMIN') {
+    const isSuperAdmin = session.user.role === 'SUPER_ADMIN'
+    if (!isSuperAdmin && session.user.role !== 'MANAGER') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
@@ -153,6 +154,12 @@ export async function POST(request) {
     const parsed = createEmployeeSchema.safeParse(body)
     if (!parsed.success) {
       return NextResponse.json({ error: 'Validation failed', details: parsed.error.flatten() }, { status: 422 })
+    }
+
+    // Managers may create employees, but only plain EMPLOYEEs — assigning MANAGER
+    // or SUPER_ADMIN is reserved for a Super Admin (no privilege escalation).
+    if (!isSuperAdmin && (parsed.data.role ?? 'EMPLOYEE') !== 'EMPLOYEE') {
+      return NextResponse.json({ error: 'Only a Super Admin can assign Manager or Super Admin roles' }, { status: 403 })
     }
 
     const { name, email, password, phone, venture, department, position, designation, salary, hireDate, employeeId, role,
@@ -184,7 +191,9 @@ export async function POST(request) {
       console.error('[POST /api/employees] login email failed:', err.message)
     )
     if (phone) {
-      sendEmployeeLoginWhatsApp({ to: phone, name, password: rawPw })
+      sendEmployeeLoginWhatsApp({ to: phone, name, password: rawPw }).catch(err =>
+        console.error('[POST /api/employees] login WhatsApp failed:', err.message)
+      )
     }
 
     logActivity({
@@ -200,6 +209,8 @@ export async function POST(request) {
     return NextResponse.json({ data: employee, tempPassword: password ? undefined : rawPw }, { status: 201 })
   } catch (err) {
     console.error('[POST /api/employees]', err)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    // Surface the real reason (admin-only route) so genuine failures aren't hidden
+    // behind a generic message — e.g. a duplicate key or a cast error.
+    return NextResponse.json({ error: err.message || 'Internal server error' }, { status: 500 })
   }
 }

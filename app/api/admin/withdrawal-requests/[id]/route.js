@@ -49,8 +49,31 @@ export async function PATCH(req, { params }) {
         reference:     withdrawal.details || null,
       })
 
+      // Settle one assignment: move its amount OUT of whichever balance bucket
+      // currently holds it, then mark it PAID. This keeps the wallet correct in
+      // every case — a freelancer cashing out their wallet (IN_WALLET /
+      // WITHDRAWAL_REQUESTED → withdrawableBalance), an admin direct-paying dues
+      // that were only accepted (→ pendingBalance), or paying a never-accepted
+      // assignment (→ no bucket). The old code flatly subtracted the full amount
+      // from withdrawableBalance, which drove it negative on direct payments.
+      let fromWithdrawable = 0
+      let fromPending      = 0
+      async function settleAssignment(assignmentId, amt) {
+        if (!assignmentId) return
+        const a = await FreelancerAssignment.findById(assignmentId).select('paymentStatus status').lean()
+        if (a) {
+          if (['IN_WALLET', 'WITHDRAWAL_REQUESTED'].includes(a.paymentStatus)) fromWithdrawable += amt
+          else if (['ACCEPTED', 'IN_PROGRESS', 'COMPLETED'].includes(a.status)) fromPending += amt
+          // else: never accepted → its amount was never credited to any balance
+        }
+        await FreelancerAssignment.findByIdAndUpdate(assignmentId, {
+          paymentStatus:       'PAID',
+          withdrawalRequestId: withdrawal._id,
+        })
+      }
+
       if (hasAllocations) {
-        // 2a. For each allocation: create ProjectExpense + mark assignment PAID
+        // 2a. For each allocation: create ProjectExpense + settle the assignment
         for (const alloc of withdrawal.allocations) {
           const allocAmt = alloc.amount
 
@@ -76,12 +99,7 @@ export async function PATCH(req, { params }) {
             })
           }
 
-          if (alloc.assignmentId) {
-            await FreelancerAssignment.findByIdAndUpdate(alloc.assignmentId, {
-              paymentStatus:       'PAID',
-              withdrawalRequestId: withdrawal._id,
-            })
-          }
+          await settleAssignment(alloc.assignmentId, allocAmt)
         }
       } else {
         // 2b. Legacy single-assignment path
@@ -104,21 +122,22 @@ export async function PATCH(req, { params }) {
           })
         }
 
-        if (withdrawal.assignmentId) {
-          await FreelancerAssignment.findByIdAndUpdate(withdrawal.assignmentId, {
-            paymentStatus:       'PAID',
-            withdrawalRequestId: withdrawal._id,
-          })
-        }
+        await settleAssignment(withdrawal.assignmentId, withdrawal.amount)
       }
 
-      // 3. Deduct from freelancer withdrawableBalance (if it had been credited)
+      // 3. A pure wallet-balance withdrawal (no linked assignments) takes the whole
+      //    amount out of the wallet. Otherwise deduct exactly what each assignment
+      //    drew from each bucket.
+      const hasLinks = hasAllocations || !!withdrawal.assignmentId
+      if (!hasLinks) fromWithdrawable += withdrawal.amount
       await Freelancer.findByIdAndUpdate(freelancer._id, {
-        $inc: { withdrawableBalance: -withdrawal.amount },
+        $inc: { withdrawableBalance: -fromWithdrawable, pendingBalance: -fromPending },
       })
 
-      // 4. Finalise withdrawal
-      withdrawal.status        = 'APPROVED'
+      // 4. Finalise withdrawal — it is now actually paid out (Transaction created),
+      //    so the terminal status is PAID (matches the direct-payment route and lets
+      //    the freelancer's panel show "Paid", not a perpetual "Approved").
+      withdrawal.status        = 'PAID'
       withdrawal.processedBy   = session.user.id
       withdrawal.processedAt   = new Date()
       withdrawal.transactionId = tx._id
@@ -136,10 +155,20 @@ export async function PATCH(req, { params }) {
       withdrawal.processedAt = new Date()
       await withdrawal.save()
 
-      // Return amount to withdrawableBalance only if it was already deducted
-      await Freelancer.findByIdAndUpdate(withdrawal.freelancerId._id ?? withdrawal.freelancerId, {
-        $inc: { withdrawableBalance: withdrawal.amount },
-      })
+      // Do NOT refund withdrawableBalance: it is only deducted on approval, so a
+      // PENDING→REJECTED request never had anything taken out. (The old refund
+      // here inflated the wallet.) Instead, release any assignments that were
+      // earmarked for this request so they go back to being withdrawable.
+      const releaseIds = [
+        ...(withdrawal.allocations ?? []).map(a => a.assignmentId),
+        withdrawal.assignmentId,
+      ].filter(Boolean)
+      if (releaseIds.length) {
+        await FreelancerAssignment.updateMany(
+          { _id: { $in: releaseIds }, paymentStatus: 'WITHDRAWAL_REQUESTED' },
+          { $set: { paymentStatus: 'IN_WALLET' }, $unset: { withdrawalRequestId: 1 } },
+        )
+      }
 
     } else {
       return Response.json({ error: 'Invalid action' }, { status: 400 })
