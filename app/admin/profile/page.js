@@ -485,7 +485,17 @@ export default function EmployeeProfilePage() {
     )
   }
 
-  if (!emp) return null
+  if (!emp) {
+    return (
+      <div className="max-w-md mx-auto mt-16 bg-white rounded-2xl border border-gray-100 p-8 shadow-sm text-center">
+        <AlertCircle className="w-10 h-10 text-amber-400 mx-auto mb-3" />
+        <h1 className="text-lg font-semibold text-gray-900">Profile not set up yet</h1>
+        <p className="text-sm text-gray-500 mt-1">
+          Your employee record isn’t ready, so there’s nothing to complete here yet. Please contact HR / your admin to finish setting up your account.
+        </p>
+      </div>
+    )
+  }
 
   const pct         = emp.profileCompletionPct ?? 0
   const status      = emp.profileStatus        ?? 'CREATED'

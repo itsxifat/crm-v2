@@ -207,8 +207,12 @@ export default async function middleware(req) {
 
     const role = token.role
 
-    // ── 5. Employee profile-completion gate ──────────────────────────────────
-    if (role === 'EMPLOYEE' && token.profileStatus !== 'APPROVED') {
+    // ── 5. Employee onboarding gate ──────────────────────────────────────────
+    // Only applies when employee onboarding (profile + KYC) is REQUIRED by config
+    // and this employee hasn't been approved yet. `needsOnboarding` is computed in
+    // the JWT (auth.js) from the live config, so turning the requirement off frees
+    // employees immediately, and turning it on later re-gates anyone unapproved.
+    if (role === 'EMPLOYEE' && token.needsOnboarding) {
       if (!pathname.startsWith('/admin/profile')) {
         return addSecurityHeaders(NextResponse.redirect(new URL('/admin/profile', req.url)))
       }
