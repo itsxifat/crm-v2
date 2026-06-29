@@ -27,11 +27,13 @@ export async function GET(request) {
     const search   = searchParams.get('search')
     const priority = searchParams.get('priority')
     const kycStatus = searchParams.get('kycStatus')
+    const clientType = searchParams.get('clientType')
     const skip     = (page - 1) * limit
 
     let filter = {}
-    if (priority)  filter.priority     = priority
-    if (kycStatus) filter['kyc.status'] = kycStatus
+    if (priority)   filter.priority     = priority
+    if (kycStatus)  filter['kyc.status'] = kycStatus
+    if (clientType) filter.clientType   = clientType
     if (search) {
       // Match the linked user (name/email/phone) OR client-level fields. All
       // plaintext now, so substring search works directly — including company.

@@ -108,6 +108,7 @@ export default function ClientsPage() {
   const [meta,          setMeta]          = useState({ page: 1, pages: 1, total: 0 })
   const [loading,       setLoading]       = useState(true)
   const [search,        setSearch]        = useState('')
+  const [typeFilter,    setTypeFilter]    = useState('')   // '' | INDIVIDUAL | COMPANY
   const [page,          setPage]          = useState(1)
   const [modalOpen,     setModalOpen]     = useState(false)
   const [editingClient, setEditingClient] = useState(null)
@@ -117,6 +118,7 @@ export default function ClientsPage() {
     try {
       const params = new URLSearchParams({ page, limit: 20 })
       if (search) params.set('search', search)
+      if (typeFilter) params.set('clientType', typeFilter)
       const res  = await fetch(`/api/clients?${params}`)
       const json = await res.json()
       if (!res.ok) throw new Error(json.error)
@@ -128,7 +130,7 @@ export default function ClientsPage() {
     } finally {
       setLoading(false)
     }
-  }, [page, search])
+  }, [page, search, typeFilter])
 
   useEffect(() => { fetchClients() }, [fetchClients])
 
@@ -194,12 +196,31 @@ export default function ClientsPage() {
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm">
         {/* Toolbar */}
         <div className="px-4 sm:px-6 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
-          <SearchInput
-            value={search}
-            onChange={(v) => { setSearch(v); setPage(1) }}
-            placeholder="Search by name, email, company…"
-            className="w-full sm:w-80"
-          />
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+            <SearchInput
+              value={search}
+              onChange={(v) => { setSearch(v); setPage(1) }}
+              placeholder="Search by name, email, company…"
+              className="w-full sm:w-80"
+            />
+            <div className="inline-flex rounded-lg border border-gray-200 p-0.5 bg-gray-50">
+              {[
+                { key: '',           label: 'All' },
+                { key: 'INDIVIDUAL', label: 'Individuals' },
+                { key: 'COMPANY',    label: 'Companies' },
+              ].map(t => (
+                <button
+                  key={t.key}
+                  onClick={() => { setTypeFilter(t.key); setPage(1) }}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                    typeFilter === t.key ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
           <span className="text-sm text-gray-400">{meta.total} client{meta.total !== 1 ? 's' : ''}</span>
         </div>
 
@@ -239,10 +260,15 @@ export default function ClientsPage() {
                         <div className="flex items-center gap-3">
                           <Avatar name={client.userId?.name} src={client.userId?.avatar} size="sm" />
                           <div>
-                            <Link href={`/admin/clients/${client.id}`}
-                              className="text-sm font-semibold text-gray-900 hover:text-blue-600 transition-colors">
-                              {client.userId?.name ?? '—'}
-                            </Link>
+                            <div className="flex items-center gap-1.5">
+                              <Link href={`/admin/clients/${client.id}`}
+                                className="text-sm font-semibold text-gray-900 hover:text-blue-600 transition-colors">
+                                {client.userId?.name ?? '—'}
+                              </Link>
+                              <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${client.clientType === 'COMPANY' ? 'bg-violet-100 text-violet-700' : 'bg-blue-100 text-blue-700'}`}>
+                                {client.clientType === 'COMPANY' ? 'Company' : 'Individual'}
+                              </span>
+                            </div>
                             <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-1">
                               <Mail className="w-3 h-3" />
                               {client.userId?.email ?? '—'}

@@ -14,8 +14,9 @@ import Avatar from '@/components/ui/Avatar'
 import Badge from '@/components/ui/Badge'
 import ClientModal from '@/components/admin/clients/ClientModal'
 import ClientMembersPanel from '@/components/admin/clients/ClientMembersPanel'
+import CustomerCompaniesPanel from '@/components/admin/clients/CustomerCompaniesPanel'
 
-const TABS = ['Overview', 'People', 'Projects', 'Invoices', 'Proposals', 'Agreements', 'Documents', 'KYC']
+const TABS = ['Overview', 'People', 'Companies', 'Projects', 'Invoices', 'Proposals', 'Agreements', 'Documents', 'KYC']
 
 const KYC_STATUS_META = {
   NOT_SUBMITTED: { label: 'Not Submitted', color: 'bg-gray-100 text-gray-500' },
@@ -139,8 +140,16 @@ export default function ClientDetailPage() {
           <div className="flex items-center gap-4">
             <Avatar name={user?.name} src={user?.avatar} size="lg" />
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h1 className="text-xl font-bold text-gray-900">{user?.name}</h1>
+                {data.clientCode && (
+                  <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-md bg-gray-100 text-gray-600 font-mono">
+                    {data.clientCode}
+                  </span>
+                )}
+                <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${data.clientType === 'COMPANY' ? 'bg-violet-100 text-violet-700' : 'bg-blue-100 text-blue-700'}`}>
+                  {data.clientType === 'COMPANY' ? 'Company' : 'Individual'}
+                </span>
                 <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${user?.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
                   {user?.isActive ? 'Active' : 'Inactive'}
                 </span>
@@ -171,6 +180,12 @@ export default function ClientDetailPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Link
+            href={`/admin/projects/new?clientId=${id}`}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <FolderOpen className="w-4 h-4" /> New Project
+          </Link>
           <button
             onClick={() => setEditOpen(true)}
             className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors"
@@ -280,9 +295,14 @@ export default function ClientDetailPage() {
             </div>
           )}
 
-          {/* PEOPLE */}
+          {/* PEOPLE — customers who can access THIS company */}
           {tab === 'People' && (
             <ClientMembersPanel clientId={id} />
+          )}
+
+          {/* COMPANIES — companies THIS customer can access */}
+          {tab === 'Companies' && (
+            <CustomerCompaniesPanel clientId={id} />
           )}
 
           {/* PROJECTS */}

@@ -16,7 +16,8 @@ export async function GET(request) {
 
     const { client, error } = await resolveActiveClient(session)
     if (error === 'SELECT_COMPANY') return NextResponse.json({ error: 'SELECT_COMPANY' }, { status: 409 })
-    if (!client) return NextResponse.json({ error: 'Client not found' }, { status: 404 })
+    // No company yet (individual client with no workspace) → empty list, not an error.
+    if (!client) return NextResponse.json({ projects: [] })
 
     const { searchParams } = new URL(request.url)
     const status = searchParams.get('status')

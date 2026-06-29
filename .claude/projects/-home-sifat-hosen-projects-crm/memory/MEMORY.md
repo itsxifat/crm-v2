@@ -1,2 +1,3 @@
 - [Activity log manual wiring](activity-log-manual-wiring.md) — logActivity() per-route, no middleware; new routes must call it
 - [Multi-company client model](multi-company-client-model.md) — people↔companies many-to-many via CompanyMembership; use resolveActiveClient, never Client.userId for access
+- [Client auth flow](client-auth-flow.md) — magic-link→OTP→password onboarding; no emailed passwords; admin-approved forgot-password (sales.customers.passwordReset)

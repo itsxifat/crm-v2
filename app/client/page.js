@@ -57,35 +57,41 @@ export default async function ClientDashboard() {
     .populate({ path: 'userId', select: 'name email' })
     .lean()
 
-  if (!client) return <div className="text-center py-20 text-gray-500">Client profile not found.</div>
-
-  const allClients = await Client.find({ userId: session.user.id })
-    .select('_id clientCode company')
-    .lean()
+  // A client with no company account yet (an individual we haven't set up with a
+  // workspace) still gets a working panel — just with empty states. So we no
+  // longer hard-stop here; we fall through with empty data.
+  const allClients = client
+    ? await Client.find({ userId: session.user.id }).select('_id clientCode company').lean()
+    : []
 
   const clientIds = allClients.map(c => c._id)
   const clientMap = Object.fromEntries(
     allClients.map(c => [c._id.toString(), { clientCode: c.clientCode, company: c.company }])
   )
-  const clientId = client._id
 
-  const [activeProjects, invoices, allProjects, pendingInvoicesCount, paidInvoices, dueInvoices] = await Promise.all([
-    Project.find({ clientId, status: { $in: ['PLANNING', 'IN_PROGRESS', 'ON_HOLD'] } })
-      .sort({ updatedAt: -1 })
-      .limit(4)
-      .lean(),
-    Invoice.find({ clientId: { $in: clientIds }, status: { $nin: ['CANCELLED', 'DRAFT'] } })
-      .sort({ createdAt: -1 })
-      .limit(5)
-      .lean(),
-    Project.countDocuments({ clientId, status: { $in: ['PLANNING', 'IN_PROGRESS', 'ON_HOLD'] } }),
-    Invoice.countDocuments({ clientId: { $in: clientIds }, status: { $in: ['SENT', 'OVERDUE', 'PARTIALLY_PAID'] } }),
-    // aggregate() bypasses Mongoose post-find decryption hooks — Invoice.total/paidAmount are
-    // encrypted, so totals must be summed in JS over decrypted lean docs (not via $sum/$subtract).
-    Invoice.find({ clientId: { $in: clientIds }, status: 'PAID' }).select('total').lean(),
-    Invoice.find({ clientId: { $in: clientIds }, status: { $in: ['SENT', 'OVERDUE', 'PARTIALLY_PAID'] } })
-      .select('total paidAmount').lean(),
-  ])
+  let activeProjects = [], invoices = [], allProjects = 0,
+      pendingInvoicesCount = 0, paidInvoices = [], dueInvoices = []
+
+  if (client) {
+    const clientId = client._id
+    ;[activeProjects, invoices, allProjects, pendingInvoicesCount, paidInvoices, dueInvoices] = await Promise.all([
+      Project.find({ clientId, status: { $in: ['PLANNING', 'IN_PROGRESS', 'ON_HOLD'] } })
+        .sort({ updatedAt: -1 })
+        .limit(4)
+        .lean(),
+      Invoice.find({ clientId: { $in: clientIds }, status: { $nin: ['CANCELLED', 'DRAFT'] } })
+        .sort({ createdAt: -1 })
+        .limit(5)
+        .lean(),
+      Project.countDocuments({ clientId, status: { $in: ['PLANNING', 'IN_PROGRESS', 'ON_HOLD'] } }),
+      Invoice.countDocuments({ clientId: { $in: clientIds }, status: { $in: ['SENT', 'OVERDUE', 'PARTIALLY_PAID'] } }),
+      // aggregate() bypasses Mongoose post-find decryption hooks — Invoice.total/paidAmount are
+      // encrypted, so totals must be summed in JS over decrypted lean docs (not via $sum/$subtract).
+      Invoice.find({ clientId: { $in: clientIds }, status: 'PAID' }).select('total').lean(),
+      Invoice.find({ clientId: { $in: clientIds }, status: { $in: ['SENT', 'OVERDUE', 'PARTIALLY_PAID'] } })
+        .select('total paidAmount').lean(),
+    ])
+  }
 
   // Enrich projects with task statuses and milestones
   const projectIds = activeProjects.map(p => p._id)
@@ -126,8 +132,8 @@ export default async function ClientDashboard() {
         <div className="flex items-center justify-between">
           <div>
             <p className="text-blue-200 text-sm font-medium mb-1">Welcome back</p>
-            <h1 className="text-3xl font-bold">{client.userId?.name}</h1>
-            {client.company && (
+            <h1 className="text-3xl font-bold">{client?.userId?.name ?? session.user.name}</h1>
+            {client?.company && (
               <p className="text-blue-200 mt-1 text-sm">{client.company}</p>
             )}
           </div>

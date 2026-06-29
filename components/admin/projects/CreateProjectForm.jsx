@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -84,6 +84,8 @@ const ic = 'w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 te
 export default function CreateProjectForm({ project }) {
   const router   = useRouter()
   const isEdit   = !!project
+  // Allow pre-selecting a client when arriving from a client/company page.
+  const prefillClientId = useSearchParams().get('clientId') ?? ''
   const [managers,      setManagers]      = useState([])
   const [ventures,      setVentures]      = useState([])
   const [svcMap,        setSvcMap]        = useState({})
@@ -108,6 +110,7 @@ export default function CreateProjectForm({ project }) {
       currency:         'BDT',
       tags:             project.tags       ?? '',
     } : {
+      clientId: prefillClientId,
       priority: 'MEDIUM',
       currency: 'BDT',
       projectType: undefined,

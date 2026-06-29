@@ -52,10 +52,15 @@ function isBotUserAgent(ua) {
 // Works for single-server / PM2 deployments.
 // For multi-instance / serverless, replace with Redis-backed limiter.
 const _rateStore = new Map()
-const API_RATE_LIMIT   = 120  // requests per window
+// General API budget. A dashboard SPA fires many calls per page load (widgets,
+// lookups, session refreshes), so this must comfortably exceed normal bursts.
+const API_RATE_LIMIT   = 600  // requests per window (10/sec)
 const API_RATE_WINDOW  = 60 * 1000  // 1-minute window
-const AUTH_RATE_LIMIT  = 10   // stricter for auth endpoints
-const AUTH_RATE_WINDOW = 15 * 60 * 1000  // 15 minutes
+// Brute-force budget. Applies ONLY to real sign-in attempts (credential POSTs),
+// NOT to NextAuth's frequent session/csrf/providers reads. This is the count of
+// failed-or-not login attempts from one IP we treat as suspicious.
+const LOGIN_RATE_LIMIT  = 10   // sign-in attempts per window before throttling
+const LOGIN_RATE_WINDOW = 15 * 60 * 1000  // 15 minutes
 
 function checkRate(key, limit, window) {
   const now   = Date.now()
@@ -71,7 +76,7 @@ function checkRate(key, limit, window) {
 
 // Periodically evict stale entries to prevent memory growth
 setInterval(() => {
-  const cutoff = Date.now() - AUTH_RATE_WINDOW
+  const cutoff = Date.now() - LOGIN_RATE_WINDOW
   for (const [key, val] of _rateStore) {
     if (val.since < cutoff) _rateStore.delete(key)
   }
@@ -153,11 +158,18 @@ export default async function middleware(req) {
         }
       }
 
-      // Rate limit — stricter for auth endpoints
-      const isAuthEndpoint = pathname.startsWith('/api/auth')
-      const rlKey     = isAuthEndpoint ? `auth:${ip}` : `api:${ip}`
-      const rlLimit   = isAuthEndpoint ? AUTH_RATE_LIMIT  : API_RATE_LIMIT
-      const rlWindow  = isAuthEndpoint ? AUTH_RATE_WINDOW : API_RATE_WINDOW
+      // Rate limit — the strict brute-force budget applies ONLY to real sign-in
+      // attempts (the credential POST). NextAuth's session/csrf/providers reads
+      // are frequent and benign, so they ride the general API budget instead —
+      // otherwise normal panel usage (useSession polling, session update()) trips
+      // the limit and locks customers out before they do anything suspicious.
+      const isLoginAttempt =
+        req.method === 'POST' &&
+        (pathname.startsWith('/api/auth/callback/credentials') ||
+         pathname.startsWith('/api/auth/signin'))
+      const rlKey     = isLoginAttempt ? `login:${ip}` : `api:${ip}`
+      const rlLimit   = isLoginAttempt ? LOGIN_RATE_LIMIT  : API_RATE_LIMIT
+      const rlWindow  = isLoginAttempt ? LOGIN_RATE_WINDOW : API_RATE_WINDOW
       const rl        = checkRate(rlKey, rlLimit, rlWindow)
 
       if (!rl.allowed) {
@@ -210,8 +222,14 @@ export default async function middleware(req) {
           return addSecurityHeaders(NextResponse.redirect(new URL('/client/change-password', req.url)))
         }
       } else if (!token.activeClientId) {
-        // No active company selected (has 0 or >1) → send to the chooser.
-        if (!pathname.startsWith('/client/select-company')) {
+        // Force the company chooser ONLY when there's an actual choice to make
+        // (member of 2+ companies). A client with zero companies is a valid
+        // individual who can still use the panel, so we never trap them on the
+        // chooser dead-end. companyCount is undefined on sessions issued before it
+        // existed — treat that as "force" (safe); the next token re-sync fills it in.
+        const count      = token.companyCount
+        const mustChoose = count === undefined ? true : count >= 2
+        if (mustChoose && !pathname.startsWith('/client/select-company')) {
           return addSecurityHeaders(NextResponse.redirect(new URL('/client/select-company', req.url)))
         }
       }
