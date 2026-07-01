@@ -456,8 +456,8 @@ function FinanceSummary({ financials, invoices, pendingWithdrawals }) {
       {pendingWithdrawals > 0 && (
         <>
           <div className="h-px bg-gray-100" />
-          <Link href="/admin/freelancers" className="flex items-center justify-between group">
-            <span className="text-xs text-gray-500">Pending Withdrawals</span>
+          <Link href="/admin/accounts" className="flex items-center justify-between group">
+            <span className="text-xs text-gray-500">Payouts Awaiting Approval</span>
             <span className="text-xs font-semibold text-amber-600 group-hover:text-amber-700 transition-colors">
               {pendingWithdrawals} pending
             </span>
@@ -615,7 +615,7 @@ export default function DashboardPage() {
   if (tasks.overdue > 0)
     alerts.push({ type: 'warning', message: `${tasks.overdue} task${tasks.overdue !== 1 ? 's' : ''} past deadline`, link: '/admin/tasks' })
   if ((stats?.pendingWithdrawals ?? 0) > 0)
-    alerts.push({ type: 'info',    message: `${stats.pendingWithdrawals} freelancer withdrawal${stats.pendingWithdrawals !== 1 ? 's' : ''} awaiting approval`, link: '/admin/freelancers' })
+    alerts.push({ type: 'info',    message: `${stats.pendingWithdrawals} freelancer payment${stats.pendingWithdrawals !== 1 ? 's' : ''} awaiting approval`, link: '/admin/accounts' })
   const critProj = (stats?.recentProjects ?? []).filter(p => { const d = daysLeft(p.deadline ?? p.currentPeriodEnd); return d != null && d >= 0 && d <= 3 })
   if (critProj.length > 0)
     alerts.push({ type: 'warning', message: `${critProj.length} project${critProj.length !== 1 ? 's' : ''} deadline within 3 days`, link: '/admin/projects' })

@@ -212,7 +212,10 @@ export default async function middleware(req) {
     // and this employee hasn't been approved yet. `needsOnboarding` is computed in
     // the JWT (auth.js) from the live config, so turning the requirement off frees
     // employees immediately, and turning it on later re-gates anyone unapproved.
-    if (role === 'EMPLOYEE' && token.needsOnboarding) {
+    // Excludes /api/ — otherwise the employee's own profile page can't load/save
+    // (its GET/PUT /api/employee/profile and POST /api/upload calls would be
+    // redirected to the HTML page). API routes enforce their own auth.
+    if (role === 'EMPLOYEE' && token.needsOnboarding && !pathname.startsWith('/api/')) {
       if (!pathname.startsWith('/admin/profile')) {
         return addSecurityHeaders(NextResponse.redirect(new URL('/admin/profile', req.url)))
       }

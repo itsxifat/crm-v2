@@ -1,8 +1,6 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { redirect } from 'next/navigation'
-import Header  from '@/components/layout/Header'
-import PendingApproval from '@/components/layout/PendingApproval'
 import DashboardShell from '@/components/layout/DashboardShell'
 
 export default async function DashboardLayout({ children }) {
@@ -23,18 +21,12 @@ export default async function DashboardLayout({ children }) {
     redirect(portals[session.user.role])
   }
 
-  // Employees/Managers who haven't been HR-approved yet see only a waiting screen
-  const staffRoles = ['EMPLOYEE', 'MANAGER']
-  if (staffRoles.includes(session.user.role) && session.user.profileStatus !== 'APPROVED') {
-    return (
-      <div className="flex h-screen flex-col bg-gray-50">
-        <Header />
-        <PendingApproval
-          name={session.user.name}
-          profileStatus={session.user.profileStatus}
-        />
-      </div>
-    )
+  // Employees who still owe onboarding (config ON + not yet HR-approved) must finish
+  // their profile first. `needsOnboarding` already encodes the config flag, so turning
+  // employee onboarding OFF grants immediate full access. The profile page itself shows
+  // the "pending HR review" / "approved" states — no separate dead-end screen.
+  if (session.user.needsOnboarding) {
+    redirect('/admin/profile')
   }
 
   return (

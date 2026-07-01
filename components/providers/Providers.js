@@ -5,7 +5,14 @@ import { Toaster } from 'react-hot-toast'
 
 export default function Providers({ children, session }) {
   return (
-    <SessionProvider session={session}>
+    <SessionProvider
+      session={session}
+      // Refresh the JWT often so server-side changes (employee onboarding config
+      // toggle, HR approval) propagate to the middleware gate quickly — within
+      // ~20s automatically, and instantly when the user refocuses the tab.
+      refetchInterval={20}
+      refetchOnWindowFocus={true}
+    >
       {children}
       <Toaster
         position="top-right"

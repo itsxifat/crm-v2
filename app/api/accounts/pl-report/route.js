@@ -38,12 +38,14 @@ export async function GET(request) {
         months[key] = { month: key, income: {}, expense: {}, totalIncome: 0, totalExpense: 0 }
       }
       const m = months[key]
+      // Roll up in BDT — amountBDT falls back to the original amount for BDT rows.
+      const amt = Number(tx.amountBDT ?? tx.amount) || 0
       if (tx.type === 'INCOME') {
-        m.income[tx.category] = (m.income[tx.category] ?? 0) + tx.amount
-        m.totalIncome += tx.amount
+        m.income[tx.category] = (m.income[tx.category] ?? 0) + amt
+        m.totalIncome += amt
       } else {
-        m.expense[tx.category] = (m.expense[tx.category] ?? 0) + tx.amount
-        m.totalExpense += tx.amount
+        m.expense[tx.category] = (m.expense[tx.category] ?? 0) + amt
+        m.totalExpense += amt
       }
     })
 

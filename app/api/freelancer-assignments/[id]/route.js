@@ -21,6 +21,12 @@ export async function PATCH(req, { params }) {
     const isAdmin    = ['SUPER_ADMIN', 'MANAGER'].includes(session.user.role)
     const isFreelancer = session.user.role === 'FREELANCER'
 
+    // PM-of-record (project manager) may complete/request payment for their own project.
+    const isProjectManager = async () => {
+      const project = await Project.findById(assignment.projectId).select('projectManagerId').lean()
+      return project && String(project.projectManagerId) === String(session.user.id)
+    }
+
     if (action === 'accept') {
       // Freelancer accepts the assignment
       if (!isFreelancer) return Response.json({ error: 'Forbidden' }, { status: 403 })
@@ -38,11 +44,6 @@ export async function PATCH(req, { params }) {
       assignment.acceptedAt = new Date()
       await assignment.save()
 
-      // Add paymentAmount to freelancer.pendingBalance
-      await Freelancer.findByIdAndUpdate(assignment.freelancerId, {
-        $inc: { pendingBalance: assignment.paymentAmount },
-      })
-
     } else if (action === 'start') {
       if (!isFreelancer && !isAdmin) return Response.json({ error: 'Forbidden' }, { status: 403 })
       if (assignment.status !== 'ACCEPTED') {
@@ -52,7 +53,8 @@ export async function PATCH(req, { params }) {
       await assignment.save()
 
     } else if (action === 'complete') {
-      if (!isAdmin) return Response.json({ error: 'Forbidden' }, { status: 403 })
+      // Work delivered — marked done by an admin or the project manager.
+      if (!isAdmin && !(await isProjectManager())) return Response.json({ error: 'Forbidden' }, { status: 403 })
       if (!['IN_PROGRESS', 'ACCEPTED'].includes(assignment.status)) {
         return Response.json({ error: 'Assignment must be in progress to complete' }, { status: 400 })
       }
@@ -60,42 +62,21 @@ export async function PATCH(req, { params }) {
       assignment.completedAt = new Date()
       await assignment.save()
 
-    } else if (action === 'approve') {
-      if (!isAdmin) return Response.json({ error: 'Forbidden' }, { status: 403 })
-      if (assignment.status !== 'COMPLETED') {
-        return Response.json({ error: 'Assignment must be COMPLETED before approving payment' }, { status: 400 })
-      }
-
-      assignment.paymentStatus = 'IN_WALLET'
-      assignment.approvedAt    = new Date()
-      assignment.approvedBy    = session.user.id
-      await assignment.save()
-
-      // Move from pendingBalance to withdrawableBalance
-      await Freelancer.findByIdAndUpdate(assignment.freelancerId, {
-        $inc: {
-          pendingBalance:      -assignment.paymentAmount,
-          withdrawableBalance:  assignment.paymentAmount,
-        },
-      })
-
     } else if (action === 'cancel') {
-      if (!isAdmin) return Response.json({ error: 'Forbidden' }, { status: 403 })
-      const wasAccepted = ['ACCEPTED', 'IN_PROGRESS'].includes(assignment.status)
+      if (!isAdmin && !(await isProjectManager())) return Response.json({ error: 'Forbidden' }, { status: 403 })
       assignment.status = 'CANCELLED'
       await assignment.save()
 
-      // Reverse pendingBalance if it was already added
-      if (wasAccepted) {
-        await Freelancer.findByIdAndUpdate(assignment.freelancerId, {
-          $inc: { pendingBalance: -assignment.paymentAmount },
-        })
-      }
-
     } else if (action === 'request_payment') {
-      if (!isAdmin) return Response.json({ error: 'Forbidden' }, { status: 403 })
+      // Send delivered work to payment: create a PENDING ProjectExpense for the
+      // account manager to approve. Salary-based engagements (NOT_REQUIRED) and
+      // amount-less engagements have nothing to request.
+      if (!isAdmin && !(await isProjectManager())) return Response.json({ error: 'Forbidden' }, { status: 403 })
       if (assignment.paymentStatus !== 'PENDING') {
-        return Response.json({ error: 'Payment request already submitted' }, { status: 400 })
+        return Response.json({ error: 'Payment request already submitted, settled, or not required' }, { status: 400 })
+      }
+      if (!assignment.paymentAmount || assignment.paymentAmount <= 0) {
+        return Response.json({ error: 'This engagement has no payable amount' }, { status: 400 })
       }
 
       const project    = await Project.findById(assignment.projectId).lean()
@@ -114,6 +95,8 @@ export async function PATCH(req, { params }) {
         venture:     project?.venture ?? null,
         title:       `${expenseCategory} — ${displayName}`,
         amount:      assignment.paymentAmount,
+        currency:    assignment.currency ?? 'BDT',
+        amountBDT:   assignment.amountBDT ?? assignment.paymentAmount,
         category:    expenseCategory,
         date:        new Date(),
         notes:       assignment.paymentNotes ?? null,
@@ -128,9 +111,11 @@ export async function PATCH(req, { params }) {
       await assignment.save()
 
     } else if (action === 'edit') {
-      if (!isAdmin) return Response.json({ error: 'Forbidden' }, { status: 403 })
-      const { paymentAmount, paymentNotes, status: newStatus } = body
-      if (paymentAmount !== undefined) assignment.paymentAmount = Number(paymentAmount)
+      if (!isAdmin && !(await isProjectManager())) return Response.json({ error: 'Forbidden' }, { status: 403 })
+      const { paymentAmount, currency, amountBDT, paymentNotes, status: newStatus } = body
+      if (paymentAmount !== undefined) assignment.paymentAmount = paymentAmount === null ? null : Number(paymentAmount)
+      if (currency      !== undefined) assignment.currency      = currency || 'BDT'
+      if (amountBDT     !== undefined) assignment.amountBDT     = amountBDT === null ? null : Number(amountBDT)
       if (paymentNotes  !== undefined) assignment.paymentNotes  = paymentNotes || null
       if (newStatus     !== undefined) {
         const validStatuses = ['ASSIGNED', 'ACCEPTED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED']
@@ -173,11 +158,8 @@ export async function DELETE(req, { params }) {
     const assignment = await FreelancerAssignment.findById(id)
     if (!assignment) return Response.json({ error: 'Assignment not found' }, { status: 404 })
 
-    // Reverse pendingBalance if freelancer had accepted
-    if (['ACCEPTED', 'IN_PROGRESS'].includes(assignment.status)) {
-      await Freelancer.findByIdAndUpdate(assignment.freelancerId, {
-        $inc: { pendingBalance: -assignment.paymentAmount },
-      })
+    if (assignment.paymentStatus === 'PAID') {
+      return Response.json({ error: 'Cannot delete a settled (paid) assignment' }, { status: 400 })
     }
 
     await assignment.deleteOne()

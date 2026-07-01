@@ -1,12 +1,13 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Building2, Plus, Eye, Pencil, Trash2, MoreHorizontal, Star, Mail } from 'lucide-react'
+import { Building2, Plus, Eye, Pencil, Trash2, Ban, RotateCcw, Mail } from 'lucide-react'
 import toast from 'react-hot-toast'
-import Link from 'next/link'
 import SearchInput from '@/components/ui/SearchInput'
 import Pagination from '@/components/ui/Pagination'
+import ActionMenu from '@/components/ui/ActionMenu'
 import FreelancerModal from '@/components/admin/freelancers/FreelancerModal'
+import { formatCurrency } from '@/lib/utils'
 
 function InviteBadge({ accepted }) {
   if (accepted) return null
@@ -26,7 +27,6 @@ export default function AgenciesPage() {
   const [page,       setPage]       = useState(1)
   const [modalOpen,  setModalOpen]  = useState(false)
   const [editing,    setEditing]    = useState(null)
-  const [menuOpen,   setMenuOpen]   = useState(null)
 
   const fetchAgencies = useCallback(async () => {
     setLoading(true)
@@ -47,12 +47,6 @@ export default function AgenciesPage() {
 
   useEffect(() => { fetchAgencies() }, [fetchAgencies])
 
-  useEffect(() => {
-    const handler = () => setMenuOpen(null)
-    document.addEventListener('click', handler)
-    return () => document.removeEventListener('click', handler)
-  }, [])
-
   function handleSaved() {
     toast.success(editing ? 'Agency updated' : 'Agency invitation sent!')
     setEditing(null)
@@ -62,7 +56,6 @@ export default function AgenciesPage() {
   async function handleDelete(f) {
     const label = f.agencyInfo?.agencyName ?? f.userId?.name
     if (!confirm(`Delete ${label}? This cannot be undone.`)) return
-    setMenuOpen(null)
     try {
       const res = await fetch(`/api/freelancers/${f.id}`, { method: 'DELETE' })
       if (!res.ok) throw new Error((await res.json()).error)
@@ -70,6 +63,23 @@ export default function AgenciesPage() {
       fetchAgencies()
     } catch (err) {
       toast.error(err.message ?? 'Failed to delete')
+    }
+  }
+
+  async function handleToggle(f, disable) {
+    if (disable && !confirm(`Disable ${f.agencyInfo?.agencyName ?? f.userId?.name}'s account?`)) return
+    try {
+      const res = await fetch(`/api/freelancers/${f.id}`, {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ action: disable ? 'disable' : 'enable' }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error)
+      toast.success(disable ? 'Account disabled' : 'Account reactivated')
+      fetchAgencies()
+    } catch (err) {
+      toast.error(err.message ?? 'Failed')
     }
   }
 
@@ -118,7 +128,7 @@ export default function AgenciesPage() {
                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Agency</th>
                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Contact Person</th>
                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Agency Type</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Rate</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Owed</th>
                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
                 <th className="px-6 py-3" />
               </tr>
@@ -142,47 +152,41 @@ export default function AgenciesPage() {
                     <p className="text-xs text-gray-400">{f.contactPerson?.designation ?? ''}</p>
                   </td>
                   <td className="px-6 py-4 text-sm text-gray-600">{f.agencyInfo?.type ?? '—'}</td>
-                  <td className="px-6 py-4 text-sm text-gray-600">
-                    {f.hourlyRate ? (
-                      <span className="flex items-center gap-1">
-                        <Star className="w-3 h-3 text-yellow-400 fill-yellow-400" />
-                        ${f.hourlyRate}/{f.rateType?.toLowerCase() ?? 'hr'}
-                      </span>
-                    ) : '—'}
+                  <td className="px-6 py-4 text-sm font-medium text-gray-900 whitespace-nowrap">
+                    {f.finance?.owedBDT ? formatCurrency(f.finance.owedBDT) : <span className="text-gray-300">—</span>}
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${f.userId?.isActive ? 'text-green-700' : 'text-gray-400'}`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${f.userId?.isActive ? 'bg-green-500' : 'bg-gray-300'}`} />
-                        {f.userId?.isActive ? 'Active' : 'Inactive'}
-                      </span>
+                      {(() => {
+                        const disabled = f.disabledAt || f.userId?.isActive === false
+                        return (
+                          <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${disabled ? 'text-rose-600' : 'text-green-700'}`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${disabled ? 'bg-rose-500' : 'bg-green-500'}`} />
+                            {disabled ? 'Disabled' : 'Active'}
+                          </span>
+                        )
+                      })()}
                       <InviteBadge accepted={f.inviteAccepted} />
                     </div>
                   </td>
                   <td className="px-6 py-4 text-right">
-                    <div className="relative inline-block">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setMenuOpen(menuOpen === f.id ? null : f.id) }}
-                        className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
-                      >
-                        <MoreHorizontal className="w-4 h-4" />
-                      </button>
-                      {menuOpen === f.id && (
-                        <div className="absolute right-0 top-8 z-10 w-40 bg-white border border-gray-100 rounded-xl shadow-lg py-1" onClick={(e) => e.stopPropagation()}>
-                          <Link href={`/admin/freelancers/${f.id}`} className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
-                            <Eye className="w-4 h-4" /> View
-                          </Link>
-                          <button onClick={() => { setEditing(f); setModalOpen(true); setMenuOpen(null) }}
-                            className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
-                            <Pencil className="w-4 h-4" /> Edit
-                          </button>
-                          <button onClick={() => handleDelete(f)}
-                            className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50">
-                            <Trash2 className="w-4 h-4" /> Delete
-                          </button>
-                        </div>
-                      )}
-                    </div>
+                    {(() => {
+                      const disabled = f.disabledAt || f.userId?.isActive === false
+                      return (
+                        <ActionMenu
+                          items={[
+                            { label: 'View details', icon: Eye, href: `/admin/freelancers/${f.id}` },
+                            { label: 'Edit', icon: Pencil, onClick: () => { setEditing(f); setModalOpen(true) } },
+                            disabled
+                              ? { label: 'Reactivate', icon: RotateCcw, onClick: () => handleToggle(f, false) }
+                              : { label: 'Disable', icon: Ban, onClick: () => handleToggle(f, true),
+                                  disabled: f.finance?.hasUnpaid, hint: f.finance?.hasUnpaid ? 'owed' : undefined },
+                            { label: 'Delete', icon: Trash2, danger: true, onClick: () => handleDelete(f),
+                              disabled: f.finance?.hasUnpaid, hint: f.finance?.hasUnpaid ? 'owed' : undefined },
+                          ]}
+                        />
+                      )
+                    })()}
                   </td>
                 </tr>
               ))}

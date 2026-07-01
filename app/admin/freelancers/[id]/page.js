@@ -5,389 +5,55 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
 import {
-  ArrowLeft, Mail, Phone, Star, Wallet, Clock, Pencil,
-  TrendingUp, TrendingDown, CheckCircle, XCircle, Loader2, BanknoteIcon
+  ArrowLeft, Mail, Phone, Clock, Pencil, Ban, RotateCcw, Loader2,
+  CheckCircle2, Send, CalendarClock,
 } from 'lucide-react'
 import Avatar from '@/components/ui/Avatar'
 import Badge from '@/components/ui/Badge'
-import Modal, { ModalFooter } from '@/components/ui/Modal'
 import FreelancerModal from '@/components/admin/freelancers/FreelancerModal'
-import { useForm } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
-import { z } from 'zod'
+import { formatCurrency } from '@/lib/utils'
 
-const TABS = ['Overview', 'Tasks', 'Timesheets', 'Assignments', 'Dues', 'Wallet', 'Withdrawals']
+const TABS = ['Overview', 'Engagements', 'Payments', 'Timesheets']
 
-const walletSchema = z.object({
-  type:        z.enum(['credit', 'debit']),
-  amount:      z.coerce.number().positive('Must be > 0'),
-  description: z.string().min(1, 'Required'),
-})
+function moneyByCurrency(totals) {
+  if (!totals || totals.length === 0) return formatCurrency(0)
+  return totals.map(t => formatCurrency(t.total, t.currency)).join('  ·  ')
+}
 
-const directPaySchema = z.object({
-  amount:       z.coerce.number().positive('Must be > 0'),
-  method:       z.string().min(1, 'Required'),
-  reference:    z.string().optional(),
-  note:         z.string().optional(),
-})
+const ASSIGN_COLORS = {
+  ASSIGNED: 'bg-blue-50 text-blue-700', ACCEPTED: 'bg-teal-50 text-teal-700',
+  IN_PROGRESS: 'bg-violet-50 text-violet-700', COMPLETED: 'bg-emerald-50 text-emerald-700',
+  CANCELLED: 'bg-rose-50 text-rose-600',
+}
+const PAY_LABEL = {
+  PENDING: { label: 'Not requested', cls: 'bg-gray-50 text-gray-500' },
+  PAYMENT_REQUESTED: { label: 'Awaiting payment', cls: 'bg-amber-50 text-amber-700' },
+  PAID: { label: 'Paid', cls: 'bg-emerald-50 text-emerald-700' },
+  NOT_REQUIRED: { label: 'Salary', cls: 'bg-indigo-50 text-indigo-700' },
+}
 
-const bulkPaySchema = z.object({
-  amount:         z.coerce.number().positive('Must be > 0'),
-  method:         z.string().min(1, 'Required'),
-  paymentDetails: z.string().optional(),
-  note:           z.string().optional(),
-})
-
-function StatBox({ label, value, color = 'blue' }) {
-  const colors = {
-    blue:   'bg-blue-50 text-blue-700',
-    green:  'bg-green-50 text-green-700',
-    yellow: 'bg-yellow-50 text-yellow-700',
-    purple: 'bg-purple-50 text-purple-700',
-  }
+function StatBox({ label, value, hint, color }) {
   return (
-    <div className={`rounded-xl p-4 ${colors[color]}`}>
-      <p className="text-xs font-medium opacity-70">{label}</p>
-      <p className="text-2xl font-bold mt-1">{value}</p>
+    <div className="rounded-2xl border border-gray-100 bg-white p-4 sm:p-5 shadow-sm">
+      <p className={`text-xs font-medium uppercase tracking-wide ${color}`}>{label}</p>
+      <p className="text-lg sm:text-xl font-bold text-gray-900 mt-1.5 break-words">{value}</p>
+      {hint && <p className="text-xs text-gray-400 mt-1">{hint}</p>}
     </div>
   )
 }
 
-function WalletModal({ open, onOpenChange, freelancerId, balance, onDone }) {
-  const { register, handleSubmit, watch, reset, formState: { errors, isSubmitting } } = useForm({
-    resolver: zodResolver(walletSchema),
-    defaultValues: { type: 'credit' },
-  })
-  const type = watch('type')
-
-  useEffect(() => { if (open) reset({ type: 'credit' }) }, [open, reset])
-
-  async function onSubmit(data) {
-    const res  = await fetch(`/api/freelancers/${freelancerId}/wallet`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    })
-    const json = await res.json()
-    if (!res.ok) throw new Error(json.error ?? 'Failed')
-    onDone()
-    onOpenChange(false)
-  }
-
-  return (
-    <Modal open={open} onOpenChange={onOpenChange} title="Wallet Adjustment" size="sm"
-      description={`Current balance: ৳ ${(balance ?? 0).toLocaleString()}`}>
-      <form id="wallet-form" onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Action</label>
-          <div className="flex gap-3">
-            {[{ value: 'credit', label: '+ Credit' }, { value: 'debit', label: '− Debit' }].map((t) => (
-              <label key={t.value} className="flex-1 flex items-center gap-2 p-3 border rounded-lg cursor-pointer has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50 transition-colors">
-                <input type="radio" value={t.value} {...register('type')} className="accent-blue-600" />
-                <span className="text-sm font-medium">{t.label}</span>
-              </label>
-            ))}
-          </div>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Amount ($)</label>
-          <input type="number" step="0.01" min="0" placeholder="0.00" {...register('amount')} onKeyDown={e => { if (e.key === '-' || e.key === 'e') e.preventDefault() }}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-          {errors.amount && <p className="mt-1 text-xs text-red-500">{errors.amount.message}</p>}
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-          <input placeholder="Reason for adjustment…" {...register('description')}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-          {errors.description && <p className="mt-1 text-xs text-red-500">{errors.description.message}</p>}
-        </div>
-      </form>
-      <ModalFooter>
-        <button type="button" onClick={() => onOpenChange(false)}
-          className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-          Cancel
-        </button>
-        <button type="submit" form="wallet-form" disabled={isSubmitting}
-          className={`px-4 py-2 text-sm font-medium text-white rounded-lg disabled:opacity-60 transition-colors flex items-center gap-2 ${type === 'credit' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}>
-          {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
-          {type === 'credit' ? 'Add Credit' : 'Deduct'}
-        </button>
-      </ModalFooter>
-    </Modal>
-  )
-}
-
-const PAY_METHODS = ['BKASH', 'BANK', 'CASH', 'CHEQUE', 'ONLINE', 'OTHER']
-
-function DirectPayModal({ open, onOpenChange, freelancerId, assignment, onDone }) {
-  const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm({
-    resolver: zodResolver(directPaySchema),
-    defaultValues: { method: 'BKASH', reference: '', note: '' },
-  })
-
-  useEffect(() => {
-    if (open) reset({
-      amount: assignment?.paymentAmount ?? '',
-      method: 'BKASH',
-      reference: '',
-      note: '',
-    })
-  }, [open, assignment, reset])
-
-  async function onSubmit(data) {
-    const res  = await fetch('/api/admin/direct-payment', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        freelancerId,
-        amount:      Number(data.amount),
-        method:      data.method,
-        reference:   data.reference,
-        note:        data.note,
-        projectId:   assignment?.projectId?._id ?? assignment?.projectId ?? null,
-        assignmentId: assignment?.id ?? assignment?._id ?? null,
-      }),
-    })
-    const json = await res.json()
-    if (!res.ok) throw new Error(json.error ?? 'Payment failed')
-    onDone()
-    onOpenChange(false)
-  }
-
-  return (
-    <Modal open={open} onOpenChange={onOpenChange} title="Direct Payment" size="sm"
-      description={assignment?.projectId?.name ? `Project: ${assignment.projectId.name}` : 'Pay freelancer directly'}>
-      <form id="direct-pay-form" onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Amount (৳)</label>
-          <input type="number" step="0.01" min="0" placeholder="0.00" {...register('amount')} onKeyDown={e => { if (e.key === '-' || e.key === 'e') e.preventDefault() }}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-          {errors.amount && <p className="mt-1 text-xs text-red-500">{errors.amount.message}</p>}
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Payment Method</label>
-          <select {...register('method')}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-            {PAY_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Reference / TxID <span className="text-gray-400 font-normal">(optional)</span></label>
-          <input placeholder="e.g. TXN1234, cheque no..." {...register('reference')}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Note <span className="text-gray-400 font-normal">(optional)</span></label>
-          <input placeholder="Reason or description…" {...register('note')}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-        </div>
-      </form>
-      <ModalFooter>
-        <button type="button" onClick={() => onOpenChange(false)}
-          className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-          Cancel
-        </button>
-        <button type="submit" form="direct-pay-form" disabled={isSubmitting}
-          className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-60 transition-colors flex items-center gap-2">
-          {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
-          Pay Now
-        </button>
-      </ModalFooter>
-    </Modal>
-  )
-}
-
-const VENTURE_COLORS = {
-  ENSTUDIO: 'bg-purple-100 text-purple-700',
-  ENTECH:   'bg-blue-100 text-blue-700',
-  ENMARK:   'bg-green-100 text-green-700',
-}
-
-// Compute FIFO allocation preview on the client (mirrors server logic)
-function computeAllocations(assignments, amount) {
-  const result = []
-  let remaining = amount
-  for (const a of assignments) {
-    if (remaining <= 0) break
-    const allocAmt = Math.min(remaining, a.paymentAmount)
-    result.push({ assignment: a, amount: allocAmt })
-    remaining -= allocAmt
-  }
-  return result
-}
-
-function BulkPayModal({ open, onOpenChange, freelancerId, dueSummary, onDone }) {
-  const [fullPay, setFullPay] = useState(true)
-  const { register, handleSubmit, watch, reset, setValue, formState: { errors, isSubmitting } } = useForm({
-    resolver: zodResolver(bulkPaySchema),
-    defaultValues: { method: 'BKASH', paymentDetails: '', note: '' },
-  })
-
-  const watchAmount = watch('amount')
-  const totalDue = dueSummary?.totalDue ?? 0
-  const assignments = dueSummary?.assignments ?? []
-
-  useEffect(() => {
-    if (open) {
-      setFullPay(true)
-      reset({ amount: totalDue > 0 ? totalDue : '', method: 'BKASH', paymentDetails: '', note: '' })
-    }
-  }, [open, totalDue, reset])
-
-  useEffect(() => {
-    if (fullPay) setValue('amount', totalDue > 0 ? totalDue : '')
-  }, [fullPay, totalDue, setValue])
-
-  const parsedAmount = Number(watchAmount) || 0
-  const previewAllocations = parsedAmount > 0 ? computeAllocations(assignments, parsedAmount) : []
-
-  async function onSubmit(data) {
-    if (Number(data.amount) > totalDue) {
-      toast.error(`Amount exceeds total due ৳${totalDue.toLocaleString()}`)
-      return
-    }
-    const res  = await fetch(`/api/admin/freelancers/${freelancerId}/pay`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...data, amount: Number(data.amount) }),
-    })
-    const json = await res.json()
-    if (!res.ok) throw new Error(json.error ?? 'Payment failed')
-    toast.success('Payment request submitted for approval')
-    onDone()
-    onOpenChange(false)
-  }
-
-  return (
-    <Modal open={open} onOpenChange={onOpenChange} title="Pay Freelancer Dues" size="lg"
-      description={`Total outstanding: ৳${totalDue.toLocaleString('en-BD', { minimumFractionDigits: 2 })}`}>
-      <form id="bulk-pay-form" onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-
-        {/* Full / Partial toggle */}
-        <div className="flex gap-3">
-          {[{ val: true, label: 'Pay Full Amount' }, { val: false, label: 'Pay Partial' }].map(({ val, label }) => (
-            <button key={label} type="button"
-              onClick={() => setFullPay(val)}
-              className={`flex-1 py-2.5 text-sm font-medium rounded-lg border transition-colors ${
-                fullPay === val
-                  ? 'bg-blue-600 text-white border-blue-600'
-                  : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
-              }`}>
-              {label}
-            </button>
-          ))}
-        </div>
-
-        {/* Amount */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Amount (৳) {fullPay && <span className="text-gray-400 font-normal">— pre-filled</span>}
-          </label>
-          <input type="number" step="0.01" min="0" readOnly={fullPay} {...register('amount')} onKeyDown={e => { if (e.key === '-' || e.key === 'e') e.preventDefault() }}
-            className={`w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${fullPay ? 'bg-gray-50 text-gray-500' : ''}`} />
-          {errors.amount && <p className="mt-1 text-xs text-red-500">{errors.amount.message}</p>}
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          {/* Method */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Payment Method</label>
-            <select {...register('method')}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-              {['BKASH', 'BANK', 'CASH', 'CHEQUE', 'ONLINE', 'OTHER'].map(m => <option key={m} value={m}>{m}</option>)}
-            </select>
-          </div>
-          {/* Note */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Note <span className="text-gray-400 font-normal">(optional)</span></label>
-            <input placeholder="Reference, reason…" {...register('note')}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-          </div>
-        </div>
-
-        {/* Payment details */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Payment Details <span className="text-gray-400 font-normal">(account / bKash no. etc.)</span></label>
-          <textarea rows={2} placeholder="e.g. bKash: 01XXXXXXXXX" {...register('paymentDetails')}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
-        </div>
-
-        {/* Allocation preview */}
-        {previewAllocations.length > 0 && (
-          <div className="rounded-xl border border-gray-100 overflow-hidden">
-            <div className="px-4 py-2 bg-gray-50 border-b border-gray-100">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Allocation Preview (FIFO)</p>
-            </div>
-            <div className="divide-y divide-gray-50">
-              {previewAllocations.map(({ assignment, amount: allocAmt }, i) => (
-                <div key={i} className="flex items-center justify-between px-4 py-2.5">
-                  <div className="flex items-center gap-2 min-w-0">
-                    {assignment.project?.venture && (
-                      <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${VENTURE_COLORS[assignment.project.venture] ?? 'bg-gray-100 text-gray-600'}`}>
-                        {assignment.project.venture}
-                      </span>
-                    )}
-                    <p className="text-sm text-gray-700 truncate">{assignment.project?.name ?? 'Unknown Project'}</p>
-                    {assignment.project?.code && (
-                      <span className="text-xs text-gray-400 font-mono">{assignment.project.code}</span>
-                    )}
-                  </div>
-                  <div className="text-right shrink-0 ml-4">
-                    <span className="text-sm font-semibold text-gray-900">
-                      ৳{allocAmt.toLocaleString('en-BD', { minimumFractionDigits: 2 })}
-                    </span>
-                    {allocAmt < assignment.paymentAmount && (
-                      <span className="ml-1.5 text-xs text-orange-500">(partial)</span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="flex items-center justify-between px-4 py-2.5 bg-blue-50 border-t border-blue-100">
-              <p className="text-sm font-semibold text-blue-700">Total</p>
-              <p className="text-sm font-bold text-blue-700">
-                ৳{previewAllocations.reduce((s, a) => s + a.amount, 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })}
-              </p>
-            </div>
-          </div>
-        )}
-
-        <p className="text-xs text-gray-400 flex items-start gap-1.5">
-          <span className="mt-0.5">ℹ</span>
-          This payment will be sent to Accounts for approval. All syncing (project expenses, transaction records) happens after approval.
-        </p>
-      </form>
-      <ModalFooter>
-        <button type="button" onClick={() => onOpenChange(false)}
-          className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-          Cancel
-        </button>
-        <button type="submit" form="bulk-pay-form" disabled={isSubmitting || totalDue === 0}
-          className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-60 transition-colors flex items-center gap-2">
-          {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
-          Submit for Approval
-        </button>
-      </ModalFooter>
-    </Modal>
-  )
+function fmtDate(d) {
+  return d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 }
 
 export default function FreelancerDetailPage() {
-  const { id }  = useParams()
-  const router  = useRouter()
-  const [data,         setData]         = useState(null)
-  const [wallet,       setWallet]       = useState(null)
-  const [assignments,  setAssignments]  = useState([])
-  const [loading,      setLoading]      = useState(true)
-  const [tab,          setTab]          = useState('Overview')
-  const [editOpen,          setEditOpen]          = useState(false)
-  const [walletOpen,        setWalletOpen]        = useState(false)
-  const [approving,         setApproving]         = useState(null)
-  const [directPayOpen,     setDirectPayOpen]     = useState(false)
-  const [directPayAssign,   setDirectPayAssign]   = useState(null)
-  const [bulkPayOpen,       setBulkPayOpen]       = useState(false)
-  const [dueSummary,        setDueSummary]        = useState(null)
-  const [dueLoading,        setDueLoading]        = useState(false)
+  const { id } = useParams()
+  const router = useRouter()
+  const [data, setData]     = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [tab, setTab]       = useState('Overview')
+  const [editOpen, setEditOpen] = useState(false)
+  const [acting, setActing] = useState(null)
 
   const load = useCallback(async () => {
     try {
@@ -402,58 +68,67 @@ export default function FreelancerDetailPage() {
     }
   }, [id])
 
-  const loadWallet = useCallback(async () => {
-    try {
-      const res  = await fetch(`/api/freelancers/${id}/wallet`)
-      const json = await res.json()
-      if (res.ok) setWallet(json.data)
-    } catch { /* silent */ }
-  }, [id])
-
-  const loadAssignments = useCallback(async () => {
-    try {
-      const res  = await fetch(`/api/freelancer-assignments?freelancerId=${id}`)
-      const json = await res.json()
-      if (res.ok) setAssignments(json.data ?? [])
-    } catch { /* silent */ }
-  }, [id])
-
-  const loadDueSummary = useCallback(async () => {
-    setDueLoading(true)
-    try {
-      const res  = await fetch(`/api/admin/freelancers/${id}/due-summary`)
-      const json = await res.json()
-      if (res.ok) setDueSummary(json.data)
-    } catch { /* silent */ }
-    finally { setDueLoading(false) }
-  }, [id])
-
   useEffect(() => { load() }, [load])
-  useEffect(() => { if (tab === 'Wallet')       loadWallet()      }, [tab, loadWallet])
-  useEffect(() => { if (tab === 'Assignments')  loadAssignments() }, [tab, loadAssignments])
-  useEffect(() => { if (tab === 'Dues')         loadDueSummary()  }, [tab, loadDueSummary])
 
-  async function handleWithdrawal(requestId, action) {
-    setApproving(requestId)
+  async function assignmentAction(assignmentId, action, msg) {
+    setActing(assignmentId + action)
     try {
-      // Use the canonical settlement route so an approval here does the SAME work
-      // as the Accounts page: records a Transaction + ProjectExpense, marks the
-      // assignments PAID and adjusts the wallet. (The old per-freelancer route only
-      // flipped status + an unused balance field, so payments looked done here but
-      // showed unpaid everywhere else.)
-      const res  = await fetch(`/api/admin/withdrawal-requests/${requestId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+      const res  = await fetch(`/api/freelancer-assignments/${assignmentId}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error)
-      toast.success(`Withdrawal ${action === 'approve' ? 'approved' : 'rejected'}`)
+      toast.success(msg)
       load()
     } catch (err) {
       toast.error(err.message ?? 'Failed')
     } finally {
-      setApproving(null)
+      setActing(null)
+    }
+  }
+
+  async function generateSalary() {
+    try {
+      const res  = await fetch('/api/cron/salary-payouts', { method: 'POST' })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error)
+      toast.success(json.created > 0 ? `Generated ${json.created} payout(s)` : 'No new payouts due')
+      load()
+    } catch (err) {
+      toast.error(err.message ?? 'Failed')
+    }
+  }
+
+  // Salary is approved & paid from the unified Expenses queue; this only cancels a pending payout.
+  async function payoutAction(p, action) {
+    try {
+      const res  = await fetch(`/api/admin/salary-payouts/${p.id ?? p._id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error)
+      toast.success('Payout cancelled')
+      load()
+    } catch (err) {
+      toast.error(err.message ?? 'Failed')
+    }
+  }
+
+  async function toggleDisable(disable) {
+    if (disable && !confirm('Disable this account?')) return
+    try {
+      const res  = await fetch(`/api/freelancers/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: disable ? 'disable' : 'enable' }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error)
+      toast.success(disable ? 'Account disabled' : 'Account reactivated')
+      load()
+    } catch (err) {
+      toast.error(err.message ?? 'Failed')
     }
   }
 
@@ -464,7 +139,6 @@ export default function FreelancerDetailPage() {
       </div>
     )
   }
-
   if (!data) {
     return (
       <div className="text-center py-20">
@@ -474,35 +148,34 @@ export default function FreelancerDetailPage() {
     )
   }
 
-  const { userId: user, tasks = [], timesheets = [], withdrawals = [], earnings = [] } = data
-  const totalEarned    = earnings.filter(e => e.amount > 0).reduce((s, e) => s + e.amount, 0)
-  const pendingPayouts = withdrawals.filter(w => w.status === 'PENDING').length
-  const totalHours     = timesheets.reduce((s, t) => s + (t.hours ?? 0), 0)
-  const totalDue       = dueSummary?.totalDue ?? 0
+  const {
+    userId: user, assignments = [], salaryPayouts = [], timesheets = [], finance = {},
+  } = data
+  const isSalary = data.employmentMode === 'SALARY'
+  const disabled = data.disabledAt || user?.isActive === false
+  const totalHours = timesheets.reduce((s, t) => s + (t.hours ?? 0), 0)
+  const paidHistory = assignments.filter(a => a.paymentStatus === 'PAID')
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 mx-auto w-full max-w-6xl">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div className="flex items-center gap-4">
           <button onClick={() => router.back()} className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-500">
             <ArrowLeft className="w-5 h-5" />
           </button>
           <Avatar name={user?.name} src={user?.avatar} size="lg" />
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-xl font-bold text-gray-900">{user?.name}</h1>
-              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${user?.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                {user?.isActive ? 'Active' : 'Inactive'}
+              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${disabled ? 'bg-rose-100 text-rose-700' : 'bg-green-100 text-green-700'}`}>
+                {disabled ? 'Disabled' : 'Active'}
+              </span>
+              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${isSalary ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-600'}`}>
+                {isSalary ? 'Salary' : 'Project'} · {data.paymentCurrency ?? 'BDT'}
               </span>
             </div>
             {data.skills && <p className="text-sm text-gray-500 mt-0.5">{data.skills}</p>}
-            {data.hourlyRate && (
-              <p className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
-                <Star className="w-3 h-3 text-yellow-400 fill-yellow-400" />
-                ${data.hourlyRate}/{data.rateType?.toLowerCase() ?? 'hr'}
-              </p>
-            )}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -510,37 +183,42 @@ export default function FreelancerDetailPage() {
             className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors">
             <Pencil className="w-4 h-4" /> Edit
           </button>
+          {disabled ? (
+            <button onClick={() => toggleDisable(false)}
+              className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-emerald-700 text-sm font-medium rounded-lg hover:bg-emerald-50 transition-colors">
+              <RotateCcw className="w-4 h-4" /> Reactivate
+            </button>
+          ) : (
+            <button onClick={() => toggleDisable(true)} disabled={finance.hasUnpaid}
+              title={finance.hasUnpaid ? 'Settle outstanding dues first' : ''}
+              className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-rose-600 text-sm font-medium rounded-lg hover:bg-rose-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+              <Ban className="w-4 h-4" /> Disable
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatBox label="Wallet Balance"   value={`৳ ${(data.walletBalance ?? 0).toLocaleString()}`} color="green"  />
-        <StatBox label="Total Earned"     value={`৳ ${totalEarned.toLocaleString()}`}               color="blue"   />
-        <StatBox label="Hours Logged"     value={`${totalHours.toFixed(1)}h`}                      color="purple" />
-        <StatBox label="Pending Payouts"  value={pendingPayouts}                                   color="yellow" />
+      {/* Money buckets */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <StatBox label="In progress" value={moneyByCurrency(finance.accepted)} hint="Accepted, not delivered" color="text-violet-600" />
+        <StatBox label="Owed" value={moneyByCurrency(finance.owed)} hint="Delivered / requested, unpaid" color="text-amber-600" />
+        <StatBox label="Total paid" value={moneyByCurrency(finance.paid)} hint="Settled to date" color="text-emerald-600" />
       </div>
 
       {/* Tabs */}
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="flex border-b border-gray-100 overflow-x-auto">
-          {TABS.map((t) => (
+          {[...TABS, ...(isSalary ? ['Salary'] : [])].map((t) => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-5 py-3.5 text-sm font-medium whitespace-nowrap transition-colors relative ${
                 tab === t ? 'text-blue-600 border-b-2 border-blue-600 -mb-px' : 'text-gray-500 hover:text-gray-700'
               }`}>
               {t}
-              {t === 'Withdrawals' && pendingPayouts > 0 && (
-                <span className="ml-1.5 px-1.5 py-0.5 text-xs bg-red-500 text-white rounded-full">{pendingPayouts}</span>
-              )}
-              {t === 'Dues' && totalDue > 0 && (
-                <span className="ml-1.5 px-1.5 py-0.5 text-xs bg-orange-500 text-white rounded-full">৳</span>
-              )}
             </button>
           ))}
         </div>
 
-        <div className="p-6">
+        <div className="p-5 sm:p-6">
           {/* OVERVIEW */}
           {tab === 'Overview' && (
             <div className="grid lg:grid-cols-2 gap-8">
@@ -564,80 +242,88 @@ export default function FreelancerDetailPage() {
                     <p className="text-sm text-gray-600">{data.bio}</p>
                   </div>
                 )}
+                {disabled && data.disabledReason && (
+                  <div className="rounded-lg bg-rose-50 border border-rose-100 p-3">
+                    <p className="text-xs text-rose-600 font-medium">Disabled</p>
+                    <p className="text-sm text-rose-700 mt-0.5">{data.disabledReason}</p>
+                  </div>
+                )}
               </div>
               <div className="space-y-4">
-                <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Payment Methods</h3>
-                {[
-                  { label: 'PayPal',       value: data.paypalEmail },
-                  { label: 'bKash',        value: data.bkashNumber },
-                  { label: 'Bank Details', value: data.bankDetails },
-                ].map(({ label, value }) => value ? (
-                  <div key={label}>
-                    <p className="text-xs text-gray-400">{label}</p>
-                    <p className="text-sm font-medium text-gray-900 mt-0.5">{value}</p>
+                <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Engagement</h3>
+                <div>
+                  <p className="text-xs text-gray-400">Mode</p>
+                  <p className="text-sm font-medium text-gray-900 mt-0.5">{isSalary ? 'Monthly salary' : 'Per project / task'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-400">Default payment currency</p>
+                  <p className="text-sm font-medium text-gray-900 mt-0.5">{data.paymentCurrency ?? 'BDT'}</p>
+                </div>
+                {isSalary && (
+                  <div className="rounded-xl bg-indigo-50/60 border border-indigo-100 p-4 space-y-1.5">
+                    <p className="text-sm font-semibold text-gray-900">{formatCurrency(data.salaryAmount, data.salaryCurrency)} / month</p>
+                    <p className="text-xs text-gray-500">Pays on day {data.salaryDay ?? '—'} of each month</p>
+                    <p className="text-xs text-gray-400">
+                      {fmtDate(data.salaryStartDate)} → {data.salaryEndDate ? fmtDate(data.salaryEndDate) : 'ongoing'}
+                      {' · '}{data.salaryActive ? 'Active' : 'Paused'}
+                    </p>
                   </div>
-                ) : null)}
-                {!data.paypalEmail && !data.bkashNumber && !data.bankDetails && (
-                  <p className="text-sm text-gray-400">No payment methods configured</p>
                 )}
               </div>
             </div>
           )}
 
-          {/* ASSIGNMENTS */}
-          {tab === 'Assignments' && (
+          {/* ENGAGEMENTS */}
+          {tab === 'Engagements' && (
             assignments.length === 0 ? (
-              <div className="text-center py-12">
-                <p className="text-gray-400">No assignments found</p>
-              </div>
+              <div className="text-center py-12"><p className="text-gray-400">No engagements yet</p></div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[600px]">
+                <table className="w-full min-w-[640px]">
                   <thead>
                     <tr className="border-b border-gray-100">
-                      {['Project', 'Payment', 'Status', 'Payment Status', 'Date', ''].map(h => (
+                      {['Project', 'Amount', 'Stage', 'Payment', 'Date', 'Action'].map(h => (
                         <th key={h} className="pb-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wide">{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
                     {assignments.map(a => {
-                      const ASSIGN_COLORS = {
-                        ASSIGNED: 'bg-blue-100 text-blue-700', ACCEPTED: 'bg-teal-100 text-teal-700',
-                        IN_PROGRESS: 'bg-purple-100 text-purple-700', COMPLETED: 'bg-green-100 text-green-700', CANCELLED: 'bg-red-100 text-red-600',
-                      }
-                      const PAY_COLORS = {
-                        PENDING: 'bg-yellow-100 text-yellow-700', IN_WALLET: 'bg-green-100 text-green-700',
-                        WITHDRAWAL_REQUESTED: 'bg-blue-100 text-blue-700', PAID: 'bg-gray-100 text-gray-600',
-                      }
+                      const aid = a.id ?? a._id
+                      const pay = PAY_LABEL[a.paymentStatus] ?? PAY_LABEL.PENDING
                       return (
-                        <tr key={a.id ?? a._id} className="hover:bg-gray-50 transition-colors">
+                        <tr key={aid} className="hover:bg-gray-50 transition-colors">
                           <td className="py-3 pr-4">
                             <p className="text-sm font-medium text-gray-900">{a.projectId?.name ?? '—'}</p>
                             {a.projectId?.projectCode && <p className="text-xs text-gray-400 font-mono">{a.projectId.projectCode}</p>}
                           </td>
                           <td className="py-3 pr-4 text-sm font-medium text-gray-900">
-                            ৳{(a.paymentAmount ?? 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })}
+                            {a.paymentAmount ? formatCurrency(a.paymentAmount, a.currency) : '—'}
                           </td>
                           <td className="py-3 pr-4">
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${ASSIGN_COLORS[a.status] ?? 'bg-gray-100 text-gray-600'}`}>
+                            <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${ASSIGN_COLORS[a.status] ?? 'bg-gray-50 text-gray-600'}`}>
                               {a.status?.replace('_', ' ')}
                             </span>
                           </td>
                           <td className="py-3 pr-4">
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${PAY_COLORS[a.paymentStatus] ?? 'bg-gray-100 text-gray-600'}`}>
-                              {a.paymentStatus?.replace('_', ' ') ?? 'PENDING'}
-                            </span>
+                            <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${pay.cls}`}>{pay.label}</span>
                           </td>
-                          <td className="py-3 text-sm text-gray-400">
-                            {a.createdAt ? new Date(a.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
-                          </td>
+                          <td className="py-3 pr-4 text-sm text-gray-400">{fmtDate(a.createdAt)}</td>
                           <td className="py-3">
-                            {a.paymentStatus !== 'PAID' && (
-                              <button
-                                onClick={() => { setDirectPayAssign(a); setDirectPayOpen(true) }}
-                                className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition-colors">
-                                <BanknoteIcon className="w-3.5 h-3.5" /> Pay Now
+                            {['ACCEPTED', 'IN_PROGRESS'].includes(a.status) && (
+                              <button onClick={() => assignmentAction(aid, 'complete', 'Marked delivered')}
+                                disabled={acting === aid + 'complete'}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 text-gray-700 text-xs font-medium rounded-lg hover:bg-gray-50 disabled:opacity-50">
+                                {acting === aid + 'complete' && <Loader2 className="w-3 h-3 animate-spin" />}
+                                <CheckCircle2 className="w-3.5 h-3.5" /> Mark done
+                              </button>
+                            )}
+                            {a.status === 'COMPLETED' && a.paymentStatus === 'PENDING' && a.paymentAmount > 0 && (
+                              <button onClick={() => assignmentAction(aid, 'request_payment', 'Sent to payment')}
+                                disabled={acting === aid + 'request_payment'}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50">
+                                {acting === aid + 'request_payment' && <Loader2 className="w-3 h-3 animate-spin" />}
+                                <Send className="w-3.5 h-3.5" /> Send to payment
                               </button>
                             )}
                           </td>
@@ -650,133 +336,28 @@ export default function FreelancerDetailPage() {
             )
           )}
 
-          {/* DUES */}
-          {tab === 'Dues' && (
-            dueLoading ? (
-              <div className="flex items-center justify-center py-16">
-                <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-              </div>
-            ) : (
-              <div className="space-y-5">
-                {/* Summary header */}
-                <div className="flex items-center justify-between gap-4 p-5 rounded-xl bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-100">
-                  <div>
-                    <p className="text-xs font-medium text-orange-600 uppercase tracking-wide">Total Outstanding Dues</p>
-                    <p className="text-3xl font-bold text-gray-900 mt-1">
-                      ৳{(dueSummary?.totalDue ?? 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })}
-                    </p>
-                    <p className="text-sm text-gray-500 mt-0.5">
-                      {dueSummary?.assignments?.length ?? 0} unpaid assignment{(dueSummary?.assignments?.length ?? 0) !== 1 ? 's' : ''}
-                    </p>
-                  </div>
-                  {(dueSummary?.totalDue ?? 0) > 0 && (
-                    <button
-                      onClick={() => setBulkPayOpen(true)}
-                      className="flex items-center gap-2 px-5 py-2.5 bg-orange-600 hover:bg-orange-700 text-white text-sm font-medium rounded-lg transition-colors shrink-0">
-                      <BanknoteIcon className="w-4 h-4" />
-                      Pay Dues
-                    </button>
-                  )}
-                </div>
-
-                {/* Assignment breakdown */}
-                {(dueSummary?.assignments?.length ?? 0) === 0 ? (
-                  <div className="text-center py-12">
-                    <p className="text-gray-400">No outstanding dues — all assignments paid.</p>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full min-w-[560px]">
-                      <thead>
-                        <tr className="border-b border-gray-100">
-                          {['Project', 'Due Amount', 'Assignment Status', 'Payment Status', 'Date'].map(h => (
-                            <th key={h} className="pb-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wide">{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-50">
-                        {dueSummary.assignments.map((a, i) => {
-                          const ASSIGN_COLORS = {
-                            ASSIGNED: 'bg-blue-100 text-blue-700', ACCEPTED: 'bg-teal-100 text-teal-700',
-                            IN_PROGRESS: 'bg-purple-100 text-purple-700', COMPLETED: 'bg-green-100 text-green-700',
-                          }
-                          const PAY_COLORS = {
-                            PENDING: 'bg-yellow-100 text-yellow-700',
-                            IN_WALLET: 'bg-green-100 text-green-700',
-                            WITHDRAWAL_REQUESTED: 'bg-blue-100 text-blue-700',
-                            PAYMENT_REQUESTED: 'bg-orange-100 text-orange-700',
-                          }
-                          return (
-                            <tr key={a.id ?? i} className="hover:bg-gray-50 transition-colors">
-                              <td className="py-3 pr-4">
-                                <div className="flex items-center gap-2">
-                                  {a.project?.venture && (
-                                    <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${VENTURE_COLORS[a.project.venture] ?? 'bg-gray-100 text-gray-600'}`}>
-                                      {a.project.venture}
-                                    </span>
-                                  )}
-                                  <div>
-                                    <p className="text-sm font-medium text-gray-900">{a.project?.name ?? '—'}</p>
-                                    {a.project?.code && <p className="text-xs text-gray-400 font-mono">{a.project.code}</p>}
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="py-3 pr-4 text-sm font-semibold text-gray-900">
-                                ৳{(a.paymentAmount ?? 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })}
-                              </td>
-                              <td className="py-3 pr-4">
-                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${ASSIGN_COLORS[a.status] ?? 'bg-gray-100 text-gray-600'}`}>
-                                  {a.status?.replace('_', ' ') ?? '—'}
-                                </span>
-                              </td>
-                              <td className="py-3 pr-4">
-                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${PAY_COLORS[a.paymentStatus] ?? 'bg-gray-100 text-gray-600'}`}>
-                                  {a.paymentStatus?.replace('_', ' ') ?? 'PENDING'}
-                                </span>
-                              </td>
-                              <td className="py-3 text-sm text-gray-400">
-                                {a.createdAt ? new Date(a.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                      <tfoot>
-                        <tr className="border-t-2 border-gray-200">
-                          <td className="py-3 text-sm font-semibold text-gray-700">Total Due</td>
-                          <td className="py-3 text-sm font-bold text-orange-600">
-                            ৳{(dueSummary?.totalDue ?? 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })}
-                          </td>
-                          <td colSpan={3} />
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-                )}
-              </div>
-            )
-          )}
-
-          {/* TASKS */}
-          {tab === 'Tasks' && (
-            tasks.length === 0 ? (
-              <div className="text-center py-12">
-                <p className="text-gray-400">No tasks assigned</p>
-              </div>
+          {/* PAYMENTS */}
+          {tab === 'Payments' && (
+            paidHistory.length === 0 && salaryPayouts.filter(p => p.status === 'PAID').length === 0 ? (
+              <div className="text-center py-12"><p className="text-gray-400">No payments yet</p></div>
             ) : (
               <div className="space-y-2">
-                {tasks.map((t) => (
-                  <div key={t.id ?? t._id} className="flex items-center gap-4 p-4 rounded-xl border border-gray-100 hover:bg-gray-50 transition-colors">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900">{t.title}</p>
-                      {t.projectId?.name && <p className="text-xs text-gray-400 mt-0.5">{t.projectId.name}</p>}
+                {paidHistory.map(a => (
+                  <div key={a.id ?? a._id} className="flex items-center justify-between gap-4 p-4 rounded-xl border border-gray-100">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">{a.projectId?.name ?? 'Project'}</p>
+                      <p className="text-xs text-gray-400">Paid · {fmtDate(a.approvedAt ?? a.updatedAt)}</p>
                     </div>
-                    <div className="flex items-center gap-3 shrink-0">
-                      {t.dueDate && (
-                        <span className="text-xs text-gray-400">{new Date(t.dueDate).toLocaleDateString()}</span>
-                      )}
-                      <Badge status={t.status} />
+                    <p className="text-sm font-semibold text-emerald-600 shrink-0">{formatCurrency(a.paymentAmount, a.currency)}</p>
+                  </div>
+                ))}
+                {salaryPayouts.filter(p => p.status === 'PAID').map(p => (
+                  <div key={p.id ?? p._id} className="flex items-center justify-between gap-4 p-4 rounded-xl border border-gray-100">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">Salary · {p.period}</p>
+                      <p className="text-xs text-gray-400">Paid · {fmtDate(p.approvedAt)}</p>
                     </div>
+                    <p className="text-sm font-semibold text-emerald-600 shrink-0">{formatCurrency(p.amount, p.currency)}</p>
                   </div>
                 ))}
               </div>
@@ -802,11 +383,10 @@ export default function FreelancerDetailPage() {
                 <tbody className="divide-y divide-gray-50">
                   {timesheets.map((ts) => (
                     <tr key={ts.id ?? ts._id} className="hover:bg-gray-50">
-                      <td className="py-3 text-sm text-gray-500">{new Date(ts.date).toLocaleDateString()}</td>
+                      <td className="py-3 text-sm text-gray-500">{fmtDate(ts.date)}</td>
                       <td className="py-3">
                         <p className="text-sm text-gray-900">{ts.taskId?.title ?? '—'}</p>
                         {ts.taskId?.projectId?.name && <p className="text-xs text-gray-400">{ts.taskId.projectId.name}</p>}
-                        {ts.description && <p className="text-xs text-gray-400 mt-0.5">{ts.description}</p>}
                       </td>
                       <td className="py-3 text-sm font-semibold text-gray-900 text-right">{ts.hours}h</td>
                     </tr>
@@ -822,102 +402,50 @@ export default function FreelancerDetailPage() {
             )
           )}
 
-          {/* WALLET */}
-          {tab === 'Wallet' && (
-            <div className="space-y-6">
-              <div className="flex items-center justify-between">
-                <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl px-6 py-5 flex-1 mr-4">
-                  <p className="text-blue-200 text-sm">Available Balance</p>
-                  <p className="text-3xl font-bold mt-1">${(data.walletBalance ?? 0).toLocaleString()}</p>
+          {/* SALARY */}
+          {tab === 'Salary' && isSalary && (
+            <div className="space-y-5">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <CalendarClock className="w-4 h-4 text-indigo-500" />
+                  <h3 className="text-sm font-semibold text-gray-700">Salary Payouts</h3>
                 </div>
-                <button onClick={() => setWalletOpen(true)}
-                  className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors">
-                  <Wallet className="w-4 h-4" /> Adjust
+                <button onClick={generateSalary}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 text-gray-700 text-xs font-medium rounded-lg hover:bg-gray-50">
+                  <RotateCcw className="w-3.5 h-3.5" /> Generate due payouts
                 </button>
               </div>
-
-              {wallet ? (
-                wallet.transactions.length === 0 ? (
-                  <p className="text-center text-gray-400 py-8">No wallet transactions</p>
-                ) : (
-                  <div className="space-y-2">
-                    {wallet.transactions.map((tx) => (
-                      <div key={tx.id} className="flex items-center gap-3 p-3 rounded-lg border border-gray-100">
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center ${tx.type === 'debit' ? 'bg-red-100' : 'bg-green-100'}`}>
-                          {tx.type === 'debit'
-                            ? <TrendingDown className="w-4 h-4 text-red-500" />
-                            : <TrendingUp className="w-4 h-4 text-green-600" />}
-                        </div>
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-gray-900">{tx.description}</p>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <p className="text-xs text-gray-400">{new Date(tx.date).toLocaleDateString()}</p>
-                            {tx.type === 'direct_payment' && (
-                              <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-medium">Direct Pay</span>
-                            )}
-                          </div>
-                        </div>
-                        <span className={`text-sm font-semibold ${tx.type === 'debit' ? 'text-red-500' : 'text-green-600'}`}>
-                          {tx.type === 'debit' ? '-' : '+'}৳{tx.amount.toLocaleString()}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )
+              <p className="text-xs text-gray-400">
+                Payouts are created automatically on day {data.salaryDay ?? '—'} each month. Use “Generate due payouts” to run it now.
+              </p>
+              {salaryPayouts.length === 0 ? (
+                <p className="text-gray-400 text-sm">No payouts yet.</p>
               ) : (
-                <div className="text-center py-8">
-                  <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto" />
+                <div className="space-y-2">
+                  {salaryPayouts.map(p => (
+                    <div key={p.id ?? p._id} className="flex items-center justify-between gap-4 p-4 rounded-xl border border-gray-100">
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">{p.period}</p>
+                        <p className="text-xs text-gray-400">{p.status === 'PAID' ? `Paid · ${fmtDate(p.approvedAt)}` : p.status}</p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <p className="text-sm font-semibold text-gray-900">{formatCurrency(p.amount, p.currency)}</p>
+                        {p.status === 'PENDING' ? (
+                          <div className="flex items-center gap-2">
+                            <Link href="/admin/accounts?tab=requests"
+                              className="px-2.5 py-1 bg-white border border-gray-200 text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-50">Approve in Expenses →</Link>
+                            <button onClick={() => payoutAction(p, 'cancel')}
+                              className="px-2.5 py-1 bg-white border border-gray-200 text-rose-600 text-xs font-medium rounded-lg hover:bg-rose-50">Cancel</button>
+                          </div>
+                        ) : (
+                          <Badge status={p.status} />
+                        )}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
-          )}
-
-          {/* WITHDRAWALS */}
-          {tab === 'Withdrawals' && (
-            withdrawals.length === 0 ? (
-              <div className="text-center py-12">
-                <p className="text-gray-400">No withdrawal requests</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {withdrawals.map((w) => (
-                  <div key={w.id ?? w._id} className="flex items-center gap-4 p-4 rounded-xl border border-gray-100">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-semibold text-gray-900">৳{w.amount.toLocaleString()}</p>
-                        <Badge status={w.status} />
-                        {w.isDirectPayment && (
-                          <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-medium">Direct Pay</span>
-                        )}
-                      </div>
-                      <p className="text-xs text-gray-400 mt-0.5">
-                        via {w.method} · {new Date(w.createdAt).toLocaleDateString()}
-                      </p>
-                      {w.adminNote && <p className="text-xs text-gray-500 mt-1 italic">{w.adminNote}</p>}
-                    </div>
-                    {w.status === 'PENDING' && (
-                      <div className="flex items-center gap-2 shrink-0">
-                        <button
-                          onClick={() => handleWithdrawal(w.id ?? w._id, 'approve')}
-                          disabled={approving === (w.id ?? w._id)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 disabled:opacity-60 transition-colors"
-                        >
-                          {approving === (w.id ?? w._id) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
-                          Approve
-                        </button>
-                        <button
-                          onClick={() => handleWithdrawal(w.id ?? w._id, 'reject')}
-                          disabled={approving === (w.id ?? w._id)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 text-red-600 text-xs font-medium rounded-lg hover:bg-red-50 disabled:opacity-60 transition-colors"
-                        >
-                          <XCircle className="w-3.5 h-3.5" /> Reject
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )
           )}
         </div>
       </div>
@@ -927,37 +455,6 @@ export default function FreelancerDetailPage() {
         onOpenChange={setEditOpen}
         freelancer={data}
         onSaved={() => { toast.success('Freelancer updated'); load() }}
-      />
-
-      <WalletModal
-        open={walletOpen}
-        onOpenChange={setWalletOpen}
-        freelancerId={id}
-        balance={data.walletBalance}
-        onDone={() => { load(); loadWallet(); toast.success('Wallet updated') }}
-      />
-
-      <DirectPayModal
-        open={directPayOpen}
-        onOpenChange={setDirectPayOpen}
-        freelancerId={id}
-        assignment={directPayAssign}
-        onDone={() => {
-          toast.success('Payment recorded')
-          loadAssignments()
-          loadWallet()
-        }}
-      />
-
-      <BulkPayModal
-        open={bulkPayOpen}
-        onOpenChange={setBulkPayOpen}
-        freelancerId={id}
-        dueSummary={dueSummary}
-        onDone={() => {
-          loadDueSummary()
-          load()
-        }}
       />
     </div>
   )

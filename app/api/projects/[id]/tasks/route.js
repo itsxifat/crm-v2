@@ -5,6 +5,7 @@ import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Task, Comment, Attachment, Timesheet, Employee, Freelancer, Client } from '@/models'
 import { canAccess } from '@/lib/permissions'
+import { createNotification } from '@/lib/createNotification'
 import { z } from 'zod'
 
 const createTaskSchema = z.object({
@@ -14,8 +15,8 @@ const createTaskSchema = z.object({
   priority:             z.enum(['LOW','MEDIUM','HIGH','URGENT']).default('MEDIUM'),
   dueDate:              z.string().optional().nullable(),
   estimatedHours:       z.number().positive().optional().nullable(),
+  // Tasks are for in-house employees only.
   assignedEmployeeId:   z.string().optional().nullable(),
-  assignedFreelancerId: z.string().optional().nullable(),
   isClientVisible:      z.boolean().default(false),
   tags:                 z.string().optional().nullable(),
 })
@@ -109,6 +110,20 @@ export async function POST(request, { params }) {
       { path: 'assignedEmployeeId',   populate: { path: 'userId', select: 'id name avatar' } },
       { path: 'assignedFreelancerId', populate: { path: 'userId', select: 'id name avatar' } },
     ])
+
+    // Notify the assigned employee so the task actually surfaces for them to accept.
+    if (task.assignedEmployeeId) {
+      const assigneeUserId = task.assignedEmployeeId?.userId?._id ?? task.assignedEmployeeId?.userId?.id
+      if (assigneeUserId) {
+        createNotification({
+          userId:  assigneeUserId.toString(),
+          title:   'New task assigned',
+          message: `You've been assigned "${task.title}". Review and accept it.`,
+          type:    'TASK',
+          link:    '/admin/tasks',
+        }).catch(() => {})
+      }
+    }
 
     return NextResponse.json({
       data: { ...task.toJSON(), _count: { comments: 0, attachments: 0 } },

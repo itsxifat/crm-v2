@@ -6,6 +6,7 @@ import connectDB from '@/lib/mongodb'
 import { Task, Timesheet, Comment, Attachment, Employee, Freelancer } from '@/models'
 import { canAccess } from '@/lib/permissions'
 import { logActivity } from '@/lib/logActivity'
+import { createNotification } from '@/lib/createNotification'
 import { z } from 'zod'
 
 const updateTaskSchema = z.object({
@@ -106,9 +107,30 @@ export async function PUT(request, { params }) {
     const data = { ...parsed.data }
     if (data.dueDate) data.dueDate = new Date(data.dueDate)
 
+    // (Re)assigning to an employee resets the acceptance flow.
+    if (data.assignedEmployeeId !== undefined) {
+      data.assignmentStatus = 'ASSIGNED'
+      data.acceptedAt = null
+      data.declinedAt = null
+    }
+
     const task = await Task.findByIdAndUpdate(params.id, data, { new: true })
       .populate({ path: 'assignedEmployeeId',   populate: { path: 'userId', select: 'id name avatar' } })
       .populate({ path: 'assignedFreelancerId', populate: { path: 'userId', select: 'id name avatar' } })
+
+    // Notify the (new) assignee so the task surfaces for them to accept.
+    if (data.assignedEmployeeId && task?.assignedEmployeeId?.userId) {
+      const uid = task.assignedEmployeeId.userId._id ?? task.assignedEmployeeId.userId.id
+      if (uid) {
+        createNotification({
+          userId:  uid.toString(),
+          title:   'Task assigned to you',
+          message: `You've been assigned "${task.title}". Review and accept it.`,
+          type:    'TASK',
+          link:    '/admin/tasks',
+        }).catch(() => {})
+      }
+    }
 
     const [commentCount, attachmentCount] = await Promise.all([
       Comment.countDocuments({ taskId: params.id }),
@@ -130,6 +152,46 @@ export async function PUT(request, { params }) {
     })
   } catch (err) {
     console.error('[PUT /api/tasks/[id]]', err)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
+// PATCH /api/tasks/[id] — assignee accepts or declines the task.
+export async function PATCH(request, { params }) {
+  try {
+    const session = await getServerSession(authOptions)
+    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+
+    await connectDB()
+    const { action } = await request.json()
+    if (!['accept', 'decline'].includes(action)) {
+      return NextResponse.json({ error: 'action must be "accept" or "decline"' }, { status: 422 })
+    }
+
+    const task = await Task.findById(params.id)
+    if (!task) return NextResponse.json({ error: 'Task not found' }, { status: 404 })
+
+    // Only the assigned employee (or a manager/admin) may accept/decline.
+    const isManager = ['SUPER_ADMIN', 'MANAGER'].includes(session.user.role)
+    if (!isManager) {
+      const employee = await Employee.findOne({ userId: session.user.id }).select('_id').lean()
+      if (!employee || String(task.assignedEmployeeId) !== String(employee._id)) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+    }
+
+    if (action === 'accept') {
+      task.assignmentStatus = 'ACCEPTED'
+      task.acceptedAt = new Date()
+    } else {
+      task.assignmentStatus = 'DECLINED'
+      task.declinedAt = new Date()
+    }
+    await task.save()
+
+    return NextResponse.json({ data: task.toJSON() })
+  } catch (err) {
+    console.error('[PATCH /api/tasks/[id]]', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

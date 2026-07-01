@@ -7,8 +7,9 @@ const ProjectPaymentSchema = new mongoose.Schema(
     clientId:      { type: mongoose.Schema.Types.ObjectId, ref: 'Client',   default: null },
     submittedBy:   { type: mongoose.Schema.Types.ObjectId, ref: 'User',     default: null },
 
-    amount:        { type: Number, required: true },
+    amount:        { type: Number, required: true },   // amount in `currency`
     currency:      { type: String, default: 'BDT' },
+    amountBDT:     { type: Number, default: null },     // BDT-equivalent; == amount for BDT
     paymentMethod: { type: String, default: 'BANK_TRANSFER' },
     paymentDate:   { type: Date, default: Date.now },
     description:   { type: String, default: null },

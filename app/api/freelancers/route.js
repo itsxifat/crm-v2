@@ -3,11 +3,11 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
-import { User, Freelancer } from '@/models'
+import { User, Freelancer, FreelancerAssignment, SalaryPayout } from '@/models'
 import bcrypt from 'bcryptjs'
 import crypto from 'crypto'
 import { ciEquals, ciContains } from '@/lib/searchMatch'
-import { requireStaff } from '@/lib/rbac'
+import { requireStaff, requirePerm } from '@/lib/rbac'
 import { maskList, FREELANCER_PII } from '@/lib/pii'
 import { sendFreelancerInviteEmail, sendEmployeeLoginEmail } from '@/lib/mailer'
 import { sendFreelancerInviteWhatsApp } from '@/lib/whatsapp'
@@ -56,7 +56,49 @@ export async function GET(request) {
       Freelancer.countDocuments(filter),
     ])
 
+    // Per-freelancer money rollups for this page (owed/paid in BDT-equivalent) +
+    // last activity, computed with aggregation. amountBDT falls back to the
+    // original amount for legacy/BDT rows.
+    const ids = freelancers.map(f => f._id)
+    const [asgRollup, salRollup] = await Promise.all([
+      FreelancerAssignment.aggregate([
+        { $match: { freelancerId: { $in: ids }, paymentStatus: { $ne: 'NOT_REQUIRED' } } },
+        { $group: {
+          _id: '$freelancerId',
+          owed: { $sum: { $cond: [
+            { $or: [
+              { $and: [{ $eq: ['$status', 'COMPLETED'] }, { $ne: ['$paymentStatus', 'PAID'] }] },
+              { $eq: ['$paymentStatus', 'PAYMENT_REQUESTED'] },
+            ] },
+            { $ifNull: ['$amountBDT', '$paymentAmount'] }, 0,
+          ] } },
+          paid: { $sum: { $cond: [{ $eq: ['$paymentStatus', 'PAID'] }, { $ifNull: ['$amountBDT', '$paymentAmount'] }, 0] } },
+          lastWorkedAt: { $max: '$updatedAt' },
+        } },
+      ]),
+      SalaryPayout.aggregate([
+        { $match: { freelancerId: { $in: ids } } },
+        { $group: {
+          _id: '$freelancerId',
+          owed: { $sum: { $cond: [{ $eq: ['$status', 'PENDING'] }, { $ifNull: ['$amountBDT', '$amount'] }, 0] } },
+          paid: { $sum: { $cond: [{ $eq: ['$status', 'PAID'] }, { $ifNull: ['$amountBDT', '$amount'] }, 0] } },
+        } },
+      ]),
+    ])
+    const financeMap = new Map()
+    for (const r of asgRollup) financeMap.set(String(r._id), { owedBDT: r.owed || 0, paidBDT: r.paid || 0, lastWorkedAt: r.lastWorkedAt ?? null })
+    for (const r of salRollup) {
+      const cur = financeMap.get(String(r._id)) ?? { owedBDT: 0, paidBDT: 0, lastWorkedAt: null }
+      cur.owedBDT += r.owed || 0
+      cur.paidBDT += r.paid || 0
+      financeMap.set(String(r._id), cur)
+    }
+
     const data = maskList(session, freelancers.map(f => f.toJSON()), FREELANCER_PII)
+      .map(f => {
+        const fin = financeMap.get(String(f.id)) ?? { owedBDT: 0, paidBDT: 0, lastWorkedAt: null }
+        return { ...f, finance: { ...fin, hasUnpaid: fin.owedBDT > 0 } }
+      })
 
     return NextResponse.json({
       data,
@@ -72,11 +114,8 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-
-    if (!['SUPER_ADMIN', 'MANAGER'].includes(session.user.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const denied = requirePerm(session, 'hr.freelancers.manage')
+    if (denied) return denied
 
     await connectDB()
 
@@ -88,8 +127,15 @@ export async function POST(request) {
       phone,
       skills,
       bio,
-      rateType,
-      hourlyRate,
+      // Engagement model — freelancers carry NO rate by default; rate is decided
+      // per project/task. SALARY mode = temporary salary-based hire.
+      employmentMode = 'PROJECT',
+      paymentCurrency = 'BDT',
+      salaryAmount,
+      salaryCurrency,
+      salaryDay,
+      salaryStartDate,
+      salaryEndDate,
       agencyInfo,
       contactPerson,
     } = body
@@ -140,12 +186,21 @@ export async function POST(request) {
       type,
       skills:   skills ?? null,
       bio:      bio    ?? null,
-      rateType: rateType ?? null,
-      hourlyRate: hourlyRate ?? null,
+      employmentMode: employmentMode === 'SALARY' ? 'SALARY' : 'PROJECT',
+      paymentCurrency: paymentCurrency || 'BDT',
       inviteToken,
       inviteTokenExpiry,
       // When verification is off, account is immediately active
       inviteAccepted: !requireVerification,
+    }
+
+    if (employmentMode === 'SALARY') {
+      freelancerData.salaryAmount    = salaryAmount ?? null
+      freelancerData.salaryCurrency  = salaryCurrency || paymentCurrency || 'BDT'
+      freelancerData.salaryDay       = salaryDay ?? null
+      freelancerData.salaryStartDate = salaryStartDate || null
+      freelancerData.salaryEndDate   = salaryEndDate || null
+      freelancerData.salaryActive    = Boolean(salaryAmount && salaryDay)
     }
 
     if (type === 'AGENCY' && agencyInfo) {

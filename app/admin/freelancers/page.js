@@ -1,13 +1,14 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Users, Plus, Eye, Pencil, Trash2, MoreHorizontal, Star, Mail } from 'lucide-react'
+import { Users, Plus, Eye, Pencil, Trash2, Ban, RotateCcw, Mail } from 'lucide-react'
 import toast from 'react-hot-toast'
-import Link from 'next/link'
 import SearchInput from '@/components/ui/SearchInput'
 import Pagination from '@/components/ui/Pagination'
 import Avatar from '@/components/ui/Avatar'
+import ActionMenu from '@/components/ui/ActionMenu'
 import FreelancerModal from '@/components/admin/freelancers/FreelancerModal'
+import { formatCurrency } from '@/lib/utils'
 
 function SkillTags({ skills }) {
   if (!skills) return <span className="text-gray-400 text-xs">—</span>
@@ -21,25 +22,49 @@ function SkillTags({ skills }) {
   )
 }
 
-function InviteBadge({ accepted }) {
-  if (accepted) return null
+function daysSince(d) {
+  if (!d) return null
+  return Math.floor((Date.now() - new Date(d).getTime()) / 86_400_000)
+}
+
+function Activity({ lastWorkedAt }) {
+  const days = daysSince(lastWorkedAt)
+  if (days == null) return <span className="text-gray-300 text-xs">No activity</span>
+  const label = days === 0 ? 'Today' : days === 1 ? 'Yesterday' : `${days}d ago`
+  const stale = days > 30
   return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 text-amber-700 text-xs rounded-md font-medium border border-amber-200">
-      <Mail className="w-3 h-3" />
-      Invited
+    <span className={`text-xs font-medium ${stale ? 'text-amber-600' : 'text-gray-600'}`}>
+      {label}{stale && ' · inactive'}
+    </span>
+  )
+}
+
+function StatusCell({ f }) {
+  if (!f.inviteAccepted) {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 text-amber-700 text-xs rounded-md font-medium border border-amber-200">
+        <Mail className="w-3 h-3" /> Invited
+      </span>
+    )
+  }
+  const disabled = f.disabledAt || f.userId?.isActive === false
+  return (
+    <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${disabled ? 'text-rose-600' : 'text-green-700'}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${disabled ? 'bg-rose-500' : 'bg-green-500'}`} />
+      {disabled ? 'Disabled' : 'Active'}
     </span>
   )
 }
 
 export default function FreelancersPage() {
-  const [freelancers,   setFreelancers]   = useState([])
-  const [meta,          setMeta]          = useState({ page: 1, pages: 1, total: 0 })
-  const [loading,       setLoading]       = useState(true)
-  const [search,        setSearch]        = useState('')
-  const [page,          setPage]          = useState(1)
-  const [modalOpen,     setModalOpen]     = useState(false)
-  const [editing,       setEditing]       = useState(null)
-  const [menuOpen,      setMenuOpen]      = useState(null)
+  const [freelancers, setFreelancers] = useState([])
+  const [meta,        setMeta]        = useState({ page: 1, pages: 1, total: 0 })
+  const [loading,     setLoading]     = useState(true)
+  const [search,      setSearch]      = useState('')
+  const [page,        setPage]        = useState(1)
+  const [activity,    setActivity]    = useState('all') // all | active | inactive
+  const [modalOpen,   setModalOpen]   = useState(false)
+  const [editing,     setEditing]     = useState(null)
 
   const fetchFreelancers = useCallback(async () => {
     setLoading(true)
@@ -60,12 +85,6 @@ export default function FreelancersPage() {
 
   useEffect(() => { fetchFreelancers() }, [fetchFreelancers])
 
-  useEffect(() => {
-    const handler = () => setMenuOpen(null)
-    document.addEventListener('click', handler)
-    return () => document.removeEventListener('click', handler)
-  }, [])
-
   function handleSaved() {
     toast.success(editing ? 'Freelancer updated' : 'Invitation sent!')
     setEditing(null)
@@ -74,7 +93,6 @@ export default function FreelancersPage() {
 
   async function handleDelete(f) {
     if (!confirm(`Delete ${f.userId?.name}? This cannot be undone.`)) return
-    setMenuOpen(null)
     try {
       const res = await fetch(`/api/freelancers/${f.id}`, { method: 'DELETE' })
       if (!res.ok) throw new Error((await res.json()).error)
@@ -85,8 +103,31 @@ export default function FreelancersPage() {
     }
   }
 
+  async function handleToggle(f, disable) {
+    if (disable && !confirm(`Disable ${f.userId?.name}'s account?`)) return
+    try {
+      const res = await fetch(`/api/freelancers/${f.id}`, {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ action: disable ? 'disable' : 'enable' }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error)
+      toast.success(disable ? 'Account disabled' : 'Account reactivated')
+      fetchFreelancers()
+    } catch (err) {
+      toast.error(err.message ?? 'Failed')
+    }
+  }
+
+  const visible = freelancers.filter(f => {
+    if (activity === 'active')   return (daysSince(f.finance?.lastWorkedAt) ?? 999) <= 30
+    if (activity === 'inactive') return (daysSince(f.finance?.lastWorkedAt) ?? 999) > 30
+    return true
+  })
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 mx-auto w-full max-w-7xl">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -101,7 +142,6 @@ export default function FreelancersPage() {
         </button>
       </div>
 
-      {/* Table */}
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="px-4 sm:px-6 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
           <SearchInput
@@ -110,94 +150,89 @@ export default function FreelancersPage() {
             placeholder="Search by name, email or skill…"
             className="w-full sm:w-80"
           />
-          <span className="text-sm text-gray-400">{meta.total} freelancer{meta.total !== 1 ? 's' : ''}</span>
+          <div className="flex items-center gap-2">
+            {[['all', 'All'], ['active', 'Recently active'], ['inactive', 'Inactive 30d+']].map(([k, label]) => (
+              <button
+                key={k}
+                onClick={() => setActivity(k)}
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                  activity === k ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-100'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {loading ? (
           <div className="flex items-center justify-center py-20">
             <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
           </div>
-        ) : freelancers.length === 0 ? (
+        ) : visible.length === 0 ? (
           <div className="text-center py-20">
             <Users className="w-12 h-12 text-gray-200 mx-auto mb-3" />
             <p className="text-gray-500 font-medium">No freelancers found</p>
-            {search && <p className="text-gray-400 text-sm mt-1">Try a different search</p>}
           </div>
         ) : (
           <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-gray-100 bg-gray-50">
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Freelancer</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Skills</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Rate</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Wallet</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
-                <th className="px-6 py-3" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {freelancers.map((f) => (
-                <tr key={f.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-3">
-                      <Avatar name={f.userId?.name} src={f.userId?.avatar} size="sm" />
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">{f.userId?.name}</p>
-                        <p className="text-xs text-gray-400">{f.userId?.email}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4"><SkillTags skills={f.skills} /></td>
-                  <td className="px-6 py-4 text-sm text-gray-600">
-                    {f.hourlyRate ? (
-                      <span className="flex items-center gap-1">
-                        <Star className="w-3 h-3 text-yellow-400 fill-yellow-400" />
-                        ${f.hourlyRate}/{f.rateType?.toLowerCase() ?? 'hr'}
-                      </span>
-                    ) : '—'}
-                  </td>
-                  <td className="px-6 py-4 text-sm font-medium text-gray-900">
-                    ${(f.walletBalance ?? 0).toLocaleString()}
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${f.userId?.isActive ? 'text-green-700' : 'text-gray-400'}`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${f.userId?.isActive ? 'bg-green-500' : 'bg-gray-300'}`} />
-                        {f.userId?.isActive ? 'Active' : 'Inactive'}
-                      </span>
-                      <InviteBadge accepted={f.inviteAccepted} />
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <div className="relative inline-block">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setMenuOpen(menuOpen === f.id ? null : f.id) }}
-                        className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
-                      >
-                        <MoreHorizontal className="w-4 h-4" />
-                      </button>
-                      {menuOpen === f.id && (
-                        <div className="absolute right-0 top-8 z-10 w-40 bg-white border border-gray-100 rounded-xl shadow-lg py-1" onClick={(e) => e.stopPropagation()}>
-                          <Link href={`/admin/freelancers/${f.id}`} className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
-                            <Eye className="w-4 h-4" /> View
-                          </Link>
-                          <button onClick={() => { setEditing(f); setModalOpen(true); setMenuOpen(null) }}
-                            className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
-                            <Pencil className="w-4 h-4" /> Edit
-                          </button>
-                          <button onClick={() => handleDelete(f)}
-                            className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50">
-                            <Trash2 className="w-4 h-4" /> Delete
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </td>
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50">
+                  {['Freelancer', 'Skills', 'Mode', 'Owed', 'Total Paid', 'Activity', 'Status', ''].map((h, i) => (
+                    <th key={i} className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {visible.map((f) => {
+                  const disabled = f.disabledAt || f.userId?.isActive === false
+                  return (
+                    <tr key={f.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <Avatar name={f.userId?.name} src={f.userId?.avatar} size="sm" />
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">{f.userId?.name}</p>
+                            <p className="text-xs text-gray-400">{f.userId?.email}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4"><SkillTags skills={f.skills} /></td>
+                      <td className="px-6 py-4">
+                        <span className={`px-2 py-0.5 rounded-md text-xs font-medium ${
+                          f.employmentMode === 'SALARY' ? 'bg-indigo-50 text-indigo-700' : 'bg-gray-100 text-gray-600'
+                        }`}>
+                          {f.employmentMode === 'SALARY' ? 'Salary' : 'Project'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-sm font-medium text-gray-900 whitespace-nowrap">
+                        {f.finance?.owedBDT ? formatCurrency(f.finance.owedBDT) : <span className="text-gray-300">—</span>}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-600 whitespace-nowrap">
+                        {f.finance?.paidBDT ? formatCurrency(f.finance.paidBDT) : <span className="text-gray-300">—</span>}
+                      </td>
+                      <td className="px-6 py-4"><Activity lastWorkedAt={f.finance?.lastWorkedAt} /></td>
+                      <td className="px-6 py-4"><StatusCell f={f} /></td>
+                      <td className="px-6 py-4 text-right">
+                        <ActionMenu
+                          items={[
+                            { label: 'View details', icon: Eye, href: `/admin/freelancers/${f.id}` },
+                            { label: 'Edit', icon: Pencil, onClick: () => { setEditing(f); setModalOpen(true) } },
+                            disabled
+                              ? { label: 'Reactivate', icon: RotateCcw, onClick: () => handleToggle(f, false) }
+                              : { label: 'Disable', icon: Ban, onClick: () => handleToggle(f, true),
+                                  disabled: f.finance?.hasUnpaid, hint: f.finance?.hasUnpaid ? 'owed' : undefined },
+                            { label: 'Delete', icon: Trash2, danger: true, onClick: () => handleDelete(f),
+                              disabled: f.finance?.hasUnpaid, hint: f.finance?.hasUnpaid ? 'owed' : undefined },
+                          ]}
+                        />
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
         )}
 

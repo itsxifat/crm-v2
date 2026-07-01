@@ -4,9 +4,10 @@ import { useEffect, useState, useRef } from 'react'
 import {
   X, Clock, MessageSquare, Paperclip, Play, Square,
   Send, Lock, Globe, User, Calendar, Tag, ChevronDown,
-  Loader2, Activity, Plus,
+  Loader2, Activity, Plus, Check,
 } from 'lucide-react'
 import { formatDate, formatRelativeTime, getStatusColor, getPriorityBadgeColor, getInitials } from '@/lib/utils'
+import { useSession } from 'next-auth/react'
 import toast from 'react-hot-toast'
 
 const PRIORITY_COLORS = {
@@ -17,8 +18,10 @@ const PRIORITY_COLORS = {
 }
 
 export default function TaskDetailModal({ taskId, onClose, onUpdate }) {
+  const { data: sessionData } = useSession()
   const [task, setTask]             = useState(null)
   const [loading, setLoading]       = useState(true)
+  const [respondingAccept, setRespondingAccept] = useState(false)
   const [comment, setComment]       = useState('')
   const [isInternal, setIsInternal] = useState(true)
   const [sendingComment, setSending] = useState(false)
@@ -54,6 +57,26 @@ export default function TaskDetailModal({ taskId, onClose, onUpdate }) {
       toast.error('Failed to load task')
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function respondToAssignment(action) {
+    setRespondingAccept(true)
+    try {
+      const res  = await fetch(`/api/tasks/${taskId}`, {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ action }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error)
+      toast.success(action === 'accept' ? 'Task accepted' : 'Task declined')
+      loadTask()
+      onUpdate?.()
+    } catch (err) {
+      toast.error(err.message ?? 'Failed')
+    } finally {
+      setRespondingAccept(false)
     }
   }
 
@@ -165,7 +188,34 @@ export default function TaskDetailModal({ taskId, onClose, onUpdate }) {
                   <Globe className="w-3 h-3" /> Client visible
                 </span>
               )}
+              {task.assignedEmployeeId && task.assignmentStatus && (
+                <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
+                  task.assignmentStatus === 'ACCEPTED' ? 'bg-emerald-100 text-emerald-700'
+                  : task.assignmentStatus === 'DECLINED' ? 'bg-rose-100 text-rose-700'
+                  : 'bg-amber-100 text-amber-700'
+                }`}>
+                  {task.assignmentStatus === 'ACCEPTED' ? 'Accepted'
+                    : task.assignmentStatus === 'DECLINED' ? 'Declined' : 'Awaiting acceptance'}
+                </span>
+              )}
             </div>
+
+            {/* Assignee accept / decline */}
+            {sessionData?.user?.role === 'EMPLOYEE' && task.assignmentStatus === 'ASSIGNED' && (
+              <div className="px-6 py-3 bg-amber-50 border-b border-amber-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <p className="text-sm text-amber-800">This task was assigned to you. Accept it to confirm.</p>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => respondToAssignment('accept')} disabled={respondingAccept}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white text-xs font-medium rounded-lg hover:bg-emerald-700 disabled:opacity-50">
+                    {respondingAccept ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />} Accept
+                  </button>
+                  <button onClick={() => respondToAssignment('decline')} disabled={respondingAccept}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 text-rose-600 text-xs font-medium rounded-lg hover:bg-rose-50 disabled:opacity-50">
+                    <X className="w-3.5 h-3.5" /> Decline
+                  </button>
+                </div>
+              </div>
+            )}
 
             <div className="px-6 py-4 space-y-5">
               {/* Description */}

@@ -4,7 +4,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import {
-  Lead, Project, Client, Task, Invoice, WithdrawalRequest,
+  Lead, Project, Client, Task, Invoice, FreelancerAssignment, SalaryPayout,
   Transaction, Employee, Attendance, Leave,
 } from '@/models'
 
@@ -30,7 +30,7 @@ export async function GET(request) {
     const sixMonthsAgo    = new Date(now.getFullYear(), now.getMonth() - 5, 1)
 
     const pctChange = (cur, prev) => prev > 0 ? Math.round(((cur - prev) / prev) * 100) : (cur > 0 ? 100 : 0)
-    const sumAmt    = (txs) => txs.reduce((s, t) => s + (Number(t.amount) || 0), 0)
+    const sumAmt    = (txs) => txs.reduce((s, t) => s + (Number(t.amountBDT ?? t.amount) || 0), 0)
 
     // ── All parallel base queries ────────────────────────────────────────────
     const [
@@ -67,7 +67,12 @@ export async function GET(request) {
       // find().lean() triggers post-find decryption hooks; aggregate() does not
       Invoice.find().select('status total').lean(),
 
-      WithdrawalRequest.countDocuments({ status: 'PENDING' }),
+      // Freelancer payouts awaiting account-manager approval (delivered work +
+      // pending salary payouts) — replaces the old wallet "withdrawals" metric.
+      Promise.all([
+        FreelancerAssignment.countDocuments({ paymentStatus: 'PAYMENT_REQUESTED' }),
+        SalaryPayout.countDocuments({ status: 'PENDING' }),
+      ]).then(([a, b]) => a + b),
 
       Employee.countDocuments(),
       Employee.countDocuments({ isActive: true }),
@@ -107,7 +112,7 @@ export async function GET(request) {
 
     // ── Fetch 6 months of transactions once — aggregate $sum on encrypted amounts returns 0 ──
     const [allTx6m, txCountThisMonth, txCountLastMonth] = await Promise.all([
-      Transaction.find({ date: { $gte: sixMonthsAgo } }).select('type amount date').lean(),
+      Transaction.find({ date: { $gte: sixMonthsAgo } }).select('type amount amountBDT date').lean(),
       Transaction.countDocuments({ date: { $gte: thisMonthStart, $lte: thisMonthEnd } }),
       Transaction.countDocuments({ date: { $gte: lastMonthStart, $lte: lastMonthEnd } }),
     ])
@@ -161,7 +166,7 @@ export async function GET(request) {
       const [yr, mo] = drillMonth.split('-').map(Number)
       const monthStart  = new Date(yr, mo - 1, 1)
       const monthEnd    = new Date(yr, mo, 0, 23, 59, 59)
-      const txInMonth   = await Transaction.find({ date: { $gte: monthStart, $lte: monthEnd } }).select('type amount date').lean()
+      const txInMonth   = await Transaction.find({ date: { $gte: monthStart, $lte: monthEnd } }).select('type amount amountBDT date').lean()
       const daysInMonth = new Date(yr, mo, 0).getDate()
       dailyData = []
       for (let d = 1; d <= daysInMonth; d++) {

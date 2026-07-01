@@ -6,8 +6,9 @@ const TransactionSchema = new mongoose.Schema(
 
     // Content — all encrypted
     category:    { type: String, required: true },
-    amount:      { type: mongoose.Schema.Types.Mixed, required: true }, // encrypted Number
+    amount:      { type: mongoose.Schema.Types.Mixed, required: true }, // amount in `currency`
     currency:    { type: String, default: 'BDT' },
+    amountBDT:   { type: Number, default: null }, // BDT-equivalent actually spent/received; == amount for BDT
     description: { type: String, required: true },
     reference:   { type: String, default: null },
 

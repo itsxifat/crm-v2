@@ -4,19 +4,30 @@ const FreelancerSchema = new mongoose.Schema(
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
     type:   { type: String, enum: ['FREELANCER', 'AGENCY'], default: 'FREELANCER' },
 
-    // Profile — stored encrypted
+    // Profile
     skills:         { type: String, default: null },
     bio:            { type: String, default: null },
     portfolioLinks: { type: String, default: null },
 
-    // Wallet — numeric aggregates used for balance calculations; kept plaintext
-    walletBalance:       { type: Number, default: 0 },
-    pendingBalance:      { type: Number, default: 0 },
-    withdrawableBalance: { type: Number, default: 0 },
+    // Engagement model. PROJECT = paid a fixed agreed amount per project/task,
+    // decided at assignment time (no rate stored here). SALARY = temporary
+    // salary-based hire, paid a recurring salary like an employee.
+    employmentMode:  { type: String, enum: ['PROJECT', 'SALARY'], default: 'PROJECT' },
+    // Default currency we pay this person in (overridable per engagement).
+    paymentCurrency: { type: String, default: 'BDT' },
 
-    // Rate — stored encrypted
-    rateType:   { type: String, default: null },
-    hourlyRate: { type: mongoose.Schema.Types.Mixed, default: null }, // encrypted Number
+    // Salary mode (temporary salary-based freelancer)
+    salaryAmount:    { type: Number, default: null },
+    salaryCurrency:  { type: String, default: 'BDT' },
+    salaryDay:       { type: Number, default: null }, // day of month 1–28
+    salaryStartDate: { type: Date,   default: null },
+    salaryEndDate:   { type: Date,   default: null },
+    salaryActive:    { type: Boolean, default: false },
+
+    // Lifecycle — account disable/reactivate (active flag lives on the linked User)
+    disabledAt:     { type: Date, default: null },
+    disabledBy:     { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    disabledReason: { type: String, default: null },
 
     paymentMethod: {
       method: { type: String, enum: ['BANK', 'BKASH', null], default: null },

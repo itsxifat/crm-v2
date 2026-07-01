@@ -30,34 +30,49 @@ export async function GET(request) {
     }
 
     const [allTx, receivableInvoices] = await Promise.all([
-      Transaction.find(dateFilter).select('type amount category expenseCategory').lean(),
+      Transaction.find(dateFilter).select('type amount amountBDT currency category expenseCategory').lean(),
       Invoice.find({ status: { $in: ['SENT', 'PARTIALLY_PAID', 'OVERDUE'] } })
-        .select('total paidAmount')
+        .select('total totalBDT paidAmount')
         .lean(),
     ])
 
     let totalRevenue = 0, totalExpenses = 0, incomeCount = 0, expenseCount = 0
     const expenseCategoryMap = {}, incomeCategoryMap = {}
     const expenseSubcategoryMap = {}, incomeSubcategoryMap = {}
+    // Per-currency breakdown: original-currency totals + BDT-equivalent totals.
+    const currencyMap = {}
 
     for (const tx of allTx) {
-      const amt = Number(tx.amount) || 0
+      // All financial metrics roll up in BDT. amountBDT falls back to the
+      // original amount for legacy/BDT rows.
+      const amt = Number(tx.amountBDT ?? tx.amount) || 0
+      const orig = Number(tx.amount) || 0
+      const cur = tx.currency || 'BDT'
+      if (!currencyMap[cur]) currencyMap[cur] = { currency: cur, incomeOriginal: 0, expenseOriginal: 0, incomeBDT: 0, expenseBDT: 0, count: 0 }
+      currencyMap[cur].count++
+
       if (tx.type === 'INCOME') {
         totalRevenue += amt
         incomeCount++
+        currencyMap[cur].incomeOriginal += orig
+        currencyMap[cur].incomeBDT      += amt
         if (tx.category)        incomeCategoryMap[tx.category]           = (incomeCategoryMap[tx.category] ?? 0) + amt
         if (tx.expenseCategory) incomeSubcategoryMap[tx.expenseCategory] = (incomeSubcategoryMap[tx.expenseCategory] ?? 0) + amt
       } else if (tx.type === 'EXPENSE') {
         totalExpenses += amt
         expenseCount++
+        currencyMap[cur].expenseOriginal += orig
+        currencyMap[cur].expenseBDT      += amt
         if (tx.category)        expenseCategoryMap[tx.category]            = (expenseCategoryMap[tx.category] ?? 0) + amt
         if (tx.expenseCategory) expenseSubcategoryMap[tx.expenseCategory]  = (expenseSubcategoryMap[tx.expenseCategory] ?? 0) + amt
       }
     }
 
+    const currencyBreakdown = Object.values(currencyMap).sort((a, b) => b.count - a.count)
+
     const netProfit = totalRevenue - totalExpenses
     const outstandingReceivables = receivableInvoices.reduce(
-      (sum, inv) => sum + ((Number(inv.total) || 0) - (Number(inv.paidAmount) || 0)), 0
+      (sum, inv) => sum + ((Number(inv.totalBDT ?? inv.total) || 0) - (Number(inv.paidAmount) || 0)), 0
     )
 
     const expenseByCategory = Object.entries(expenseCategoryMap)
@@ -77,7 +92,7 @@ export async function GET(request) {
     const now     = new Date()
     const yearAgo = new Date(now.getFullYear() - 1, now.getMonth(), 1)
     const monthlyTx = await Transaction.find({ date: { $gte: yearAgo } })
-      .select('type amount date')
+      .select('type amount amountBDT date')
       .sort({ date: 1 })
       .lean()
 
@@ -85,8 +100,8 @@ export async function GET(request) {
     monthlyTx.forEach(tx => {
       const key = `${tx.date.getFullYear()}-${String(tx.date.getMonth() + 1).padStart(2, '0')}`
       if (!monthlyMap[key]) monthlyMap[key] = { month: key, income: 0, expense: 0 }
-      if (tx.type === 'INCOME')  monthlyMap[key].income  += Number(tx.amount) || 0
-      if (tx.type === 'EXPENSE') monthlyMap[key].expense += Number(tx.amount) || 0
+      if (tx.type === 'INCOME')  monthlyMap[key].income  += Number(tx.amountBDT ?? tx.amount) || 0
+      if (tx.type === 'EXPENSE') monthlyMap[key].expense += Number(tx.amountBDT ?? tx.amount) || 0
     })
     const monthlyData = Object.values(monthlyMap).sort((a, b) => a.month.localeCompare(b.month))
 
@@ -101,6 +116,7 @@ export async function GET(request) {
         incomeByCategory,
         expenseBySubcategory,
         incomeBySubcategory,
+        currencyBreakdown,
         grossMargin:        totalRevenue > 0 ? ((totalRevenue - totalExpenses) / totalRevenue * 100) : 0,
         expenseRatio:       totalRevenue > 0 ? (totalExpenses / totalRevenue * 100) : 0,
         ebitda:             netProfit,

@@ -79,7 +79,7 @@ const NAV_SECTIONS = [
       { href: '/admin/accounts?tab=transactions',  label: 'Transactions',          icon: ArrowRightLeft, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'finance.transactions.view', basePath: '/admin/accounts', tab: 'transactions' },
       { href: '/admin/accounts?tab=confirmations', label: 'Payment Confirmations', icon: CheckCircle,    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'finance.payments.confirm',  basePath: '/admin/accounts', tab: 'confirmations' },
       { href: '/admin/accounts?tab=requests',      label: 'Payment Requests',      icon: Inbox,          roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'finance.payments.request',  basePath: '/admin/accounts', tab: 'requests' },
-      { href: '/admin/accounts?tab=withdrawals',   label: 'Withdrawals',           icon: Wallet,         roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'finance.withdrawals.view',  basePath: '/admin/accounts', tab: 'withdrawals' },
+      { href: '/admin/my-expenses',                label: 'My Expenses',           icon: Receipt,        roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'finance.expenses.submit' },
       { href: '/admin/accounts?tab=pl',            label: 'P&L Report',            icon: LineChart,      roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'finance.reports.view',      basePath: '/admin/accounts', tab: 'pl' },
     ],
   },
@@ -131,6 +131,9 @@ const NAV_SECTIONS = [
     label: 'Account',
     roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
     items: [
+      // No `permission` — always reachable so employees can complete their profile/KYC
+      // (required when onboarding is ON, optional when OFF), even on a fresh custom role.
+      { href: '/admin/profile',       label: 'My Profile',    icon: UserCircle, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'] },
       { href: '/admin/account',       label: 'My Account',    icon: UserCog, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'account.profile.view' },
       { href: '/admin/notifications', label: 'Notifications', icon: Bell,    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'account.notifications.view' },
     ],

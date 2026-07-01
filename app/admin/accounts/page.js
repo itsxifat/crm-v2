@@ -6,7 +6,7 @@ import { useSearchParams } from 'next/navigation'
 import {
   TrendingUp, TrendingDown, Wallet, AlertCircle,
   Plus, Pencil, Trash2, X, Loader2, Clock, CheckCircle2, XCircle,
-  Paperclip, ExternalLink, ArrowUpRight, ArrowDownRight, BarChart2, Percent, FileText as FileTextIcon, ChevronLeft,
+  Paperclip, ExternalLink, ArrowUpRight, ArrowDownRight, BarChart2, Percent, FileText as FileTextIcon, ChevronLeft, Printer,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useForm, Controller } from 'react-hook-form'
@@ -21,10 +21,11 @@ import Select from '@/components/ui/Select'
 import DatePicker from '@/components/ui/DatePicker'
 import DocPreview from '@/components/ui/DocPreview'
 import { useConfig } from '@/lib/useConfig'
+import { currencyOptions, BASE_CURRENCY } from '@/lib/currencies'
+import { formatCurrency } from '@/lib/utils'
+import { canDo } from '@/lib/rbac'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
-
-const CURRENCY_OPTIONS   = ['BDT']
 
 const VENTURE_COLORS = {
   ENSTUDIO: 'bg-purple-100 text-purple-700',
@@ -40,6 +41,7 @@ const txSchema = z.object({
   date:           z.string().min(1, 'Date required'),
   reference:      z.string().optional(),
   currency:       z.string().default('BDT'),
+  amountBDT:      z.coerce.number().positive().optional().or(z.literal('')),
   accountManager: z.string().optional(),
   paymentMethod:  z.string().optional(),
   projectId:      z.string().optional(),
@@ -66,7 +68,8 @@ function StatusDot({ status }) {
     INCOME:               { dot: 'bg-green-500',  label: 'Income' },
     EXPENSE:              { dot: 'bg-red-500',     label: 'Expense' },
     PENDING:              { dot: 'bg-yellow-400',  label: 'Pending' },
-    APPROVED:             { dot: 'bg-green-500',   label: 'Approved' },
+    APPROVED:             { dot: 'bg-blue-500',    label: 'Approved' },
+    PAID:                 { dot: 'bg-green-500',   label: 'Paid' },
     REJECTED:             { dot: 'bg-red-500',     label: 'Rejected' },
     PENDING_CONFIRMATION: { dot: 'bg-yellow-400',  label: 'Pending' },
     CONFIRMED:            { dot: 'bg-green-500',   label: 'Confirmed' },
@@ -78,6 +81,21 @@ function StatusDot({ status }) {
       <span className="text-xs text-gray-600">{s.label}</span>
     </span>
   )
+}
+
+// Local YYYY-MM-DD (no UTC shift) for the expense date-range presets.
+function ymdLocal(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+function presetRange(preset) {
+  const start = new Date()
+  const end   = new Date()
+  if (preset === 'today')          { /* start = end = today */ }
+  else if (preset === 'yesterday') { start.setDate(start.getDate() - 1); end.setDate(end.getDate() - 1) }
+  else if (preset === '7d')        { start.setDate(start.getDate() - 6) }
+  else if (preset === 'month')     { start.setDate(1) }
+  else return { start: '', end: '' }
+  return { start: ymdLocal(start), end: ymdLocal(end) }
 }
 
 // ─── Transaction Modal ────────────────────────────────────────────────────────
@@ -100,7 +118,9 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
   })
   const type       = watch('type')
   const category   = watch('category')
+  const currency   = watch('currency')
   const isExpense  = type === 'EXPENSE'
+  const isForeign  = currency && currency !== BASE_CURRENCY
 
   // Nested taxonomy from config — subcategories belong to the selected category
   const baseCategories = isExpense ? expenseCategories : incomeCategories
@@ -141,7 +161,8 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
         description:    tx.description,
         date:           tx.date?.slice(0, 10),
         reference:      tx.reference ?? '',
-        currency:       'BDT',
+        currency:       tx.currency ?? 'BDT',
+        amountBDT:      tx.amountBDT ?? '',
         who:            editWho,
         accountManager: tx.accountManager?.id ?? tx.accountManager ?? '',
         paymentMethod:   tx.paymentMethod ?? '',
@@ -219,11 +240,31 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
             )} />
           </div>
           <div>
-            <label className={lc}>Amount (BDT) *</label>
+            <label className={lc}>Amount *</label>
             <input type="number" step="0.01" min="0" placeholder="0.00" {...register('amount')} onKeyDown={e => { if (e.key === '-' || e.key === 'e') e.preventDefault() }}
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900" />
             {errors.amount && <p className="mt-1 text-xs text-red-500">{errors.amount.message}</p>}
           </div>
+        </div>
+
+        {/* Currency + BDT-equivalent (metrics always roll up in BDT) */}
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className={lc}>Currency</label>
+            <Controller name="currency" control={control} render={({ field }) => (
+              <Select value={field.value ?? 'BDT'} onChange={v => field.onChange(v ?? 'BDT')}
+                options={currencyOptions} placeholder="Select currency…" />
+            )} />
+          </div>
+          {isForeign && (
+            <div>
+              <label className={lc}>BDT-equivalent spent/received *</label>
+              <input type="number" step="0.01" min="0" placeholder="0.00" {...register('amountBDT')} onKeyDown={e => { if (e.key === '-' || e.key === 'e') e.preventDefault() }}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900" />
+              <p className="mt-1 text-xs text-gray-400">The actual taka value — used for all finance metrics.</p>
+              {errors.amountBDT && <p className="mt-1 text-xs text-red-500">{errors.amountBDT.message}</p>}
+            </div>
+          )}
         </div>
 
         <div>
@@ -342,45 +383,30 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
 // ─── Approve Modal ────────────────────────────────────────────────────────────
 
 function ApproveModal({ expense, onClose, onDone, currentUser }) {
-  const [receiptUrl,      setReceiptUrl]      = useState(expense.invoiceUrl ?? '')
-  const [note,            setNote]            = useState('')
-  const [txnId,           setTxnId]           = useState('')
-  const [accountManager,  setAccountManager]  = useState('')
-  const [users,           setUsers]           = useState([])
-  const [saving,          setSaving]          = useState(false)
-  const hasSubmittedInvoice = !!expense.invoiceUrl
-
-  useEffect(() => {
-    fetch('/api/users?limit=100').then(r => r.json()).then(j => setUsers(j.data ?? []))
-  }, [])
+  const [note,     setNote]     = useState('')
+  const [amtBDT,   setAmtBDT]   = useState(expense.amountBDT ?? '')
+  const [saving,   setSaving]   = useState(false)
+  const isForeign = (expense.currency ?? 'BDT') !== 'BDT'
 
   async function submit(action) {
-    if (action === 'approve') {
-      const finalReceipt = receiptUrl || null
-      if (!finalReceipt && !txnId.trim()) {
-        toast.error('Upload a receipt OR enter a Transaction ID to approve')
-        return
-      }
+    if (action === 'approve' && isForeign && !(Number(amtBDT) > 0)) {
+      toast.error('Enter the BDT-equivalent for this foreign-currency expense')
+      return
     }
     setSaving(true)
     try {
-      const projectId = typeof expense.projectId === 'object'
-        ? (expense.projectId?.id ?? expense.projectId?._id)
-        : expense.projectId
-      const res  = await fetch(`/api/projects/${projectId}/expenses/${expense.id}`, {
+      const res  = await fetch(`/api/expenses/${expense.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action,
           note,
-          receiptUrl:     receiptUrl || null,
-          txnId:          txnId.trim() || undefined,
-          accountManager: accountManager || undefined,
+          amountBDT: action === 'approve' && isForeign ? Number(amtBDT) : undefined,
         }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error)
-      toast.success(action === 'approve' ? 'Payment approved & synced to transactions' : 'Payment rejected')
+      toast.success(action === 'approve' ? 'Approved — voucher ready to print' : 'Request rejected')
       onDone()
       onClose()
     } catch (err) {
@@ -398,7 +424,7 @@ function ApproveModal({ expense, onClose, onDone, currentUser }) {
 
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
-          <h3 className="text-base font-semibold text-gray-900">Review Payment Request</h3>
+          <h3 className="text-base font-semibold text-gray-900">Review Expense</h3>
           <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100">
             <X className="w-5 h-5 text-gray-400" />
           </button>
@@ -406,75 +432,44 @@ function ApproveModal({ expense, onClose, onDone, currentUser }) {
 
         {/* Scrollable body */}
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+          <p className="text-xs text-gray-500">
+            Approving assigns a voucher number so you can print, sign &amp; seal the expense invoice.
+            The payment is <strong>not</strong> recorded until you mark it paid with the signed scan.
+          </p>
 
-          {/* Two-column layout: summary + invoice preview */}
+          {/* Two-column layout: summary + submitted proof */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-
-            {/* Left: expense summary */}
             <div className="rounded-xl bg-gray-50 border border-gray-100 px-4 py-4 space-y-2">
               <p className="text-sm font-semibold text-gray-900">{expense.title}</p>
               <p className="text-xs text-gray-500">{expense.category}{expense.subcategory ? ` / ${expense.subcategory}` : ''} · {fmtDate(expense.date)}</p>
-              <p className="text-xl font-bold text-gray-900"><TkAmt value={expense.amount} decimals={2} /></p>
+              <p className="text-xl font-bold text-gray-900"><TkAmt value={expense.amount} decimals={2} /> <span className="text-xs font-normal text-gray-400">{expense.currency}</span></p>
               {expense.submittedBy?.name && (
                 <p className="text-xs text-gray-500">Submitted by: <span className="font-medium text-gray-700">{expense.submittedBy.name}</span></p>
               )}
               {expense.notes && (
-                <p className="text-xs text-gray-500 border-t border-gray-200 pt-2 mt-2">{expense.notes}</p>
+                <p className="text-xs text-gray-500 border-t border-gray-200 pt-2 mt-2 whitespace-pre-wrap">{expense.notes}</p>
               )}
             </div>
 
-            {/* Right: submitted invoice preview */}
             {expense.invoiceUrl ? (
-              <DocPreview
-                url={expense.invoiceUrl}
-                label="Submitted Invoice / Receipt"
-              />
+              <DocPreview url={expense.invoiceUrl} label="Submitted Proof / Memo" />
             ) : (
-              <div className="rounded-xl bg-gray-50 border border-dashed border-gray-200 flex items-center justify-center py-8">
-                <p className="text-xs text-gray-400">No invoice submitted</p>
+              <div className="rounded-xl bg-gray-50 border border-dashed border-gray-200 flex items-center justify-center py-8 text-center px-4">
+                <p className="text-xs text-gray-400">No proof attached — verify the description details above.</p>
               </div>
             )}
           </div>
 
-          {/* Upload your receipt */}
-          <FileUpload
-            label={
-              hasSubmittedInvoice
-                ? 'Your Receipt (pre-filled — replace if needed)'
-                : 'Upload Receipt (required to approve)'
-            }
-            value={receiptUrl}
-            onUploaded={url => setReceiptUrl(url)}
-          />
-          {hasSubmittedInvoice && !receiptUrl && (
-            <p className="text-xs text-amber-600">Invoice was cleared — re-upload or keep the original.</p>
-          )}
-
-          {/* Account Manager + TxnId */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Account Manager</label>
-              <div className={`${ic} bg-gray-50 cursor-not-allowed flex items-center`}>
-                <span className="text-gray-700">
-                  {currentUser?.name ?? '—'}
-                  {currentUser?.role && (
-                    <span className="ml-1.5 text-xs text-gray-400 font-normal">
-                      {currentUser.role.replace('_', ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase())}
-                    </span>
-                  )}
-                </span>
-              </div>
-            </div>
+          {isForeign && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Transaction ID {!receiptUrl && <span className="text-red-500">*</span>}
-                {receiptUrl && <span className="text-gray-400 text-xs ml-1">(optional)</span>}
+                Actual spend in BDT <span className="text-red-500">*</span>
+                <span className="text-gray-400 text-xs ml-1">({expense.currency} → BDT)</span>
               </label>
-              <input value={txnId} onChange={e => setTxnId(e.target.value)}
-                placeholder="e.g. TXN-REF-001"
-                className={ic} />
+              <input type="number" value={amtBDT} onChange={e => setAmtBDT(e.target.value)}
+                placeholder="e.g. 12000" className={ic} />
             </div>
-          </div>
+          )}
 
           {/* Note */}
           <div>
@@ -500,6 +495,204 @@ function ApproveModal({ expense, onClose, onDone, currentUser }) {
             className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 disabled:opacity-60 flex items-center gap-1.5">
             {saving && <Loader2 className="w-4 h-4 animate-spin" />}
             <CheckCircle2 className="w-4 h-4" /> Approve
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Mark Paid Modal ──────────────────────────────────────────────────────────
+// Second stage: after the printed voucher is signed & sealed, upload the scan
+// (mandatory) to record the actual payment. Only then is the Transaction created.
+
+function MarkPaidModal({ expense, onClose, onDone }) {
+  const [signedUrl,     setSignedUrl]     = useState(expense.signedInvoiceUrl ?? '')
+  const [paymentMethod, setPaymentMethod] = useState('')
+  const [txnId,         setTxnId]         = useState('')
+  const [note,          setNote]          = useState('')
+  const [saving,        setSaving]        = useState(false)
+
+  async function submit() {
+    if (!signedUrl) { toast.error('Upload the signed & sealed voucher scan to mark this paid'); return }
+    setSaving(true)
+    try {
+      const res  = await fetch(`/api/expenses/${expense.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'mark_paid',
+          signedInvoiceUrl: signedUrl,
+          paymentMethod:    paymentMethod || undefined,
+          paymentNote:      note || undefined,
+          txnId:            txnId.trim() || undefined,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error)
+      toast.success('Marked paid & recorded in transactions')
+      onDone()
+      onClose()
+    } catch (err) {
+      toast.error(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const ic = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900'
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-xl border border-gray-200 w-full max-w-2xl max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
+          <h3 className="text-base font-semibold text-gray-900">Mark Paid — Voucher #{expense.expenseInvoiceNo ?? '—'}</h3>
+          <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100">
+            <X className="w-5 h-5 text-gray-400" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+          <div className="rounded-xl bg-gray-50 border border-gray-100 px-4 py-4 flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold text-gray-900">{expense.title}</p>
+              <p className="text-xs text-gray-500">{expense.category}{expense.subcategory ? ` / ${expense.subcategory}` : ''} · {fmtDate(expense.date)}</p>
+              <p className="text-lg font-bold text-gray-900 mt-1"><TkAmt value={expense.amount} decimals={2} /> <span className="text-xs font-normal text-gray-400">{expense.currency}</span></p>
+            </div>
+            <a href={`/api/expenses/${expense.id}/voucher`} target="_blank" rel="noreferrer"
+              className="px-3 py-2 text-xs font-medium border border-gray-200 rounded-lg hover:bg-white flex items-center gap-1.5 shrink-0">
+              <Printer className="w-4 h-4" /> Print Invoice
+            </a>
+          </div>
+
+          <FileUpload
+            label="Signed & sealed voucher scan (required)"
+            value={signedUrl}
+            onUploaded={url => setSignedUrl(url)}
+          />
+          <p className="text-xs text-gray-400 -mt-3">Upload the printed voucher after it has been signed by the account manager / authorised signatory and stamped with the company seal.</p>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Payment method <span className="text-gray-400 text-xs">(optional)</span></label>
+              <input value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} placeholder="Cash / Bank / bKash…" className={ic} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Transaction ID <span className="text-gray-400 text-xs">(optional)</span></label>
+              <input value={txnId} onChange={e => setTxnId(e.target.value)} placeholder="auto-generated if blank" className={ic} />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Note (optional)</label>
+            <textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
+              placeholder="e.g. paid in cash / bank ref…"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 resize-none" />
+          </div>
+        </div>
+
+        <div className="flex gap-2 justify-end px-6 py-4 border-t border-gray-100 shrink-0">
+          <button onClick={onClose} disabled={saving}
+            className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">
+            Cancel
+          </button>
+          <button onClick={submit} disabled={saving || !signedUrl}
+            className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-60 flex items-center gap-1.5">
+            {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+            <CheckCircle2 className="w-4 h-4" /> Mark Paid
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Batch Pay Modal ──────────────────────────────────────────────────────────
+// Marks a whole group of APPROVED expenses paid against ONE combined authorized
+// invoice: print the combined invoice, get it signed & sealed, upload the scan.
+
+function BatchPayModal({ ids, expenses, onClose, onDone }) {
+  const [signedUrl,     setSignedUrl]     = useState('')
+  const [paymentMethod, setPaymentMethod] = useState('')
+  const [note,          setNote]          = useState('')
+  const [saving,        setSaving]        = useState(false)
+
+  const totalBDT = expenses.reduce((s, e) => s + (e.amountBDT ?? e.amount ?? 0), 0)
+  const idsParam = ids.join(',')
+
+  async function submit() {
+    if (!signedUrl) { toast.error('Upload the signed & sealed combined invoice scan first'); return }
+    setSaving(true)
+    try {
+      const res  = await fetch('/api/expenses/batch-pay', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids, signedInvoiceUrl: signedUrl, paymentMethod: paymentMethod || undefined, paymentNote: note || undefined }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error)
+      toast.success(`${json.data?.paid ?? ids.length} expense(s) marked paid`)
+      onDone()
+      onClose()
+    } catch (err) {
+      toast.error(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const ic = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900'
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-xl border border-gray-200 w-full max-w-2xl max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
+          <h3 className="text-base font-semibold text-gray-900">Pay {ids.length} expense{ids.length > 1 ? 's' : ''} — combined invoice</h3>
+          <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100">
+            <X className="w-5 h-5 text-gray-400" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+          <div className="rounded-xl bg-gray-50 border border-gray-100 px-4 py-4 flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold text-gray-900">{ids.length} approved expense{ids.length > 1 ? 's' : ''}</p>
+              <p className="text-lg font-bold text-gray-900 mt-1">Total <TkAmt value={totalBDT} decimals={2} /> <span className="text-xs font-normal text-gray-400">BDT</span></p>
+            </div>
+            <a href={`/api/expenses/combined-voucher?ids=${idsParam}`} target="_blank" rel="noreferrer"
+              className="px-3 py-2 text-xs font-medium border border-gray-200 rounded-lg hover:bg-white flex items-center gap-1.5 shrink-0">
+              <Printer className="w-4 h-4" /> Print Combined Invoice
+            </a>
+          </div>
+
+          <FileUpload
+            label="Signed & sealed combined invoice scan (required)"
+            value={signedUrl}
+            onUploaded={url => setSignedUrl(url)}
+          />
+          <p className="text-xs text-gray-400 -mt-3">One authorized invoice covers all selected expenses — uploading it marks them all paid together.</p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Payment method <span className="text-gray-400 text-xs">(optional)</span></label>
+              <input value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} placeholder="Cash / Bank / bKash…" className={ic} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Note <span className="text-gray-400 text-xs">(optional)</span></label>
+              <input value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. paid in cash" className={ic} />
+            </div>
+          </div>
+        </div>
+
+        <div className="flex gap-2 justify-end px-6 py-4 border-t border-gray-100 shrink-0">
+          <button onClick={onClose} disabled={saving}
+            className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">
+            Cancel
+          </button>
+          <button onClick={submit} disabled={saving || !signedUrl}
+            className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-60 flex items-center gap-1.5">
+            {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+            <CheckCircle2 className="w-4 h-4" /> Mark {ids.length} Paid
           </button>
         </div>
       </div>
@@ -962,7 +1155,15 @@ function AccountsContent() {
   const [prLoading,   setPrLoading]   = useState(false)
   const [prPage,      setPrPage]      = useState(1)
   const [prStatus,    setPrStatus]    = useState('PENDING')
+  const [prCategory,    setPrCategory]    = useState('')
+  const [prSubcategory, setPrSubcategory] = useState('')
+  const [prStart,       setPrStart]       = useState('')
+  const [prEnd,         setPrEnd]         = useState('')
+  const [prPreset,      setPrPreset]      = useState('')      // '', today, yesterday, 7d, month
+  const [prSelected,    setPrSelected]    = useState([])      // expense ids selected for batch pay
+  const [batchPaying,   setBatchPaying]   = useState(false)
   const [approvingPr, setApprovingPr] = useState(null)
+  const [payingPr,    setPayingPr]    = useState(null)
 
   // Payment confirmations (project client payments)
   const [pcList,      setPcList]      = useState([])
@@ -1066,18 +1267,23 @@ function AccountsContent() {
     setPrLoading(true)
     try {
       const params = new URLSearchParams({ page: prPage, limit: 20 })
-      if (prStatus) params.set('status', prStatus)
+      if (prStatus)      params.set('status', prStatus)
+      if (prCategory)    params.set('category', prCategory)
+      if (prSubcategory) params.set('subcategory', prSubcategory)
+      if (prStart)       params.set('startDate', prStart)
+      if (prEnd)         params.set('endDate', prEnd)
       const res  = await fetch(`/api/expenses?${params}`)
       const json = await res.json()
       if (!res.ok) throw new Error(json.error)
       setPrList(json.data ?? [])
       setPrMeta(json.meta ?? { page: 1, pages: 1, total: 0 })
+      setPrSelected([])
     } catch (err) {
       toast.error(err.message ?? 'Failed to load payment requests')
     } finally {
       setPrLoading(false)
     }
-  }, [prPage, prStatus])
+  }, [prPage, prStatus, prCategory, prSubcategory, prStart, prEnd])
 
   const loadPaymentConfirmations = useCallback(async () => {
     setPcLoading(true)
@@ -1328,6 +1534,40 @@ function AccountsContent() {
                         )
                       })}
                     </div>
+
+                    {/* By-currency breakdown — original totals + their BDT-equivalent */}
+                    {summary?.currencyBreakdown?.length > 0 && (
+                      <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+                        <div className="px-5 py-3 border-b border-gray-100">
+                          <h3 className="text-sm font-semibold text-gray-900">By currency</h3>
+                          <p className="text-xs text-gray-400 mt-0.5">All metrics above roll up in BDT. This shows the original currencies behind them.</p>
+                        </div>
+                        <div className="overflow-x-auto">
+                          <table className="w-full min-w-[640px]">
+                            <thead>
+                              <tr className="border-b border-gray-100 bg-gray-50">
+                                {['Currency', 'Transactions', 'Income (orig.)', 'Expense (orig.)', 'Income (BDT)', 'Expense (BDT)'].map(h => (
+                                  <th key={h} className="px-5 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-50">
+                              {summary.currencyBreakdown.map(c => (
+                                <tr key={c.currency} className="hover:bg-gray-50/50">
+                                  <td className="px-5 py-2.5 text-sm font-medium text-gray-900">{c.currency}</td>
+                                  <td className="px-5 py-2.5 text-sm text-gray-600">{c.count}</td>
+                                  <td className="px-5 py-2.5 text-sm text-gray-700">{c.incomeOriginal ? formatCurrency(c.incomeOriginal, c.currency) : '—'}</td>
+                                  <td className="px-5 py-2.5 text-sm text-gray-700">{c.expenseOriginal ? formatCurrency(c.expenseOriginal, c.currency) : '—'}</td>
+                                  <td className="px-5 py-2.5 text-sm text-green-600">{c.incomeBDT ? fmt(c.incomeBDT) : '—'}</td>
+                                  <td className="px-5 py-2.5 text-sm text-red-500">{c.expenseBDT ? fmt(c.expenseBDT) : '—'}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-xs text-gray-400 mr-1">Drill down by month:</span>
                       {monthOptions.map(m => (
@@ -1521,16 +1761,93 @@ function AccountsContent() {
       )}
 
       {/* ── PAYMENT REQUESTS tab ── */}
-      {activeTab === 'requests' && (
+      {activeTab === 'requests' && (() => {
+        const canConfirm    = canDo(session, 'finance.payments.confirm')
+        const showBatch     = prStatus === 'APPROVED' && canConfirm
+        const subOptions    = expenseCategories.find(c => c.label === prCategory)?.subcategories ?? []
+        const selectableIds = prList.filter(r => r.status === 'APPROVED').map(r => r.id ?? r._id)
+        const allSelected   = selectableIds.length > 0 && selectableIds.every(id => prSelected.includes(id))
+        const selectedRows  = prList.filter(r => prSelected.includes(r.id ?? r._id))
+        const selectedTotal = selectedRows.reduce((s, r) => s + (r.amountBDT ?? r.amount ?? 0), 0)
+        const selectPreset  = (p) => { setPrPreset(p); setPrPage(1); const { start, end } = presetRange(p); setPrStart(start); setPrEnd(end) }
+        const setCustom     = (which, v) => { setPrPreset(''); setPrPage(1); which === 'start' ? setPrStart(v ?? '') : setPrEnd(v ?? '') }
+        const toggleAll     = () => setPrSelected(allSelected ? [] : selectableIds)
+        const toggleOne     = (id) => setPrSelected(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id])
+        return (
         <div className="space-y-4">
-          <div className="flex gap-2">
-            {[['PENDING', 'Pending'], ['APPROVED', 'Approved'], ['REJECTED', 'Rejected'], ['', 'All']].map(([v, l]) => (
-              <button key={v} onClick={() => { setPrStatus(v); setPrPage(1) }}
+          {/* Status filter */}
+          <div className="flex gap-2 flex-wrap">
+            {[['PENDING', 'Pending'], ['APPROVED', 'Approved'], ['PAID', 'Paid'], ['REJECTED', 'Rejected'], ['', 'All']].map(([v, l]) => (
+              <button key={v} onClick={() => { setPrStatus(v); setPrPage(1); setPrSelected([]) }}
                 className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${prStatus === v ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'}`}>
                 {l}
               </button>
             ))}
           </div>
+
+          {/* Date + category filters */}
+          <div className="flex flex-wrap items-end gap-3 bg-white rounded-xl border border-gray-100 p-3">
+            <div className="flex gap-1.5 flex-wrap">
+              {[['today', 'Today'], ['yesterday', 'Yesterday'], ['7d', 'Last 7 days'], ['month', 'This month'], ['', 'All dates']].map(([v, l]) => (
+                <button key={v || 'all'} onClick={() => selectPreset(v)}
+                  className={`px-2.5 py-1.5 text-xs font-medium rounded-lg border transition-colors ${prPreset === v && (v || (!prStart && !prEnd)) ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'}`}>
+                  {l}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-end gap-2">
+              <div>
+                <label className="block text-[11px] text-gray-400 mb-1">From</label>
+                <DatePicker value={prStart || null} onChange={v => setCustom('start', v)} />
+              </div>
+              <div>
+                <label className="block text-[11px] text-gray-400 mb-1">To</label>
+                <DatePicker value={prEnd || null} onChange={v => setCustom('end', v)} />
+              </div>
+            </div>
+            <div className="min-w-[150px]">
+              <label className="block text-[11px] text-gray-400 mb-1">Category</label>
+              <select value={prCategory} onChange={e => { setPrCategory(e.target.value); setPrSubcategory(''); setPrPage(1) }}
+                className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-gray-900">
+                <option value="">All categories</option>
+                {expenseCategories.map(c => <option key={c.id ?? c.label} value={c.label}>{c.label}</option>)}
+              </select>
+            </div>
+            <div className="min-w-[150px]">
+              <label className="block text-[11px] text-gray-400 mb-1">Subcategory</label>
+              <select value={prSubcategory} onChange={e => { setPrSubcategory(e.target.value); setPrPage(1) }}
+                disabled={!prCategory || subOptions.length === 0}
+                className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-gray-900 disabled:bg-gray-50 disabled:text-gray-400">
+                <option value="">All subcategories</option>
+                {subOptions.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            {(prCategory || prSubcategory || prStart || prEnd) && (
+              <button onClick={() => { setPrCategory(''); setPrSubcategory(''); setPrStart(''); setPrEnd(''); setPrPreset(''); setPrPage(1) }}
+                className="px-2.5 py-1.5 text-xs font-medium text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50">
+                Clear
+              </button>
+            )}
+          </div>
+
+          {/* Batch action bar (approved + confirmer) */}
+          {showBatch && prSelected.length > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-3 bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-3">
+              <p className="text-sm text-indigo-900">
+                <strong>{prSelected.length}</strong> selected · Total <TkAmt value={selectedTotal} decimals={2} /> BDT
+              </p>
+              <div className="flex items-center gap-2">
+                <a href={`/api/expenses/combined-voucher?ids=${prSelected.join(',')}`} target="_blank" rel="noreferrer"
+                  className="px-3 py-1.5 text-xs font-medium border border-indigo-300 text-indigo-700 bg-white rounded-lg hover:bg-indigo-50 flex items-center gap-1.5">
+                  <Printer className="w-3.5 h-3.5" /> Generate Combined Invoice
+                </a>
+                <button onClick={() => setBatchPaying(true)}
+                  className="px-3 py-1.5 text-xs font-medium bg-green-600 text-white rounded-lg hover:bg-green-700">
+                  Mark Selected Paid
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
             {prLoading ? <Spinner /> : prList.length === 0 ? (
@@ -1540,9 +1857,17 @@ function AccountsContent() {
                 <table className="w-full text-sm min-w-[640px]">
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-100">
+                      {showBatch && (
+                        <th className="px-4 py-3 w-9">
+                          <input type="checkbox" checked={allSelected} onChange={toggleAll}
+                            disabled={selectableIds.length === 0}
+                            className="w-4 h-4 rounded border-gray-300 accent-indigo-600" />
+                        </th>
+                      )}
                       <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Title</th>
                       <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Category</th>
                       <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Project</th>
+                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Voucher</th>
                       <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">Amount</th>
                       <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Status</th>
                       <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Submitted By</th>
@@ -1553,23 +1878,53 @@ function AccountsContent() {
                   <tbody className="divide-y divide-gray-50">
                     {prList.map(pr => (
                       <tr key={pr.id ?? pr._id} className="hover:bg-gray-50/50 transition-colors">
+                        {showBatch && (
+                          <td className="px-4 py-3">
+                            {pr.status === 'APPROVED' && (
+                              <input type="checkbox" checked={prSelected.includes(pr.id ?? pr._id)}
+                                onChange={() => toggleOne(pr.id ?? pr._id)}
+                                className="w-4 h-4 rounded border-gray-300 accent-indigo-600" />
+                            )}
+                          </td>
+                        )}
                         <td className="px-4 py-3 text-xs font-medium text-gray-800 max-w-[160px] truncate">{pr.title ?? pr.description ?? '—'}</td>
                         <td className="px-4 py-3 text-xs text-gray-600">
                           <span>{pr.category ?? '—'}</span>
                           {pr.subcategory && <span className="block text-[11px] text-gray-400">{pr.subcategory}</span>}
                         </td>
-                        <td className="px-4 py-3 text-xs text-gray-500">{pr.projectId?.name ?? '—'}</td>
+                        <td className="px-4 py-3 text-xs text-gray-500">{pr.projectId?.name ?? (pr.origin === 'SALARY' ? 'Salary' : pr.origin === 'REIMBURSEMENT' ? 'Reimbursement' : '—')}</td>
+                        <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{pr.expenseInvoiceNo ?? '—'}</td>
                         <td className="px-4 py-3 text-right text-sm font-semibold text-gray-800 whitespace-nowrap">{fmt(pr.amount)}</td>
                         <td className="px-4 py-3"><StatusDot status={pr.status} /></td>
-                        <td className="px-4 py-3 text-xs text-gray-500">{pr.submittedBy?.name ?? '—'}</td>
+                        <td className="px-4 py-3 text-xs text-gray-500">{pr.submittedBy?.name ?? (pr.origin === 'SALARY' ? 'System' : '—')}</td>
                         <td className="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">{fmtDate(pr.date ?? pr.createdAt)}</td>
                         <td className="px-4 py-3">
-                          {pr.status === 'PENDING' && (
-                            <button onClick={() => setApprovingPr(pr)}
-                              className="px-3 py-1.5 text-xs font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors">
-                              Review
-                            </button>
-                          )}
+                          <div className="flex items-center justify-end gap-2">
+                            {pr.status === 'PENDING' && (
+                              <button onClick={() => setApprovingPr(pr)}
+                                className="px-3 py-1.5 text-xs font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors">
+                                Review
+                              </button>
+                            )}
+                            {pr.status === 'APPROVED' && (
+                              <>
+                                <a href={`/api/expenses/${pr.id ?? pr._id}/voucher`} target="_blank" rel="noreferrer"
+                                  className="px-3 py-1.5 text-xs font-medium border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 flex items-center gap-1.5">
+                                  <Printer className="w-3.5 h-3.5" /> Invoice
+                                </a>
+                                <button onClick={() => setPayingPr(pr)}
+                                  className="px-3 py-1.5 text-xs font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
+                                  Mark Paid
+                                </button>
+                              </>
+                            )}
+                            {pr.status === 'PAID' && (
+                              <a href={`/api/expenses/${pr.id ?? pr._id}/voucher`} target="_blank" rel="noreferrer"
+                                className="px-3 py-1.5 text-xs font-medium border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 flex items-center gap-1.5">
+                                <Printer className="w-3.5 h-3.5" /> Invoice
+                              </a>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -1611,106 +1966,16 @@ function AccountsContent() {
             </div>
           )}
         </div>
-      )}
+        )
+      })()}
 
-      {/* ── WITHDRAWALS tab ── */}
+      {/* ── WITHDRAWALS tab (removed — freelancer payments settle via Payment Requests) ── */}
       {activeTab === 'withdrawals' && (
-        <div className="space-y-4">
-          <div className="flex gap-2">
-            {[['', 'All'], ['PENDING', 'Pending'], ['PAID', 'Paid'], ['REJECTED', 'Rejected']].map(([v, l]) => (
-              <button key={v} onClick={() => setWdStatus(v)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${wdStatus === v ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'}`}>
-                {l}
-              </button>
-            ))}
-          </div>
-
-          <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-            {wdLoading ? <Spinner /> : wdList.length === 0 ? (
-              <div className="text-center py-16 text-gray-400 text-sm">No withdrawal requests found</div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm min-w-[640px]">
-                  <thead>
-                    <tr className="bg-gray-50 border-b border-gray-100">
-                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Freelancer</th>
-                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Project</th>
-                      <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">Amount</th>
-                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Status</th>
-                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Requested</th>
-                      <th className="px-4 py-3" />
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
-                    {wdList.map(wd => (
-                      <tr key={wd.id ?? wd._id} className="hover:bg-gray-50/50 transition-colors">
-                        <td className="px-4 py-3">
-                          <p className="text-xs font-medium text-gray-800">{wd.freelancerId?.userId?.name ?? '—'}</p>
-                          {wd.freelancerId?.userId?.email && <p className="text-xs text-gray-400">{wd.freelancerId.userId.email}</p>}
-                        </td>
-                        <td className="px-4 py-3 text-xs text-gray-500">{wd.projectId?.name ?? '—'}</td>
-                        <td className="px-4 py-3 text-right text-sm font-semibold text-gray-800 whitespace-nowrap">{fmt(wd.amount)}</td>
-                        <td className="px-4 py-3"><StatusDot status={wd.status} /></td>
-                        <td className="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">{fmtDate(wd.createdAt)}</td>
-                        <td className="px-4 py-3">
-                          {wd.status === 'PENDING' && (
-                            <div className="flex gap-1.5 justify-end">
-                              <button onClick={() => setWdApproveModal(wd)}
-                                className="px-3 py-1.5 text-xs font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors">
-                                Approve
-                              </button>
-                              <button
-                                onClick={async () => {
-                                  const note = window.prompt('Rejection reason (optional):') ?? ''
-                                  setWdNote(note)
-                                  await handleRejectWithdrawal(wd.id ?? wd._id)
-                                }}
-                                className="px-3 py-1.5 text-xs font-medium border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors">
-                                Reject
-                              </button>
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          {/* Approve withdrawal modal */}
-          {wdApproveModal && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-              <div className="bg-white rounded-xl border border-gray-200 w-full max-w-md p-6 space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-base font-semibold text-gray-900">Approve Withdrawal</h3>
-                  <button onClick={() => setWdApproveModal(null)} className="p-1 rounded-lg hover:bg-gray-100">
-                    <X className="w-5 h-5 text-gray-400" />
-                  </button>
-                </div>
-                <div className="bg-gray-50 rounded-lg p-4 text-sm space-y-1">
-                  <p className="font-medium text-gray-800">{wdApproveModal.freelancerId?.userId?.name ?? '—'}</p>
-                  <p className="text-gray-500">{wdApproveModal.projectId?.name ?? '—'}</p>
-                  <p className="text-lg font-bold text-gray-900 mt-2">{fmt(wdApproveModal.amount)}</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Note (optional)</label>
-                  <textarea value={wdApproveNote} onChange={e => setWdApproveNote(e.target.value)} rows={2}
-                    placeholder="Add a note…"
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 resize-none" />
-                </div>
-                <div className="flex gap-2 justify-end">
-                  <button onClick={() => setWdApproveModal(null)} className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
-                  <button onClick={() => handleApproveWithdrawal(wdApproveModal)} disabled={!!approvingWd}
-                    className="px-4 py-2 text-sm font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-60 flex items-center gap-2">
-                    {approvingWd && <Loader2 className="w-4 h-4 animate-spin" />}
-                    Approve
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
+        <div className="bg-white border border-gray-100 rounded-xl p-10 text-center">
+          <p className="text-sm text-gray-500">
+            Wallet withdrawals were removed. Freelancer &amp; agency payments are now settled directly via{' '}
+            <Link href="/admin/accounts?tab=requests" className="text-blue-600 hover:underline">Payment Requests</Link>.
+          </p>
         </div>
       )}
 
@@ -1818,6 +2083,23 @@ function AccountsContent() {
           currentUser={session?.user}
           onClose={() => setApprovingPr(null)}
           onDone={() => { loadPaymentRequests(); loadSummary() }}
+        />
+      )}
+
+      {payingPr && (
+        <MarkPaidModal
+          expense={payingPr}
+          onClose={() => setPayingPr(null)}
+          onDone={() => { loadPaymentRequests(); loadSummary() }}
+        />
+      )}
+
+      {batchPaying && (
+        <BatchPayModal
+          ids={prSelected}
+          expenses={prList.filter(r => prSelected.includes(r.id ?? r._id))}
+          onClose={() => setBatchPaying(false)}
+          onDone={() => { setPrSelected([]); loadPaymentRequests(); loadSummary() }}
         />
       )}
 

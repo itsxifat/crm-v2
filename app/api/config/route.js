@@ -4,6 +4,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Setting } from '@/models'
+import { invalidateConfigCache } from '@/lib/getConfig'
 
 const CONFIG_KEY = 'crm_config'
 
@@ -84,6 +85,7 @@ export async function PUT(request) {
       { key: CONFIG_KEY, value: JSON.stringify(body), group: 'config' },
       { upsert: true, new: true }
     )
+    invalidateConfigCache()
 
     return NextResponse.json({ data: body })
   } catch (err) {
@@ -120,6 +122,7 @@ export async function PATCH(request) {
       { key: CONFIG_KEY, value: JSON.stringify(updated), group: 'config' },
       { upsert: true, new: true }
     )
+    invalidateConfigCache()
 
     return NextResponse.json({ data: updated })
   } catch (err) {

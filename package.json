@@ -9,7 +9,8 @@
     "lint": "next lint",
     "db:seed": "node scripts/seed.js",
     "db:decrypt": "node scripts/decrypt-migrate.js",
-    "db:backfill-memberships": "node scripts/backfill-company-memberships.js"
+    "db:backfill-memberships": "node scripts/backfill-company-memberships.js",
+    "db:migrate-expenses": "node scripts/migrate-expenses-approved-to-paid.js"
   },
   "dependencies": {
     "@hello-pangea/dnd": "^16.6.0",

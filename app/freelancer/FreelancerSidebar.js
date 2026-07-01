@@ -2,33 +2,18 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, FolderOpen, Wallet, LogOut, UserCircle, Send, X } from 'lucide-react'
+import { LayoutDashboard, FolderOpen, LogOut, UserCircle, X } from 'lucide-react'
 import { signOut } from 'next-auth/react'
-import { useState, useEffect } from 'react'
 
 const NAV = [
   { href: '/freelancer',                   label: 'Dashboard',        icon: LayoutDashboard },
   { href: '/freelancer/projects',          label: 'My Projects',      icon: FolderOpen },
-  { href: '/freelancer/wallet',            label: 'Wallet',           icon: Wallet },
-  { href: '/freelancer/payment-requests',  label: 'Payment Requests', icon: Send, badge: 'paymentRequests' },
   { href: '/freelancer/account',           label: 'My Account',       icon: UserCircle },
 ]
 
 export default function FreelancerSidebar({ user, portalType = 'FREELANCER', isOpen = false, onClose }) {
   const pathname = usePathname()
-  const [pendingCount, setPendingCount] = useState(0)
-
-  useEffect(() => {
-    fetch('/api/freelancer/withdrawals')
-      .then(r => r.json())
-      .then(json => {
-        const pending = (json.data ?? []).filter(r => r.status === 'PENDING').length
-        setPendingCount(pending)
-      })
-      .catch(() => {})
-  }, [pathname])
-
-  const badges = { paymentRequests: pendingCount }
+  const badges = {}
 
   return (
     <>

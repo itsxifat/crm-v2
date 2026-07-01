@@ -19,6 +19,8 @@ import FileUpload from '@/components/ui/FileUpload'
 import DocPreview from '@/components/ui/DocPreview'
 import Select from '@/components/ui/Select'
 import DatePicker from '@/components/ui/DatePicker'
+import PeoplePicker from '@/components/ui/PeoplePicker'
+import { currencyOptions, BASE_CURRENCY } from '@/lib/currencies'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -587,7 +589,7 @@ export default function ProjectDetailPage() {
   const [paymentsLoaded,      setPaymentsLoaded]      = useState(false)
   const [freelancerAssignments, setFreelancerAssignments] = useState([])
   const [assignModal,         setAssignModal]         = useState(false)
-  const [assignForm,          setAssignForm]          = useState({ freelancerId: '', paymentAmount: '', paymentNotes: '' })
+  const [assignForm,          setAssignForm]          = useState({ person: null, freelancerId: '', paymentAmount: '', currency: 'BDT', amountBDT: '', paymentNotes: '' })
   const [freelancerList,      setFreelancerList]      = useState([])
   const [assignSaving,        setAssignSaving]        = useState(false)
   const [approvingAssign,     setApprovingAssign]     = useState(null)
@@ -599,7 +601,7 @@ export default function ProjectDetailPage() {
   // Agency assignments (reuse FreelancerAssignment model; agencies have type=AGENCY)
   const [agencyList,          setAgencyList]          = useState([])
   const [assignAgencyModal,   setAssignAgencyModal]   = useState(false)
-  const [assignAgencyForm,    setAssignAgencyForm]    = useState({ freelancerId: '', paymentAmount: '', paymentNotes: '' })
+  const [assignAgencyForm,    setAssignAgencyForm]    = useState({ person: null, freelancerId: '', paymentAmount: '', currency: 'BDT', amountBDT: '', paymentNotes: '' })
   const [assignAgencySaving,  setAssignAgencySaving]  = useState(false)
 
   // Brief state
@@ -739,22 +741,33 @@ export default function ProjectDetailPage() {
 
   async function handleAssignFreelancer(e) {
     e.preventDefault()
-    if (!assignForm.freelancerId || !assignForm.paymentAmount) {
-      toast.error('Freelancer and payment amount are required')
-      return
+    const isSalary = assignForm.person?.mode === 'SALARY'
+    if (!assignForm.freelancerId) { toast.error('Select a freelancer'); return }
+    if (!isSalary && !assignForm.paymentAmount) { toast.error('Payment amount is required'); return }
+    if (!isSalary && assignForm.currency !== BASE_CURRENCY && !assignForm.amountBDT) {
+      toast.error('Enter the BDT-equivalent for a non-BDT amount'); return
     }
     setAssignSaving(true)
     try {
       const res  = await fetch('/api/freelancer-assignments', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ projectId: id, ...assignForm, paymentAmount: Number(assignForm.paymentAmount) }),
+        body:    JSON.stringify({
+          projectId: id,
+          freelancerId: assignForm.freelancerId,
+          paymentNotes: assignForm.paymentNotes,
+          ...(isSalary ? {} : {
+            paymentAmount: Number(assignForm.paymentAmount),
+            currency: assignForm.currency,
+            amountBDT: assignForm.amountBDT ? Number(assignForm.amountBDT) : undefined,
+          }),
+        }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error)
       toast.success('Freelancer assigned!')
       setAssignModal(false)
-      setAssignForm({ freelancerId: '', paymentAmount: '', paymentNotes: '' })
+      setAssignForm({ person: null, freelancerId: '', paymentAmount: '', currency: 'BDT', amountBDT: '', paymentNotes: '' })
       loadFreelancerAssignments()
     } catch (err) { toast.error(err.message) }
     finally { setAssignSaving(false) }
@@ -766,18 +779,28 @@ export default function ProjectDetailPage() {
       toast.error('Agency and payment amount are required')
       return
     }
+    if (assignAgencyForm.currency !== BASE_CURRENCY && !assignAgencyForm.amountBDT) {
+      toast.error('Enter the BDT-equivalent for a non-BDT amount'); return
+    }
     setAssignAgencySaving(true)
     try {
       const res  = await fetch('/api/freelancer-assignments', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ projectId: id, ...assignAgencyForm, paymentAmount: Number(assignAgencyForm.paymentAmount) }),
+        body:    JSON.stringify({
+          projectId: id,
+          freelancerId: assignAgencyForm.freelancerId,
+          paymentNotes: assignAgencyForm.paymentNotes,
+          paymentAmount: Number(assignAgencyForm.paymentAmount),
+          currency: assignAgencyForm.currency,
+          amountBDT: assignAgencyForm.amountBDT ? Number(assignAgencyForm.amountBDT) : undefined,
+        }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error)
       toast.success('Agency assigned!')
       setAssignAgencyModal(false)
-      setAssignAgencyForm({ freelancerId: '', paymentAmount: '', paymentNotes: '' })
+      setAssignAgencyForm({ person: null, freelancerId: '', paymentAmount: '', currency: 'BDT', amountBDT: '', paymentNotes: '' })
       loadFreelancerAssignments()
     } catch (err) { toast.error(err.message) }
     finally { setAssignAgencySaving(false) }
@@ -863,14 +886,14 @@ export default function ProjectDetailPage() {
   async function handleExpenseAction(expenseId, action) {
     setProcessingExpense(expenseId)
     try {
-      const res  = await fetch(`/api/projects/${id}/expenses/${expenseId}`, {
+      const res  = await fetch(`/api/expenses/${expenseId}`, {
         method:  'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ action }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error)
-      toast.success(action === 'approve' ? 'Expense approved' : 'Expense rejected')
+      toast.success(action === 'approve' ? 'Expense approved — voucher ready to print' : 'Expense rejected')
       load()
     } catch (err) { toast.error(err.message) }
     finally { setProcessingExpense(null) }
@@ -1341,7 +1364,8 @@ export default function ProjectDetailPage() {
                       <td className="px-5 py-3 whitespace-nowrap">
                         <div className="flex items-center gap-1.5">
                           <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                            e.status === 'APPROVED' ? 'bg-green-500' :
+                            e.status === 'PAID' ? 'bg-green-500' :
+                            e.status === 'APPROVED' ? 'bg-blue-500' :
                             e.status === 'REJECTED' ? 'bg-red-500' :
                             'bg-yellow-400'
                           }`} />
@@ -1351,6 +1375,12 @@ export default function ProjectDetailPage() {
                       <td className="px-5 py-3">
                         <div className="flex items-center gap-2">
                           {e.invoiceUrl && <DocPreview url={e.invoiceUrl} compact />}
+                          {(e.status === 'APPROVED' || e.status === 'PAID') && (
+                            <a href={`/api/expenses/${e.id ?? e._id}/voucher`} target="_blank" rel="noreferrer"
+                              className="px-2 py-0.5 text-xs font-medium text-gray-600 border border-gray-200 rounded hover:bg-gray-50">
+                              Voucher
+                            </a>
+                          )}
                           {e.status === 'PENDING' && (
                             <>
                               <button onClick={() => handleExpenseAction(e.id ?? e._id, 'approve')}
@@ -1632,19 +1662,45 @@ export default function ProjectDetailPage() {
                   <form onSubmit={handleAssignFreelancer} className="space-y-4">
                     <div>
                       <label className="block text-xs font-medium text-gray-500 mb-1">Freelancer <span className="text-red-500">*</span></label>
-                      <Select value={assignForm.freelancerId}
-                        onChange={v => setAssignForm(f => ({ ...f, freelancerId: v ?? '' }))}
-                        options={freelancerList.map(f => ({ value: f.id ?? f._id, label: `${f.userId?.name ?? f.id}${f.userId?.email ? ` — ${f.userId.email}` : ''}` }))}
-                        placeholder="Select freelancer…"
-                      />
+                      <PeoplePicker types={['FREELANCER']} typeFilter={false} value={assignForm.person}
+                        placeholder="Search freelancers…"
+                        onChange={p => setAssignForm(f => ({
+                          ...f, person: p, freelancerId: p?.id ?? '',
+                          currency: p?.currency ?? 'BDT',
+                        }))} />
                     </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-1">Payment Amount (৳) <span className="text-red-500">*</span></label>
-                      <input type="number" step="0.01" min="1"
-                        value={assignForm.paymentAmount}
-                        onChange={e => setAssignForm(f => ({ ...f, paymentAmount: e.target.value }))}
-                        placeholder="0.00" className={ic} required />
-                    </div>
+                    {assignForm.person?.mode === 'SALARY' ? (
+                      <div className="rounded-lg bg-indigo-50 border border-indigo-100 px-3 py-2.5 text-xs text-indigo-700">
+                        Salary-based freelancer — no per-engagement payment. Their monthly salary covers this work.
+                      </div>
+                    ) : (
+                      <>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Amount <span className="text-red-500">*</span></label>
+                            <input type="number" step="0.01" min="1"
+                              value={assignForm.paymentAmount}
+                              onChange={e => setAssignForm(f => ({ ...f, paymentAmount: e.target.value }))}
+                              placeholder="0.00" className={ic} />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Currency</label>
+                            <Select value={assignForm.currency}
+                              onChange={v => setAssignForm(f => ({ ...f, currency: v ?? 'BDT' }))}
+                              options={currencyOptions} placeholder="Currency…" />
+                          </div>
+                        </div>
+                        {assignForm.currency !== BASE_CURRENCY && (
+                          <div>
+                            <label className="block text-xs font-medium text-gray-500 mb-1">BDT-equivalent <span className="text-red-500">*</span></label>
+                            <input type="number" step="0.01" min="1"
+                              value={assignForm.amountBDT}
+                              onChange={e => setAssignForm(f => ({ ...f, amountBDT: e.target.value }))}
+                              placeholder="0.00" className={ic} />
+                          </div>
+                        )}
+                      </>
+                    )}
                     <div>
                       <label className="block text-xs font-medium text-gray-500 mb-1">Payment Notes</label>
                       <textarea value={assignForm.paymentNotes}
@@ -1865,19 +1921,37 @@ export default function ProjectDetailPage() {
                   <form onSubmit={handleAssignAgency} className="space-y-4">
                     <div>
                       <label className="block text-xs font-medium text-gray-500 mb-1">Agency <span className="text-red-500">*</span></label>
-                      <Select value={assignAgencyForm.freelancerId}
-                        onChange={v => setAssignAgencyForm(f => ({ ...f, freelancerId: v ?? '' }))}
-                        options={agencyList.map(f => ({ value: f.id ?? f._id, label: `${f.agencyInfo?.agencyName ?? f.userId?.name ?? f.id}${f.userId?.email ? ` — ${f.userId.email}` : ''}` }))}
-                        placeholder="Select agency…"
-                      />
+                      <PeoplePicker types={['AGENCY']} typeFilter={false} value={assignAgencyForm.person}
+                        placeholder="Search agencies…"
+                        onChange={p => setAssignAgencyForm(f => ({
+                          ...f, person: p, freelancerId: p?.id ?? '',
+                          currency: p?.currency ?? 'BDT',
+                        }))} />
                     </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-1">Payment Amount (৳) <span className="text-red-500">*</span></label>
-                      <input type="number" step="0.01" min="1"
-                        value={assignAgencyForm.paymentAmount}
-                        onChange={e => setAssignAgencyForm(f => ({ ...f, paymentAmount: e.target.value }))}
-                        placeholder="0.00" className={ic} required />
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">Amount <span className="text-red-500">*</span></label>
+                        <input type="number" step="0.01" min="1"
+                          value={assignAgencyForm.paymentAmount}
+                          onChange={e => setAssignAgencyForm(f => ({ ...f, paymentAmount: e.target.value }))}
+                          placeholder="0.00" className={ic} />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">Currency</label>
+                        <Select value={assignAgencyForm.currency}
+                          onChange={v => setAssignAgencyForm(f => ({ ...f, currency: v ?? 'BDT' }))}
+                          options={currencyOptions} placeholder="Currency…" />
+                      </div>
                     </div>
+                    {assignAgencyForm.currency !== BASE_CURRENCY && (
+                      <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">BDT-equivalent <span className="text-red-500">*</span></label>
+                        <input type="number" step="0.01" min="1"
+                          value={assignAgencyForm.amountBDT}
+                          onChange={e => setAssignAgencyForm(f => ({ ...f, amountBDT: e.target.value }))}
+                          placeholder="0.00" className={ic} />
+                      </div>
+                    )}
                     <div>
                       <label className="block text-xs font-medium text-gray-500 mb-1">Payment Notes</label>
                       <textarea value={assignAgencyForm.paymentNotes}

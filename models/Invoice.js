@@ -29,6 +29,7 @@ const InvoiceSchema = new mongoose.Schema(
     total:      { type: mongoose.Schema.Types.Mixed, default: 0 },
     paidAmount: { type: mongoose.Schema.Types.Mixed, default: 0 },
     currency:   { type: String, default: 'BDT' },
+    totalBDT:   { type: Number, default: null }, // BDT-equivalent of total; == total for BDT
 
     notes:    { type: String, default: null },
     terms:    { type: String, default: null },

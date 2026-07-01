@@ -44,6 +44,7 @@ export async function POST(request, { params }) {
 
     const expense = await new ProjectExpense({
       projectId:        params.id,
+      origin:           'PROJECT',
       venture:          project.venture ?? null,
       title:            body.title,
       amount:           amount,

@@ -20,16 +20,25 @@ export async function PATCH(request, { params }) {
     if (payment.status !== 'PENDING_CONFIRMATION')
       return NextResponse.json({ error: 'Payment already processed' }, { status: 409 })
 
-    const { action, rejectionNote, txnId, accountManager } = await request.json()
+    const { action, rejectionNote, txnId, accountManager, currency, amountBDT } = await request.json()
 
     if (action === 'confirm') {
       const project = payment.projectId
       const invoiceId = payment.invoiceId?._id ?? payment.invoiceId ?? null
+
+      // Currency + BDT-equivalent: confirmer may set the actual BDT received for a
+      // foreign-currency payment; falls back to what the payment carried.
+      const txnCurrency = currency ?? payment.currency ?? 'BDT'
+      const bdt = (amountBDT ?? payment.amountBDT ?? payment.amount) || 0
+      payment.currency  = txnCurrency
+      payment.amountBDT = bdt
+
       const tx = await new Transaction({
         type:           'INCOME',
         category:       'Project Revenue',
         amount:         payment.amount,
-        currency:       'BDT',
+        currency:       txnCurrency,
+        amountBDT:      bdt,
         description:    `Payment received${payment.description ? ': ' + payment.description : ''} — ${project?.name ?? (payment.invoiceId?.invoiceNumber ?? 'Invoice')}`,
         date:           payment.paymentDate,
         reference:      project?.projectCode ?? payment.invoiceId?.invoiceNumber ?? null,
@@ -49,10 +58,10 @@ export async function PATCH(request, { params }) {
       payment.transactionId = tx._id
       await payment.save()
 
-      // ── Sync paidAmount on Project (only if linked) ────────────────────────
+      // ── Sync paidAmount on Project (BDT — project budget is tracked in BDT) ──
       if (payment.projectId) {
         const proj = payment.projectId
-        proj.paidAmount = (proj.paidAmount ?? 0) + payment.amount
+        proj.paidAmount = (proj.paidAmount ?? 0) + bdt
         await proj.save()
       }
 
