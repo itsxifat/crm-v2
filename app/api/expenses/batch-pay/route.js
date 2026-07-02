@@ -8,9 +8,9 @@ import { requirePerm } from '@/lib/rbac'
 import { settleExpenseAsPaid, computeBatchRef } from '@/lib/expensePayment'
 
 // POST /api/expenses/batch-pay
-// Marks a group of APPROVED expenses PAID against ONE combined authorized invoice:
-// they all share the uploaded signed-scan and a batch reference. Body:
-//   { ids: [...], signedInvoiceUrl, paymentMethod?, paymentNote? }
+// Marks a group of APPROVED expenses PAID against ONE combined authorized invoice.
+// The group shares the payment method, transaction id / proof and a batch reference.
+//   { ids: [...], paymentMethod, paymentProofUrl?, paymentTxnId?, paymentNote? }
 export async function POST(request) {
   try {
     const session = await getServerSession(authOptions)
@@ -18,11 +18,13 @@ export async function POST(request) {
     if (denied) return denied
     await connectDB()
 
-    const { ids, signedInvoiceUrl, paymentMethod, paymentNote } = await request.json()
+    const { ids, paymentMethod, paymentProofUrl, paymentTxnId, paymentNote } = await request.json()
     if (!Array.isArray(ids) || ids.length === 0)
       return NextResponse.json({ error: 'Select at least one approved expense' }, { status: 422 })
-    if (!signedInvoiceUrl)
-      return NextResponse.json({ error: 'Upload the signed & sealed combined invoice scan first' }, { status: 422 })
+    if (!paymentMethod)
+      return NextResponse.json({ error: 'Select the payment method' }, { status: 422 })
+    if (!paymentProofUrl && !paymentTxnId?.trim())
+      return NextResponse.json({ error: 'Provide a transaction ID or upload payment proof' }, { status: 422 })
 
     const expenses = await ProjectExpense.find({ _id: { $in: ids }, status: 'APPROVED' })
     if (expenses.length === 0)
@@ -32,7 +34,8 @@ export async function POST(request) {
 
     for (const expense of expenses) {
       await settleExpenseAsPaid(expense, {
-        userId: session.user.id, signedInvoiceUrl, paymentMethod, paymentNote, batchInvoiceNo,
+        userId: session.user.id, paymentMethod, paymentProofUrl: paymentProofUrl ?? null,
+        paymentTxnId: paymentTxnId?.trim() || null, paymentNote, batchInvoiceNo,
       })
     }
 

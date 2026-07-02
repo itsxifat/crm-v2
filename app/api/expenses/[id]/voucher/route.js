@@ -5,6 +5,7 @@ import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { ProjectExpense } from '@/models'
 import { canDo } from '@/lib/rbac'
+import { getConfig } from '@/lib/getConfig'
 
 function formatCurrency(amount, currency = 'BDT') {
   const n = amount ?? 0
@@ -84,6 +85,10 @@ export async function GET(request, { params }) {
       e.paidToEmployeeId?.userId?.name ??
       e.paidToName ?? '—'
 
+    const cfg         = await getConfig()
+    const methodLabel = cfg.paymentMethods?.find(m => m.value === e.paymentMethod)?.label ?? e.paymentMethod ?? null
+    const hasPayment  = e.status === 'PAID' && (methodLabel || e.paymentTxnId)
+
     const companyName    = 'En-Tech Agency'
     const companyAddress = '123 Business Ave, Suite 100'
     const amountStr      = formatCurrency(e.amount, e.currency)
@@ -162,10 +167,13 @@ export async function GET(request, { params }) {
     </div>
     <div class="meta-block right">
       <h3>Voucher Details</h3>
+      <div class="row"><span class="label">Expense ID</span><span class="value">${e.expenseId ?? '—'}</span></div>
       <div class="row"><span class="label">Voucher No</span><span class="value">${e.expenseInvoiceNo ?? '—'}</span></div>
       <div class="row"><span class="label">Expense Date</span><span class="value">${formatDate(e.date)}</span></div>
       <div class="row"><span class="label">Category</span><span class="value">${e.category ?? '—'}${e.subcategory ? ` / ${e.subcategory}` : ''}</span></div>
       <div class="row"><span class="label">Currency</span><span class="value">${e.currency ?? 'BDT'}</span></div>
+      ${hasPayment ? `<div class="row"><span class="label">Payment Method</span><span class="value">${methodLabel ?? '—'}</span></div>` : ''}
+      ${hasPayment && e.paymentTxnId ? `<div class="row"><span class="label">Transaction ID</span><span class="value">${e.paymentTxnId}</span></div>` : ''}
     </div>
   </div>
 

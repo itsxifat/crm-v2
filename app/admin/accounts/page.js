@@ -507,14 +507,18 @@ function ApproveModal({ expense, onClose, onDone, currentUser }) {
 // (mandatory) to record the actual payment. Only then is the Transaction created.
 
 function MarkPaidModal({ expense, onClose, onDone }) {
-  const [signedUrl,     setSignedUrl]     = useState(expense.signedInvoiceUrl ?? '')
+  const { paymentMethods } = useConfig()
   const [paymentMethod, setPaymentMethod] = useState('')
   const [txnId,         setTxnId]         = useState('')
+  const [proofUrl,      setProofUrl]      = useState('')
   const [note,          setNote]          = useState('')
   const [saving,        setSaving]        = useState(false)
 
+  const canSubmit = paymentMethod && (proofUrl || txnId.trim())
+
   async function submit() {
-    if (!signedUrl) { toast.error('Upload the signed & sealed voucher scan to mark this paid'); return }
+    if (!paymentMethod)                 { toast.error('Select the payment method'); return }
+    if (!proofUrl && !txnId.trim())     { toast.error('Enter a transaction ID or upload payment proof'); return }
     setSaving(true)
     try {
       const res  = await fetch(`/api/expenses/${expense.id}`, {
@@ -522,10 +526,10 @@ function MarkPaidModal({ expense, onClose, onDone }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'mark_paid',
-          signedInvoiceUrl: signedUrl,
-          paymentMethod:    paymentMethod || undefined,
-          paymentNote:      note || undefined,
-          txnId:            txnId.trim() || undefined,
+          paymentMethod,
+          paymentTxnId:    txnId.trim() || undefined,
+          paymentProofUrl: proofUrl || undefined,
+          paymentNote:     note || undefined,
         }),
       })
       const json = await res.json()
@@ -546,7 +550,7 @@ function MarkPaidModal({ expense, onClose, onDone }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="bg-white rounded-xl border border-gray-200 w-full max-w-2xl max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
-          <h3 className="text-base font-semibold text-gray-900">Mark Paid — Voucher #{expense.expenseInvoiceNo ?? '—'}</h3>
+          <h3 className="text-base font-semibold text-gray-900">Mark Paid — {expense.expenseId ?? expense.expenseInvoiceNo ?? ''}</h3>
           <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100">
             <X className="w-5 h-5 text-gray-400" />
           </button>
@@ -565,23 +569,29 @@ function MarkPaidModal({ expense, onClose, onDone }) {
             </a>
           </div>
 
-          <FileUpload
-            label="Signed & sealed voucher scan (required)"
-            value={signedUrl}
-            onUploaded={url => setSignedUrl(url)}
-          />
-          <p className="text-xs text-gray-400 -mt-3">Upload the printed voucher after it has been signed by the account manager / authorised signatory and stamped with the company seal.</p>
-
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Payment method <span className="text-gray-400 text-xs">(optional)</span></label>
-              <input value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} placeholder="Cash / Bank / bKash…" className={ic} />
+              <label className="block text-sm font-medium text-gray-700 mb-1">Payment method <span className="text-red-500">*</span></label>
+              <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} className={ic}>
+                <option value="">Select method…</option>
+                {paymentMethods.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+              </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Transaction ID <span className="text-gray-400 text-xs">(optional)</span></label>
-              <input value={txnId} onChange={e => setTxnId(e.target.value)} placeholder="auto-generated if blank" className={ic} />
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Transaction ID {!proofUrl && <span className="text-red-500">*</span>}
+                {proofUrl && <span className="text-gray-400 text-xs ml-1">(optional)</span>}
+              </label>
+              <input value={txnId} onChange={e => setTxnId(e.target.value)} placeholder="e.g. bank / bKash txn ref" className={ic} />
             </div>
           </div>
+
+          <FileUpload
+            label={`Payment proof ${txnId.trim() ? '(optional)' : '(required if no transaction ID)'}`}
+            value={proofUrl}
+            onUploaded={url => setProofUrl(url)}
+          />
+          <p className="text-xs text-gray-400 -mt-3">Proof that the payment was actually made (bank/MFS receipt). Optional if you enter a transaction ID.</p>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Note (optional)</label>
@@ -596,7 +606,7 @@ function MarkPaidModal({ expense, onClose, onDone }) {
             className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">
             Cancel
           </button>
-          <button onClick={submit} disabled={saving || !signedUrl}
+          <button onClick={submit} disabled={saving || !canSubmit}
             className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-60 flex items-center gap-1.5">
             {saving && <Loader2 className="w-4 h-4 animate-spin" />}
             <CheckCircle2 className="w-4 h-4" /> Mark Paid
@@ -612,22 +622,32 @@ function MarkPaidModal({ expense, onClose, onDone }) {
 // invoice: print the combined invoice, get it signed & sealed, upload the scan.
 
 function BatchPayModal({ ids, expenses, onClose, onDone }) {
-  const [signedUrl,     setSignedUrl]     = useState('')
+  const { paymentMethods } = useConfig()
+  const [proofUrl,      setProofUrl]      = useState('')
   const [paymentMethod, setPaymentMethod] = useState('')
+  const [txnId,         setTxnId]         = useState('')
   const [note,          setNote]          = useState('')
   const [saving,        setSaving]        = useState(false)
 
-  const totalBDT = expenses.reduce((s, e) => s + (e.amountBDT ?? e.amount ?? 0), 0)
-  const idsParam = ids.join(',')
+  const totalBDT  = expenses.reduce((s, e) => s + (e.amountBDT ?? e.amount ?? 0), 0)
+  const idsParam  = ids.join(',')
+  const canSubmit = paymentMethod && (proofUrl || txnId.trim())
 
   async function submit() {
-    if (!signedUrl) { toast.error('Upload the signed & sealed combined invoice scan first'); return }
+    if (!paymentMethod)             { toast.error('Select the payment method'); return }
+    if (!proofUrl && !txnId.trim()) { toast.error('Enter a transaction ID or upload payment proof'); return }
     setSaving(true)
     try {
       const res  = await fetch('/api/expenses/batch-pay', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids, signedInvoiceUrl: signedUrl, paymentMethod: paymentMethod || undefined, paymentNote: note || undefined }),
+        body: JSON.stringify({
+          ids,
+          paymentMethod,
+          paymentTxnId:    txnId.trim() || undefined,
+          paymentProofUrl: proofUrl || undefined,
+          paymentNote:     note || undefined,
+        }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error)
@@ -665,22 +685,33 @@ function BatchPayModal({ ids, expenses, onClose, onDone }) {
             </a>
           </div>
 
-          <FileUpload
-            label="Signed & sealed combined invoice scan (required)"
-            value={signedUrl}
-            onUploaded={url => setSignedUrl(url)}
-          />
-          <p className="text-xs text-gray-400 -mt-3">One authorized invoice covers all selected expenses — uploading it marks them all paid together.</p>
-
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Payment method <span className="text-gray-400 text-xs">(optional)</span></label>
-              <input value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} placeholder="Cash / Bank / bKash…" className={ic} />
+              <label className="block text-sm font-medium text-gray-700 mb-1">Payment method <span className="text-red-500">*</span></label>
+              <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} className={ic}>
+                <option value="">Select method…</option>
+                {paymentMethods.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+              </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Note <span className="text-gray-400 text-xs">(optional)</span></label>
-              <input value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. paid in cash" className={ic} />
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Transaction ID {!proofUrl && <span className="text-red-500">*</span>}
+                {proofUrl && <span className="text-gray-400 text-xs ml-1">(optional)</span>}
+              </label>
+              <input value={txnId} onChange={e => setTxnId(e.target.value)} placeholder="e.g. bank / bKash txn ref" className={ic} />
             </div>
+          </div>
+
+          <FileUpload
+            label={`Payment proof ${txnId.trim() ? '(optional)' : '(required if no transaction ID)'}`}
+            value={proofUrl}
+            onUploaded={url => setProofUrl(url)}
+          />
+          <p className="text-xs text-gray-400 -mt-3">One authorized invoice covers all selected expenses — this payment marks them all paid together. Optional if you enter a transaction ID.</p>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Note (optional)</label>
+            <input value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. paid in cash" className={ic} />
           </div>
         </div>
 
@@ -689,7 +720,7 @@ function BatchPayModal({ ids, expenses, onClose, onDone }) {
             className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">
             Cancel
           </button>
-          <button onClick={submit} disabled={saving || !signedUrl}
+          <button onClick={submit} disabled={saving || !canSubmit}
             className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-60 flex items-center gap-1.5">
             {saving && <Loader2 className="w-4 h-4 animate-spin" />}
             <CheckCircle2 className="w-4 h-4" /> Mark {ids.length} Paid

@@ -2,6 +2,8 @@ import mongoose from 'mongoose'
 
 const ProjectExpenseSchema = new mongoose.Schema(
   {
+    // Human-readable id assigned to every expense on creation (EXP-YYMM-####).
+    expenseId:   { type: String, default: null },
     // Optional — null for salary / reimbursement / general (non-project) spend.
     projectId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Project', default: null },
     // Where this expense came from — drives payee display & downstream settlement.
@@ -38,10 +40,12 @@ const ProjectExpenseSchema = new mongoose.Schema(
     expenseInvoiceNo:{ type: String, default: null },      // voucher number, assigned on approve (EXV-YYMM-####)
 
     // ── Paid step ──
-    signedInvoiceUrl:{ type: String, default: null },      // scan of the signed & sealed voucher — required to reach PAID
+    signedInvoiceUrl:{ type: String, default: null },      // legacy: scan of the signed & sealed voucher
+    paymentProofUrl: { type: String, default: null },      // proof the payment was actually made (optional if a txn id is given)
+    paymentTxnId:    { type: String, default: null },      // external payment/transaction reference entered at pay time
     paidBy:          { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     paidAt:          { type: Date,   default: null },
-    paymentMethod:   { type: String, default: null },
+    paymentMethod:   { type: String, default: null },      // config payment-method value (CASH / BKASH / …)
     paymentNote:     { type: String, default: null },
 
     // When paid as part of a combined/authorized invoice, all expenses in the group
@@ -68,6 +72,16 @@ const ProjectExpenseSchema = new mongoose.Schema(
     },
   }
 )
+
+// Assign a human-readable expense id on creation (EXP-YYMM-####).
+ProjectExpenseSchema.pre('validate', async function () {
+  if (this.expenseId) return
+  const now    = new Date()
+  const yymm   = `${String(now.getFullYear()).slice(-2)}${String(now.getMonth() + 1).padStart(2, '0')}`
+  const prefix = `EXP-${yymm}-`
+  const count  = await mongoose.model('ProjectExpense').countDocuments({ expenseId: { $regex: `^${prefix}` } })
+  this.expenseId = `${prefix}${String(count + 1).padStart(4, '0')}`
+})
 
 if (mongoose.models.ProjectExpense) delete mongoose.models.ProjectExpense
 export default mongoose.model('ProjectExpense', ProjectExpenseSchema)

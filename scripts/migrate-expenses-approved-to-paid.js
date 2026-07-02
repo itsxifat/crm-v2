@@ -6,7 +6,8 @@
  * bumped the project budget and marked the payment settled — so those historical
  * rows are APPROVED yet already fully paid (they carry accountsTransactionId).
  * This flips them to PAID so the Accounts queue and every surface show them
- * consistently, and backfills `origin` for legacy project expenses.
+ * consistently, backfills `origin` for legacy project expenses, and assigns an
+ * `expenseId` (EXP-YYMM-####) to any expense created before that field existed.
  *
  * SAFETY
  *   • Only flips APPROVED docs that were already synced to a Transaction.
@@ -39,6 +40,11 @@ async function main() {
   const originCount  = await expenses.countDocuments(originFilter)
   console.log(`Found ${originCount} legacy project expense(s) missing origin.`)
 
+  // 3) Expenses missing `expenseId` → assign EXP-YYMM-#### in creation order.
+  const idFilter  = { expenseId: { $in: [null, undefined] } }
+  const idMissing = await expenses.find(idFilter).sort({ createdAt: 1 }).project({ _id: 1, createdAt: 1 }).toArray()
+  console.log(`Found ${idMissing.length} expense(s) missing an expense id.`)
+
   if (APPLY) {
     if (paidCount > 0) {
       const res = await expenses.updateMany(paidFilter, [
@@ -49,6 +55,21 @@ async function main() {
     if (originCount > 0) {
       const res = await expenses.updateMany(originFilter, { $set: { origin: 'PROJECT' } })
       console.log(`Backfilled origin=PROJECT on ${res.modifiedCount} row(s).`)
+    }
+    if (idMissing.length > 0) {
+      // Continue each month's numbering after any ids already present.
+      const perMonth = {}
+      for (const doc of idMissing) {
+        const d = new Date(doc.createdAt ?? Date.now())
+        const yymm = `${String(d.getFullYear()).slice(-2)}${String(d.getMonth() + 1).padStart(2, '0')}`
+        if (perMonth[yymm] == null) {
+          perMonth[yymm] = await expenses.countDocuments({ expenseId: { $regex: `^EXP-${yymm}-` } })
+        }
+        perMonth[yymm] += 1
+        const expenseId = `EXP-${yymm}-${String(perMonth[yymm]).padStart(4, '0')}`
+        await expenses.updateOne({ _id: doc._id }, { $set: { expenseId } })
+      }
+      console.log(`Assigned expense ids to ${idMissing.length} row(s).`)
     }
   } else {
     console.log('Dry run only — re-run with --apply to write.')

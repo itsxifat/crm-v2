@@ -50,8 +50,8 @@ export async function PATCH(request, { params }) {
     if (denied) return denied
     await connectDB()
 
-    const { action, note, receiptUrl, txnId, accountManager, currency, amountBDT,
-            signedInvoiceUrl, paymentMethod, paymentNote } = await request.json()
+    const { action, note, receiptUrl, accountManager, currency, amountBDT,
+            paymentMethod, paymentProofUrl, paymentTxnId, paymentNote } = await request.json()
 
     const expense = await ProjectExpense.findById(params.id)
     if (!expense) return NextResponse.json({ error: 'Not found' }, { status: 404 })
@@ -75,14 +75,16 @@ export async function PATCH(request, { params }) {
       return NextResponse.json({ data: expense.toJSON() })
     }
 
-    // ─── MARK PAID ─── APPROVED → PAID. Requires the signed & sealed voucher scan.
+    // ─── MARK PAID ─── APPROVED → PAID. Records how the payment was actually made.
     if (action === 'mark_paid') {
       if (expense.status !== 'APPROVED') return NextResponse.json({ error: 'Only approved expenses can be marked paid' }, { status: 422 })
-      const scan = signedInvoiceUrl ?? expense.signedInvoiceUrl
-      if (!scan) return NextResponse.json({ error: 'A scan of the signed & sealed voucher is required to mark this expense paid' }, { status: 422 })
+      if (!paymentMethod) return NextResponse.json({ error: 'Select the payment method' }, { status: 422 })
+      if (!paymentProofUrl && !paymentTxnId?.trim())
+        return NextResponse.json({ error: 'Provide a transaction ID or upload payment proof' }, { status: 422 })
 
       await settleExpenseAsPaid(expense, {
-        userId: session.user.id, signedInvoiceUrl: scan, paymentMethod, paymentNote, txnId, accountManager,
+        userId: session.user.id, paymentMethod, paymentProofUrl: paymentProofUrl ?? null,
+        paymentTxnId: paymentTxnId?.trim() || null, paymentNote, accountManager,
       })
       return NextResponse.json({ data: expense.toJSON() })
     }

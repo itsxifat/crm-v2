@@ -3,21 +3,21 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
-import { ProjectExpense } from '@/models'
+import { ProjectExpense, Setting } from '@/models'
 import { requirePerm } from '@/lib/rbac'
 import { computeBatchRef } from '@/lib/expensePayment'
+import { getConfig } from '@/lib/getConfig'
 
-function formatCurrency(amount, currency = 'BDT') {
-  const n = amount ?? 0
+const fmtDate = (d) =>
+  d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
+
+// Currency amount, matching the client invoice's ৳-in-serif treatment for BDT.
+function money(amount, currency = 'BDT') {
+  const n = (amount ?? 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })
   if (!currency || currency === 'BDT') {
-    return `৳ ${new Intl.NumberFormat('en-BD', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)}`
+    return `<span style="font-size:13px;font-weight:400;letter-spacing:-0.5px;font-family:Georgia,serif">৳</span>&nbsp;${n}`
   }
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(n)
-}
-
-function formatDate(date) {
-  if (!date) return '—'
-  return new Date(date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+  return `${currency}&nbsp;${n}`
 }
 
 function payeeOf(e) {
@@ -30,10 +30,14 @@ function payeeOf(e) {
   )
 }
 
+const TH = 'padding:7px 16px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.07em;color:#64748b;border-bottom:1px solid #e2e8f0;background:#fff;border-top:2px solid #0f172a;'
+const TD = 'padding:8px 16px;font-size:12.5px;color:#334155;border-bottom:1px solid #f1f5f9;vertical-align:top;'
+
 // GET /api/expenses/combined-voucher?ids=a,b,c
-// Printable, multi-page A4 "Expense Invoice" listing every selected expense as a
-// line item — same layout blueprint as the client invoice PDF. Header table
-// repeats per page and rows never split across a page break.
+// Printable, multi-page A4 combined expense invoice — visually identical to the
+// client invoice (components/shared/InvoicePrintView.jsx): Inter font, logo
+// header, #0f172a accents, the same table + totals styling. The header table
+// repeats on every page and rows never split across a page break.
 export async function GET(request) {
   try {
     const session = await getServerSession(authOptions)
@@ -45,153 +49,184 @@ export async function GET(request) {
     const ids = idsParam.split(',').map(s => s.trim()).filter(Boolean)
     if (ids.length === 0) return NextResponse.json({ error: 'No expenses selected' }, { status: 422 })
 
-    const rows = await ProjectExpense.find({ _id: { $in: ids } })
-      .sort({ date: 1, createdAt: 1 })
-      .populate({ path: 'freelancerId',     populate: { path: 'userId', select: 'name' } })
-      .populate({ path: 'agencyId',         populate: { path: 'userId', select: 'name' } })
-      .populate({ path: 'vendorId',         select: 'name companyName' })
-      .populate({ path: 'paidToEmployeeId', populate: { path: 'userId', select: 'name' } })
-      .populate({ path: 'projectId',        select: 'name projectCode' })
+    const [rows, settingsDocs] = await Promise.all([
+      ProjectExpense.find({ _id: { $in: ids } })
+        .sort({ date: 1, createdAt: 1 })
+        .populate({ path: 'freelancerId',     populate: { path: 'userId', select: 'name' } })
+        .populate({ path: 'agencyId',         populate: { path: 'userId', select: 'name' } })
+        .populate({ path: 'vendorId',         select: 'name companyName' })
+        .populate({ path: 'paidToEmployeeId', populate: { path: 'userId', select: 'name' } })
+        .populate({ path: 'projectId',        select: 'name projectCode' }),
+      Setting.find({ group: 'company' }).lean(),
+    ])
     if (rows.length === 0) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-    const list      = rows.map(r => r.toJSON())
-    const batchRef  = computeBatchRef(list)
+    const cfg = {}
+    settingsDocs.forEach(d => { cfg[d.key] = d.value })
+    const company = {
+      name:    cfg.company_name    ?? 'En-Tech Agency',
+      address: cfg.company_address ?? '',
+      phone:   cfg.company_phone   ?? '',
+      email:   cfg.company_email   ?? '',
+      website: cfg.company_website ?? '',
+    }
+
+    const list       = rows.map(r => r.toJSON())
+    const batchRef   = computeBatchRef(list)
     const currencies = [...new Set(list.map(e => e.currency ?? 'BDT'))]
     const mixed      = currencies.length > 1
     const totalBDT   = list.reduce((s, e) => s + (e.amountBDT ?? e.amount ?? 0), 0)
-    const dates      = [...new Set(list.map(e => formatDate(e.date)))]
+    const dayLabels  = [...new Set(list.map(e => fmtDate(e.date)))]
+    const period     = dayLabels.length === 1 ? dayLabels[0] : `${dayLabels[0]} – ${dayLabels[dayLabels.length - 1]}`
     const categories = [...new Set(list.map(e => e.category || '—'))]
+    const catLabel   = categories.length === 1 ? categories[0] : 'Multiple categories'
+    const title      = categories.length === 1 ? categories[0] : 'Combined Expenses'
+    const accent     = '#2563eb'
 
-    const companyName    = 'En-Tech Agency'
-    const companyAddress = '123 Business Ave, Suite 100, New York, NY 10001'
-    const companyEmail   = 'billing@en-tech.agency'
-    const companyPhone   = '+1 (555) 000-0000'
+    // Payment method / transaction id (shown once the group is paid).
+    const appCfg     = await getConfig()
+    const payMethods = appCfg.paymentMethods ?? []
+    const paidRows   = list.filter(e => e.status === 'PAID')
+    const gMethods   = [...new Set(paidRows.map(e => e.paymentMethod).filter(Boolean))]
+    const gTxns      = [...new Set(paidRows.map(e => e.paymentTxnId).filter(Boolean))]
+    const methodLabel = gMethods.length === 1 ? (payMethods.find(m => m.value === gMethods[0])?.label ?? gMethods[0]) : (gMethods.length > 1 ? 'Multiple' : null)
+    const txnLabel    = gTxns.length === 1 ? gTxns[0] : (gTxns.length > 1 ? 'Multiple' : null)
+    const hasPayment  = paidRows.length > 0 && (methodLabel || txnLabel)
+
+    const contactLine = [company.phone, company.email].filter(Boolean).join(' – ')
 
     const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>Combined Expense Invoice ${batchRef}</title>
+<base href="${new URL(request.url).origin}/" />
+<title>Expense Invoice ${batchRef}</title>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: 'Segoe UI', Arial, sans-serif; color: #1a1a2e; background: #fff; font-size: 14px; line-height: 1.5; }
-  .page { max-width: 800px; margin: 0 auto; padding: 40px; }
-  .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 40px; border-bottom: 3px solid #4f46e5; padding-bottom: 24px; }
-  .company-name { font-size: 28px; font-weight: 700; color: #4f46e5; }
-  .company-info { font-size: 12px; color: #6b7280; margin-top: 6px; }
-  .invoice-meta { text-align: right; }
-  .invoice-title { font-size: 26px; font-weight: 700; color: #4f46e5; letter-spacing: 2px; }
-  .invoice-number { font-size: 14px; color: #6b7280; margin-top: 4px; }
-  .status-badge { display: inline-block; padding: 3px 12px; border-radius: 20px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin-top: 8px; background: #eef2ff; color: #4f46e5; }
-  .billing-section { display: flex; justify-content: space-between; margin-bottom: 36px; }
-  .billing-block h3 { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: #9ca3af; margin-bottom: 10px; }
-  .billing-block .name { font-size: 16px; font-weight: 600; color: #111827; }
-  .billing-block .info { font-size: 13px; color: #6b7280; margin-top: 4px; }
-  .dates-block { text-align: right; }
-  .dates-block .date-row { display: flex; justify-content: flex-end; gap: 20px; margin-bottom: 6px; }
-  .dates-block .label { font-size: 12px; color: #9ca3af; }
-  .dates-block .value { font-size: 13px; font-weight: 500; color: #111827; min-width: 140px; text-align: right; }
-  table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Inter','Segoe UI',sans-serif; background: #fff; color: #0f172a; }
+  table { width: 100%; border-collapse: collapse; }
   thead { display: table-header-group; }
-  thead th { background: #4f46e5; color: #fff; padding: 12px 16px; text-align: left; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
-  thead th:last-child { text-align: right; }
-  tbody tr { break-inside: avoid; page-break-inside: avoid; }
-  tbody td { padding: 12px 16px; border-bottom: 1px solid #f3f4f6; color: #374151; font-size: 13px; }
-  tbody td:last-child { text-align: right; font-weight: 600; }
-  tbody tr:hover { background: #f9fafb; }
-  .totals-section { display: flex; justify-content: flex-end; margin-bottom: 36px; break-inside: avoid; }
-  .totals-table { width: 300px; }
-  .totals-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f3f4f6; }
-  .totals-row.final { border-top: 2px solid #4f46e5; border-bottom: none; padding-top: 12px; margin-top: 4px; }
-  .totals-row .label { color: #6b7280; font-size: 13px; }
-  .totals-row .amount { font-weight: 500; color: #111827; }
-  .totals-row.final .label { font-size: 16px; font-weight: 700; color: #111827; }
-  .totals-row.final .amount { font-size: 18px; font-weight: 700; color: #4f46e5; }
-  .notes-section { background: #f9fafb; border-radius: 8px; padding: 16px 20px; margin-bottom: 28px; break-inside: avoid; }
-  .notes-section h3 { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: #9ca3af; margin-bottom: 8px; }
-  .notes-section p { color: #374151; font-size: 13px; line-height: 1.6; }
-  .signatures { display: flex; justify-content: space-between; gap: 24px; margin-top: 56px; break-inside: avoid; }
-  .sign-block { flex: 1; text-align: center; }
-  .sign-line { border-top: 1px solid #374151; margin: 0 8px 6px; padding-top: 6px; }
-  .sign-label { font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; }
-  .seal-box { margin-top: 36px; border: 1px dashed #9ca3af; border-radius: 8px; height: 96px; display: flex; align-items: center; justify-content: center; color: #9ca3af; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; break-inside: avoid; }
-  .footer { text-align: center; padding-top: 24px; margin-top: 32px; border-top: 1px solid #e5e7eb; color: #9ca3af; font-size: 12px; }
-  @media print {
-    body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-    .page { padding: 20px; max-width: none; }
-  }
-  @page { size: A4; margin: 12mm; }
+  tr { page-break-inside: avoid; break-inside: avoid; }
+  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+  @page { size: A4; margin: 14mm 12mm; }
 </style>
 </head>
 <body>
-<div class="page">
-  <div class="header">
+<div style="max-width:780px;margin:0 auto;padding:8px 0;">
+
+  <!-- HEADER -->
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;">
     <div>
-      <div class="company-name">${companyName}</div>
-      <div class="company-info">${companyAddress}<br>${companyEmail} | ${companyPhone}</div>
+      <img src="/en-logo.png" alt="${company.name}" width="120" height="38" style="object-fit:contain;display:block;margin-bottom:7px;" />
+      ${company.name    ? `<p style="margin:0 0 2px;font-size:13px;font-weight:700;color:#0f172a;">${company.name}</p>` : ''}
+      ${company.address ? `<p style="margin:0 0 2px;font-size:11px;color:#64748b;">${company.address}</p>` : ''}
+      ${contactLine     ? `<p style="margin:0 0 2px;font-size:11px;color:#64748b;">${contactLine}</p>` : ''}
+      ${company.website ? `<p style="margin:0;font-size:11px;color:#64748b;">${company.website}</p>` : ''}
     </div>
-    <div class="invoice-meta">
-      <div class="invoice-title">EXPENSE INVOICE</div>
-      <div class="invoice-number">#${batchRef}</div>
-      <span class="status-badge">Combined · ${list.length} item${list.length > 1 ? 's' : ''}</span>
+    <div style="text-align:right;">
+      <p style="margin:0;font-size:11px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:#94a3b8;">Expense Invoice</p>
+      <p style="margin:2px 0 0;font-size:24px;font-weight:700;color:#0f172a;letter-spacing:-0.5px;">${title}</p>
+      <p style="margin:4px 0 0;font-size:13px;font-weight:700;color:#94a3b8;">Invoice No: <strong style="color:${accent};font-weight:700;">${batchRef}</strong></p>
+      <div style="margin-top:10px;display:flex;flex-direction:column;gap:3px;align-items:flex-end;">
+        <div style="display:flex;gap:6px;align-items:baseline;">
+          <span style="font-size:11px;color:#94a3b8;min-width:44px;text-align:right;">Issued</span>
+          <strong style="font-size:11px;color:#475569;min-width:100px;text-align:left;">${fmtDate(new Date())}</strong>
+        </div>
+        <div style="display:flex;gap:6px;align-items:baseline;">
+          <span style="font-size:11px;color:#94a3b8;min-width:44px;text-align:right;">Period</span>
+          <strong style="font-size:11px;color:#475569;min-width:100px;text-align:left;">${period}</strong>
+        </div>
+      </div>
+      <p style="margin:10px 0 0;font-size:13px;font-weight:700;color:#94a3b8;">Type: <strong style="color:${accent};font-weight:700;">Combined · ${list.length} item${list.length > 1 ? 's' : ''}</strong></p>
     </div>
   </div>
 
-  <div class="billing-section">
-    <div class="billing-block">
-      <h3>Expense Summary</h3>
-      <div class="name">${categories.length === 1 ? categories[0] : 'Multiple categories'}</div>
-      <div class="info">${list.length} approved expense${list.length > 1 ? 's' : ''}</div>
-    </div>
-    <div class="billing-block dates-block">
-      <h3>Invoice Details</h3>
-      <div class="date-row"><span class="label">Reference</span><span class="value">${batchRef}</span></div>
-      <div class="date-row"><span class="label">${dates.length === 1 ? 'Date' : 'Date range'}</span><span class="value">${dates.length === 1 ? dates[0] : `${dates[0]} – ${dates[dates.length - 1]}`}</span></div>
-      <div class="date-row"><span class="label">Issued</span><span class="value">${formatDate(new Date())}</span></div>
-    </div>
+  <!-- DIVIDER -->
+  <div style="height:1px;background:#e2e8f0;margin-bottom:20px;"></div>
+
+  <!-- SUMMARY -->
+  <div style="margin-bottom:20px;">
+    <p style="margin:0 0 10px;font-size:10px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:#94a3b8;">Expense Summary</p>
+    <p style="margin:0 0 2px;font-size:13px;font-weight:700;color:#0f172a;">${catLabel}
+      <span style="font-size:11px;font-weight:400;color:#94a3b8;margin-left:6px;">(Ref: ${batchRef})</span>
+    </p>
+    <p style="margin:0;font-size:11px;color:#64748b;">${list.length} expense${list.length > 1 ? 's' : ''} · ${period}</p>
+    ${hasPayment ? `<p style="margin:6px 0 0;font-size:11px;color:#475569;">Paid via <strong style="color:#0f172a;">${methodLabel ?? '—'}</strong>${txnLabel ? ` · Txn ID: <strong style="color:#0f172a;">${txnLabel}</strong>` : ''}</p>` : ''}
   </div>
 
-  <table>
+  <!-- ITEMS TABLE -->
+  <table style="margin-bottom:0;">
     <thead>
       <tr>
-        <th style="width:14%">Date</th>
-        <th style="width:40%">Description</th>
-        <th style="width:26%">Paid To</th>
-        <th style="width:20%">Amount</th>
+        <th style="${TH}text-align:left;padding-left:0;white-space:nowrap;">Expense ID</th>
+        <th style="${TH}text-align:left;white-space:nowrap;">Date</th>
+        <th style="${TH}text-align:left;">Description</th>
+        <th style="${TH}text-align:left;">Paid To</th>
+        <th style="${TH}text-align:right;padding-right:0;white-space:nowrap;">Amount</th>
       </tr>
     </thead>
     <tbody>
       ${list.map(e => `
       <tr>
-        <td>${formatDate(e.date)}</td>
-        <td>${e.title}${e.projectId?.name ? `<br><span style="color:#9ca3af;font-size:11px">${e.projectId.name}</span>` : ''}${e.subcategory ? `<br><span style="color:#9ca3af;font-size:11px">${e.category} / ${e.subcategory}</span>` : ''}</td>
-        <td>${payeeOf(e)}</td>
-        <td>${formatCurrency(e.amount, e.currency)}</td>
+        <td style="${TD}padding-left:0;font-size:12px;font-weight:600;color:#0f172a;white-space:nowrap;">${e.expenseId ?? '—'}</td>
+        <td style="${TD}font-size:12px;font-weight:500;color:#334155;white-space:nowrap;">${fmtDate(e.date)}</td>
+        <td style="${TD}">
+          ${e.category ? `<p style="margin:0 0 2px;font-size:10px;font-weight:500;color:#94a3b8;line-height:1.3;text-transform:uppercase;letter-spacing:0.06em;">${e.category}${e.subcategory ? ` / ${e.subcategory}` : ''}</p>` : ''}
+          <p style="margin:0;font-size:13px;font-weight:600;color:#0f172a;line-height:1.4;">${e.title}</p>
+          ${e.projectId?.name ? `<p style="margin:3px 0 0;font-size:10px;font-weight:400;color:#64748b;line-height:1.6;">${e.projectId.name}${e.projectId.projectCode ? ` (#${e.projectId.projectCode})` : ''}</p>` : ''}
+          ${e.notes ? `<p style="margin:3px 0 0;font-size:10px;font-weight:400;color:#94a3b8;line-height:1.5;">${e.notes}</p>` : ''}
+        </td>
+        <td style="${TD}color:#64748b;">${payeeOf(e)}</td>
+        <td style="${TD}text-align:right;padding-right:0;font-weight:700;color:#0f172a;white-space:nowrap;">${money(e.amount, e.currency)}</td>
       </tr>`).join('')}
     </tbody>
   </table>
 
-  <div class="totals-section">
-    <div class="totals-table">
-      <div class="totals-row"><span class="label">Items</span><span class="amount">${list.length}</span></div>
-      ${mixed ? `<div class="totals-row"><span class="label">Currencies</span><span class="amount">${currencies.join(', ')}</span></div>` : ''}
-      <div class="totals-row final"><span class="label">Total (BDT)</span><span class="amount">${formatCurrency(totalBDT, 'BDT')}</span></div>
+  <!-- TOTALS -->
+  <div style="display:flex;justify-content:flex-end;margin-bottom:20px;">
+    <div style="width:280px;">
+      <div style="height:2px;background:#0f172a;"></div>
+      <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f1f5f9;">
+        <span style="font-size:12px;color:#64748b;">Items</span>
+        <span style="font-size:12px;color:#334155;font-weight:500;">${list.length}</span>
+      </div>
+      ${mixed ? `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f1f5f9;">
+        <span style="font-size:12px;color:#64748b;">Currencies</span>
+        <span style="font-size:12px;color:#334155;font-weight:500;">${currencies.join(', ')}</span>
+      </div>` : ''}
+      <div style="display:flex;justify-content:space-between;padding:9px 16px;margin-top:3px;margin-left:-16px;margin-right:-16px;border-radius:8px;background:#f8fafc;">
+        <span style="font-size:14px;font-weight:800;color:#0f172a;">Total (BDT)</span>
+        <span style="font-size:14px;font-weight:800;color:#0f172a;">${money(totalBDT, 'BDT')}</span>
+      </div>
     </div>
   </div>
 
-  ${mixed ? `<div class="notes-section"><h3>Note</h3><p>This combined invoice includes expenses in multiple currencies. The total shown is the BDT-equivalent of the actual amounts spent.</p></div>` : ''}
+  ${mixed ? `<div style="margin-bottom:16px;"><p style="margin:0 0 6px;font-size:10px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:#94a3b8;">Note</p><p style="margin:0;font-size:11px;color:#475569;line-height:1.7;">This combined invoice includes expenses in multiple currencies. The total shown is the BDT-equivalent of the actual amounts spent.</p></div>` : ''}
 
-  <div class="signatures">
-    <div class="sign-block"><div class="sign-line"></div><div class="sign-label">Prepared By</div></div>
-    <div class="sign-block"><div class="sign-line"></div><div class="sign-label">Approved By / Account Manager</div></div>
-    <div class="sign-block"><div class="sign-line"></div><div class="sign-label">Authorised Signatory</div></div>
+  <!-- SIGNATURES -->
+  <div style="display:flex;justify-content:space-between;gap:28px;margin-top:56px;page-break-inside:avoid;">
+    <div style="flex:1;text-align:center;">
+      <div style="border-top:1px solid #334155;margin:0 8px 6px;padding-top:6px;"></div>
+      <div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.06em;">Prepared By</div>
+    </div>
+    <div style="flex:1;text-align:center;">
+      <div style="border-top:1px solid #334155;margin:0 8px 6px;padding-top:6px;"></div>
+      <div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.06em;">Approved By / Account Manager</div>
+    </div>
+    <div style="flex:1;text-align:center;">
+      <div style="border-top:1px solid #334155;margin:0 8px 6px;padding-top:6px;"></div>
+      <div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.06em;">Authorised Signatory</div>
+    </div>
+  </div>
+  <div style="margin-top:32px;border:1px dashed #cbd5e1;border-radius:8px;height:92px;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:11px;text-transform:uppercase;letter-spacing:0.08em;page-break-inside:avoid;">Company Seal</div>
+
+  <!-- FOOTER -->
+  <div style="border-top:1px solid #e2e8f0;padding-top:12px;margin-top:20px;text-align:center;">
+    <p style="margin:0 0 3px;font-size:11px;color:#94a3b8;">Official combined expense record · Ref ${batchRef} · Generated ${fmtDate(new Date())}</p>
+    ${company.name ? `<p style="margin:0;font-size:10px;color:#cbd5e1;letter-spacing:0.04em;">${company.name}</p>` : ''}
   </div>
 
-  <div class="seal-box">Company Seal</div>
-
-  <div class="footer">
-    <p>Official combined expense record — reference ${batchRef} | Generated on ${formatDate(new Date())} | ${companyName}</p>
-  </div>
 </div>
 <script>window.onload = () => window.print()</script>
 </body>
