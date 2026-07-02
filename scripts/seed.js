@@ -23,9 +23,9 @@ import bcrypt from 'bcryptjs'
 const MONGODB_URI = process.env.MONGODB_URI
 if (!MONGODB_URI) { console.error('MONGODB_URI not set'); process.exit(1) }
 
-const EMAIL    = (process.env.SEED_ADMIN_EMAIL    ?? 'admin@encrm.com').trim().toLowerCase()
+const EMAIL    = (process.env.SEED_ADMIN_EMAIL    ?? 'enfinito.official@gmail.com').trim().toLowerCase()
 const PASSWORD =  process.env.SEED_ADMIN_PASSWORD ?? 'Admin@123456'
-const NAME     = (process.env.SEED_ADMIN_NAME     ?? 'Super Admin').trim()
+const NAME     = (process.env.SEED_ADMIN_NAME     ?? 'Enfinito Admin').trim()
 
 if (PASSWORD.length < 8) {
   console.error('SEED_ADMIN_PASSWORD must be at least 8 characters.')

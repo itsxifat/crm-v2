@@ -33,14 +33,14 @@ export async function GET() {
   }
 }
 
-// PUT /api/account — update own profile (name / phone / avatar), all roles
+// PUT /api/account — update own profile (name / email / phone / avatar), all roles
 export async function PUT(request) {
   try {
     const session = await getServerSession(authOptions)
     if (!session?.user?.id)
       return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
 
-    const { name, phone, avatar } = await request.json()
+    const { name, email, phone, avatar } = await request.json()
     if (!name || !String(name).trim())
       return NextResponse.json({ error: 'Name is required' }, { status: 422 })
 
@@ -48,13 +48,25 @@ export async function PUT(request) {
     const user = await User.findById(session.user.id)
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
+    // Email is the login identity — validate + enforce uniqueness when it changes.
+    if (email !== undefined) {
+      const next = String(email).trim().toLowerCase()
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(next))
+        return NextResponse.json({ error: 'Enter a valid email address' }, { status: 422 })
+      if (next !== user.email) {
+        const taken = await User.exists({ email: next, _id: { $ne: user._id } })
+        if (taken) return NextResponse.json({ error: 'That email is already in use' }, { status: 409 })
+        user.email = next
+      }
+    }
+
     user.name  = String(name).trim()
     user.phone = phone ? String(phone).trim() : null
     if (avatar !== undefined) user.avatar = avatar || null
     await user.save()
 
     return NextResponse.json({
-      data: { name: user.name, phone: user.phone ?? '', avatar: user.avatar ?? null },
+      data: { name: user.name, email: user.email, phone: user.phone ?? '', avatar: user.avatar ?? null },
     })
   } catch (err) {
     console.error('[PUT /api/account]', err)

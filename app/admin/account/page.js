@@ -47,7 +47,7 @@ export default function AdminAccountPage() {
   // ── Profile ──
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [form,    setForm]    = useState({ name: '', phone: '', avatar: null })
+  const [form,    setForm]    = useState({ name: '', email: '', phone: '', avatar: null })
   const [savingProfile, setSavingProfile] = useState(false)
 
   // ── Password ──
@@ -63,7 +63,7 @@ export default function AdminAccountPage() {
       .then(j => {
         if (j.data) {
           setProfile(j.data)
-          setForm({ name: j.data.name ?? '', phone: j.data.phone ?? '', avatar: j.data.avatar ?? null })
+          setForm({ name: j.data.name ?? '', email: j.data.email ?? '', phone: j.data.phone ?? '', avatar: j.data.avatar ?? null })
         }
       })
       .catch(() => toast.error('Failed to load profile'))
@@ -81,7 +81,7 @@ export default function AdminAccountPage() {
       const res  = await fetch('/api/account', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: form.name.trim(), phone: form.phone.trim() || null, avatar: form.avatar ?? null }),
+        body: JSON.stringify({ name: form.name.trim(), email: form.email.trim(), phone: form.phone.trim() || null, avatar: form.avatar ?? null }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error ?? 'Failed')
@@ -152,7 +152,7 @@ export default function AdminAccountPage() {
             <Avatar name={form.name || profile.name} src={form.avatar} size="lg" />
             <div className="min-w-0">
               <p className="text-base font-semibold text-gray-900 truncate">{form.name || profile.name}</p>
-              <p className="text-sm text-gray-500 break-all">{profile.email}</p>
+              <p className="text-sm text-gray-500 break-all">{form.email || profile.email}</p>
               <span className={`inline-flex items-center gap-1 mt-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${roleMeta.bg} ${roleMeta.text}`}>
                 <Shield className="w-3 h-3" /> {roleMeta.label}
               </span>
@@ -176,8 +176,9 @@ export default function AdminAccountPage() {
               <input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} placeholder="+880…" className={inputCls} />
             </div>
             <div className="sm:col-span-2">
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Email <span className="text-gray-400 normal-case font-normal">(login — read only)</span></label>
-              <input value={profile.email} disabled className={`${inputCls} bg-gray-50 text-gray-500 cursor-not-allowed`} />
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Email <span className="text-gray-400 normal-case font-normal">(login)</span></label>
+              <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="you@example.com" className={inputCls} />
+              <p className="text-xs text-gray-400 mt-1">This is the email you sign in with. You’ll use the new address next time you log in.</p>
             </div>
           </div>
 
