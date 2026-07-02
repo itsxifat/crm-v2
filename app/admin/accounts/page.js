@@ -383,30 +383,39 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
 // ─── Approve Modal ────────────────────────────────────────────────────────────
 
 function ApproveModal({ expense, onClose, onDone, currentUser }) {
-  const [note,     setNote]     = useState('')
-  const [amtBDT,   setAmtBDT]   = useState(expense.amountBDT ?? '')
-  const [saving,   setSaving]   = useState(false)
+  const { paymentMethods } = useConfig()
+  const [note,          setNote]          = useState('')
+  const [amtBDT,        setAmtBDT]        = useState(expense.amountBDT ?? '')
+  const [paymentMethod, setPaymentMethod] = useState('')
+  const [txnId,         setTxnId]         = useState('')
+  const [proofUrl,      setProofUrl]      = useState('')
+  const [saving,        setSaving]        = useState(false)
   const isForeign = (expense.currency ?? 'BDT') !== 'BDT'
+  const canApprove = paymentMethod && (proofUrl || txnId.trim()) && (!isForeign || Number(amtBDT) > 0)
 
   async function submit(action) {
-    if (action === 'approve' && isForeign && !(Number(amtBDT) > 0)) {
-      toast.error('Enter the BDT-equivalent for this foreign-currency expense')
-      return
+    if (action === 'approve') {
+      if (!paymentMethod)             { toast.error('Select the payment method'); return }
+      if (!proofUrl && !txnId.trim()) { toast.error('Enter a transaction ID or upload payment proof'); return }
+      if (isForeign && !(Number(amtBDT) > 0)) { toast.error('Enter the BDT-equivalent for this foreign-currency expense'); return }
     }
     setSaving(true)
     try {
       const res  = await fetch(`/api/expenses/${expense.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body: JSON.stringify(action === 'approve' ? {
           action,
           note,
-          amountBDT: action === 'approve' && isForeign ? Number(amtBDT) : undefined,
-        }),
+          paymentMethod,
+          paymentTxnId:    txnId.trim() || undefined,
+          paymentProofUrl: proofUrl || undefined,
+          amountBDT:       isForeign ? Number(amtBDT) : undefined,
+        } : { action, note }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error)
-      toast.success(action === 'approve' ? 'Approved — voucher ready to print' : 'Request rejected')
+      toast.success(action === 'approve' ? 'Approved — invoice ready to print & authorize' : 'Request rejected')
       onDone()
       onClose()
     } catch (err) {
@@ -424,7 +433,7 @@ function ApproveModal({ expense, onClose, onDone, currentUser }) {
 
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
-          <h3 className="text-base font-semibold text-gray-900">Review Expense</h3>
+          <h3 className="text-base font-semibold text-gray-900">Review &amp; Approve Expense</h3>
           <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100">
             <X className="w-5 h-5 text-gray-400" />
           </button>
@@ -433,8 +442,8 @@ function ApproveModal({ expense, onClose, onDone, currentUser }) {
         {/* Scrollable body */}
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
           <p className="text-xs text-gray-500">
-            Approving assigns a voucher number so you can print, sign &amp; seal the expense invoice.
-            The payment is <strong>not</strong> recorded until you mark it paid with the signed scan.
+            Record how the payment was made to approve. Approving makes the invoice printable — the
+            expense turns <strong>Paid</strong> only after you upload the scan of the authorized invoice.
           </p>
 
           {/* Two-column layout: summary + submitted proof */}
@@ -442,7 +451,7 @@ function ApproveModal({ expense, onClose, onDone, currentUser }) {
             <div className="rounded-xl bg-gray-50 border border-gray-100 px-4 py-4 space-y-2">
               <p className="text-sm font-semibold text-gray-900">{expense.title}</p>
               <p className="text-xs text-gray-500">{expense.category}{expense.subcategory ? ` / ${expense.subcategory}` : ''} · {fmtDate(expense.date)}</p>
-              <p className="text-xl font-bold text-gray-900"><TkAmt value={expense.amount} decimals={2} /> <span className="text-xs font-normal text-gray-400">{expense.currency}</span></p>
+              <p className="text-xl font-bold text-gray-900">{formatCurrency(expense.amount, expense.currency)}</p>
               {expense.submittedBy?.name && (
                 <p className="text-xs text-gray-500">Submitted by: <span className="font-medium text-gray-700">{expense.submittedBy.name}</span></p>
               )}
@@ -459,6 +468,31 @@ function ApproveModal({ expense, onClose, onDone, currentUser }) {
               </div>
             )}
           </div>
+
+          {/* Payment method + transaction id */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Payment method <span className="text-red-500">*</span></label>
+              <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} className={ic}>
+                <option value="">Select method…</option>
+                {paymentMethods.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Transaction ID {!proofUrl && <span className="text-red-500">*</span>}
+                {proofUrl && <span className="text-gray-400 text-xs ml-1">(optional)</span>}
+              </label>
+              <input value={txnId} onChange={e => setTxnId(e.target.value)} placeholder="e.g. bank / bKash txn ref" className={ic} />
+            </div>
+          </div>
+
+          <FileUpload
+            label={`Payment proof ${txnId.trim() ? '(optional)' : '(required if no transaction ID)'}`}
+            value={proofUrl}
+            onUploaded={url => setProofUrl(url)}
+          />
+          <p className="text-xs text-gray-400 -mt-3">Proof that the payment was actually made (bank/MFS receipt). Optional if you enter a transaction ID.</p>
 
           {isForeign && (
             <div>
@@ -491,7 +525,7 @@ function ApproveModal({ expense, onClose, onDone, currentUser }) {
             {saving && <Loader2 className="w-4 h-4 animate-spin" />}
             <XCircle className="w-4 h-4" /> Reject
           </button>
-          <button onClick={() => submit('approve')} disabled={saving}
+          <button onClick={() => submit('approve')} disabled={saving || !canApprove}
             className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 disabled:opacity-60 flex items-center gap-1.5">
             {saving && <Loader2 className="w-4 h-4 animate-spin" />}
             <CheckCircle2 className="w-4 h-4" /> Approve
@@ -503,34 +537,23 @@ function ApproveModal({ expense, onClose, onDone, currentUser }) {
 }
 
 // ─── Mark Paid Modal ──────────────────────────────────────────────────────────
-// Second stage: after the printed voucher is signed & sealed, upload the scan
-// (mandatory) to record the actual payment. Only then is the Transaction created.
+// Final stage: print the approved invoice, get it authorized (signed & sealed),
+// then upload the scan here. Uploading it records the ledger entry and marks PAID.
 
 function MarkPaidModal({ expense, onClose, onDone }) {
   const { paymentMethods } = useConfig()
-  const [paymentMethod, setPaymentMethod] = useState('')
-  const [txnId,         setTxnId]         = useState('')
-  const [proofUrl,      setProofUrl]      = useState('')
-  const [note,          setNote]          = useState('')
-  const [saving,        setSaving]        = useState(false)
-
-  const canSubmit = paymentMethod && (proofUrl || txnId.trim())
+  const [scanUrl, setScanUrl] = useState('')
+  const [saving,  setSaving]  = useState(false)
+  const methodLabel = paymentMethods.find(m => m.value === expense.paymentMethod)?.label ?? expense.paymentMethod ?? '—'
 
   async function submit() {
-    if (!paymentMethod)                 { toast.error('Select the payment method'); return }
-    if (!proofUrl && !txnId.trim())     { toast.error('Enter a transaction ID or upload payment proof'); return }
+    if (!scanUrl) { toast.error('Upload the scan of the authorized invoice to mark this paid'); return }
     setSaving(true)
     try {
       const res  = await fetch(`/api/expenses/${expense.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'mark_paid',
-          paymentMethod,
-          paymentTxnId:    txnId.trim() || undefined,
-          paymentProofUrl: proofUrl || undefined,
-          paymentNote:     note || undefined,
-        }),
+        body: JSON.stringify({ action: 'mark_paid', signedInvoiceUrl: scanUrl }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error)
@@ -543,8 +566,6 @@ function MarkPaidModal({ expense, onClose, onDone }) {
       setSaving(false)
     }
   }
-
-  const ic = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900'
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -561,7 +582,8 @@ function MarkPaidModal({ expense, onClose, onDone }) {
             <div>
               <p className="text-sm font-semibold text-gray-900">{expense.title}</p>
               <p className="text-xs text-gray-500">{expense.category}{expense.subcategory ? ` / ${expense.subcategory}` : ''} · {fmtDate(expense.date)}</p>
-              <p className="text-lg font-bold text-gray-900 mt-1"><TkAmt value={expense.amount} decimals={2} /> <span className="text-xs font-normal text-gray-400">{expense.currency}</span></p>
+              <p className="text-lg font-bold text-gray-900 mt-1">{formatCurrency(expense.amount, expense.currency)}</p>
+              <p className="text-xs text-gray-500 mt-1">Paid via <span className="font-medium text-gray-700">{methodLabel}</span>{expense.paymentTxnId ? ` · Txn ${expense.paymentTxnId}` : ''}</p>
             </div>
             <a href={`/api/expenses/${expense.id}/voucher`} target="_blank" rel="noreferrer"
               className="px-3 py-2 text-xs font-medium border border-gray-200 rounded-lg hover:bg-white flex items-center gap-1.5 shrink-0">
@@ -569,36 +591,12 @@ function MarkPaidModal({ expense, onClose, onDone }) {
             </a>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Payment method <span className="text-red-500">*</span></label>
-              <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} className={ic}>
-                <option value="">Select method…</option>
-                {paymentMethods.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Transaction ID {!proofUrl && <span className="text-red-500">*</span>}
-                {proofUrl && <span className="text-gray-400 text-xs ml-1">(optional)</span>}
-              </label>
-              <input value={txnId} onChange={e => setTxnId(e.target.value)} placeholder="e.g. bank / bKash txn ref" className={ic} />
-            </div>
-          </div>
-
           <FileUpload
-            label={`Payment proof ${txnId.trim() ? '(optional)' : '(required if no transaction ID)'}`}
-            value={proofUrl}
-            onUploaded={url => setProofUrl(url)}
+            label="Authorized invoice scan (required)"
+            value={scanUrl}
+            onUploaded={url => setScanUrl(url)}
           />
-          <p className="text-xs text-gray-400 -mt-3">Proof that the payment was actually made (bank/MFS receipt). Optional if you enter a transaction ID.</p>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Note (optional)</label>
-            <textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
-              placeholder="e.g. paid in cash / bank ref…"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 resize-none" />
-          </div>
+          <p className="text-xs text-gray-400 -mt-3">Upload the printed invoice after it has been signed by the account manager / authorized signatory and stamped with the company seal.</p>
         </div>
 
         <div className="flex gap-2 justify-end px-6 py-4 border-t border-gray-100 shrink-0">
@@ -606,7 +604,7 @@ function MarkPaidModal({ expense, onClose, onDone }) {
             className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">
             Cancel
           </button>
-          <button onClick={submit} disabled={saving || !canSubmit}
+          <button onClick={submit} disabled={saving || !scanUrl}
             className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-60 flex items-center gap-1.5">
             {saving && <Loader2 className="w-4 h-4 animate-spin" />}
             <CheckCircle2 className="w-4 h-4" /> Mark Paid
@@ -622,32 +620,20 @@ function MarkPaidModal({ expense, onClose, onDone }) {
 // invoice: print the combined invoice, get it signed & sealed, upload the scan.
 
 function BatchPayModal({ ids, expenses, onClose, onDone }) {
-  const { paymentMethods } = useConfig()
-  const [proofUrl,      setProofUrl]      = useState('')
-  const [paymentMethod, setPaymentMethod] = useState('')
-  const [txnId,         setTxnId]         = useState('')
-  const [note,          setNote]          = useState('')
-  const [saving,        setSaving]        = useState(false)
+  const [scanUrl, setScanUrl] = useState('')
+  const [saving,  setSaving]  = useState(false)
 
-  const totalBDT  = expenses.reduce((s, e) => s + (e.amountBDT ?? e.amount ?? 0), 0)
-  const idsParam  = ids.join(',')
-  const canSubmit = paymentMethod && (proofUrl || txnId.trim())
+  const totalBDT = expenses.reduce((s, e) => s + (e.amountBDT ?? e.amount ?? 0), 0)
+  const idsParam = ids.join(',')
 
   async function submit() {
-    if (!paymentMethod)             { toast.error('Select the payment method'); return }
-    if (!proofUrl && !txnId.trim()) { toast.error('Enter a transaction ID or upload payment proof'); return }
+    if (!scanUrl) { toast.error('Upload the scan of the authorized combined invoice first'); return }
     setSaving(true)
     try {
       const res  = await fetch('/api/expenses/batch-pay', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ids,
-          paymentMethod,
-          paymentTxnId:    txnId.trim() || undefined,
-          paymentProofUrl: proofUrl || undefined,
-          paymentNote:     note || undefined,
-        }),
+        body: JSON.stringify({ ids, signedInvoiceUrl: scanUrl }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error)
@@ -660,8 +646,6 @@ function BatchPayModal({ ids, expenses, onClose, onDone }) {
       setSaving(false)
     }
   }
-
-  const ic = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900'
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -685,34 +669,12 @@ function BatchPayModal({ ids, expenses, onClose, onDone }) {
             </a>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Payment method <span className="text-red-500">*</span></label>
-              <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} className={ic}>
-                <option value="">Select method…</option>
-                {paymentMethods.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Transaction ID {!proofUrl && <span className="text-red-500">*</span>}
-                {proofUrl && <span className="text-gray-400 text-xs ml-1">(optional)</span>}
-              </label>
-              <input value={txnId} onChange={e => setTxnId(e.target.value)} placeholder="e.g. bank / bKash txn ref" className={ic} />
-            </div>
-          </div>
-
           <FileUpload
-            label={`Payment proof ${txnId.trim() ? '(optional)' : '(required if no transaction ID)'}`}
-            value={proofUrl}
-            onUploaded={url => setProofUrl(url)}
+            label="Authorized combined invoice scan (required)"
+            value={scanUrl}
+            onUploaded={url => setScanUrl(url)}
           />
-          <p className="text-xs text-gray-400 -mt-3">One authorized invoice covers all selected expenses — this payment marks them all paid together. Optional if you enter a transaction ID.</p>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Note (optional)</label>
-            <input value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. paid in cash" className={ic} />
-          </div>
+          <p className="text-xs text-gray-400 -mt-3">Print the combined invoice, get it signed &amp; sealed, then upload the scan — one authorized invoice marks all {ids.length} expense(s) paid together.</p>
         </div>
 
         <div className="flex gap-2 justify-end px-6 py-4 border-t border-gray-100 shrink-0">
@@ -720,7 +682,7 @@ function BatchPayModal({ ids, expenses, onClose, onDone }) {
             className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">
             Cancel
           </button>
-          <button onClick={submit} disabled={saving || !canSubmit}
+          <button onClick={submit} disabled={saving || !scanUrl}
             className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-60 flex items-center gap-1.5">
             {saving && <Loader2 className="w-4 h-4 animate-spin" />}
             <CheckCircle2 className="w-4 h-4" /> Mark {ids.length} Paid
@@ -1925,7 +1887,7 @@ function AccountsContent() {
                         </td>
                         <td className="px-4 py-3 text-xs text-gray-500">{pr.projectId?.name ?? (pr.origin === 'SALARY' ? 'Salary' : pr.origin === 'REIMBURSEMENT' ? 'Reimbursement' : '—')}</td>
                         <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{pr.expenseInvoiceNo ?? '—'}</td>
-                        <td className="px-4 py-3 text-right text-sm font-semibold text-gray-800 whitespace-nowrap">{fmt(pr.amount)}</td>
+                        <td className="px-4 py-3 text-right text-sm font-semibold text-gray-800 whitespace-nowrap">{formatCurrency(pr.amount, pr.currency)}</td>
                         <td className="px-4 py-3"><StatusDot status={pr.status} /></td>
                         <td className="px-4 py-3 text-xs text-gray-500">{pr.submittedBy?.name ?? (pr.origin === 'SALARY' ? 'System' : '—')}</td>
                         <td className="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">{fmtDate(pr.date ?? pr.createdAt)}</td>

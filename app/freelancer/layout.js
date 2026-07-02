@@ -13,6 +13,11 @@ export default async function FreelancerLayout({ children }) {
     redirect('/login')
   }
 
+  // Note: the config-driven KYC gate (verification.freelancer) is enforced in
+  // middleware.js, which redirects unverified freelancers to /freelancer/verification
+  // while letting that page through. We don't gate here because the verification page
+  // renders under this same layout (a layout-level redirect would infinite-loop).
+
   await connectDB()
   const profile = await Freelancer.findOne({ userId: session.user.id }).select('type').lean()
   const portalType = profile?.type ?? 'FREELANCER'

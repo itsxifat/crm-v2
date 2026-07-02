@@ -19,12 +19,23 @@ function InviteBadge({ accepted }) {
   )
 }
 
+function KycPill({ status }) {
+  if (status === 'APPROVED') {
+    return <span className="inline-flex items-center px-2 py-0.5 bg-green-50 text-green-700 text-[11px] rounded-md font-medium border border-green-200">Verified</span>
+  }
+  if (status === 'PENDING_APPROVAL') {
+    return <span className="inline-flex items-center px-2 py-0.5 bg-blue-50 text-blue-700 text-[11px] rounded-md font-medium border border-blue-200">Pending review</span>
+  }
+  return <span className="inline-flex items-center px-2 py-0.5 bg-gray-100 text-gray-500 text-[11px] rounded-md font-medium">Unverified</span>
+}
+
 export default function AgenciesPage() {
   const [agencies,   setAgencies]   = useState([])
   const [meta,       setMeta]       = useState({ page: 1, pages: 1, total: 0 })
   const [loading,    setLoading]    = useState(true)
   const [search,     setSearch]     = useState('')
   const [page,       setPage]       = useState(1)
+  const [verify,     setVerify]     = useState('all') // all | pending | verified | unverified
   const [modalOpen,  setModalOpen]  = useState(false)
   const [editing,    setEditing]    = useState(null)
 
@@ -33,6 +44,7 @@ export default function AgenciesPage() {
     try {
       const params = new URLSearchParams({ page, limit: 20, type: 'AGENCY' })
       if (search) params.set('search', search)
+      if (verify !== 'all') params.set('verification', verify)
       const res  = await fetch(`/api/freelancers?${params}`)
       const json = await res.json()
       if (!res.ok) throw new Error(json.error)
@@ -43,7 +55,7 @@ export default function AgenciesPage() {
     } finally {
       setLoading(false)
     }
-  }, [page, search])
+  }, [page, search, verify])
 
   useEffect(() => { fetchAgencies() }, [fetchAgencies])
 
@@ -101,14 +113,26 @@ export default function AgenciesPage() {
 
       {/* Table */}
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-4">
+        <div className="px-6 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-4">
           <SearchInput
             value={search}
             onChange={(v) => { setSearch(v); setPage(1) }}
             placeholder="Search by agency name or email…"
             className="w-80"
           />
-          <span className="text-sm text-gray-400">{meta.total} agenc{meta.total !== 1 ? 'ies' : 'y'}</span>
+          <div className="flex items-center gap-2">
+            {[['all', 'All'], ['pending', 'Pending review'], ['verified', 'Verified'], ['unverified', 'Unverified']].map(([k, label]) => (
+              <button
+                key={k}
+                onClick={() => { setVerify(k); setPage(1) }}
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                  verify === k ? 'bg-blue-600 text-white' : 'text-gray-500 hover:bg-gray-100'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {loading ? (
@@ -167,6 +191,7 @@ export default function AgenciesPage() {
                         )
                       })()}
                       <InviteBadge accepted={f.inviteAccepted} />
+                      <KycPill status={f.profileStatus} />
                     </div>
                   </td>
                   <td className="px-6 py-4 text-right">

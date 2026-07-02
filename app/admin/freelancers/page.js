@@ -39,20 +39,36 @@ function Activity({ lastWorkedAt }) {
   )
 }
 
+function KycPill({ status }) {
+  if (status === 'APPROVED') {
+    return <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-50 text-green-700 text-[11px] rounded-md font-medium border border-green-200">Verified</span>
+  }
+  if (status === 'PENDING_APPROVAL') {
+    return <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 text-[11px] rounded-md font-medium border border-blue-200">Pending review</span>
+  }
+  return <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 text-gray-500 text-[11px] rounded-md font-medium">Unverified</span>
+}
+
 function StatusCell({ f }) {
   if (!f.inviteAccepted) {
     return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 text-amber-700 text-xs rounded-md font-medium border border-amber-200">
-        <Mail className="w-3 h-3" /> Invited
-      </span>
+      <div className="flex flex-col items-start gap-1">
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 text-amber-700 text-xs rounded-md font-medium border border-amber-200">
+          <Mail className="w-3 h-3" /> Invited
+        </span>
+        <KycPill status={f.profileStatus} />
+      </div>
     )
   }
   const disabled = f.disabledAt || f.userId?.isActive === false
   return (
-    <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${disabled ? 'text-rose-600' : 'text-green-700'}`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${disabled ? 'bg-rose-500' : 'bg-green-500'}`} />
-      {disabled ? 'Disabled' : 'Active'}
-    </span>
+    <div className="flex flex-col items-start gap-1">
+      <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${disabled ? 'text-rose-600' : 'text-green-700'}`}>
+        <span className={`w-1.5 h-1.5 rounded-full ${disabled ? 'bg-rose-500' : 'bg-green-500'}`} />
+        {disabled ? 'Disabled' : 'Active'}
+      </span>
+      <KycPill status={f.profileStatus} />
+    </div>
   )
 }
 
@@ -63,6 +79,7 @@ export default function FreelancersPage() {
   const [search,      setSearch]      = useState('')
   const [page,        setPage]        = useState(1)
   const [activity,    setActivity]    = useState('all') // all | active | inactive
+  const [verify,      setVerify]      = useState('all') // all | pending | verified | unverified
   const [modalOpen,   setModalOpen]   = useState(false)
   const [editing,     setEditing]     = useState(null)
 
@@ -71,6 +88,7 @@ export default function FreelancersPage() {
     try {
       const params = new URLSearchParams({ page, limit: 20, type: 'FREELANCER' })
       if (search) params.set('search', search)
+      if (verify !== 'all') params.set('verification', verify)
       const res  = await fetch(`/api/freelancers?${params}`)
       const json = await res.json()
       if (!res.ok) throw new Error(json.error)
@@ -81,7 +99,7 @@ export default function FreelancersPage() {
     } finally {
       setLoading(false)
     }
-  }, [page, search])
+  }, [page, search, verify])
 
   useEffect(() => { fetchFreelancers() }, [fetchFreelancers])
 
@@ -150,7 +168,19 @@ export default function FreelancersPage() {
             placeholder="Search by name, email or skill…"
             className="w-full sm:w-80"
           />
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {[['all', 'All'], ['pending', 'Pending review'], ['verified', 'Verified'], ['unverified', 'Unverified']].map(([k, label]) => (
+              <button
+                key={k}
+                onClick={() => { setVerify(k); setPage(1) }}
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                  verify === k ? 'bg-blue-600 text-white' : 'text-gray-500 hover:bg-gray-100'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+            <span className="w-px h-5 bg-gray-200 mx-1" />
             {[['all', 'All'], ['active', 'Recently active'], ['inactive', 'Inactive 30d+']].map(([k, label]) => (
               <button
                 key={k}

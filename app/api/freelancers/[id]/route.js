@@ -54,6 +54,9 @@ export async function GET(request, { params }) {
     return NextResponse.json({
       data: maskDoc(session, {
         ...freelancer.toJSON(),
+        // `documents` below is the separate Document collection; expose the
+        // freelancer's own KYC uploads under a distinct key so it isn't clobbered.
+        kycDocuments: freelancer.documents ?? [],
         assignments, salaryPayouts, timesheets, agreements, documents, finance,
       }, FREELANCER_PII),
     })

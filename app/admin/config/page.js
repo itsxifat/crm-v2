@@ -1218,8 +1218,8 @@ function ConfigContent() {
             <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm divide-y divide-gray-50">
               {[
                 { key: 'freelancer',        icon: Users,      iconBg: 'bg-purple-50', iconColor: 'text-purple-600', title: 'Freelancer & Agency Verification',
-                  on:  'New freelancers and agencies receive an invite link and must set their own password before accessing the panel.',
-                  off: 'Accounts are created immediately. Login credentials are emailed directly — no invite step required.' },
+                  on:  'Freelancers and agencies must complete KYC (identity/details + documents) and be approved by an admin before accessing the portal.',
+                  off: 'Accounts are active immediately — no KYC required. Freelancers can still complete their KYC optionally from the portal.' },
                 { key: 'clientKyc',         icon: UserCheck,  iconBg: 'bg-blue-50',   iconColor: 'text-blue-600',   title: 'Client KYC Verification',
                   on:  'Clients must submit identity documents. An admin must approve them before their KYC status is marked Verified.',
                   off: 'Clients are automatically marked as Verified upon account creation — no review required.' },

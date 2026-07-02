@@ -222,6 +222,17 @@ export default async function middleware(req) {
       return addSecurityHeaders(NextResponse.next())
     }
 
+    // ── 5a. Freelancer / Agency KYC gate (page routes only) ──────────────────────
+    // Same shape as the employee gate. `needsVerification` is config-driven
+    // (verification.freelancer) and clears on admin approval. Excludes /api/ so the
+    // freelancer's own KYC form can load/upload/submit.
+    if (role === 'FREELANCER' && token.needsVerification && !pathname.startsWith('/api/')) {
+      if (!pathname.startsWith('/freelancer/verification')) {
+        return addSecurityHeaders(NextResponse.redirect(new URL('/freelancer/verification', req.url)))
+      }
+      return addSecurityHeaders(NextResponse.next())
+    }
+
     // ── 5b. Client gates (page routes only): forced password change, then company selection
     if (role === 'CLIENT' && !pathname.startsWith('/api/')) {
       if (token.mustChangePassword) {

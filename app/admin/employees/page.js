@@ -718,10 +718,11 @@ export default function EmployeesPage() {
         <Select value={status} onChange={v => { setStatus(v ?? ''); setPage(1) }}
           options={[
             { value: 'active',   label: 'Active' },
+            { value: 'pending',  label: 'Pending verification' },
             { value: 'resigned', label: 'Resigned' },
           ]}
           placeholder="All Status"
-          className="w-36"
+          className="w-44"
           size="sm"
         />
         <Select value={sortBy} onChange={v => { setSortBy(v ?? ''); setPage(1) }}

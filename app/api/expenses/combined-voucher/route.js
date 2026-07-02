@@ -86,12 +86,12 @@ export async function GET(request) {
     // Payment method / transaction id (shown once the group is paid).
     const appCfg     = await getConfig()
     const payMethods = appCfg.paymentMethods ?? []
-    const paidRows   = list.filter(e => e.status === 'PAID')
-    const gMethods   = [...new Set(paidRows.map(e => e.paymentMethod).filter(Boolean))]
-    const gTxns      = [...new Set(paidRows.map(e => e.paymentTxnId).filter(Boolean))]
+    // Payment is recorded at approval, so show it once expenses are approved/paid.
+    const gMethods   = [...new Set(list.map(e => e.paymentMethod).filter(Boolean))]
+    const gTxns      = [...new Set(list.map(e => e.paymentTxnId).filter(Boolean))]
     const methodLabel = gMethods.length === 1 ? (payMethods.find(m => m.value === gMethods[0])?.label ?? gMethods[0]) : (gMethods.length > 1 ? 'Multiple' : null)
     const txnLabel    = gTxns.length === 1 ? gTxns[0] : (gTxns.length > 1 ? 'Multiple' : null)
-    const hasPayment  = paidRows.length > 0 && (methodLabel || txnLabel)
+    const hasPayment  = methodLabel || txnLabel
 
     const contactLine = [company.phone, company.email].filter(Boolean).join(' – ')
 

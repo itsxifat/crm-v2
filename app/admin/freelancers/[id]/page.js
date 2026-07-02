@@ -6,7 +6,7 @@ import Link from 'next/link'
 import toast from 'react-hot-toast'
 import {
   ArrowLeft, Mail, Phone, Clock, Pencil, Ban, RotateCcw, Loader2,
-  CheckCircle2, Send, CalendarClock,
+  CheckCircle2, Send, CalendarClock, ShieldCheck, BadgeCheck, FileText, XCircle,
 } from 'lucide-react'
 import Avatar from '@/components/ui/Avatar'
 import Badge from '@/components/ui/Badge'
@@ -44,6 +44,111 @@ function StatBox({ label, value, hint, color }) {
 
 function fmtDate(d) {
   return d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
+}
+
+const VERIFY_META = {
+  CREATED:          { label: 'Not Started',  cls: 'bg-gray-100 text-gray-600' },
+  INCOMPLETE:       { label: 'Incomplete',   cls: 'bg-amber-50 text-amber-700' },
+  PENDING_APPROVAL: { label: 'Pending Review', cls: 'bg-blue-50 text-blue-700' },
+  APPROVED:         { label: 'Verified',     cls: 'bg-green-50 text-green-700' },
+}
+
+function VerificationCard({ data, acting, onAction }) {
+  const status  = data.profileStatus ?? 'CREATED'
+  const pct     = data.profileCompletionPct ?? 0
+  const isAgency = data.type === 'AGENCY'
+  const docs    = data.kycDocuments ?? []
+  const meta    = VERIFY_META[status] ?? VERIFY_META.INCOMPLETE
+  const busy    = acting === 'verify'
+
+  const rows = isAgency
+    ? [
+        { label: 'Agency Name', value: data.agencyInfo?.agencyName },
+        { label: 'Agency Type', value: data.agencyInfo?.type },
+        { label: 'Contact Person', value: data.contactPerson?.name },
+        { label: 'Contact Phone', value: data.contactPerson?.phone },
+        { label: 'Contact Email', value: data.contactPerson?.email },
+        { label: 'Address', value: data.address },
+      ]
+    : [
+        { label: 'NID Number', value: data.nidNumber },
+        { label: 'Passport', value: data.passportNumber },
+        { label: 'Address', value: data.address },
+        { label: 'Skills', value: data.skills },
+      ]
+
+  return (
+    <div className="rounded-2xl border border-gray-100 bg-white p-5 sm:p-6 shadow-sm">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2">
+          <ShieldCheck className="w-5 h-5 text-gray-500" />
+          <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">KYC / Verification</h3>
+        </div>
+        <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium ${meta.cls}`}>
+          {meta.label} · {pct}%
+        </span>
+      </div>
+
+      {status === 'CREATED' || status === 'INCOMPLETE' ? (
+        <p className="text-sm text-gray-500 mt-4">
+          {isAgency ? 'This agency' : 'This freelancer'} hasn’t submitted their KYC yet ({pct}% complete). You can review and approve once they submit.
+        </p>
+      ) : (
+        <>
+          <div className="grid sm:grid-cols-2 gap-x-8 gap-y-3 mt-4">
+            {rows.filter(r => r.value).map(r => (
+              <div key={r.label}>
+                <p className="text-xs text-gray-400">{r.label}</p>
+                <p className="text-sm font-medium text-gray-800 break-words">{r.value}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-4">
+            <p className="text-xs text-gray-400 mb-1.5">Documents</p>
+            {docs.length === 0 ? (
+              <p className="text-sm text-gray-400">No documents uploaded.</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {docs.map((d, i) => (
+                  <a key={i} href={d.url} target="_blank" rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 hover:text-blue-600 transition-colors">
+                    <FileText className="w-3.5 h-3.5" /> {d.name || d.type}
+                  </a>
+                ))}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {data.reviewNotes && status === 'INCOMPLETE' && (
+        <div className="mt-4 flex items-start gap-2 p-3 bg-red-50 border border-red-100 rounded-xl text-sm text-red-700">
+          <XCircle className="w-4 h-4 shrink-0 mt-0.5" />
+          <div><span className="font-medium">Sent back: </span>{data.reviewNotes}</div>
+        </div>
+      )}
+
+      {status === 'PENDING_APPROVAL' && (
+        <div className="flex items-center gap-2 mt-5 pt-4 border-t border-gray-100">
+          <button onClick={() => onAction('approve')} disabled={busy}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors">
+            {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <BadgeCheck className="w-4 h-4" />} Approve
+          </button>
+          <button onClick={() => onAction('reject')} disabled={busy}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-rose-600 text-sm font-medium rounded-lg hover:bg-rose-50 disabled:opacity-50 transition-colors">
+            <XCircle className="w-4 h-4" /> Reject
+          </button>
+        </div>
+      )}
+
+      {status === 'APPROVED' && (
+        <p className="text-xs text-green-600 mt-4 font-medium inline-flex items-center gap-1.5">
+          <BadgeCheck className="w-4 h-4" /> Verified{data.verifiedAt ? ` on ${fmtDate(data.verifiedAt)}` : ''} — full portal access granted.
+        </p>
+      )}
+    </div>
+  )
 }
 
 export default function FreelancerDetailPage() {
@@ -132,6 +237,40 @@ export default function FreelancerDetailPage() {
     }
   }
 
+  async function verifyAction(action) {
+    if (action === 'reject') {
+      const notes = prompt('Reason for rejection (shown to the freelancer):')
+      if (notes === null) return
+      setActing('verify')
+      try {
+        const res  = await fetch(`/api/admin/freelancers/${id}/approve`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'reject', notes }),
+        })
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error)
+        toast.success('KYC returned for revision')
+        load()
+      } catch (err) {
+        toast.error(err.message ?? 'Failed')
+      } finally { setActing(null) }
+      return
+    }
+    setActing('verify')
+    try {
+      const res  = await fetch(`/api/admin/freelancers/${id}/approve`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'approve' }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error)
+      toast.success('Verified — access granted')
+      load()
+    } catch (err) {
+      toast.error(err.message ?? 'Failed')
+    } finally { setActing(null) }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -204,6 +343,9 @@ export default function FreelancerDetailPage() {
         <StatBox label="Owed" value={moneyByCurrency(finance.owed)} hint="Delivered / requested, unpaid" color="text-amber-600" />
         <StatBox label="Total paid" value={moneyByCurrency(finance.paid)} hint="Settled to date" color="text-emerald-600" />
       </div>
+
+      {/* KYC / Verification */}
+      <VerificationCard data={data} acting={acting} onAction={verifyAction} />
 
       {/* Tabs */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">

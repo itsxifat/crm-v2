@@ -2,12 +2,13 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, FolderOpen, LogOut, UserCircle, X } from 'lucide-react'
+import { LayoutDashboard, FolderOpen, LogOut, UserCircle, ShieldCheck, X } from 'lucide-react'
 import { signOut } from 'next-auth/react'
 
 const NAV = [
   { href: '/freelancer',                   label: 'Dashboard',        icon: LayoutDashboard },
   { href: '/freelancer/projects',          label: 'My Projects',      icon: FolderOpen },
+  { href: '/freelancer/verification',      label: 'Verification',     icon: ShieldCheck },
   { href: '/freelancer/account',           label: 'My Account',       icon: UserCircle },
 ]
 

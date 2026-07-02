@@ -68,6 +68,8 @@ export async function GET(request) {
     // Status filter (resigned is a plain boolean — DB filter is fine)
     if (status === 'active')   filter.resigned = { $ne: true }
     if (status === 'resigned') filter.resigned = true
+    // Awaiting HR review — surfaces employees who submitted their profile.
+    if (status === 'pending')  filter.profileStatus = 'PENDING_APPROVAL'
 
     // Year filter — match employeeId pattern [VENTURE_PREFIX]-[DEPT][YY][MM][SERIAL]
     // (employeeId is NOT encrypted, so regex works here)

@@ -26,6 +26,7 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url)
     const search = searchParams.get('search') ?? ''
     const type   = searchParams.get('type') ?? null
+    const verification = searchParams.get('verification') ?? null  // pending | verified | unverified
     const page   = parseInt(searchParams.get('page')  ?? '1',  10)
     const limit  = parseInt(searchParams.get('limit') ?? '20', 10)
     const skip   = (page - 1) * limit
@@ -35,6 +36,11 @@ export async function GET(request) {
     if (type && ['FREELANCER', 'AGENCY'].includes(type)) {
       filter.type = type
     }
+
+    // KYC / verification status filter
+    if (verification === 'pending')    filter.profileStatus = 'PENDING_APPROVAL'
+    if (verification === 'verified')   filter.profileStatus = 'APPROVED'
+    if (verification === 'unverified') filter.profileStatus = { $ne: 'APPROVED' }
 
     if (search) {
       const matchingUsers = await User.find({

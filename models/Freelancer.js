@@ -67,6 +67,26 @@ const FreelancerSchema = new mongoose.Schema(
     inviteToken:       { type: String, sparse: true, unique: true, default: null },
     inviteTokenExpiry: { type: Date, default: null },
     inviteAccepted:    { type: Boolean, default: false },
+
+    // ── KYC / verification (mirrors the Employee onboarding flow) ──────────────
+    // Gated by config `verification.freelancer`. Self-service submission lives at
+    // /freelancer/verification; admin approves on the freelancer detail page.
+    photo:          { type: String, default: null },
+    address:        { type: String, default: null },
+    nidNumber:      { type: String, default: null },
+    passportNumber: { type: String, default: null },
+    documents: [{
+      url:  { type: String },
+      type: { type: String },
+      name: { type: String },
+    }],
+
+    profileStatus:        { type: String, enum: ['CREATED', 'INCOMPLETE', 'PENDING_APPROVAL', 'APPROVED'], default: 'CREATED' },
+    profileCompletionPct: { type: Number, default: 0 },
+    kycApproved:          { type: Boolean, default: false },
+    verifiedAt:           { type: Date, default: null },
+    verifiedBy:           { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    reviewNotes:          { type: String, default: null },
   },
   {
     timestamps: true,
@@ -76,6 +96,25 @@ const FreelancerSchema = new mongoose.Schema(
     },
   }
 )
+
+// Type-aware KYC completion — agencies and individuals require different fields.
+export function calcFreelancerProfileCompletion(f) {
+  const checks = f?.type === 'AGENCY'
+    ? [
+        !!f.agencyInfo?.agencyName,
+        !!f.contactPerson?.name,
+        !!f.contactPerson?.phone,
+        !!f.address,
+        Array.isArray(f.documents) && f.documents.length > 0,
+      ]
+    : [
+        !!f.address,
+        !!f.nidNumber,
+        !!f.skills,
+        Array.isArray(f.documents) && f.documents.length > 0,
+      ]
+  return Math.round((checks.filter(Boolean).length / checks.length) * 100)
+}
 
 if (mongoose.models.Freelancer) delete mongoose.models.Freelancer
 export default mongoose.model('Freelancer', FreelancerSchema)
