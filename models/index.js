@@ -3,6 +3,7 @@
 
 export { default as User }              from './User.js'
 export { default as Employee }          from './Employee.js'
+export { default as EmployeeOnboarding } from './EmployeeOnboarding.js'
 export { default as Client }            from './Client.js'
 export { default as Freelancer }        from './Freelancer.js'
 export { default as Vendor }            from './Vendor.js'
