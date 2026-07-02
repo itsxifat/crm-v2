@@ -236,8 +236,10 @@ export default async function middleware(req) {
     // ── 5b. Client gates (page routes only): forced password change, then company selection
     if (role === 'CLIENT' && !pathname.startsWith('/api/')) {
       if (token.mustChangePassword) {
-        if (!pathname.startsWith('/client/change-password')) {
-          return addSecurityHeaders(NextResponse.redirect(new URL('/client/change-password', req.url)))
+        // First-time set only — a just-activated client has no current password,
+        // so send them to the dedicated set-password page (never the change form).
+        if (!pathname.startsWith('/client/set-password')) {
+          return addSecurityHeaders(NextResponse.redirect(new URL('/client/set-password', req.url)))
         }
       } else if (!token.activeClientId) {
         // Force the company chooser ONLY when there's an actual choice to make

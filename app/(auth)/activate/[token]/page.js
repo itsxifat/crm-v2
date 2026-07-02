@@ -51,7 +51,7 @@ export default function ActivateAccountPage() {
       const result = await signIn('credentials', { identifier: email, otp: code.trim(), redirect: false })
       if (result?.error) throw new Error('That code is invalid or has expired')
       // mustChangePassword is true → middleware sends them to set a password
-      router.replace('/client/change-password')
+      router.replace('/client/set-password')
       router.refresh()
     } catch (err) {
       toast.error(err.message)

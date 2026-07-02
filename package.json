@@ -11,7 +11,8 @@
     "db:decrypt": "node scripts/decrypt-migrate.js",
     "db:backfill-memberships": "node scripts/backfill-company-memberships.js",
     "db:migrate-expenses": "node scripts/migrate-expenses-approved-to-paid.js",
-    "db:migrate-expense-statuses": "node scripts/migrate-expense-statuses.js"
+    "db:migrate-expense-statuses": "node scripts/migrate-expense-statuses.js",
+    "db:drop-collections": "node scripts/drop-collections.js"
   },
   "dependencies": {
     "@hello-pangea/dnd": "^16.6.0",
