@@ -16,12 +16,15 @@
  * Usage:
  *   node scripts/migrate-expenses-approved-to-paid.js          # dry run
  *   node scripts/migrate-expenses-approved-to-paid.js --apply  # write
+ *   npm run db:migrate-expenses -- --apply                     # write (note the --)
  */
 
 import 'dotenv/config'
 import mongoose from 'mongoose'
 
-const APPLY = process.argv.includes('--apply')
+// Accept --apply as a direct arg, or via npm (which turns `npm run … --apply`
+// into npm_config_apply rather than passing it through to the script).
+const APPLY = process.argv.includes('--apply') || process.env.npm_config_apply === 'true'
 
 async function main() {
   const uri = process.env.MONGODB_URI
