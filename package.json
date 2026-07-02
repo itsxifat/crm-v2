@@ -10,7 +10,8 @@
     "db:seed": "node scripts/seed.js",
     "db:decrypt": "node scripts/decrypt-migrate.js",
     "db:backfill-memberships": "node scripts/backfill-company-memberships.js",
-    "db:migrate-expenses": "node scripts/migrate-expenses-approved-to-paid.js"
+    "db:migrate-expenses": "node scripts/migrate-expenses-approved-to-paid.js",
+    "db:migrate-expense-statuses": "node scripts/migrate-expense-statuses.js"
   },
   "dependencies": {
     "@hello-pangea/dnd": "^16.6.0",

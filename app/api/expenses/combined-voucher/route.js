@@ -178,7 +178,10 @@ export async function GET(request) {
           ${e.notes ? `<p style="margin:3px 0 0;font-size:10px;font-weight:400;color:#94a3b8;line-height:1.5;">${e.notes}</p>` : ''}
         </td>
         <td style="${TD}color:#64748b;">${payeeOf(e)}</td>
-        <td style="${TD}text-align:right;padding-right:0;font-weight:700;color:#0f172a;white-space:nowrap;">${money(e.amount, e.currency)}</td>
+        <td style="${TD}text-align:right;padding-right:0;font-weight:700;color:#0f172a;white-space:nowrap;">
+          ${money(e.amount, e.currency)}
+          ${(e.currency && e.currency !== 'BDT') ? `<div style="font-size:10px;font-weight:400;color:#94a3b8;">≈ ${money(e.amountBDT ?? 0, 'BDT')}</div>` : ''}
+        </td>
       </tr>`).join('')}
     </tbody>
   </table>

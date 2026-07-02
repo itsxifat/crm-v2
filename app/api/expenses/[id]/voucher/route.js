@@ -33,8 +33,8 @@ const PAYEE_LABEL = {
   FREELANCER: 'Freelancer', AGENCY: 'Agency', VENDOR: 'Vendor',
   SALARY: 'Salary', REIMBURSEMENT: 'Reimbursement', PROJECT: 'Project', OTHER: 'Expense',
 }
-const STATUS_LABEL = { APPROVED: 'Approved', PAID: 'Paid', REJECTED: 'Rejected', PENDING: 'Pending' }
-const STATUS_ACCENT = { PAID: '#16a34a', APPROVED: '#2563eb', REJECTED: '#dc2626', PENDING: '#d97706' }
+const STATUS_LABEL = { PAID: 'Paid', AUTHORIZED: 'Authorized', APPROVED: 'Approved', REJECTED: 'Rejected', PENDING: 'Pending' }
+const STATUS_ACCENT = { AUTHORIZED: '#16a34a', PAID: '#2563eb', APPROVED: '#2563eb', REJECTED: '#dc2626', PENDING: '#d97706' }
 
 const TH = 'padding:7px 16px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.07em;color:#64748b;border-bottom:1px solid #e2e8f0;background:#fff;border-top:2px solid #0f172a;'
 const TD = 'padding:8px 16px;font-size:12.5px;color:#334155;border-bottom:1px solid #f1f5f9;vertical-align:top;'
@@ -85,9 +85,9 @@ export async function GET(request, { params }) {
 
     const e   = expense.toJSON()
     const cur = e.currency ?? 'BDT'
-    const paid = e.status === 'PAID'
+    const paid = e.status === 'PAID' || e.status === 'AUTHORIZED'
+    const isForeign = cur !== 'BDT'
     const methodLabel = appCfg.paymentMethods?.find(m => m.value === e.paymentMethod)?.label ?? e.paymentMethod ?? null
-    // Payment is recorded at approval, so show it from the APPROVED stage onward.
     const hasTxn = (methodLabel || e.paymentTxnId)
     const statusLabel  = STATUS_LABEL[e.status] ?? e.status
     const accent       = STATUS_ACCENT[e.status] ?? '#2563eb'
@@ -188,6 +188,11 @@ export async function GET(request, { params }) {
         <span style="font-size:13px;font-weight:700;color:#0f172a;">Payable</span>
         <span style="font-size:13px;font-weight:700;color:#0f172a;">${money(e.amount, cur)}</span>
       </div>
+      ${isForeign ? `
+      <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f1f5f9;">
+        <span style="font-size:12px;color:#64748b;">Equivalent in BDT</span>
+        <span style="font-size:12px;color:#334155;font-weight:600;">${money(e.amountBDT ?? 0, 'BDT')}</span>
+      </div>` : ''}
       ${paid ? `
       <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f1f5f9;">
         <span style="font-size:12px;color:#16a34a;font-weight:500;">Paid</span>

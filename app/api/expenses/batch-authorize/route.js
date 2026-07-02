@@ -5,13 +5,12 @@ import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { ProjectExpense } from '@/models'
 import { requirePerm } from '@/lib/rbac'
-import { settleExpenseAsPaid, computeBatchRef } from '@/lib/expensePayment'
+import { authorizeExpense, computeBatchRef } from '@/lib/expensePayment'
 
-// POST /api/expenses/batch-pay
-// Marks a group of APPROVED expenses PAID against ONE combined authorized invoice.
-// Each expense already carries its payment details (recorded at approval); here
-// the whole group shares the uploaded authorized-invoice scan + a batch reference.
-//   { ids: [...], signedInvoiceUrl }
+// POST /api/expenses/batch-authorize
+// Authorizes a group of PAID expenses against ONE combined invoice: they all
+// share the uploaded authorized-invoice scan and a batch reference, and move to
+// AUTHORIZED together.  { ids: [...], signedInvoiceUrl }
 export async function POST(request) {
   try {
     const session = await getServerSession(authOptions)
@@ -21,27 +20,25 @@ export async function POST(request) {
 
     const { ids, signedInvoiceUrl } = await request.json()
     if (!Array.isArray(ids) || ids.length === 0)
-      return NextResponse.json({ error: 'Select at least one approved expense' }, { status: 422 })
+      return NextResponse.json({ error: 'Select at least one paid expense' }, { status: 422 })
     if (!signedInvoiceUrl)
       return NextResponse.json({ error: 'Upload the scan of the authorized combined invoice first' }, { status: 422 })
 
-    const expenses = await ProjectExpense.find({ _id: { $in: ids }, status: 'APPROVED' })
+    const expenses = await ProjectExpense.find({ _id: { $in: ids }, status: 'PAID' })
     if (expenses.length === 0)
-      return NextResponse.json({ error: 'None of the selected expenses are approved & unpaid' }, { status: 422 })
+      return NextResponse.json({ error: 'None of the selected expenses are paid & awaiting authorization' }, { status: 422 })
 
     const batchInvoiceNo = computeBatchRef(expenses)
 
     for (const expense of expenses) {
-      await settleExpenseAsPaid(expense, {
-        userId: session.user.id, signedInvoiceUrl, batchInvoiceNo,
-      })
+      await authorizeExpense(expense, { userId: session.user.id, signedInvoiceUrl, batchInvoiceNo })
     }
 
     return NextResponse.json({
-      data: { paid: expenses.length, skipped: ids.length - expenses.length, batchInvoiceNo },
+      data: { authorized: expenses.length, skipped: ids.length - expenses.length, batchInvoiceNo },
     })
   } catch (err) {
-    console.error('[POST /api/expenses/batch-pay]', err)
+    console.error('[POST /api/expenses/batch-authorize]', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

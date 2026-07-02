@@ -1364,8 +1364,8 @@ export default function ProjectDetailPage() {
                       <td className="px-5 py-3 whitespace-nowrap">
                         <div className="flex items-center gap-1.5">
                           <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                            e.status === 'PAID' ? 'bg-green-500' :
-                            e.status === 'APPROVED' ? 'bg-blue-500' :
+                            e.status === 'AUTHORIZED' ? 'bg-green-500' :
+                            e.status === 'PAID' ? 'bg-blue-500' :
                             e.status === 'REJECTED' ? 'bg-red-500' :
                             'bg-yellow-400'
                           }`} />
@@ -1375,19 +1375,18 @@ export default function ProjectDetailPage() {
                       <td className="px-5 py-3">
                         <div className="flex items-center gap-2">
                           {e.invoiceUrl && <DocPreview url={e.invoiceUrl} compact />}
-                          {(e.status === 'APPROVED' || e.status === 'PAID') && (
+                          {(e.status === 'PAID' || e.status === 'AUTHORIZED') && (
                             <a href={`/api/expenses/${e.id ?? e._id}/voucher`} target="_blank" rel="noreferrer"
                               className="px-2 py-0.5 text-xs font-medium text-gray-600 border border-gray-200 rounded hover:bg-gray-50">
-                              Voucher
+                              Invoice
                             </a>
                           )}
                           {e.status === 'PENDING' && (
                             <>
-                              <button onClick={() => handleExpenseAction(e.id ?? e._id, 'approve')}
-                                disabled={processingExpense === (e.id ?? e._id)}
-                                className="px-2 py-0.5 text-xs font-medium text-white bg-green-600 rounded hover:bg-green-700 disabled:opacity-50">
-                                Approve
-                              </button>
+                              <Link href="/admin/accounts?tab=requests"
+                                className="px-2 py-0.5 text-xs font-medium text-white bg-gray-900 rounded hover:bg-gray-800">
+                                Record payment →
+                              </Link>
                               <button onClick={() => handleExpenseAction(e.id ?? e._id, 'reject')}
                                 disabled={processingExpense === (e.id ?? e._id)}
                                 className="px-2 py-0.5 text-xs font-medium text-red-600 border border-red-200 rounded hover:bg-red-50 disabled:opacity-50">

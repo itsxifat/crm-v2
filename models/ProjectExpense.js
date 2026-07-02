@@ -29,24 +29,29 @@ const ProjectExpenseSchema = new mongoose.Schema(
 
     // null for system/cron-generated (e.g. salary) expenses.
     submittedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
-    // Three-stage flow: PENDING → APPROVED (voucher printable) → PAID (needs signed scan). REJECTED terminal.
-    status:      { type: String, enum: ['PENDING','APPROVED','PAID','REJECTED'], default: 'PENDING' },
+    // Three-stage flow: PENDING → PAID (payment recorded + ledger entry, paid invoice printable)
+    // → AUTHORIZED (authorized invoice scan uploaded). REJECTED terminal.
+    status:      { type: String, enum: ['PENDING','PAID','AUTHORIZED','REJECTED'], default: 'PENDING' },
 
-    // ── Approve step ──
+    // ── Review / rejection ──
     reviewedBy:      { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     reviewedAt:      { type: Date,   default: null },
     reviewNote:      { type: String, default: null },
-    receiptUrl:      { type: String, default: null },      // receipt uploaded by approver (legacy)
-    expenseInvoiceNo:{ type: String, default: null },      // voucher number, assigned on approve (EXV-YYMM-####)
+    receiptUrl:      { type: String, default: null },      // legacy
+    expenseInvoiceNo:{ type: String, default: null },      // paid-invoice number, assigned when paid (EXV-YYMM-####)
 
-    // ── Paid step ──
-    signedInvoiceUrl:{ type: String, default: null },      // legacy: scan of the signed & sealed voucher
+    // ── Paid step (payment recorded, ledger entry created) ──
     paymentProofUrl: { type: String, default: null },      // proof the payment was actually made (optional if a txn id is given)
-    paymentTxnId:    { type: String, default: null },      // external payment/transaction reference entered at pay time
+    paymentTxnId:    { type: String, default: null },      // external payment/transaction reference
     paidBy:          { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     paidAt:          { type: Date,   default: null },
     paymentMethod:   { type: String, default: null },      // config payment-method value (CASH / BKASH / …)
     paymentNote:     { type: String, default: null },
+
+    // ── Authorized step (signed & sealed invoice scan re-uploaded) ──
+    signedInvoiceUrl:{ type: String, default: null },      // scan/photo of the authorized invoice
+    authorizedBy:    { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    authorizedAt:    { type: Date,   default: null },
 
     // When paid as part of a combined/authorized invoice, all expenses in the group
     // share this reference (EXB-YYYYMMDD-CATEGORY) and the same signedInvoiceUrl.

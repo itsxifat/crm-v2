@@ -10,16 +10,16 @@ const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-dig
 const fmt     = (n, c = 'BDT') => `${(n ?? 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })} ${c}`
 
 const STATUS_BADGE = {
-  PENDING:  'bg-yellow-100 text-yellow-700',
-  APPROVED: 'bg-blue-100 text-blue-700',
-  PAID:     'bg-green-100 text-green-700',
-  REJECTED: 'bg-red-100 text-red-700',
+  PENDING:    'bg-yellow-100 text-yellow-700',
+  PAID:       'bg-blue-100 text-blue-700',
+  AUTHORIZED: 'bg-green-100 text-green-700',
+  REJECTED:   'bg-red-100 text-red-700',
 }
 const STATUS_LABEL = {
-  PENDING:  'Pending review',
-  APPROVED: 'Approved',
-  PAID:     'Reimbursed',
-  REJECTED: 'Rejected',
+  PENDING:    'Pending review',
+  PAID:       'Paid — awaiting authorization',
+  AUTHORIZED: 'Reimbursed',
+  REJECTED:   'Rejected',
 }
 
 const ic = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900'

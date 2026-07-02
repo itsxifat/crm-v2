@@ -68,8 +68,9 @@ function StatusDot({ status }) {
     INCOME:               { dot: 'bg-green-500',  label: 'Income' },
     EXPENSE:              { dot: 'bg-red-500',     label: 'Expense' },
     PENDING:              { dot: 'bg-yellow-400',  label: 'Pending' },
+    PAID:                 { dot: 'bg-blue-500',    label: 'Paid' },
+    AUTHORIZED:           { dot: 'bg-green-500',   label: 'Authorized' },
     APPROVED:             { dot: 'bg-blue-500',    label: 'Approved' },
-    PAID:                 { dot: 'bg-green-500',   label: 'Paid' },
     REJECTED:             { dot: 'bg-red-500',     label: 'Rejected' },
     PENDING_CONFIRMATION: { dot: 'bg-yellow-400',  label: 'Pending' },
     CONFIRMED:            { dot: 'bg-green-500',   label: 'Confirmed' },
@@ -382,7 +383,7 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
 
 // ─── Approve Modal ────────────────────────────────────────────────────────────
 
-function ApproveModal({ expense, onClose, onDone, currentUser }) {
+function PaymentModal({ expense, onClose, onDone, currentUser }) {
   const { paymentMethods } = useConfig()
   const [note,          setNote]          = useState('')
   const [amtBDT,        setAmtBDT]        = useState(expense.amountBDT ?? '')
@@ -391,10 +392,10 @@ function ApproveModal({ expense, onClose, onDone, currentUser }) {
   const [proofUrl,      setProofUrl]      = useState('')
   const [saving,        setSaving]        = useState(false)
   const isForeign = (expense.currency ?? 'BDT') !== 'BDT'
-  const canApprove = paymentMethod && (proofUrl || txnId.trim()) && (!isForeign || Number(amtBDT) > 0)
+  const canPay = paymentMethod && (proofUrl || txnId.trim()) && (!isForeign || Number(amtBDT) > 0)
 
   async function submit(action) {
-    if (action === 'approve') {
+    if (action === 'pay') {
       if (!paymentMethod)             { toast.error('Select the payment method'); return }
       if (!proofUrl && !txnId.trim()) { toast.error('Enter a transaction ID or upload payment proof'); return }
       if (isForeign && !(Number(amtBDT) > 0)) { toast.error('Enter the BDT-equivalent for this foreign-currency expense'); return }
@@ -404,7 +405,7 @@ function ApproveModal({ expense, onClose, onDone, currentUser }) {
       const res  = await fetch(`/api/expenses/${expense.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(action === 'approve' ? {
+        body: JSON.stringify(action === 'pay' ? {
           action,
           note,
           paymentMethod,
@@ -415,7 +416,7 @@ function ApproveModal({ expense, onClose, onDone, currentUser }) {
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error)
-      toast.success(action === 'approve' ? 'Approved — invoice ready to print & authorize' : 'Request rejected')
+      toast.success(action === 'pay' ? 'Payment recorded — invoice ready to print & authorize' : 'Request rejected')
       onDone()
       onClose()
     } catch (err) {
@@ -433,7 +434,7 @@ function ApproveModal({ expense, onClose, onDone, currentUser }) {
 
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
-          <h3 className="text-base font-semibold text-gray-900">Review &amp; Approve Expense</h3>
+          <h3 className="text-base font-semibold text-gray-900">Record Payment</h3>
           <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100">
             <X className="w-5 h-5 text-gray-400" />
           </button>
@@ -442,8 +443,8 @@ function ApproveModal({ expense, onClose, onDone, currentUser }) {
         {/* Scrollable body */}
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
           <p className="text-xs text-gray-500">
-            Record how the payment was made to approve. Approving makes the invoice printable — the
-            expense turns <strong>Paid</strong> only after you upload the scan of the authorized invoice.
+            Record how the payment was made. This marks the expense <strong>Paid</strong> and generates the
+            invoice — print it, get it authorized, then upload the scan to move it to <strong>Authorized</strong>.
           </p>
 
           {/* Two-column layout: summary + submitted proof */}
@@ -525,10 +526,10 @@ function ApproveModal({ expense, onClose, onDone, currentUser }) {
             {saving && <Loader2 className="w-4 h-4 animate-spin" />}
             <XCircle className="w-4 h-4" /> Reject
           </button>
-          <button onClick={() => submit('approve')} disabled={saving || !canApprove}
+          <button onClick={() => submit('pay')} disabled={saving || !canPay}
             className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 disabled:opacity-60 flex items-center gap-1.5">
             {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-            <CheckCircle2 className="w-4 h-4" /> Approve
+            <CheckCircle2 className="w-4 h-4" /> Mark Paid
           </button>
         </div>
       </div>
@@ -536,28 +537,28 @@ function ApproveModal({ expense, onClose, onDone, currentUser }) {
   )
 }
 
-// ─── Mark Paid Modal ──────────────────────────────────────────────────────────
-// Final stage: print the approved invoice, get it authorized (signed & sealed),
-// then upload the scan here. Uploading it records the ledger entry and marks PAID.
+// ─── Authorize Modal ──────────────────────────────────────────────────────────
+// Final stage: print the paid invoice, get it authorized (signed & sealed), then
+// upload the scan here to move the expense to AUTHORIZED.
 
-function MarkPaidModal({ expense, onClose, onDone }) {
+function AuthorizeModal({ expense, onClose, onDone }) {
   const { paymentMethods } = useConfig()
   const [scanUrl, setScanUrl] = useState('')
   const [saving,  setSaving]  = useState(false)
   const methodLabel = paymentMethods.find(m => m.value === expense.paymentMethod)?.label ?? expense.paymentMethod ?? '—'
 
   async function submit() {
-    if (!scanUrl) { toast.error('Upload the scan of the authorized invoice to mark this paid'); return }
+    if (!scanUrl) { toast.error('Upload the scan of the authorized invoice'); return }
     setSaving(true)
     try {
       const res  = await fetch(`/api/expenses/${expense.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'mark_paid', signedInvoiceUrl: scanUrl }),
+        body: JSON.stringify({ action: 'authorize', signedInvoiceUrl: scanUrl }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error)
-      toast.success('Marked paid & recorded in transactions')
+      toast.success('Invoice authorized')
       onDone()
       onClose()
     } catch (err) {
@@ -571,7 +572,7 @@ function MarkPaidModal({ expense, onClose, onDone }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="bg-white rounded-xl border border-gray-200 w-full max-w-2xl max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
-          <h3 className="text-base font-semibold text-gray-900">Mark Paid — {expense.expenseId ?? expense.expenseInvoiceNo ?? ''}</h3>
+          <h3 className="text-base font-semibold text-gray-900">Authorize Invoice — {expense.expenseId ?? expense.expenseInvoiceNo ?? ''}</h3>
           <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100">
             <X className="w-5 h-5 text-gray-400" />
           </button>
@@ -607,7 +608,7 @@ function MarkPaidModal({ expense, onClose, onDone }) {
           <button onClick={submit} disabled={saving || !scanUrl}
             className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-60 flex items-center gap-1.5">
             {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-            <CheckCircle2 className="w-4 h-4" /> Mark Paid
+            <CheckCircle2 className="w-4 h-4" /> Authorize
           </button>
         </div>
       </div>
@@ -615,11 +616,11 @@ function MarkPaidModal({ expense, onClose, onDone }) {
   )
 }
 
-// ─── Batch Pay Modal ──────────────────────────────────────────────────────────
-// Marks a whole group of APPROVED expenses paid against ONE combined authorized
-// invoice: print the combined invoice, get it signed & sealed, upload the scan.
+// ─── Batch Authorize Modal ────────────────────────────────────────────────────
+// Authorizes a whole group of PAID expenses against ONE combined invoice: print
+// the combined invoice, get it signed & sealed, upload the scan.
 
-function BatchPayModal({ ids, expenses, onClose, onDone }) {
+function BatchAuthorizeModal({ ids, expenses, onClose, onDone }) {
   const [scanUrl, setScanUrl] = useState('')
   const [saving,  setSaving]  = useState(false)
 
@@ -630,14 +631,14 @@ function BatchPayModal({ ids, expenses, onClose, onDone }) {
     if (!scanUrl) { toast.error('Upload the scan of the authorized combined invoice first'); return }
     setSaving(true)
     try {
-      const res  = await fetch('/api/expenses/batch-pay', {
+      const res  = await fetch('/api/expenses/batch-authorize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids, signedInvoiceUrl: scanUrl }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error)
-      toast.success(`${json.data?.paid ?? ids.length} expense(s) marked paid`)
+      toast.success(`${json.data?.authorized ?? ids.length} expense(s) authorized`)
       onDone()
       onClose()
     } catch (err) {
@@ -651,7 +652,7 @@ function BatchPayModal({ ids, expenses, onClose, onDone }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="bg-white rounded-xl border border-gray-200 w-full max-w-2xl max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
-          <h3 className="text-base font-semibold text-gray-900">Pay {ids.length} expense{ids.length > 1 ? 's' : ''} — combined invoice</h3>
+          <h3 className="text-base font-semibold text-gray-900">Authorize {ids.length} expense{ids.length > 1 ? 's' : ''} — combined invoice</h3>
           <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100">
             <X className="w-5 h-5 text-gray-400" />
           </button>
@@ -660,7 +661,7 @@ function BatchPayModal({ ids, expenses, onClose, onDone }) {
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
           <div className="rounded-xl bg-gray-50 border border-gray-100 px-4 py-4 flex items-center justify-between gap-4">
             <div>
-              <p className="text-sm font-semibold text-gray-900">{ids.length} approved expense{ids.length > 1 ? 's' : ''}</p>
+              <p className="text-sm font-semibold text-gray-900">{ids.length} paid expense{ids.length > 1 ? 's' : ''}</p>
               <p className="text-lg font-bold text-gray-900 mt-1">Total <TkAmt value={totalBDT} decimals={2} /> <span className="text-xs font-normal text-gray-400">BDT</span></p>
             </div>
             <a href={`/api/expenses/combined-voucher?ids=${idsParam}`} target="_blank" rel="noreferrer"
@@ -674,7 +675,7 @@ function BatchPayModal({ ids, expenses, onClose, onDone }) {
             value={scanUrl}
             onUploaded={url => setScanUrl(url)}
           />
-          <p className="text-xs text-gray-400 -mt-3">Print the combined invoice, get it signed &amp; sealed, then upload the scan — one authorized invoice marks all {ids.length} expense(s) paid together.</p>
+          <p className="text-xs text-gray-400 -mt-3">Print the combined invoice, get it signed &amp; sealed, then upload the scan — one authorized invoice authorizes all {ids.length} expense(s) together.</p>
         </div>
 
         <div className="flex gap-2 justify-end px-6 py-4 border-t border-gray-100 shrink-0">
@@ -685,7 +686,7 @@ function BatchPayModal({ ids, expenses, onClose, onDone }) {
           <button onClick={submit} disabled={saving || !scanUrl}
             className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-60 flex items-center gap-1.5">
             {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-            <CheckCircle2 className="w-4 h-4" /> Mark {ids.length} Paid
+            <CheckCircle2 className="w-4 h-4" /> Authorize {ids.length}
           </button>
         </div>
       </div>
@@ -1153,10 +1154,10 @@ function AccountsContent() {
   const [prStart,       setPrStart]       = useState('')
   const [prEnd,         setPrEnd]         = useState('')
   const [prPreset,      setPrPreset]      = useState('')      // '', today, yesterday, 7d, month
-  const [prSelected,    setPrSelected]    = useState([])      // expense ids selected for batch pay
-  const [batchPaying,   setBatchPaying]   = useState(false)
-  const [approvingPr, setApprovingPr] = useState(null)
-  const [payingPr,    setPayingPr]    = useState(null)
+  const [prSelected,    setPrSelected]    = useState([])      // paid expense ids selected for batch authorize
+  const [batchAuthorizing, setBatchAuthorizing] = useState(false)
+  const [payingPr,      setPayingPr]      = useState(null)    // PENDING → record payment (PaymentModal)
+  const [authorizingPr, setAuthorizingPr] = useState(null)    // PAID → authorize (AuthorizeModal)
 
   // Payment confirmations (project client payments)
   const [pcList,      setPcList]      = useState([])
@@ -1756,9 +1757,9 @@ function AccountsContent() {
       {/* ── PAYMENT REQUESTS tab ── */}
       {activeTab === 'requests' && (() => {
         const canConfirm    = canDo(session, 'finance.payments.confirm')
-        const showBatch     = prStatus === 'APPROVED' && canConfirm
+        const showBatch     = prStatus === 'PAID' && canConfirm
         const subOptions    = expenseCategories.find(c => c.label === prCategory)?.subcategories ?? []
-        const selectableIds = prList.filter(r => r.status === 'APPROVED').map(r => r.id ?? r._id)
+        const selectableIds = prList.filter(r => r.status === 'PAID').map(r => r.id ?? r._id)
         const allSelected   = selectableIds.length > 0 && selectableIds.every(id => prSelected.includes(id))
         const selectedRows  = prList.filter(r => prSelected.includes(r.id ?? r._id))
         const selectedTotal = selectedRows.reduce((s, r) => s + (r.amountBDT ?? r.amount ?? 0), 0)
@@ -1770,7 +1771,7 @@ function AccountsContent() {
         <div className="space-y-4">
           {/* Status filter */}
           <div className="flex gap-2 flex-wrap">
-            {[['PENDING', 'Pending'], ['APPROVED', 'Approved'], ['PAID', 'Paid'], ['REJECTED', 'Rejected'], ['', 'All']].map(([v, l]) => (
+            {[['PENDING', 'Pending'], ['PAID', 'Paid'], ['AUTHORIZED', 'Authorized'], ['REJECTED', 'Rejected'], ['', 'All']].map(([v, l]) => (
               <button key={v} onClick={() => { setPrStatus(v); setPrPage(1); setPrSelected([]) }}
                 className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${prStatus === v ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'}`}>
                 {l}
@@ -1823,7 +1824,7 @@ function AccountsContent() {
             )}
           </div>
 
-          {/* Batch action bar (approved + confirmer) */}
+          {/* Batch action bar (paid + confirmer) — authorize a group with one combined invoice */}
           {showBatch && prSelected.length > 0 && (
             <div className="flex flex-wrap items-center justify-between gap-3 bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-3">
               <p className="text-sm text-indigo-900">
@@ -1834,9 +1835,9 @@ function AccountsContent() {
                   className="px-3 py-1.5 text-xs font-medium border border-indigo-300 text-indigo-700 bg-white rounded-lg hover:bg-indigo-50 flex items-center gap-1.5">
                   <Printer className="w-3.5 h-3.5" /> Generate Combined Invoice
                 </a>
-                <button onClick={() => setBatchPaying(true)}
+                <button onClick={() => setBatchAuthorizing(true)}
                   className="px-3 py-1.5 text-xs font-medium bg-green-600 text-white rounded-lg hover:bg-green-700">
-                  Mark Selected Paid
+                  Authorize Selected
                 </button>
               </div>
             </div>
@@ -1873,7 +1874,7 @@ function AccountsContent() {
                       <tr key={pr.id ?? pr._id} className="hover:bg-gray-50/50 transition-colors">
                         {showBatch && (
                           <td className="px-4 py-3">
-                            {pr.status === 'APPROVED' && (
+                            {pr.status === 'PAID' && (
                               <input type="checkbox" checked={prSelected.includes(pr.id ?? pr._id)}
                                 onChange={() => toggleOne(pr.id ?? pr._id)}
                                 className="w-4 h-4 rounded border-gray-300 accent-indigo-600" />
@@ -1894,24 +1895,24 @@ function AccountsContent() {
                         <td className="px-4 py-3">
                           <div className="flex items-center justify-end gap-2">
                             {pr.status === 'PENDING' && (
-                              <button onClick={() => setApprovingPr(pr)}
+                              <button onClick={() => setPayingPr(pr)}
                                 className="px-3 py-1.5 text-xs font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors">
                                 Review
                               </button>
                             )}
-                            {pr.status === 'APPROVED' && (
+                            {pr.status === 'PAID' && (
                               <>
                                 <a href={`/api/expenses/${pr.id ?? pr._id}/voucher`} target="_blank" rel="noreferrer"
                                   className="px-3 py-1.5 text-xs font-medium border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 flex items-center gap-1.5">
                                   <Printer className="w-3.5 h-3.5" /> Invoice
                                 </a>
-                                <button onClick={() => setPayingPr(pr)}
+                                <button onClick={() => setAuthorizingPr(pr)}
                                   className="px-3 py-1.5 text-xs font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
-                                  Mark Paid
+                                  Authorize
                                 </button>
                               </>
                             )}
-                            {pr.status === 'PAID' && (
+                            {pr.status === 'AUTHORIZED' && (
                               <a href={`/api/expenses/${pr.id ?? pr._id}/voucher`} target="_blank" rel="noreferrer"
                                 className="px-3 py-1.5 text-xs font-medium border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 flex items-center gap-1.5">
                                 <Printer className="w-3.5 h-3.5" /> Invoice
@@ -2070,28 +2071,28 @@ function AccountsContent() {
         currentUser={session?.user}
       />
 
-      {approvingPr && (
-        <ApproveModal
-          expense={approvingPr}
-          currentUser={session?.user}
-          onClose={() => setApprovingPr(null)}
-          onDone={() => { loadPaymentRequests(); loadSummary() }}
-        />
-      )}
-
       {payingPr && (
-        <MarkPaidModal
+        <PaymentModal
           expense={payingPr}
+          currentUser={session?.user}
           onClose={() => setPayingPr(null)}
           onDone={() => { loadPaymentRequests(); loadSummary() }}
         />
       )}
 
-      {batchPaying && (
-        <BatchPayModal
+      {authorizingPr && (
+        <AuthorizeModal
+          expense={authorizingPr}
+          onClose={() => setAuthorizingPr(null)}
+          onDone={() => { loadPaymentRequests(); loadSummary() }}
+        />
+      )}
+
+      {batchAuthorizing && (
+        <BatchAuthorizeModal
           ids={prSelected}
           expenses={prList.filter(r => prSelected.includes(r.id ?? r._id))}
-          onClose={() => setBatchPaying(false)}
+          onClose={() => setBatchAuthorizing(false)}
           onDone={() => { setPrSelected([]); loadPaymentRequests(); loadSummary() }}
         />
       )}
