@@ -2,13 +2,13 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
-import { useSession } from 'next-auth/react'
 import {
   Search, Plus, ChevronDown, Circle, CheckCircle2,
   Loader2, Flag, AlertTriangle, Clock, MoreHorizontal, Trash2,
   ExternalLink, Filter,
 } from 'lucide-react'
 import Select from '@/components/ui/Select'
+import { usePermission } from '@/components/auth/Can'
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -134,7 +134,6 @@ function RowMenu({ taskId, onDeleted }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function TasksPage() {
-  const { data: session }       = useSession()
   const [tasks,    setTasks]    = useState([])
   const [loading,  setLoading]  = useState(true)
   const [total,    setTotal]    = useState(0)
@@ -145,7 +144,10 @@ export default function TasksPage() {
   const [searchQ,  setSearchQ]  = useState('')
   const limit                   = 30
 
-  const isAdmin = ['SUPER_ADMIN', 'MANAGER'].includes(session?.user?.role)
+  const { can } = usePermission()
+  const canCreateTask = can('tasks.create')
+  const canUpdateTask = can('tasks.update')
+  const canDeleteTask = can('tasks.delete')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -183,7 +185,7 @@ export default function TasksPage() {
           <h1 className="text-xl font-semibold text-gray-900">Tasks</h1>
           <p className="text-sm text-gray-400 mt-0.5">{total} task{total !== 1 ? 's' : ''} total</p>
         </div>
-        {isAdmin && (
+        {canCreateTask && (
           <Link href="/admin/projects"
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors">
             <Plus className="w-4 h-4" />
@@ -313,7 +315,7 @@ export default function TasksPage() {
                     </td>
                     {/* Status */}
                     <td className="px-5 py-3.5">
-                      {isAdmin
+                      {canUpdateTask
                         ? <StatusDropdown taskId={task._id} current={task.status} onUpdated={handleUpdated} />
                         : (
                           <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium ${STATUS_CFG[task.status]?.bg} ${STATUS_CFG[task.status]?.text}`}>
@@ -325,7 +327,7 @@ export default function TasksPage() {
                     </td>
                     {/* Actions */}
                     <td className="px-3 py-3.5">
-                      {isAdmin && <RowMenu taskId={task._id} onDeleted={handleDeleted} />}
+                      {canDeleteTask && <RowMenu taskId={task._id} onDeleted={handleDeleted} />}
                     </td>
                   </tr>
                 )

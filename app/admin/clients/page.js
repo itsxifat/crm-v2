@@ -12,6 +12,7 @@ import Avatar from '@/components/ui/Avatar'
 import SearchInput from '@/components/ui/SearchInput'
 import Pagination from '@/components/ui/Pagination'
 import ClientModal from '@/components/admin/clients/ClientModal'
+import { Can } from '@/components/auth/Can'
 import TkAmt from '@/components/ui/TkAmt'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -174,12 +175,14 @@ export default function ClientsPage() {
           <h1 className="text-2xl font-bold text-gray-900">Clients</h1>
           <p className="text-sm text-gray-500 mt-0.5">Manage client accounts and relationships</p>
         </div>
-        <button
-          onClick={() => { setEditingClient(null); setModalOpen(true) }}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          <Plus className="w-4 h-4" /> Add Client
-        </button>
+        <Can perm="sales.customers.create">
+          <button
+            onClick={() => { setEditingClient(null); setModalOpen(true) }}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <Plus className="w-4 h-4" /> Add Client
+          </button>
+        </Can>
       </div>
 
       {/* Stats */}

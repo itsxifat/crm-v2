@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { requireManager } from '@/lib/rbac'
+import { requirePerm } from '@/lib/rbac'
 import { maskDoc, EMPLOYEE_PII } from '@/lib/pii'
 import connectDB from '@/lib/mongodb'
 import { User, Employee, Task, Leave, Attendance } from '@/models'
@@ -43,7 +43,7 @@ const updateEmployeeSchema = z.object({
 export async function GET(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    const denied = requireManager(session)
+    const denied = requirePerm(session, 'hr.employees.view')
     if (denied) return denied
 
     await connectDB()
@@ -78,12 +78,8 @@ export async function GET(request, { params }) {
 export async function PUT(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-
-    const allowedRoles = ['SUPER_ADMIN', 'MANAGER']
-    if (!allowedRoles.includes(session.user.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const denied  = requirePerm(session, 'hr.employees.update')
+    if (denied) return denied
 
     await connectDB()
 
@@ -94,6 +90,12 @@ export async function PUT(request, { params }) {
     }
 
     const { name, email, phone, isActive, role, password, hireDate, resign, ...empData } = parsed.data
+
+    // Only a Super Admin may promote to MANAGER/SUPER_ADMIN — prevents a custom
+    // role granted employee-edit from escalating privileges.
+    if (role !== undefined && role !== 'EMPLOYEE' && session.user.role !== 'SUPER_ADMIN') {
+      return NextResponse.json({ error: 'Only a Super Admin can assign Manager or Super Admin roles' }, { status: 403 })
+    }
 
     const current = await Employee.findById(params.id).lean()
     if (!current) return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
@@ -162,9 +164,8 @@ export async function PUT(request, { params }) {
 export async function PATCH(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-    if (!['SUPER_ADMIN', 'MANAGER'].includes(session.user.role))
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const denied  = requirePerm(session, 'hr.employees.update')
+    if (denied) return denied
 
     await connectDB()
 
@@ -195,12 +196,8 @@ export async function PATCH(request, { params }) {
 export async function DELETE(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    const denied = requireManager(session)
+    const denied  = requirePerm(session, 'hr.employees.delete')
     if (denied) return denied
-
-    if (session.user.role !== 'SUPER_ADMIN') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
 
     await connectDB()
 

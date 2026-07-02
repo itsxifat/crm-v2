@@ -10,6 +10,7 @@ import { useConfig } from '@/lib/useConfig'
 import TkAmt from '@/components/ui/TkAmt'
 import Select from '@/components/ui/Select'
 import DatePicker from '@/components/ui/DatePicker'
+import { Can, usePermission } from '@/components/auth/Can'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -165,6 +166,7 @@ function StatusDropdown({ project, onUpdated }) {
 
 function RowMenu({ project, onDeleted }) {
   const router = useRouter()
+  const { can } = usePermission()
   const [open, setOpen] = useState(false)
   const [pos,  setPos]  = useState({ top: 0, right: 0 })
   const btnRef = useRef(null)
@@ -208,15 +210,19 @@ function RowMenu({ project, onDeleted }) {
             className="w-full flex items-center gap-2.5 px-4 py-2 text-gray-700 hover:bg-gray-50">
             <Eye className="w-3.5 h-3.5 text-gray-400" /> View Details
           </button>
-          <button onClick={() => { setOpen(false); router.push(`/admin/projects/${project.id}/edit`) }}
-            className="w-full flex items-center gap-2.5 px-4 py-2 text-gray-700 hover:bg-gray-50">
-            <Pencil className="w-3.5 h-3.5 text-gray-400" /> Edit Project
-          </button>
-          <div className="border-t border-gray-100 my-1" />
-          <button onClick={handleDelete}
-            className="w-full flex items-center gap-2.5 px-4 py-2 text-red-600 hover:bg-red-50">
-            <Trash2 className="w-3.5 h-3.5" /> Delete
-          </button>
+          {can('projects.update') && (
+            <button onClick={() => { setOpen(false); router.push(`/admin/projects/${project.id}/edit`) }}
+              className="w-full flex items-center gap-2.5 px-4 py-2 text-gray-700 hover:bg-gray-50">
+              <Pencil className="w-3.5 h-3.5 text-gray-400" /> Edit Project
+            </button>
+          )}
+          {can('projects.delete') && (<>
+            <div className="border-t border-gray-100 my-1" />
+            <button onClick={handleDelete}
+              className="w-full flex items-center gap-2.5 px-4 py-2 text-red-600 hover:bg-red-50">
+              <Trash2 className="w-3.5 h-3.5" /> Delete
+            </button>
+          </>)}
         </div>
       )}
     </div>
@@ -303,10 +309,12 @@ export default function ProjectsPage() {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-semibold text-gray-900">Projects</h1>
-        <Link href="/admin/projects/new"
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors">
-          <Plus className="w-4 h-4" /> New Project
-        </Link>
+        <Can perm="projects.create">
+          <Link href="/admin/projects/new"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors">
+            <Plus className="w-4 h-4" /> New Project
+          </Link>
+        </Can>
       </div>
 
       {/* Status overview chips */}

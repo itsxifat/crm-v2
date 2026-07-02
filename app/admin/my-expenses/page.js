@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import toast from 'react-hot-toast'
-import { Plus, X, Loader2, Printer, Receipt } from 'lucide-react'
+import { Plus, X, Loader2, Printer, Receipt, FileText } from 'lucide-react'
 import FileUpload from '@/components/ui/FileUpload'
 import { CURRENCIES } from '@/lib/currencies'
 
@@ -217,11 +217,17 @@ export default function MyExpensesPage() {
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">{fmtDate(r.date ?? r.createdAt)}</td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center justify-end">
+                      <div className="flex items-center justify-end gap-2">
                         {r.status !== 'PENDING' && r.status !== 'REJECTED' && (
                           <a href={`/api/expenses/${r.id ?? r._id}/voucher`} target="_blank" rel="noreferrer"
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50">
-                            <Printer className="w-3.5 h-3.5" /> Voucher
+                            <Printer className="w-3.5 h-3.5" /> Invoice
+                          </a>
+                        )}
+                        {r.status === 'AUTHORIZED' && r.signedInvoiceUrl && (
+                          <a href={r.signedInvoiceUrl} target="_blank" rel="noreferrer"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-green-200 text-green-700 bg-green-50 rounded-lg hover:bg-green-100">
+                            <FileText className="w-3.5 h-3.5" /> Authorized
                           </a>
                         )}
                       </div>

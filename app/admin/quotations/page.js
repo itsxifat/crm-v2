@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Plus, Search, X, Loader2, Copy, Trash2, Eye, FileText } from 'lucide-react'
 import toast from 'react-hot-toast'
 import Link from 'next/link'
+import { Can, usePermission } from '@/components/auth/Can'
 
 const STATUS_STYLES = {
   DRAFT:    { badge: 'bg-gray-100 text-gray-600',    label: 'Draft' },
@@ -25,6 +26,7 @@ export default function QuotationsPage() {
   const [page,       setPage]       = useState(1)
   const [total,      setTotal]      = useState(0)
   const [deleting,   setDeleting]   = useState(null)
+  const { can } = usePermission()
   const limit = 20
 
   const load = useCallback(async () => {
@@ -74,10 +76,12 @@ export default function QuotationsPage() {
           <h1 className="text-xl font-semibold text-gray-900">Quotations</h1>
           <p className="text-sm text-gray-400 mt-0.5">{total} quotation{total !== 1 ? 's' : ''}</p>
         </div>
-        <Link href="/admin/quotations/new"
-          className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-xl hover:bg-gray-800 transition-colors">
-          <Plus className="w-4 h-4" /> New Quotation
-        </Link>
+        <Can perm="sales.quotations.create">
+          <Link href="/admin/quotations/new"
+            className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-xl hover:bg-gray-800 transition-colors">
+            <Plus className="w-4 h-4" /> New Quotation
+          </Link>
+        </Can>
       </div>
 
       {/* Filters */}
@@ -148,14 +152,18 @@ export default function QuotationsPage() {
                               className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors">
                               <Eye className="w-3.5 h-3.5" />
                             </Link>
-                            <button onClick={() => duplicate(q.id)}
-                              className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
-                              <Copy className="w-3.5 h-3.5" />
-                            </button>
-                            <button onClick={() => del(q.id)} disabled={deleting === q.id}
-                              className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-40">
-                              {deleting === q.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-                            </button>
+                            {can('sales.quotations.create') && (
+                              <button onClick={() => duplicate(q.id)}
+                                className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
+                                <Copy className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                            {can('sales.quotations.delete') && (
+                              <button onClick={() => del(q.id)} disabled={deleting === q.id}
+                                className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-40">
+                                {deleting === q.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>

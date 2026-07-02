@@ -11,6 +11,7 @@ import toast from 'react-hot-toast'
 import Link from 'next/link'
 import Avatar from '@/components/ui/Avatar'
 import TkAmt from '@/components/ui/TkAmt'
+import { Can, usePermission } from '@/components/auth/Can'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -446,6 +447,8 @@ function RowMenu({ employee, onEdit, onResigned, onRoleChanged }) {
   const [roleMode,    setRoleMode]    = useState(false)
   const [changingRole, setChangingRole] = useState(false)
   const [resigning,   setResigning]   = useState(false)
+  const { can } = usePermission()
+  const canEdit = can('hr.employees.update')
   const ref = useRef(null)
 
   useEffect(() => {
@@ -509,14 +512,18 @@ function RowMenu({ employee, onEdit, onResigned, onRoleChanged }) {
               className="w-full flex items-center gap-2.5 px-4 py-2 text-gray-700 hover:bg-gray-50">
               <Eye className="w-3.5 h-3.5 text-gray-400" /> View Profile
             </Link>
-            <button onClick={() => { setOpen(false); onEdit(employee) }}
-              className="w-full flex items-center gap-2.5 px-4 py-2 text-gray-700 hover:bg-gray-50">
-              <Pencil className="w-3.5 h-3.5 text-gray-400" /> Edit
-            </button>
-            <button onClick={() => setRoleMode(true)}
-              className="w-full flex items-center gap-2.5 px-4 py-2 text-gray-700 hover:bg-gray-50">
-              <Shield className="w-3.5 h-3.5 text-gray-400" /> Change Role
-            </button>
+            {canEdit && (
+              <button onClick={() => { setOpen(false); onEdit(employee) }}
+                className="w-full flex items-center gap-2.5 px-4 py-2 text-gray-700 hover:bg-gray-50">
+                <Pencil className="w-3.5 h-3.5 text-gray-400" /> Edit
+              </button>
+            )}
+            {canEdit && (
+              <button onClick={() => setRoleMode(true)}
+                className="w-full flex items-center gap-2.5 px-4 py-2 text-gray-700 hover:bg-gray-50">
+                <Shield className="w-3.5 h-3.5 text-gray-400" /> Change Role
+              </button>
+            )}
             {employee.appointmentLetterUrl && (
               <a href={employee.appointmentLetterUrl} target="_blank" rel="noreferrer"
                 className="w-full flex items-center gap-2.5 px-4 py-2 text-gray-700 hover:bg-gray-50">
@@ -529,8 +536,8 @@ function RowMenu({ employee, onEdit, onResigned, onRoleChanged }) {
                 <FileText className="w-3.5 h-3.5 text-gray-400" /> Agreement
               </a>
             )}
-            <div className="border-t border-gray-100 my-1" />
-            {employee.resigned ? (
+            {canEdit && <div className="border-t border-gray-100 my-1" />}
+            {canEdit && (employee.resigned ? (
               <span className="w-full flex items-center gap-2.5 px-4 py-2 text-gray-400 cursor-default text-xs">
                 <LogOut className="w-3.5 h-3.5" /> Already Resigned
               </span>
@@ -539,7 +546,7 @@ function RowMenu({ employee, onEdit, onResigned, onRoleChanged }) {
                 className="w-full flex items-center gap-2.5 px-4 py-2 text-orange-600 hover:bg-orange-50 disabled:opacity-50">
                 <LogOut className="w-3.5 h-3.5" /> Resigned
               </button>
-            )}
+            ))}
           </>) : (<>
             <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wide flex items-center justify-between">
               <span>Change Role</span>
@@ -664,14 +671,18 @@ export default function EmployeesPage() {
           <p className="text-sm text-gray-400 mt-0.5">Manage team members, profiles and panel access</p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => setDeptModalOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-            <Settings className="w-4 h-4" /> Departments
-          </button>
-          <button onClick={() => { setEditing(null); setModalOpen(true) }}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors">
-            <Plus className="w-4 h-4" /> Add Employee
-          </button>
+          <Can perm="hr.employees.update">
+            <button onClick={() => setDeptModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+              <Settings className="w-4 h-4" /> Departments
+            </button>
+          </Can>
+          <Can perm="hr.employees.create">
+            <button onClick={() => { setEditing(null); setModalOpen(true) }}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors">
+              <Plus className="w-4 h-4" /> Add Employee
+            </button>
+          </Can>
         </div>
       </div>
 

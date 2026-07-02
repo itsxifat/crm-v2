@@ -10,6 +10,7 @@ import DatePicker from '@/components/ui/DatePicker'
 import Pagination from '@/components/ui/Pagination'
 import LeadsTable from '@/components/admin/leads/LeadsTable'
 import LeadModal from '@/components/admin/leads/LeadModal'
+import { Can } from '@/components/auth/Can'
 import { formatCurrency } from '@/lib/utils'
 
 const STATUS_OPTIONS = [
@@ -128,13 +129,15 @@ export default function LeadsPage() {
           <h1 className="text-2xl font-bold text-gray-900">Leads</h1>
           <p className="text-sm text-gray-500 mt-0.5">Manage and track your sales pipeline</p>
         </div>
-        <button
-          onClick={() => { setEditingLead(null); setModalOpen(true) }}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
-        >
-          <Plus className="w-4 h-4" />
-          Add Lead
-        </button>
+        <Can perm="sales.leads.create">
+          <button
+            onClick={() => { setEditingLead(null); setModalOpen(true) }}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+          >
+            <Plus className="w-4 h-4" />
+            Add Lead
+          </button>
+        </Can>
       </div>
 
       {/* Stats */}

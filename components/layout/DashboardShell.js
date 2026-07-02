@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import Sidebar from './Sidebar'
 import Header from './Header'
+import { RouteGuard } from '@/components/auth/Can'
 
 export default function DashboardShell({ children }) {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
@@ -26,7 +27,7 @@ export default function DashboardShell({ children }) {
         <Header onMenuClick={() => setMobileSidebarOpen(true)} />
         <main className="flex-1 overflow-y-auto scrollbar-thin">
           <div className="p-4 sm:p-6">
-            {children}
+            <RouteGuard>{children}</RouteGuard>
           </div>
         </main>
       </div>

@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 import toast from 'react-hot-toast'
 import TkAmt from '@/components/ui/TkAmt'
 import DatePicker from '@/components/ui/DatePicker'
+import { Can, usePermission } from '@/components/auth/Can'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -36,6 +37,7 @@ const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-dig
 
 function RowMenu({ inv, onDeleted }) {
   const router = useRouter()
+  const { can } = usePermission()
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
 
@@ -70,13 +72,13 @@ function RowMenu({ inv, onDeleted }) {
             className="w-full flex items-center gap-2.5 px-4 py-2 text-gray-700 hover:bg-gray-50">
             <Eye className="w-3.5 h-3.5 text-gray-400" /> View Invoice
           </button>
-          {inv.status === 'DRAFT' && (
+          {inv.status === 'DRAFT' && can('sales.invoices.update') && (
             <button onClick={() => { setOpen(false); router.push(`/admin/invoices/${inv.id}/edit`) }}
               className="w-full flex items-center gap-2.5 px-4 py-2 text-gray-700 hover:bg-gray-50">
               <Pencil className="w-3.5 h-3.5 text-gray-400" /> Edit
             </button>
           )}
-          {inv.status === 'DRAFT' && (
+          {inv.status === 'DRAFT' && can('sales.invoices.delete') && (
             <>
               <div className="border-t border-gray-100 my-1" />
               <button onClick={handleDelete}
@@ -186,10 +188,12 @@ export default function InvoicesPage() {
           <h1 className="text-xl font-semibold text-gray-900">Invoices</h1>
           <p className="text-sm text-gray-400 mt-0.5">Manage client invoices and billing</p>
         </div>
-        <Link href="/admin/invoices/new"
-          className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors">
-          <Plus className="w-4 h-4" /> New Invoice
-        </Link>
+        <Can perm="sales.invoices.create">
+          <Link href="/admin/invoices/new"
+            className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors">
+            <Plus className="w-4 h-4" /> New Invoice
+          </Link>
+        </Can>
       </div>
 
       {/* Payment analytics */}

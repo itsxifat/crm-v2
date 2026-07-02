@@ -5,6 +5,7 @@ import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { User, Employee, Task, Leave, CustomRole } from '@/models'
 import { normalizeDeptCode } from '@/models/Employee'
+import { requirePerm } from '@/lib/rbac'
 import { ciEquals, ciContains } from '@/lib/searchMatch'
 import { z } from 'zod'
 import bcrypt from 'bcryptjs'
@@ -44,12 +45,8 @@ const createEmployeeSchema = z.object({
 export async function GET(request) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-
-    const allowedRoles = ['SUPER_ADMIN', 'MANAGER']
-    if (!allowedRoles.includes(session.user.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const denied  = requirePerm(session, 'hr.employees.view')
+    if (denied) return denied
 
     await connectDB()
 
@@ -143,12 +140,12 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    const denied  = requirePerm(session, 'hr.employees.create')
+    if (denied) return denied
 
+    // Assigning MANAGER or SUPER_ADMIN is reserved for a Super Admin (no
+    // privilege escalation) — even for a custom role granted employee-create.
     const isSuperAdmin = session.user.role === 'SUPER_ADMIN'
-    if (!isSuperAdmin && session.user.role !== 'MANAGER') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
 
     await connectDB()
 
