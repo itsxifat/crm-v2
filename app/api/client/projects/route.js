@@ -25,7 +25,10 @@ export async function GET(request) {
     const filter = { clientId: client._id }
     if (status && status !== 'ALL') filter.status = status
 
+    // Explicit projection of client-safe fields only — never expose internal
+    // financials like approvedExpenses / profit to the client.
     const projects = await Project.find(filter)
+      .select('projectCode name description category subcategory projectType status priority startDate deadline currentPeriodStart currentPeriodEnd nextBillingDate budget discount paidAmount currency updatedAt')
       .sort({ updatedAt: -1 })
       .lean()
 
@@ -43,9 +46,16 @@ export async function GET(request) {
       const pMilestones = milestones.filter(m => m.projectId.toString() === p._id.toString())
       const completed   = pTasks.filter(t => t.status === 'COMPLETED').length
       const nextMile    = pMilestones.find(m => !m.completed)
+      const budget      = Number(p.budget   ?? 0)
+      const discount    = Number(p.discount ?? 0)
+      const paid        = Number(p.paidAmount ?? 0)
+      const netValue    = Math.max(0, budget - discount)
       return {
         ...p,
         id:                 p._id.toString(),
+        netValue,
+        paidAmount:         paid,
+        dueAmount:          Math.max(0, netValue - paid),
         completedTaskCount: completed,
         _count:             { tasks: pTasks.length },
         nextMilestone:      nextMile ?? null,

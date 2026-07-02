@@ -1,37 +1,32 @@
 import { getServerSession } from 'next-auth'
+import { redirect } from 'next/navigation'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
-import { Client, Project, Invoice, Milestone, Task } from '@/models'
+import { Project, Invoice, Milestone } from '@/models'
+import { resolveActiveClient } from '@/lib/clientAccess'
 import Link from 'next/link'
 import {
   FolderOpen, FileText, Wallet, AlertCircle,
-  ArrowRight, Clock, TrendingUp
+  ArrowRight, Clock, Building2,
 } from 'lucide-react'
-import ProgressBar from '@/components/portals/ProgressBar'
+import ProjectStatusBadge from '@/components/portals/ProjectStatusBadge'
 
-function StatusBadge({ status }) {
-  const map = {
-    PLANNING:    { label: 'Planning',     bg: 'bg-gray-100',   text: 'text-gray-700' },
-    IN_PROGRESS: { label: 'In Progress',  bg: 'bg-blue-100',   text: 'text-blue-700' },
-    ON_HOLD:     { label: 'On Hold',      bg: 'bg-yellow-100', text: 'text-yellow-700' },
-    COMPLETED:   { label: 'Completed',    bg: 'bg-green-100',  text: 'text-green-700' },
-    CANCELLED:   { label: 'Cancelled',    bg: 'bg-red-100',    text: 'text-red-700' },
-  }
-  const s = map[status] || map.PLANNING
-  return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${s.bg} ${s.text}`}>
-      {s.label}
-    </span>
-  )
-}
+// Non-terminal statuses — what a client thinks of as "active / ongoing" work.
+// Everything except DELIVERED / CANCELLED / RENEWED.
+const ACTIVE_STATUSES = [
+  'PENDING', 'IN_PROGRESS', 'IN_REVIEW', 'REVISION', 'APPROVED',
+  'FEEDBACK', 'SUBMITTED', 'ACTIVE', 'EXPIRING_SOON', 'ON_HOLD',
+]
+
+const OUTSTANDING = ['SENT', 'OVERDUE', 'PARTIALLY_PAID']
 
 function InvoiceStatusBadge({ status }) {
   const map = {
-    DRAFT:          { label: 'Draft',          bg: 'bg-gray-100',   text: 'text-gray-700' },
-    SENT:           { label: 'Awaiting Payment',bg: 'bg-blue-100',   text: 'text-blue-700' },
-    PARTIALLY_PAID: { label: 'Partial',         bg: 'bg-yellow-100', text: 'text-yellow-700' },
-    PAID:           { label: 'Paid',            bg: 'bg-green-100',  text: 'text-green-700' },
-    OVERDUE:        { label: 'Overdue',         bg: 'bg-red-100',    text: 'text-red-700' },
+    DRAFT:          { label: 'Draft',            bg: 'bg-gray-100',   text: 'text-gray-700' },
+    SENT:           { label: 'Awaiting Payment', bg: 'bg-blue-100',   text: 'text-blue-700' },
+    PARTIALLY_PAID: { label: 'Partial',          bg: 'bg-yellow-100', text: 'text-yellow-800' },
+    PAID:           { label: 'Paid',             bg: 'bg-green-100',  text: 'text-green-700' },
+    OVERDUE:        { label: 'Overdue',          bg: 'bg-red-100',    text: 'text-red-700' },
   }
   const s = map[status] || map.DRAFT
   return (
@@ -41,124 +36,116 @@ function InvoiceStatusBadge({ status }) {
   )
 }
 
-function calcProgress(project) {
-  const tasks = project.tasks || []
-  if (!tasks.length) return 0
-  const done = tasks.filter((t) => t.status === 'COMPLETED').length
-  return Math.round((done / tasks.length) * 100)
-}
+const fmtTk = (n) => `৳ ${(Number(n) || 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })}`
+const fmtDate = (d) =>
+  d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 
 export default async function ClientDashboard() {
   const session = await getServerSession(authOptions)
 
   await connectDB()
 
-  const client = await Client.findOne({ userId: session.user.id })
-    .populate({ path: 'userId', select: 'name email' })
-    .lean()
+  // Scope EVERYTHING to the company the client is currently signed into. Using
+  // the legacy Client.findOne({userId}) here was the bug: projects showed a
+  // single (wrong) company and invoices summed across all companies.
+  const { client, clientId, error } = await resolveActiveClient(session)
 
-  // A client with no company account yet (an individual we haven't set up with a
-  // workspace) still gets a working panel — just with empty states. So we no
-  // longer hard-stop here; we fall through with empty data.
-  const allClients = client
-    ? await Client.find({ userId: session.user.id }).select('_id clientCode company').lean()
-    : []
+  // 2+ companies and none chosen → send them to the chooser (middleware normally
+  // catches this, but guard here too so we never render cross-company data).
+  if (error === 'SELECT_COMPANY') redirect('/client/select-company')
 
-  const clientIds = allClients.map(c => c._id)
-  const clientMap = Object.fromEntries(
-    allClients.map(c => [c._id.toString(), { clientCode: c.clientCode, company: c.company }])
-  )
+  const hasCompany = !!clientId
 
-  let activeProjects = [], invoices = [], allProjects = 0,
-      pendingInvoicesCount = 0, paidInvoices = [], dueInvoices = []
+  let activeProjects = [], invoices = [],
+      activeCount = 0, pendingInvoicesCount = 0,
+      paidInvoices = [], dueInvoices = []
 
-  if (client) {
-    const clientId = client._id
-    ;[activeProjects, invoices, allProjects, pendingInvoicesCount, paidInvoices, dueInvoices] = await Promise.all([
-      Project.find({ clientId, status: { $in: ['PLANNING', 'IN_PROGRESS', 'ON_HOLD'] } })
+  if (hasCompany) {
+    ;[activeProjects, invoices, activeCount, pendingInvoicesCount, paidInvoices, dueInvoices] = await Promise.all([
+      Project.find({ clientId, status: { $in: ACTIVE_STATUSES } })
+        .select('name description status projectType deadline currentPeriodEnd updatedAt')
         .sort({ updatedAt: -1 })
         .limit(4)
         .lean(),
-      Invoice.find({ clientId: { $in: clientIds }, status: { $nin: ['CANCELLED', 'DRAFT'] } })
+      Invoice.find({ clientId, status: { $nin: ['CANCELLED', 'DRAFT'] } })
+        .select('invoiceNumber issueDate dueDate total paidAmount status')
         .sort({ createdAt: -1 })
         .limit(5)
         .lean(),
-      Project.countDocuments({ clientId, status: { $in: ['PLANNING', 'IN_PROGRESS', 'ON_HOLD'] } }),
-      Invoice.countDocuments({ clientId: { $in: clientIds }, status: { $in: ['SENT', 'OVERDUE', 'PARTIALLY_PAID'] } }),
-      // aggregate() bypasses Mongoose post-find decryption hooks — Invoice.total/paidAmount are
-      // encrypted, so totals must be summed in JS over decrypted lean docs (not via $sum/$subtract).
-      Invoice.find({ clientId: { $in: clientIds }, status: 'PAID' }).select('total').lean(),
-      Invoice.find({ clientId: { $in: clientIds }, status: { $in: ['SENT', 'OVERDUE', 'PARTIALLY_PAID'] } })
-        .select('total paidAmount').lean(),
+      Project.countDocuments({ clientId, status: { $in: ACTIVE_STATUSES } }),
+      Invoice.countDocuments({ clientId, status: { $in: OUTSTANDING } }),
+      Invoice.find({ clientId, status: 'PAID' }).select('total').lean(),
+      Invoice.find({ clientId, status: { $in: OUTSTANDING } }).select('total paidAmount').lean(),
     ])
   }
 
-  // Enrich projects with task statuses and milestones
+  // Attach the next open milestone for each active project card.
   const projectIds = activeProjects.map(p => p._id)
-  const [tasksByProject, milestonesByProject] = await Promise.all([
-    Task.find({ projectId: { $in: projectIds } }).select('projectId status isClientVisible').lean(),
-    Milestone.find({ projectId: { $in: projectIds } }).select('projectId completed title dueDate').lean(),
-  ])
+  const milestones = projectIds.length
+    ? await Milestone.find({ projectId: { $in: projectIds }, completed: false })
+        .select('projectId title dueDate')
+        .sort({ dueDate: 1 })
+        .lean()
+    : []
 
   const enrichedProjects = activeProjects.map(p => ({
     ...p,
     id: p._id.toString(),
-    tasks:      tasksByProject.filter(t => t.projectId.toString() === p._id.toString()),
-    milestones: milestonesByProject.filter(m => m.projectId.toString() === p._id.toString()),
+    nextMilestone: milestones.find(m => m.projectId.toString() === p._id.toString()) ?? null,
   }))
 
   const paidTotal = paidInvoices.reduce((s, i) => s + (Number(i.total) || 0), 0)
   const dueTotal  = dueInvoices.reduce((s, i) => s + ((Number(i.total) || 0) - (Number(i.paidAmount) || 0)), 0)
-  const pendingInvoices = pendingInvoicesCount
 
   const stats = [
-    { label: 'Active Projects',   value: allProjects,                                                                    icon: FolderOpen,  color: 'blue'   },
-    { label: 'Pending Invoices',  value: pendingInvoices,                                                                icon: FileText,    color: 'yellow' },
-    { label: 'Total Paid',        value: `৳ ${paidTotal.toLocaleString('en-BD', { minimumFractionDigits: 2 })}`,         icon: Wallet,  color: 'green'  },
-    { label: 'Due Balance',       value: `৳ ${dueTotal.toLocaleString('en-BD',  { minimumFractionDigits: 2 })}`,         icon: AlertCircle, color: 'red'    },
+    { label: 'Active Projects',  value: activeCount,               icon: FolderOpen,  color: 'blue'   },
+    { label: 'Pending Invoices', value: pendingInvoicesCount,      icon: FileText,    color: 'amber'  },
+    { label: 'Total Paid',       value: fmtTk(paidTotal),          icon: Wallet,      color: 'green'  },
+    { label: 'Due Balance',      value: fmtTk(dueTotal),           icon: AlertCircle, color: 'red'    },
   ]
 
   const colorMap = {
-    blue:   { bg: 'bg-blue-50',   icon: 'text-blue-600',   ring: 'ring-blue-100'  },
-    green:  { bg: 'bg-green-50',  icon: 'text-green-600',  ring: 'ring-green-100' },
-    yellow: { bg: 'bg-yellow-50', icon: 'text-yellow-600', ring: 'ring-yellow-100' },
-    red:    { bg: 'bg-red-50',    icon: 'text-red-500',    ring: 'ring-red-100'    },
+    blue:  { bg: 'bg-blue-50',  icon: 'text-blue-600'  },
+    green: { bg: 'bg-green-50', icon: 'text-green-600' },
+    amber: { bg: 'bg-amber-50', icon: 'text-amber-600' },
+    red:   { bg: 'bg-red-50',   icon: 'text-red-500'   },
   }
 
   return (
-    <div className="space-y-8">
-      {/* Welcome */}
-      <div className="bg-gradient-to-r from-blue-600 to-blue-700 rounded-2xl p-8 text-white shadow-lg">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-blue-200 text-sm font-medium mb-1">Welcome back</p>
-            <h1 className="text-3xl font-bold">{client?.userId?.name ?? session.user.name}</h1>
-            {client?.company && (
-              <p className="text-blue-200 mt-1 text-sm">{client.company}</p>
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">
+            Welcome back, {session.user.name?.split(' ')[0] ?? 'there'}
+          </h1>
+          <p className="text-sm text-gray-500 mt-0.5 flex items-center gap-1.5">
+            {client?.company ? (
+              <>
+                <Building2 className="w-3.5 h-3.5 text-gray-400" />
+                {client.company}
+                {client.clientCode && <span className="text-gray-300">· {client.clientCode}</span>}
+              </>
+            ) : (
+              'Here is an overview of your projects and account activity.'
             )}
-          </div>
-          <div className="hidden sm:flex w-16 h-16 bg-white/10 rounded-2xl items-center justify-center">
-            <TrendingUp className="w-8 h-8 text-white" />
-          </div>
+          </p>
         </div>
-        <p className="text-blue-100 text-sm mt-4">
-          Here&apos;s an overview of your projects and account activity.
-        </p>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {stats.map(({ label, value, icon: Icon, color }) => {
           const c = colorMap[color]
           return (
-            <div key={label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 hover:shadow-md transition-shadow">
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-500">{label}</p>
-                  <p className="text-2xl font-bold text-gray-900 mt-1">{value}</p>
+            <div key={label} className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 sm:p-5">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-xs font-medium text-gray-500">{label}</p>
+                  <p className="text-lg sm:text-xl font-bold text-gray-900 mt-1 truncate">{value}</p>
                 </div>
-                <div className={`w-12 h-12 rounded-xl flex items-center justify-center ring-2 ${c.bg} ${c.ring}`}>
-                  <Icon className={`w-6 h-6 ${c.icon}`} />
+                <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${c.bg}`}>
+                  <Icon className={`w-5 h-5 ${c.icon}`} />
                 </div>
               </div>
             </div>
@@ -167,135 +154,111 @@ export default async function ClientDashboard() {
       </div>
 
       {/* Active Projects */}
-      <div>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-bold text-gray-900">Active Projects</h2>
+      <section>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-base font-semibold text-gray-900">Active Projects</h2>
           <Link href="/client/projects" className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 font-medium">
             View all <ArrowRight className="w-4 h-4" />
           </Link>
         </div>
 
         {enrichedProjects.length === 0 ? (
-          <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center">
-            <FolderOpen className="w-12 h-12 text-gray-200 mx-auto mb-3" />
-            <p className="text-gray-500 font-medium">No active projects</p>
-            <p className="text-gray-400 text-sm mt-1">Your projects will appear here once they&apos;re created.</p>
+          <div className="bg-white rounded-xl border border-gray-100 p-12 text-center">
+            <FolderOpen className="w-10 h-10 text-gray-200 mx-auto mb-3" />
+            <p className="text-gray-500 font-medium text-sm">No active projects</p>
+            <p className="text-gray-400 text-xs mt-1">Your projects will appear here once they&apos;re created.</p>
           </div>
         ) : (
-          <div className="grid sm:grid-cols-2 gap-4">
-            {enrichedProjects.map((project) => {
-              const progress = calcProgress(project)
-              const nextMilestone = project.milestones.find((m) => !m.completed)
-              return (
-                <Link key={project.id} href={`/client/projects/${project.id}`}>
-                  <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 hover:shadow-md hover:border-blue-100 transition-all duration-200 cursor-pointer h-full">
-                    <div className="flex items-start justify-between mb-3">
-                      <h3 className="font-semibold text-gray-900 text-base line-clamp-1">{project.name}</h3>
-                      <StatusBadge status={project.status} />
-                    </div>
-
-                    {project.description && (
-                      <p className="text-sm text-gray-500 mb-4 line-clamp-2">{project.description}</p>
-                    )}
-
-                    <div className="mb-4">
-                      <div className="flex justify-between items-center mb-1">
-                        <span className="text-xs text-gray-500">Progress</span>
-                        <span className="text-xs font-semibold text-gray-700">{progress}%</span>
-                      </div>
-                      <div className="w-full bg-gray-100 rounded-full h-2">
-                        <div
-                          className="bg-blue-500 h-2 rounded-full transition-all"
-                          style={{ width: `${progress}%` }}
-                        />
-                      </div>
-                    </div>
-
-                    {nextMilestone && (
-                      <div className="flex items-center gap-2 text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
-                        <Clock className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                        <span>Next: {nextMilestone.title}</span>
-                        {nextMilestone.dueDate && (
-                          <span className="text-gray-400">
-                            &bull; {new Date(nextMilestone.dueDate).toLocaleDateString()}
-                          </span>
-                        )}
-                      </div>
+          <div className="grid sm:grid-cols-2 gap-3">
+            {enrichedProjects.map((project) => (
+              <Link key={project.id} href={`/client/projects/${project.id}`}
+                className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 hover:border-blue-200 hover:shadow-md transition-all">
+                <div className="flex items-start justify-between gap-3 mb-1">
+                  <h3 className="font-semibold text-gray-900 text-sm line-clamp-1">{project.name}</h3>
+                  <ProjectStatusBadge status={project.status} className="shrink-0" />
+                </div>
+                <p className="text-xs text-gray-400 mb-3">
+                  {project.projectType === 'MONTHLY' ? 'Monthly' : 'Fixed'} project
+                </p>
+                {project.nextMilestone ? (
+                  <div className="flex items-center gap-2 text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
+                    <Clock className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                    <span className="truncate">Next: {project.nextMilestone.title}</span>
+                    {project.nextMilestone.dueDate && (
+                      <span className="text-gray-400 shrink-0 ml-auto">{fmtDate(project.nextMilestone.dueDate)}</span>
                     )}
                   </div>
-                </Link>
-              )
-            })}
+                ) : (
+                  <div className="flex items-center gap-2 text-xs text-gray-400 bg-gray-50 rounded-lg px-3 py-2">
+                    <Clock className="w-3.5 h-3.5 shrink-0" />
+                    <span>
+                      {project.projectType === 'MONTHLY'
+                        ? (project.currentPeriodEnd ? `Renews ${fmtDate(project.currentPeriodEnd)}` : 'No renewal date set')
+                        : (project.deadline ? `Due ${fmtDate(project.deadline)}` : 'No deadline set')}
+                    </span>
+                  </div>
+                )}
+              </Link>
+            ))}
           </div>
         )}
-      </div>
+      </section>
 
       {/* Recent Invoices */}
-      <div>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-bold text-gray-900">Recent Invoices</h2>
+      <section>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-base font-semibold text-gray-900">Recent Invoices</h2>
           <Link href="/client/invoices" className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 font-medium">
             View all <ArrowRight className="w-4 h-4" />
           </Link>
         </div>
 
         {invoices.length === 0 ? (
-          <div className="bg-white rounded-2xl border border-gray-100 p-10 text-center">
-            <FileText className="w-10 h-10 text-gray-200 mx-auto mb-3" />
-            <p className="text-gray-500">No invoices yet</p>
+          <div className="bg-white rounded-xl border border-gray-100 p-10 text-center">
+            <FileText className="w-9 h-9 text-gray-200 mx-auto mb-3" />
+            <p className="text-gray-500 text-sm">No invoices yet</p>
           </div>
         ) : (
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-            <table className="w-full">
+          <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-x-auto">
+            <table className="w-full min-w-[560px]">
               <thead>
-                <tr className="bg-gray-50 border-b border-gray-100">
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Invoice</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Due Date</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Amount</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
-                  <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Action</th>
+                <tr className="bg-gray-50/60 border-b border-gray-100">
+                  <th className="px-5 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">Invoice</th>
+                  <th className="px-5 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">Due Date</th>
+                  <th className="px-5 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wide">Amount</th>
+                  <th className="px-5 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">Status</th>
+                  <th className="px-5 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wide">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {invoices.map((invoice) => (
-                  <tr key={invoice._id?.toString() ?? invoice.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4">
-                      <p className="text-sm font-medium text-gray-900">{invoice.invoiceNumber}</p>
-                      <p className="text-xs text-gray-400">{new Date(invoice.issueDate).toLocaleDateString()}</p>
-                      {allClients.length > 1 && (() => {
-                        const info = clientMap[invoice.clientId?.toString()]
-                        return info ? (
-                          <p className="text-xs text-blue-500 mt-0.5">{info.clientCode}{info.company ? ` · ${info.company}` : ''}</p>
-                        ) : null
-                      })()}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-600">
-                      {invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : '—'}
-                    </td>
-                    <td className="px-6 py-4">
-                      <p className="text-sm font-semibold text-gray-900">৳ {invoice.total.toLocaleString('en-BD', { minimumFractionDigits: 2 })}</p>
-                    </td>
-                    <td className="px-6 py-4">
-                      <InvoiceStatusBadge status={invoice.status} />
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <Link href={`/client/invoices/${invoice.id}`}>
-                        {['SENT', 'OVERDUE', 'PARTIALLY_PAID'].includes(invoice.status) ? (
-                          <span className="inline-flex items-center px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition-colors">
-                            Pay Now
-                          </span>
-                        ) : (
-                          <span className="text-xs text-blue-600 hover:text-blue-700 font-medium">View</span>
-                        )}
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
+                {invoices.map((invoice) => {
+                  const id = invoice._id.toString()
+                  const payable = OUTSTANDING.includes(invoice.status)
+                  return (
+                    <tr key={id} className="hover:bg-gray-50/60 transition-colors">
+                      <td className="px-5 py-3.5">
+                        <p className="text-sm font-medium text-gray-900">{invoice.invoiceNumber}</p>
+                        <p className="text-xs text-gray-400">{fmtDate(invoice.issueDate)}</p>
+                      </td>
+                      <td className="px-5 py-3.5 text-sm text-gray-600">{fmtDate(invoice.dueDate)}</td>
+                      <td className="px-5 py-3.5 text-right text-sm font-semibold text-gray-900">{fmtTk(invoice.total)}</td>
+                      <td className="px-5 py-3.5"><InvoiceStatusBadge status={invoice.status} /></td>
+                      <td className="px-5 py-3.5 text-right">
+                        <Link href={`/client/invoices/${id}`}
+                          className={payable
+                            ? 'inline-flex items-center px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition-colors'
+                            : 'text-xs text-blue-600 hover:text-blue-700 font-medium'}>
+                          {payable ? 'Pay Now' : 'View'}
+                        </Link>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
         )}
-      </div>
+      </section>
     </div>
   )
 }

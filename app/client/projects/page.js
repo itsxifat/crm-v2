@@ -1,34 +1,22 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import Link from 'next/link'
+import { useState, useEffect, useMemo } from 'react'
+import { useRouter } from 'next/navigation'
 import { FolderOpen, Search, Clock, ChevronRight } from 'lucide-react'
+import { STATUS_META } from '@/lib/ventures'
+import ProjectStatusBadge from '@/components/portals/ProjectStatusBadge'
 
-const STATUS_OPTIONS = ['ALL', 'PLANNING', 'IN_PROGRESS', 'ON_HOLD', 'COMPLETED', 'CANCELLED']
-
-function StatusBadge({ status }) {
-  const map = {
-    PLANNING:    { label: 'Planning',    bg: 'bg-gray-100',    text: 'text-gray-700' },
-    IN_PROGRESS: { label: 'In Progress', bg: 'bg-blue-100',    text: 'text-blue-700' },
-    ON_HOLD:     { label: 'On Hold',     bg: 'bg-yellow-100',  text: 'text-yellow-700' },
-    COMPLETED:   { label: 'Completed',   bg: 'bg-green-100',   text: 'text-green-700' },
-    CANCELLED:   { label: 'Cancelled',   bg: 'bg-red-100',     text: 'text-red-700' },
-  }
-  const s = map[status] || map.PLANNING
-  return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${s.bg} ${s.text}`}>
-      {s.label}
-    </span>
-  )
-}
-
+const fmtTk = (n) => `৳ ${(Number(n) || 0).toLocaleString('en-BD', { minimumFractionDigits: 0 })}`
+const fmtDate = (d) =>
+  d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 
 export default function ClientProjectsPage() {
+  const router = useRouter()
   const [projects, setProjects] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  const [loading, setLoading]   = useState(true)
+  const [error, setError]       = useState(null)
   const [statusFilter, setStatusFilter] = useState('ALL')
-  const [search, setSearch] = useState('')
+  const [search, setSearch]     = useState('')
 
   useEffect(() => {
     const fetchProjects = async () => {
@@ -46,26 +34,35 @@ export default function ClientProjectsPage() {
     fetchProjects()
   }, [])
 
+  // Build the status filter chips from the statuses actually present, with counts.
+  const statusChips = useMemo(() => {
+    const counts = {}
+    for (const p of projects) counts[p.status] = (counts[p.status] ?? 0) + 1
+    const chips = [{ key: 'ALL', label: 'All', count: projects.length }]
+    for (const key of Object.keys(counts)) {
+      chips.push({ key, label: STATUS_META[key]?.label ?? key, count: counts[key] })
+    }
+    return chips
+  }, [projects])
+
   const filtered = projects.filter((p) => {
     const matchStatus = statusFilter === 'ALL' || p.status === statusFilter
-    const matchSearch = p.name.toLowerCase().includes(search.toLowerCase())
+    const matchSearch =
+      p.name?.toLowerCase().includes(search.toLowerCase()) ||
+      p.projectCode?.toLowerCase().includes(search.toLowerCase())
     return matchStatus && matchSearch
   })
 
   if (loading) {
     return (
-      <div>
-        <div className="h-7 bg-gray-200 rounded animate-pulse w-32 mb-6" />
-        <div className="bg-white rounded-2xl border border-gray-100 divide-y divide-gray-50">
-          {[...Array(5)].map((_, i) => (
+      <div className="space-y-6">
+        <div className="h-7 bg-gray-200 rounded animate-pulse w-40" />
+        <div className="bg-white rounded-xl border border-gray-100 divide-y divide-gray-50">
+          {[...Array(6)].map((_, i) => (
             <div key={i} className="flex items-center gap-4 p-4 animate-pulse">
-              <div className="flex-1 min-w-0">
-                <div className="h-4 bg-gray-200 rounded w-1/3 mb-2" />
-                <div className="h-2 bg-gray-200 rounded-full w-full" />
-              </div>
-              <div className="h-5 bg-gray-200 rounded-full w-20 flex-shrink-0" />
-              <div className="h-3 bg-gray-200 rounded w-16 flex-shrink-0 hidden sm:block" />
-              <div className="w-4 h-4 bg-gray-200 rounded flex-shrink-0" />
+              <div className="h-4 bg-gray-200 rounded w-20 flex-shrink-0" />
+              <div className="h-4 bg-gray-200 rounded w-1/3" />
+              <div className="h-5 bg-gray-200 rounded-full w-20 ml-auto flex-shrink-0" />
             </div>
           ))}
         </div>
@@ -76,106 +73,132 @@ export default function ClientProjectsPage() {
   if (error) {
     return (
       <div className="text-center py-20">
-        <p className="text-red-500">{error}</p>
+        <p className="text-red-500 text-sm">{error}</p>
       </div>
     )
   }
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">My Projects</h1>
-          <p className="text-sm text-gray-500 mt-0.5">{projects.length} project{projects.length !== 1 ? 's' : ''} total</p>
-        </div>
+    <div className="space-y-5">
+      {/* Header */}
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">My Projects</h1>
+        <p className="text-sm text-gray-500 mt-0.5">
+          {projects.length} project{projects.length !== 1 ? 's' : ''} total
+        </p>
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3 mb-6">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search projects..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-9 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
-        </div>
-
-        <div className="flex gap-2 flex-wrap">
-          {STATUS_OPTIONS.map((s) => (
-            <button
-              key={s}
-              onClick={() => setStatusFilter(s)}
-              className={`px-3 py-2 rounded-xl text-xs font-medium border transition-colors ${
-                statusFilter === s
-                  ? 'bg-blue-600 text-white border-blue-600'
-                  : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300 hover:text-blue-600'
-              }`}
-            >
-              {s === 'ALL' ? 'All' : s.replace('_', ' ')}
-            </button>
-          ))}
-        </div>
+      {/* Status chips */}
+      <div className="flex flex-wrap gap-2">
+        {statusChips.map(({ key, label, count }) => (
+          <button
+            key={key}
+            onClick={() => setStatusFilter(key)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
+              statusFilter === key
+                ? 'bg-gray-900 text-white border-gray-900'
+                : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400 hover:text-gray-800'
+            }`}
+          >
+            {label}
+            <span className={statusFilter === key ? 'text-gray-300' : 'text-gray-400'}>{count}</span>
+          </button>
+        ))}
       </div>
 
-      {/* Projects List */}
-      {filtered.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-gray-100 p-16 text-center">
-          <FolderOpen className="w-14 h-14 text-gray-200 mx-auto mb-4" />
-          <h3 className="text-gray-600 font-semibold text-lg">No projects found</h3>
-          <p className="text-gray-400 text-sm mt-1">
-            {statusFilter !== 'ALL' ? 'Try changing the status filter.' : 'You have no projects yet.'}
-          </p>
-        </div>
-      ) : (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm divide-y divide-gray-50">
-          {filtered.map((project) => {
-            const totalTasks = project._count?.tasks || 0
-            const completedTasks = project.completedTaskCount || 0
-            const progress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0
+      {/* Search */}
+      <div className="relative w-full sm:max-w-xs">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+        <input
+          type="text"
+          placeholder="Search by name or ID…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="w-full pl-9 pr-3 py-2 bg-white border border-gray-200 rounded-lg text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
+        />
+      </div>
 
-            return (
-              <Link key={project.id} href={`/client/projects/${project.id}`}>
-                <div className="flex items-center gap-4 px-5 py-4 hover:bg-gray-50 transition-colors group">
-                  {/* Name + progress */}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-gray-900 truncate">{project.name}</p>
-                    <div className="flex items-center gap-2 mt-1.5">
-                      <div className="flex-1 max-w-xs bg-gray-100 rounded-full h-1.5">
-                        <div
-                          className="bg-blue-500 h-1.5 rounded-full transition-all"
-                          style={{ width: `${progress}%` }}
-                        />
-                      </div>
-                      <span className="text-xs text-gray-400 flex-shrink-0">{progress}%</span>
-                    </div>
-                  </div>
-
-                  {/* Due date */}
-                  {project.endDate ? (
-                    <span className="hidden sm:flex items-center gap-1 text-xs text-gray-400 flex-shrink-0">
-                      <Clock className="w-3 h-3" />
-                      {new Date(project.endDate).toLocaleDateString()}
-                    </span>
-                  ) : (
-                    <span className="hidden sm:block w-20" />
-                  )}
-
-                  {/* Status */}
-                  <div className="flex-shrink-0">
-                    <StatusBadge status={project.status} />
-                  </div>
-
-                  {/* Arrow */}
-                  <ChevronRight className="w-4 h-4 text-gray-300 flex-shrink-0 group-hover:text-blue-500 transition-colors" />
-                </div>
-              </Link>
-            )
-          })}
-        </div>
-      )}
+      {/* Table */}
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+        {filtered.length === 0 ? (
+          <div className="p-16 text-center">
+            <FolderOpen className="w-12 h-12 text-gray-200 mx-auto mb-4" />
+            <h3 className="text-gray-600 font-semibold">No projects found</h3>
+            <p className="text-gray-400 text-sm mt-1">
+              {statusFilter !== 'ALL' || search ? 'Try changing the filters.' : 'You have no projects yet.'}
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[820px]">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50/60">
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide whitespace-nowrap">Project ID</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">Project</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">Type</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wide">Value</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wide">Paid</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wide">Due</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide whitespace-nowrap">Due / Renews</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">Status</th>
+                  <th className="px-4 py-3 w-10" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {filtered.map((p) => {
+                  const isMonthly = p.projectType === 'MONTHLY'
+                  const due = isMonthly ? p.currentPeriodEnd : p.deadline
+                  const isOverdue = due && new Date(due) < new Date()
+                    && !['DELIVERED', 'CANCELLED', 'APPROVED', 'RENEWED'].includes(p.status)
+                  return (
+                    <tr
+                      key={p.id}
+                      onClick={() => router.push(`/client/projects/${p.id}`)}
+                      className="hover:bg-gray-50/60 cursor-pointer transition-colors group"
+                    >
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <span className="text-sm font-mono font-medium text-gray-800">{p.projectCode ?? '—'}</span>
+                      </td>
+                      <td className="px-4 py-3 min-w-44">
+                        <p className="text-sm font-medium text-gray-900 truncate max-w-[220px]">{p.name}</p>
+                        {(p.category || p.subcategory) && (
+                          <p className="text-xs text-gray-400 mt-0.5 truncate max-w-[220px]">
+                            {p.category}{p.subcategory ? ` › ${p.subcategory}` : ''}
+                          </p>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <span className="text-xs text-gray-500">{isMonthly ? 'Monthly' : 'Fixed'}</span>
+                      </td>
+                      <td className="px-4 py-3 text-right whitespace-nowrap text-sm text-gray-700">{fmtTk(p.netValue)}</td>
+                      <td className="px-4 py-3 text-right whitespace-nowrap text-sm text-green-600">{fmtTk(p.paidAmount)}</td>
+                      <td className="px-4 py-3 text-right whitespace-nowrap">
+                        <span className={`text-sm ${p.dueAmount > 0 ? 'text-amber-600' : 'text-gray-400'}`}>{fmtTk(p.dueAmount)}</span>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        {due ? (
+                          <span className={`inline-flex items-center gap-1 text-xs ${isOverdue ? 'text-red-500' : 'text-gray-500'}`}>
+                            <Clock className="w-3 h-3" />
+                            {isOverdue ? 'Overdue · ' : ''}{fmtDate(due)}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-300">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <ProjectStatusBadge status={p.status} />
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-blue-500 transition-colors" />
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

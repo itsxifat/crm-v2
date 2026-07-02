@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, Suspense } from 'react'
+import { useState, useEffect, useRef, useCallback, Suspense } from 'react'
 import { useSession } from 'next-auth/react'
 import { useSearchParams } from 'next/navigation'
 import {
@@ -117,6 +117,11 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
     resolver: zodResolver(txSchema),
     defaultValues: { type: 'INCOME', currency: 'BDT', date: new Date().toISOString().slice(0,10) },
   })
+  // Keep the latest session user without making it a form-init dependency —
+  // it arrives async (undefined → object) and gets a fresh ref on refetches.
+  const currentUserRef = useRef(currentUser)
+  currentUserRef.current = currentUser
+
   const type       = watch('type')
   const category   = watch('category')
   const currency   = watch('currency')
@@ -172,9 +177,15 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
         expenseCategory: tx.expenseCategory ?? '',
         receiptUrl:      url,
         txnId:           tx.txnId ?? '',
-      } : { type: 'INCOME', currency: 'BDT', date: new Date().toISOString().slice(0, 10), accountManager: currentUser?.id ?? '' })
+      } : { type: 'INCOME', currency: 'BDT', date: new Date().toISOString().slice(0, 10), accountManager: currentUserRef.current?.id ?? '' })
     }
-  }, [open, tx, isEdit, reset, currentUser])
+  }, [open, tx, isEdit, reset])
+
+  // Backfill the (read-only) account manager once the session resolves, without
+  // re-initializing the form — otherwise the Type toggle snaps back to Income.
+  useEffect(() => {
+    if (open && !isEdit && currentUser?.id) setValue('accountManager', currentUser.id)
+  }, [open, isEdit, currentUser, setValue])
 
   async function onSubmit(data) {
     // Resolve the optional "who" selection into the matching reference + display name

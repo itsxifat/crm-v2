@@ -7,23 +7,7 @@ import {
   ArrowLeft, CheckCircle, Circle, Clock, File, Download,
   AlertCircle, ChevronDown, ChevronUp
 } from 'lucide-react'
-
-function StatusBadge({ status }) {
-  const map = {
-    PLANNING:    { label: 'Planning',    bg: 'bg-gray-100',   text: 'text-gray-700' },
-    IN_PROGRESS: { label: 'In Progress', bg: 'bg-blue-100',   text: 'text-blue-700' },
-    ON_HOLD:     { label: 'On Hold',     bg: 'bg-yellow-100', text: 'text-yellow-700' },
-    COMPLETED:   { label: 'Completed',   bg: 'bg-green-100',  text: 'text-green-700' },
-    CANCELLED:   { label: 'Cancelled',   bg: 'bg-red-100',    text: 'text-red-700' },
-  }
-  const s = map[status] || map.PLANNING
-  return (
-    <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${s.bg} ${s.text}`}>
-      {s.label}
-    </span>
-  )
-}
-
+import ProjectStatusBadge from '@/components/portals/ProjectStatusBadge'
 
 function TaskStatusBadge({ status }) {
   const map = {
@@ -112,7 +96,7 @@ export default function ClientProjectDetailPage() {
           <div className="flex-1">
             <div className="flex items-center gap-3 mb-2 flex-wrap">
               <h1 className="text-2xl font-bold text-gray-900">{project.name}</h1>
-              <StatusBadge status={project.status} />
+              <ProjectStatusBadge status={project.status} className="px-3 py-1 text-sm" />
             </div>
             {project.description && (
               <p className="text-gray-500 text-sm max-w-2xl">{project.description}</p>
