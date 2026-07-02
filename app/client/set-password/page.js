@@ -1,8 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { useSession } from 'next-auth/react'
+import { signOut } from 'next-auth/react'
 import { Lock, Loader2, ShieldCheck, Eye, EyeOff, Check, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { passwordChecklist, isStrongPassword } from '@/lib/passwordPolicy'
@@ -12,9 +11,6 @@ import { passwordChecklist, isStrongPassword } from '@/lib/passwordPolicy'
 // (they got here via an emailed activation OTP). The authenticated session is
 // sufficient; the API skips the old-password check while mustChangePassword is set.
 export default function ClientSetPasswordPage() {
-  const router = useRouter()
-  const { update } = useSession()
-
   const [newPassword, setNewPassword] = useState('')
   const [confirm, setConfirm]         = useState('')
   const [show, setShow]               = useState(false)
@@ -35,12 +31,15 @@ export default function ClientSetPasswordPage() {
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error ?? 'Failed to set password')
-      await update()  // clears mustChangePassword in the token so middleware lets them in
-      toast.success('Password set')
-      router.replace('/client')
+      // Setup complete. Rather than soft-navigating into the panel (which races
+      // the session refresh and often bounces the client right back here), sign
+      // them out and send them to a clean login with their new password. This
+      // rebuilds the token from scratch — mustChangePassword cleared and company
+      // gating resolved — so the first real sign-in lands them properly.
+      toast.success('Password set — please sign in')
+      await signOut({ callbackUrl: '/login?passwordSet=1' })
     } catch (err) {
       toast.error(err.message)
-    } finally {
       setSaving(false)
     }
   }

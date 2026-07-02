@@ -103,10 +103,30 @@ export default function FreelancersPage() {
 
   useEffect(() => { fetchFreelancers() }, [fetchFreelancers])
 
-  function handleSaved() {
-    toast.success(editing ? 'Freelancer updated' : 'Invitation sent!')
+  function handleSaved(result) {
+    const wasEditing = !!editing
     setEditing(null)
     fetchFreelancers()
+
+    if (wasEditing) { toast.success('Freelancer updated'); return }
+
+    // Be honest about email delivery: the API returns 201 even when the invite
+    // email fails to send (SMTP not configured, etc.). Don't claim "sent" then.
+    if (result?.emailSent === false) {
+      if (result.link && typeof navigator !== 'undefined' && navigator.clipboard) {
+        navigator.clipboard.writeText(result.link).catch(() => {})
+      }
+      const detail = result.link
+        ? 'Invite link copied to clipboard — share it manually.'
+        : 'Check the email settings and try again.'
+      toast.error(`Freelancer created, but the invitation email could not be sent. ${detail}`, { duration: 8000 })
+      if (result.link || result.tempPassword) {
+        console.warn('[freelancer invite] email failed — share manually:', result.link ?? `temp password: ${result.tempPassword}`)
+      }
+      return
+    }
+
+    toast.success('Invitation sent!')
   }
 
   async function handleDelete(f) {

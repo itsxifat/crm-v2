@@ -8,7 +8,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Eye, EyeOff, Lock, AtSign, Loader2 } from 'lucide-react'
+import { Eye, EyeOff, Lock, AtSign, Loader2, CheckCircle2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/utils'
 
@@ -21,6 +21,7 @@ export default function LoginPage() {
   const router       = useRouter()
   const searchParams = useSearchParams()
   const callbackUrl  = searchParams.get('callbackUrl') ?? '/'
+  const passwordSet  = searchParams.get('passwordSet') === '1'
   const [showPass, setShowPass] = useState(false)
   const [loading,  setLoading]  = useState(false)
 
@@ -63,6 +64,15 @@ export default function LoginPage() {
             <h1 className="text-xl font-bold text-gray-900">Sign in</h1>
             <p className="text-sm text-gray-500 mt-1">Enter your credentials to continue</p>
           </div>
+
+          {passwordSet && (
+            <div className="mb-5 flex items-start gap-2.5 rounded-xl border border-green-100 bg-green-50 px-3.5 py-3">
+              <CheckCircle2 className="w-4 h-4 text-green-600 mt-0.5 shrink-0" />
+              <p className="text-sm text-green-700">
+                Your password has been set. Please sign in to continue.
+              </p>
+            </div>
+          )}
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
 

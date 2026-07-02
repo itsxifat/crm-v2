@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { useSession } from 'next-auth/react'
+import { useSession, signOut } from 'next-auth/react'
 import { Lock, Loader2, ShieldCheck, Eye, EyeOff, Check, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { passwordChecklist, isStrongPassword } from '@/lib/passwordPolicy'
@@ -33,12 +33,18 @@ export default function ClientChangePasswordPage() {
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error ?? 'Failed to update password')
-      await update()  // clears mustChangePassword in the session
-      toast.success('Password set')
+      if (firstTime) {
+        // First-time setup: sign out and re-login with the new password so the
+        // token is rebuilt cleanly (no mustChangePassword/company-gate races).
+        toast.success('Password set — please sign in')
+        await signOut({ callbackUrl: '/login?passwordSet=1' })
+        return
+      }
+      await update()  // refresh the session after a normal password change
+      toast.success('Password updated')
       router.replace('/client')
     } catch (err) {
       toast.error(err.message)
-    } finally {
       setSaving(false)
     }
   }

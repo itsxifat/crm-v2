@@ -5,6 +5,7 @@ import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Loader2, Info } from 'lucide-react'
+import toast from 'react-hot-toast'
 import Modal, { ModalFooter } from '@/components/ui/Modal'
 import Select from '@/components/ui/Select'
 import { currencyOptions } from '@/lib/currencies'
@@ -126,6 +127,7 @@ export default function FreelancerModal({ open, onOpenChange, freelancer, onSave
   }, [open, isEdit, freelancer, isAgency, reset])
 
   async function onSubmit(data) {
+   try {
     let body
     if (isAgency) {
       body = {
@@ -169,10 +171,17 @@ export default function FreelancerModal({ open, onOpenChange, freelancer, onSave
     const url    = isEdit ? `/api/freelancers/${freelancer.id}` : '/api/freelancers'
     const method = isEdit ? 'PUT' : 'POST'
     const res    = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-    const json   = await res.json()
-    if (!res.ok) throw new Error(json.error ?? 'Failed to save')
-    onSaved(json.data)
+    const json   = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(json.error ?? `Failed to save (${res.status})`)
+    // Pass the whole payload up (not just data) so the caller can report the real
+    // email-delivery outcome instead of always claiming "Invitation sent!".
+    onSaved(json)
     onOpenChange(false)
+   } catch (err) {
+    // Previously any failure here threw out of the async submit handler with no
+    // UI feedback — the button just "did nothing". Surface it.
+    toast.error(err?.message ?? 'Something went wrong')
+   }
   }
 
   const title = isEdit
@@ -336,7 +345,10 @@ export default function FreelancerModal({ open, onOpenChange, freelancer, onSave
           className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
           Cancel
         </button>
-        <button type="submit" form="fl-form" disabled={isSubmitting}
+        {/* Invoke the submit handler directly instead of relying on the
+            `form="fl-form"` association across the Radix Dialog portal — that
+            link is what silently failed, making the button appear to do nothing. */}
+        <button type="button" onClick={handleSubmit(onSubmit)} disabled={isSubmitting}
           className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-60 transition-colors flex items-center gap-2">
           {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
           {isEdit ? 'Save Changes' : 'Send Invitation'}
