@@ -49,7 +49,6 @@ const txSchema = z.object({
   receiptUrl:     z.string().optional(),
   txnId:          z.string().optional(),
   expenseCategory:  z.string().optional().nullable(),  // subcategory (storage field)
-  who:              z.string().optional(),             // "kind:id" — optional person who made/received it
 })
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -107,10 +106,6 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
   const [receiptUrl,  setReceiptUrl]  = useState('')
   const [projects,    setProjects]    = useState([])
   const [invoices,    setInvoices]    = useState([])
-  const [users,       setUsers]       = useState([])
-  const [freelancers, setFreelancers] = useState([])
-  const [agencies,    setAgencies]    = useState([])
-  const [employees,   setEmployees]   = useState([])
   const [txnIdVal,    setTxnIdVal]    = useState('')
 
   const { register, control, handleSubmit, watch, reset, setValue, formState: { errors, isSubmitting } } = useForm({
@@ -127,6 +122,9 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
   const currency   = watch('currency')
   const isExpense  = type === 'EXPENSE'
   const isForeign  = currency && currency !== BASE_CURRENCY
+  // A NEW expense is not a direct ledger entry — it's submitted as a request that
+  // must be Reviewed → Paid → Authorized. Editing an existing transaction is unchanged.
+  const isExpenseRequest = isExpense && !isEdit
 
   // Nested taxonomy from config — subcategories belong to the selected category
   const baseCategories = isExpense ? expenseCategories : incomeCategories
@@ -135,31 +133,13 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
   const categories    = (category && !baseLabels.includes(category)) ? [...baseLabels, category] : baseLabels
   const subcategories = baseCategories.find(c => c.label === category)?.subcategories ?? []
 
-  // Optional "who made/received it" — any employee, staff user, or freelancer
-  const whoOptions = [
-    ...employees.filter(e => e.userId?.id).map(e => ({ value: `employee:${e.id}`, label: `${e.userId.name} · Employee` })),
-    ...freelancers.map(f => ({ value: `freelancer:${f.id}`, label: `${f.userId?.name ?? f.userId?.email ?? 'Freelancer'} · Freelancer` })),
-    ...agencies.map(a => ({ value: `agency:${a.id}`, label: `${a.agencyInfo?.agencyName ?? a.userId?.name ?? 'Agency'} · Agency` })),
-    ...users.map(u => ({ value: `user:${u.id}`, label: `${u.name} · Staff` })),
-  ]
-  const whoName = (val) => whoOptions.find(o => o.value === val)?.label?.split(' · ')[0] ?? null
-
   useEffect(() => {
     if (open) {
       fetch('/api/projects?limit=200').then(r => r.json()).then(j => setProjects(j.data ?? []))
       fetch('/api/invoices?limit=200').then(r => r.json()).then(j => setInvoices((j.data ?? []).filter(inv => !['PAID','CANCELLED','DRAFT'].includes(inv.status))))
-      fetch('/api/users?limit=200&roles=EMPLOYEE,MANAGER,SUPER_ADMIN').then(r => r.json()).then(j => setUsers(j.data ?? []))
-      fetch('/api/freelancers?limit=200&type=FREELANCER').then(r => r.json()).then(j => setFreelancers(j.data ?? []))
-      fetch('/api/freelancers?limit=200&type=AGENCY').then(r => r.json()).then(j => setAgencies(j.data ?? []))
-      fetch('/api/employees?limit=200').then(r => r.json()).then(j => setEmployees(j.data ?? []))
       const url = isEdit ? tx.receiptUrl ?? '' : ''
       setReceiptUrl(url)
       setTxnIdVal(isEdit ? tx.txnId ?? '' : '')
-      const editWho =
-        tx?.freelancerId     ? `freelancer:${tx.freelancerId}` :
-        tx?.agencyId         ? `agency:${tx.agencyId}` :
-        tx?.paidToEmployeeId ? `employee:${tx.paidToEmployeeId}` :
-        tx?.paidBy           ? `user:${tx.paidBy?.id ?? tx.paidBy}` : ''
       reset(isEdit ? {
         type:           tx.type,
         category:       tx.category,
@@ -169,7 +149,6 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
         reference:      tx.reference ?? '',
         currency:       tx.currency ?? 'BDT',
         amountBDT:      tx.amountBDT ?? '',
-        who:            editWho,
         accountManager: tx.accountManager?.id ?? tx.accountManager ?? '',
         paymentMethod:   tx.paymentMethod ?? '',
         projectId:       tx.projectId?.id ?? tx.projectId ?? '',
@@ -188,23 +167,46 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
   }, [open, isEdit, currentUser, setValue])
 
   async function onSubmit(data) {
-    // Resolve the optional "who" selection into the matching reference + display name
-    const [whoKind, whoId] = (data.who ?? '').split(':')
-    const refs = { freelancerId: null, agencyId: null, paidToEmployeeId: null, paidBy: null }
-    if (whoKind === 'freelancer') refs.freelancerId     = whoId
-    else if (whoKind === 'agency') refs.agencyId         = whoId
-    else if (whoKind === 'employee') refs.paidToEmployeeId = whoId
-    else if (whoKind === 'user')   refs.paidBy           = whoId
-    const { who, ...rest } = data
-    const body = { ...rest, ...refs, paidToName: data.who ? whoName(data.who) : null, receiptUrl: receiptUrl || null, txnId: txnIdVal.trim() || null }
-    Object.keys(body).forEach(k => { if (body[k] === '') body[k] = null })
-    const url    = isEdit ? `/api/transactions/${tx.id}` : '/api/transactions'
-    const method = isEdit ? 'PUT' : 'POST'
-    const res    = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-    const json   = await res.json()
-    if (!res.ok) throw new Error(json.error ?? 'Failed')
-    onSaved()
-    onOpenChange(false)
+    try {
+      // A brand-new expense is not written to the ledger directly — it becomes a
+      // PENDING expense request that must be Reviewed → Paid → Authorized.
+      if (isExpenseRequest) {
+        const body = {
+          origin:      data.projectId ? 'PROJECT' : 'OTHER',
+          title:       data.description,
+          category:    data.category,
+          subcategory: data.expenseCategory || undefined,
+          amount:      data.amount,
+          currency:    data.currency,
+          amountBDT:   data.amountBDT || undefined,
+          date:        data.date,
+          projectId:   data.projectId || undefined,
+          invoiceUrl:  receiptUrl || undefined,
+          notes:       data.reference ? `Ref: ${data.reference}` : undefined,
+        }
+        const res  = await fetch('/api/expenses', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+        })
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error ?? 'Failed to submit expense request')
+        onSaved({ expenseRequest: true })
+        onOpenChange(false)
+        return
+      }
+
+      // Income, or editing an existing transaction → direct ledger entry.
+      const body = { ...data, receiptUrl: receiptUrl || null, txnId: txnIdVal.trim() || null }
+      Object.keys(body).forEach(k => { if (body[k] === '') body[k] = null })
+      const url    = isEdit ? `/api/transactions/${tx.id}` : '/api/transactions'
+      const method = isEdit ? 'PUT' : 'POST'
+      const res    = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      const json   = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Failed')
+      onSaved()
+      onOpenChange(false)
+    } catch (err) {
+      toast.error(err.message ?? 'Something went wrong')
+    }
   }
 
   const ic = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-gray-900'
@@ -224,6 +226,11 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
               </label>
             ))}
           </div>
+          {isExpenseRequest && (
+            <p className="mt-2 text-xs text-amber-600">
+              Expenses are submitted as a request — they go through Review → Paid → Authorized before they appear in the ledger.
+            </p>
+          )}
         </div>
 
         <div className="grid grid-cols-3 gap-4">
@@ -291,30 +298,23 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
             <input type="date" {...register('date')} className={ic} />
             {errors.date && <p className="mt-1 text-xs text-red-500">{errors.date.message}</p>}
           </div>
-          <div>
-            <label className={lc}>Payment Method</label>
-            <Controller name="paymentMethod" control={control} render={({ field }) => (
-              <Select value={field.value} onChange={v => field.onChange(v ?? '')}
-                options={paymentMethods}
-                placeholder="Select…"
-              />
-            )} />
-          </div>
+          {/* Payment method is recorded when the expense request is Paid, not at submit. */}
+          {!isExpenseRequest && (
+            <div>
+              <label className={lc}>Payment Method</label>
+              <Controller name="paymentMethod" control={control} render={({ field }) => (
+                <Select value={field.value} onChange={v => field.onChange(v ?? '')}
+                  options={paymentMethods}
+                  placeholder="Select…"
+                />
+              )} />
+            </div>
+          )}
         </div>
 
-        <div>
-          <label className={lc}>
-            {isExpense ? 'Who made the expense' : 'Received from'}
-            <span className="text-gray-400 font-normal text-xs ml-1">(optional — pick a person, or describe in the note above)</span>
-          </label>
-          <Controller name="who" control={control} render={({ field }) => (
-            <Select value={field.value ?? ''} onChange={v => field.onChange(v ?? '')}
-              options={whoOptions}
-              placeholder="Select a person…"
-            />
-          )} />
-        </div>
-
+        {/* Account manager + txn id are assigned when the expense is Paid, so they're
+            hidden while submitting an expense request. */}
+        {!isExpenseRequest && (
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className={lc}>Account Manager</label>
@@ -342,6 +342,7 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
             />
           </div>
         </div>
+        )}
 
         <div className="grid grid-cols-2 gap-4">
           <div>
@@ -385,7 +386,7 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
         <button type="submit" form="tx-form" disabled={isSubmitting}
           className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 disabled:opacity-60 transition-colors flex items-center gap-2">
           {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
-          {isEdit ? 'Save Changes' : 'Add Transaction'}
+          {isEdit ? 'Save Changes' : isExpenseRequest ? 'Submit Expense Request' : 'Add Transaction'}
         </button>
       </ModalFooter>
     </Modal>
@@ -1500,8 +1501,13 @@ function AccountsContent() {
     }
   }
 
-  function handleSaved() {
-    toast.success(editingTx ? 'Transaction updated' : 'Transaction added')
+  function handleSaved(meta = {}) {
+    if (meta.expenseRequest) {
+      toast.success('Expense request submitted — review it in the Requests tab')
+      loadPaymentRequests()
+    } else {
+      toast.success(editingTx ? 'Transaction updated' : 'Transaction added')
+    }
     setEditingTx(null)
     loadSummary()
     loadTransactions()

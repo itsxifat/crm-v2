@@ -5,6 +5,7 @@ import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { ProjectExpense, Employee } from '@/models'
 import { requirePerm, canDo } from '@/lib/rbac'
+import { canAccess } from '@/lib/permissions'
 
 // GET /api/expenses?status=PENDING&origin=&venture=&mine=&page=&limit=
 export async function GET(request) {
@@ -63,47 +64,74 @@ export async function GET(request) {
   }
 }
 
-// POST /api/expenses — employee self-submits an out-of-pocket reimbursement.
-// Proof (invoiceUrl) is optional, but a detailed description is mandatory when absent.
+// POST /api/expenses — create a PENDING expense request that enters the shared
+// Review → Paid → Authorized pipeline. No ledger Transaction is written here; it
+// is created only when the request is marked Paid (see lib/expensePayment.js).
+// Two sources, distinguished by `origin`:
+//   • REIMBURSEMENT (default): an employee's out-of-pocket spend, submitted from
+//     "My Expenses". Gated on finance.expenses.submit; linked to their Employee.
+//   • Company / project expense (origin PROJECT | VENDOR | OTHER): logged by an
+//     accounts user from Add Transaction. Gated on accounts.addTransaction.
 export async function POST(request) {
   try {
     const session = await getServerSession(authOptions)
-    const denied  = requirePerm(session, 'finance.expenses.submit')
-    if (denied) return denied
+    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
     await connectDB()
 
-    const body   = await request.json()
+    const body = await request.json()
+
+    const isReimbursement = !body.origin || body.origin === 'REIMBURSEMENT'
+    if (isReimbursement) {
+      const denied = requirePerm(session, 'finance.expenses.submit')
+      if (denied) return denied
+    } else if (!canAccess(session, 'accounts', 'addTransaction')) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
     const amount = Number(body.amount)
     if (!body.title?.trim()) return NextResponse.json({ error: 'A reason / title is required' }, { status: 422 })
     if (!Number.isFinite(amount) || amount <= 0) return NextResponse.json({ error: 'Amount must be a positive number' }, { status: 422 })
 
-    // Every reimbursement must be classified. "Reimbursement" is NOT a category —
-    // it's the `origin` marker below; the category/subcategory say what was bought.
+    // Every expense must be classified. "Reimbursement" is NOT a category — it's the
+    // `origin` marker; the category/subcategory say what the money was spent on.
     const category    = (body.category ?? '').trim()
     const subcategory = (body.subcategory ?? '').trim() || null
     if (!category) return NextResponse.json({ error: 'A category is required' }, { status: 422 })
 
     const invoiceUrl = body.invoiceUrl ?? null
     const notes      = (body.notes ?? '').trim()
-    if (!invoiceUrl && notes.length < 30)
+    // Anti-fraud: an out-of-pocket reimbursement with no proof needs a detailed note.
+    if (isReimbursement && !invoiceUrl && notes.length < 30)
       return NextResponse.json({ error: 'Without an attached proof you must describe the expense in detail (at least 30 characters).' }, { status: 422 })
 
-    // Link the reimbursement to the submitter's Employee record (reimbursement target).
-    const employee = await Employee.findOne({ userId: session.user.id }).select('_id').lean()
+    const currency  = body.currency ?? 'BDT'
+    // Reimbursements get their BDT-equivalent at pay time; company expenses enter it up front.
+    const amountBDT = currency === 'BDT' ? amount : (isReimbursement ? null : (Number(body.amountBDT) || null))
+
+    let origin           = 'REIMBURSEMENT'   // the "this is a reimbursement" marker
+    let paidToEmployeeId = null
+    if (isReimbursement) {
+      // Link the reimbursement to the submitter's Employee record (payout target).
+      const employee = await Employee.findOne({ userId: session.user.id }).select('_id').lean()
+      paidToEmployeeId = employee?._id ?? null
+    } else {
+      const allowed = ['PROJECT', 'VENDOR', 'OTHER']
+      origin = allowed.includes(body.origin) ? body.origin : (body.projectId ? 'PROJECT' : 'OTHER')
+    }
 
     const expense = await new ProjectExpense({
-      origin:           'REIMBURSEMENT',   // the "this is a reimbursement" marker
+      origin,
       projectId:        body.projectId ?? null,
       title:            body.title.trim(),
       amount,
-      currency:         body.currency ?? 'BDT',
-      amountBDT:        (body.currency ?? 'BDT') === 'BDT' ? amount : null,
+      currency,
+      amountBDT,
       category,
       subcategory,
       date:             body.date ? new Date(body.date) : new Date(),
       notes:            notes || null,
       invoiceUrl,
-      paidToEmployeeId: employee?._id ?? null,
+      paidToEmployeeId,
       submittedBy:      session.user.id,
       status:           'PENDING',
     }).save()
