@@ -44,6 +44,15 @@ const EmployeeSchema = new mongoose.Schema(
 
     customRoleId: { type: mongoose.Schema.Types.ObjectId, ref: 'CustomRole', default: null },
 
+    // Per-user permission overrides layered on top of the assigned custom role
+    // (or the base-role defaults when no custom role is set). `added` grants extra
+    // permissions to just this person; `removed` revokes permissions their role
+    // would otherwise give them. Effective set = (base ∪ added) − removed.
+    permissionOverrides: {
+      added:   { type: [String], default: [] },
+      removed: { type: [String], default: [] },
+    },
+
     panelAccessGranted: { type: Boolean, default: false },
     panelAccessDate:    { type: Date,    default: null },
 

@@ -1,17 +1,22 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import Select from '@/components/ui/Select'
 import {
   Plus, Search, MoreHorizontal, Eye, Pencil, Users,
   Briefcase, Clock, Building2, Shield, ShieldCheck, Download,
   FileText, X, Loader2, LogOut, Settings, Trash2, Check,
+  SlidersHorizontal, RotateCcw, ChevronDown, ChevronRight,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import Link from 'next/link'
 import Avatar from '@/components/ui/Avatar'
 import TkAmt from '@/components/ui/TkAmt'
 import { Can, usePermission } from '@/components/auth/Can'
+import {
+  PERMISSION_MODULES, ALL_PERMISSIONS, DEFAULT_ROLE_PERMISSIONS,
+  applyPermissionOverrides,
+} from '@/lib/rbac'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -442,13 +447,189 @@ function ManageDepartmentsModal({ open, onClose, departments, onChanged }) {
 
 // ─── Row Menu ─────────────────────────────────────────────────────────────────
 
-function RowMenu({ employee, onEdit, onResigned, onRoleChanged }) {
+// ─── Per-User Permissions Modal ───────────────────────────────────────────────
+
+function PermToggle({ checked, onChange, disabled }) {
+  return (
+    <button type="button" role="switch" aria-checked={checked} disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-150 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${checked ? 'bg-blue-600' : 'bg-gray-200'}`}>
+      <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform duration-150 ${checked ? 'translate-x-4' : 'translate-x-0'}`} />
+    </button>
+  )
+}
+
+function EmployeePermissionsModal({ open, onClose, employee, customRoles = [], onSaved }) {
+  const [active,   setActive]   = useState(new Set())
+  const [search,   setSearch]   = useState('')
+  const [saving,   setSaving]   = useState(false)
+  const [collapsed, setCollapsed] = useState(new Set())
+
+  // Baseline = the assigned custom role's permissions, or the base-role defaults.
+  const baseRole = employee?.userId?.role ?? 'EMPLOYEE'
+  const roleId   = employee?.customRoleId?.id ?? employee?.customRoleId ?? null
+  const roleObj  = roleId ? customRoles.find(r => r.id === roleId) : null
+  const baselineSet = useMemo(
+    () => new Set(roleObj?.permissions ?? DEFAULT_ROLE_PERMISSIONS[baseRole] ?? []),
+    [roleObj, baseRole],
+  )
+
+  useEffect(() => {
+    if (!open || !employee) return
+    const base = roleObj?.permissions ?? DEFAULT_ROLE_PERMISSIONS[baseRole] ?? []
+    setActive(new Set(applyPermissionOverrides(base, employee.permissionOverrides)))
+    setSearch('')
+    setCollapsed(new Set())
+  }, [open, employee, roleObj, baseRole])
+
+  const overrideCount = useMemo(() => {
+    let n = 0
+    ALL_PERMISSIONS.forEach(p => { if (active.has(p) !== baselineSet.has(p)) n++ })
+    return n
+  }, [active, baselineSet])
+
+  if (!open || !employee) return null
+
+  const q = search.trim().toLowerCase()
+  const toggle = (key) => setActive(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n })
+  const toggleModule = (keys, val) => setActive(prev => { const n = new Set(prev); keys.forEach(k => val ? n.add(k) : n.delete(k)); return n })
+  const toggleCollapse = (key) => setCollapsed(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n })
+
+  async function save() {
+    const added   = [...active].filter(p => !baselineSet.has(p))
+    const removed = [...baselineSet].filter(p => !active.has(p))
+    setSaving(true)
+    try {
+      const res = await fetch(`/api/employees/${employee.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ permissionOverrides: { added, removed } }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Failed')
+      toast.success('Permissions updated')
+      onSaved(employee.id, { added, removed })
+      onClose()
+    } catch (err) { toast.error(err.message) }
+    finally { setSaving(false) }
+  }
+
+  const sourceLabel = roleObj ? `${roleObj.title} · ${roleObj.department}` : `Default ${ROLE_META[baseRole]?.label ?? baseRole} permissions`
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl ring-1 ring-black/5 flex flex-col max-h-[88vh]">
+        {/* Header */}
+        <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-gray-100">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
+              <SlidersHorizontal className="w-4 h-4 text-blue-600" />
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-sm font-semibold text-gray-900 truncate">Permissions · {employee.userId?.name}</h2>
+              <p className="text-xs text-gray-400 truncate">Baseline: {sourceLabel}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 transition-colors shrink-0">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Toolbar */}
+        <div className="px-5 py-3 border-b border-gray-100 flex flex-wrap items-center gap-2">
+          <div className="relative flex-1 min-w-40">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search permissions…"
+              className="w-full pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+          </div>
+          <span className="text-xs text-gray-400">
+            <span className="font-semibold text-gray-600">{active.size}</span> enabled
+            {overrideCount > 0 && <> · <span className="font-semibold text-amber-600">{overrideCount}</span> customised</>}
+          </span>
+          <button type="button" onClick={() => setActive(new Set(baselineSet))} disabled={saving || overrideCount === 0}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 transition-colors">
+            <RotateCcw className="w-3 h-3" /> Reset to role
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-5 py-4 overflow-y-auto space-y-3">
+          <p className="text-xs text-gray-400">
+            Toggles set this person&apos;s access individually. Anything different from the baseline role is saved as a personal override.
+          </p>
+          {PERMISSION_MODULES.map(module => {
+            const perms = q
+              ? module.permissions.filter(p => p.label.toLowerCase().includes(q) || p.key.toLowerCase().includes(q))
+              : module.permissions
+            if (perms.length === 0) return null
+            const keys = module.permissions.map(p => p.key)
+            const enabled = keys.filter(k => active.has(k)).length
+            const allOn = enabled === keys.length
+            const isCollapsed = collapsed.has(module.key)
+            return (
+              <div key={module.key} className="border border-gray-100 rounded-xl overflow-hidden">
+                <div className="flex items-center gap-2 px-3 py-2 bg-gray-50/70 border-b border-gray-100">
+                  <button type="button" onClick={() => toggleCollapse(module.key)} className="flex items-center gap-1.5 flex-1 min-w-0 text-left">
+                    {isCollapsed ? <ChevronRight className="w-3.5 h-3.5 text-gray-400 shrink-0" /> : <ChevronDown className="w-3.5 h-3.5 text-gray-400 shrink-0" />}
+                    <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide truncate">{module.label}</span>
+                  </button>
+                  <span className="text-xs text-gray-400 shrink-0">{enabled}/{keys.length}</span>
+                  <button type="button" disabled={saving} onClick={() => toggleModule(keys, !allOn)}
+                    className={`text-xs px-2 py-0.5 rounded-md font-medium border shrink-0 transition-colors ${allOn ? 'text-red-600 border-red-100 hover:bg-red-50' : 'text-blue-600 border-blue-100 hover:bg-blue-50'}`}>
+                    {allOn ? 'Remove all' : 'Grant all'}
+                  </button>
+                </div>
+                {!isCollapsed && (
+                  <div className="divide-y divide-gray-50">
+                    {perms.map(perm => {
+                      const on = active.has(perm.key)
+                      const overridden = on !== baselineSet.has(perm.key)
+                      return (
+                        <div key={perm.key} onClick={() => !saving && toggle(perm.key)}
+                          className="flex items-center justify-between gap-3 px-3 py-2 hover:bg-gray-50 cursor-pointer">
+                          <div className="min-w-0">
+                            <p className={`text-sm ${on ? 'text-gray-800' : 'text-gray-500'} flex items-center gap-1.5`}>
+                              {perm.label}
+                              {overridden && <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" title="Overridden for this person" />}
+                            </p>
+                            <p className="text-xs text-gray-300 font-mono truncate">{perm.key}</p>
+                          </div>
+                          <PermToggle checked={on} onChange={() => toggle(perm.key)} disabled={saving} />
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-gray-100">
+          <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
+          <button type="button" onClick={save} disabled={saving}
+            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-60 flex items-center gap-2 transition-colors">
+            {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Save Permissions
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Row Menu ─────────────────────────────────────────────────────────────────
+
+function RowMenu({ employee, onEdit, onResigned, onCustomRoleChanged, onEditPermissions, customRoles = [] }) {
   const [open,        setOpen]        = useState(false)
   const [roleMode,    setRoleMode]    = useState(false)
   const [changingRole, setChangingRole] = useState(false)
   const [resigning,   setResigning]   = useState(false)
   const { can } = usePermission()
   const canEdit = can('hr.employees.update')
+  const canManageRoles = can('hr.roles.manage')
+  const currentRoleId = employee.customRoleId?.id ?? employee.customRoleId ?? null
   const ref = useRef(null)
 
   useEffect(() => {
@@ -477,19 +658,22 @@ function RowMenu({ employee, onEdit, onResigned, onRoleChanged }) {
     }
   }
 
-  async function handleRoleChange(newRole) {
-    if (newRole === employee.userId?.role) { setOpen(false); setRoleMode(false); return }
+  async function handleCustomRoleChange(roleId) {
+    if ((roleId ?? null) === (currentRoleId ?? null)) { setOpen(false); setRoleMode(false); return }
     setChangingRole(true)
     try {
       const res = await fetch(`/api/employees/${employee.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role: newRole }),
+        body: JSON.stringify({ customRoleId: roleId }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error ?? 'Failed')
-      toast.success(`Role changed to ${ROLE_META[newRole]?.label ?? newRole}`)
-      onRoleChanged(employee.id, newRole)
+      const assigned = roleId ? customRoles.find(r => r.id === roleId) : null
+      toast.success(assigned ? `Role set to ${assigned.title}` : 'Role removed')
+      onCustomRoleChanged(employee.id, assigned
+        ? { id: assigned.id, title: assigned.title, department: assigned.department, color: assigned.color }
+        : null)
     } catch (err) {
       toast.error(err.message)
     } finally {
@@ -524,6 +708,12 @@ function RowMenu({ employee, onEdit, onResigned, onRoleChanged }) {
                 <Shield className="w-3.5 h-3.5 text-gray-400" /> Change Role
               </button>
             )}
+            {canManageRoles && (
+              <button onClick={() => { setOpen(false); onEditPermissions(employee) }}
+                className="w-full flex items-center gap-2.5 px-4 py-2 text-gray-700 hover:bg-gray-50">
+                <SlidersHorizontal className="w-3.5 h-3.5 text-gray-400" /> Permissions
+              </button>
+            )}
             {employee.appointmentLetterUrl && (
               <a href={employee.appointmentLetterUrl} target="_blank" rel="noreferrer"
                 className="w-full flex items-center gap-2.5 px-4 py-2 text-gray-700 hover:bg-gray-50">
@@ -549,17 +739,42 @@ function RowMenu({ employee, onEdit, onResigned, onRoleChanged }) {
             ))}
           </>) : (<>
             <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wide flex items-center justify-between">
-              <span>Change Role</span>
+              <span>Assign Role</span>
               <button onClick={() => setRoleMode(false)} className="text-gray-300 hover:text-gray-500"><X className="w-3 h-3" /></button>
             </div>
             <div className="border-t border-gray-100" />
-            {Object.entries(ROLE_META).map(([role, { label, bg, text }]) => (
-              <button key={role} onClick={() => handleRoleChange(role)} disabled={changingRole}
-                className={`w-full flex items-center justify-between px-4 py-2 hover:bg-gray-50 disabled:opacity-50 ${employee.userId?.role === role ? 'font-semibold' : ''}`}>
-                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${bg} ${text}`}>{label}</span>
-                {employee.userId?.role === role && <span className="text-xs text-gray-400">current</span>}
-              </button>
-            ))}
+            <div className="max-h-64 overflow-y-auto">
+              {customRoles.length === 0 ? (
+                <div className="px-4 py-3 text-xs text-gray-400">
+                  No roles yet. Create one in{' '}
+                  <Link href="/admin/roles" className="text-blue-600 hover:underline">Roles &amp; Permissions</Link>.
+                </div>
+              ) : (
+                customRoles.map(role => {
+                  const isCurrent = role.id === currentRoleId
+                  return (
+                    <button key={role.id} onClick={() => handleCustomRoleChange(role.id)} disabled={changingRole}
+                      className={`w-full flex items-center justify-between gap-2 px-4 py-2 hover:bg-gray-50 disabled:opacity-50 ${isCurrent ? 'bg-blue-50/50' : ''}`}>
+                      <span className="flex items-center gap-2 min-w-0">
+                        <span className="w-2 h-2 rounded-full shrink-0" style={{ background: role.color ?? '#6366f1' }} />
+                        <span className={`text-sm truncate ${isCurrent ? 'font-semibold text-blue-700' : 'text-gray-700'}`}>{role.title}</span>
+                        <span className="text-xs text-gray-400 truncate">· {role.department}</span>
+                      </span>
+                      {isCurrent && <Check className="w-3.5 h-3.5 text-blue-600 shrink-0" />}
+                    </button>
+                  )
+                })
+              )}
+            </div>
+            {currentRoleId && (
+              <>
+                <div className="border-t border-gray-100" />
+                <button onClick={() => handleCustomRoleChange(null)} disabled={changingRole}
+                  className="w-full flex items-center gap-2.5 px-4 py-2 text-red-600 hover:bg-red-50 disabled:opacity-50 text-sm">
+                  <X className="w-3.5 h-3.5" /> Remove role
+                </button>
+              </>
+            )}
           </>)}
         </div>
       )}
@@ -582,6 +797,8 @@ export default function EmployeesPage() {
   const [page,       setPage]       = useState(1)
   const [modalOpen,    setModalOpen]    = useState(false)
   const [editing,      setEditing]      = useState(null)
+  const [permModalOpen, setPermModalOpen] = useState(false)
+  const [permEmployee,  setPermEmployee]  = useState(null)
   const [customRoles,  setCustomRoles]  = useState([])
   const [ventures,     setVentures]     = useState([])
   const [departments,  setDepartments]  = useState([])
@@ -651,8 +868,12 @@ export default function EmployeesPage() {
     }))
   }
 
-  function handleRoleChanged(id, newRole) {
-    setEmployees(p => p.map(e => e.id !== id ? e : { ...e, userId: { ...e.userId, role: newRole } }))
+  function handleCustomRoleChanged(id, customRole) {
+    setEmployees(p => p.map(e => e.id !== id ? e : { ...e, customRoleId: customRole }))
+  }
+
+  function handlePermissionsSaved(id, overrides) {
+    setEmployees(p => p.map(e => e.id !== id ? e : { ...e, permissionOverrides: overrides }))
   }
 
   const STAT_CARDS = stats ? [
@@ -852,9 +1073,11 @@ export default function EmployeesPage() {
                     <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
                       <RowMenu
                         employee={emp}
+                        customRoles={customRoles}
                         onEdit={e => { setEditing(e); setModalOpen(true) }}
                         onResigned={handleResigned}
-                        onRoleChanged={handleRoleChanged}
+                        onCustomRoleChanged={handleCustomRoleChanged}
+                        onEditPermissions={e => { setPermEmployee(e); setPermModalOpen(true) }}
                       />
                     </td>
                   </tr>
@@ -897,6 +1120,14 @@ export default function EmployeesPage() {
         onClose={() => setDeptModalOpen(false)}
         departments={departments}
         onChanged={loadDepartments}
+      />
+
+      <EmployeePermissionsModal
+        open={permModalOpen}
+        onClose={() => { setPermModalOpen(false); setPermEmployee(null) }}
+        employee={permEmployee}
+        customRoles={customRoles}
+        onSaved={handlePermissionsSaved}
       />
 
     </div>

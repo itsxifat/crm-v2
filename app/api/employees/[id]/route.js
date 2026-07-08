@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { requirePerm } from '@/lib/rbac'
+import { requirePerm, canDo, ALL_PERMISSIONS } from '@/lib/rbac'
 import { maskDoc, EMPLOYEE_PII } from '@/lib/pii'
 import connectDB from '@/lib/mongodb'
 import { User, Employee, Task, Leave, Attendance } from '@/models'
@@ -35,6 +35,10 @@ const updateEmployeeSchema = z.object({
   agreementUrl:         z.string().optional().nullable(),
   panelAccessGranted:   z.boolean().optional(),
   customRoleId:         z.string().optional().nullable(),
+  permissionOverrides:  z.object({
+    added:   z.array(z.string()).optional().default([]),
+    removed: z.array(z.string()).optional().default([]),
+  }).optional(),
   password:             z.string().min(6).optional().or(z.literal('')).transform(v => v === '' ? undefined : v),
   resign:               z.boolean().optional(),
 })
@@ -95,6 +99,20 @@ export async function PUT(request, { params }) {
     // role granted employee-edit from escalating privileges.
     if (role !== undefined && role !== 'EMPLOYEE' && session.user.role !== 'SUPER_ADMIN') {
       return NextResponse.json({ error: 'Only a Super Admin can assign Manager or Super Admin roles' }, { status: 403 })
+    }
+
+    // Granting/revoking individual permissions is role management — gate it behind
+    // hr.roles.manage so an employee-editor can't hand out arbitrary access. Also
+    // sanitise the override lists to known permission strings only.
+    if (empData.permissionOverrides !== undefined) {
+      if (!canDo(session, 'hr.roles.manage')) {
+        return NextResponse.json({ error: 'You do not have permission to customise individual permissions' }, { status: 403 })
+      }
+      const clean = (arr) => [...new Set((arr ?? []).filter(p => ALL_PERMISSIONS.includes(p)))]
+      const added   = clean(empData.permissionOverrides.added)
+      const removed  = clean(empData.permissionOverrides.removed)
+      // A permission can't be both added and removed — an explicit add wins.
+      empData.permissionOverrides = { added, removed: removed.filter(p => !added.includes(p)) }
     }
 
     const current = await Employee.findById(params.id).lean()

@@ -5,7 +5,7 @@ import { useSession } from 'next-auth/react'
 import { useSearchParams } from 'next/navigation'
 import {
   TrendingUp, TrendingDown, Wallet, AlertCircle,
-  Plus, Pencil, Trash2, X, Loader2, Clock, CheckCircle2, XCircle,
+  Plus, Pencil, X, Loader2, Clock, CheckCircle2, XCircle,
   Paperclip, ExternalLink, ArrowUpRight, ArrowDownRight, BarChart2, Percent, FileText as FileTextIcon, ChevronLeft, Printer,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -1513,19 +1513,6 @@ function AccountsContent() {
     loadTransactions()
   }
 
-  async function handleDelete(tx) {
-    if (!confirm(`Delete "${tx.description}"?`)) return
-    try {
-      const res = await fetch(`/api/transactions/${tx.id}`, { method: 'DELETE' })
-      if (!res.ok) throw new Error((await res.json()).error)
-      toast.success('Transaction deleted')
-      loadSummary()
-      loadTransactions()
-    } catch (err) {
-      toast.error(err.message ?? 'Failed to delete')
-    }
-  }
-
   // ── Spinner ───────────────────────────────────────────────────────────────
 
   const Spinner = () => (
@@ -1764,9 +1751,6 @@ function AccountsContent() {
                           <div className="flex items-center gap-1 justify-end">
                             <button onClick={() => { setEditingTx(tx); setModalOpen(true) }} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">
                               <Pencil className="w-3.5 h-3.5" />
-                            </button>
-                            <button onClick={() => handleDelete(tx)} className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors">
-                              <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
                         </td>

@@ -95,32 +95,5 @@ export async function PUT(request, { params }) {
   }
 }
 
-// DELETE /api/transactions/[id]
-export async function DELETE(request, { params }) {
-  try {
-    const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-
-    if (session.user.role !== 'SUPER_ADMIN') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
-
-    await connectDB()
-    const deleted = await Transaction.findByIdAndDelete(params.id)
-
-    logActivity({
-      userId:   session.user.id,
-      userRole: session.user.role,
-      action:   'DELETE',
-      entity:   'TRANSACTION',
-      entityId: params.id,
-      changes:  deleted ? JSON.stringify({ type: deleted.type, amount: deleted.amount }) : null,
-      request,
-    })
-
-    return NextResponse.json({ message: 'Transaction deleted' })
-  } catch (err) {
-    console.error('[DELETE /api/transactions/[id]]', err)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
-  }
-}
+// Transactions are an immutable financial ledger — there is intentionally NO DELETE
+// handler. A transaction can never be deleted through the API. Do not add one.
