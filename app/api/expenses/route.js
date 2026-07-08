@@ -77,6 +77,12 @@ export async function POST(request) {
     if (!body.title?.trim()) return NextResponse.json({ error: 'A reason / title is required' }, { status: 422 })
     if (!Number.isFinite(amount) || amount <= 0) return NextResponse.json({ error: 'Amount must be a positive number' }, { status: 422 })
 
+    // Every reimbursement must be classified. "Reimbursement" is NOT a category —
+    // it's the `origin` marker below; the category/subcategory say what was bought.
+    const category    = (body.category ?? '').trim()
+    const subcategory = (body.subcategory ?? '').trim() || null
+    if (!category) return NextResponse.json({ error: 'A category is required' }, { status: 422 })
+
     const invoiceUrl = body.invoiceUrl ?? null
     const notes      = (body.notes ?? '').trim()
     if (!invoiceUrl && notes.length < 30)
@@ -86,14 +92,14 @@ export async function POST(request) {
     const employee = await Employee.findOne({ userId: session.user.id }).select('_id').lean()
 
     const expense = await new ProjectExpense({
-      origin:           'REIMBURSEMENT',
+      origin:           'REIMBURSEMENT',   // the "this is a reimbursement" marker
       projectId:        body.projectId ?? null,
       title:            body.title.trim(),
       amount,
       currency:         body.currency ?? 'BDT',
       amountBDT:        (body.currency ?? 'BDT') === 'BDT' ? amount : null,
-      category:         body.category ?? 'Reimbursement',
-      subcategory:      body.subcategory ?? null,
+      category,
+      subcategory,
       date:             body.date ? new Date(body.date) : new Date(),
       notes:            notes || null,
       invoiceUrl,

@@ -5,6 +5,7 @@ import toast from 'react-hot-toast'
 import { Plus, X, Loader2, Printer, Receipt, FileText } from 'lucide-react'
 import FileUpload from '@/components/ui/FileUpload'
 import { CURRENCIES } from '@/lib/currencies'
+import { useConfig, subcategoriesFor } from '@/lib/useConfig'
 
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 const fmt     = (n, c = 'BDT') => `${(n ?? 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })} ${c}`
@@ -30,10 +31,11 @@ function ExpenseModal({ onClose, onSaved }) {
   const [form, setForm] = useState({
     title: '', amount: '', currency: 'BDT',
     date: new Date().toISOString().slice(0, 10),
-    projectId: '', invoiceUrl: '', notes: '',
+    projectId: '', category: '', subcategory: '', invoiceUrl: '', notes: '',
   })
   const [projects, setProjects] = useState([])
   const [saving,   setSaving]   = useState(false)
+  const { expenseCategories } = useConfig()
 
   useEffect(() => {
     fetch('/api/projects?limit=100').then(r => r.json()).then(j => setProjects(j.data ?? [])).catch(() => {})
@@ -41,12 +43,16 @@ function ExpenseModal({ onClose, onSaved }) {
 
   function set(k, v) { setForm(f => ({ ...f, [k]: v })) }
 
+  // Subcategories belong to the chosen category; changing category resets it.
+  const subcats  = subcategoriesFor(expenseCategories, form.category)
   const hasProof = !!form.invoiceUrl
   const detailOk = hasProof || form.notes.trim().length >= 30
 
   async function save() {
     if (!form.title.trim())        { toast.error('Enter a reason / title'); return }
     if (!(Number(form.amount) > 0)) { toast.error('Enter a valid amount'); return }
+    if (!form.category)            { toast.error('Select a category'); return }
+    if (subcats.length > 0 && !form.subcategory) { toast.error('Select a subcategory'); return }
     if (!detailOk)                 { toast.error('Attach a proof, or describe the expense in detail (30+ characters)'); return }
     setSaving(true)
     try {
@@ -58,6 +64,8 @@ function ExpenseModal({ onClose, onSaved }) {
           currency:   form.currency,
           date:       form.date,
           projectId:  form.projectId || undefined,
+          category:   form.category,
+          subcategory: form.subcategory || undefined,
           invoiceUrl: form.invoiceUrl || undefined,
           notes:      form.notes.trim() || undefined,
         }),
@@ -102,6 +110,30 @@ function ExpenseModal({ onClose, onSaved }) {
             <select value={form.projectId} onChange={e => set('projectId', e.target.value)} className={ic}>
               <option value="">— None / general —</option>
               {projects.map(p => <option key={p.id ?? p._id} value={p.id ?? p._id}>{p.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Category *</label>
+            <select value={form.category}
+              onChange={e => setForm(f => ({ ...f, category: e.target.value, subcategory: '' }))}
+              className={ic} disabled={expenseCategories.length === 0}>
+              <option value="">— Select category —</option>
+              {expenseCategories.map(c => <option key={c.id ?? c.label} value={c.label}>{c.label}</option>)}
+            </select>
+            {expenseCategories.length === 0 && (
+              <p className="text-xs mt-1 text-amber-600">No expense categories set up in Config → Finance.</p>
+            )}
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">
+              Subcategory {subcats.length > 0 && <span className="text-red-500">*</span>}
+            </label>
+            <select value={form.subcategory} onChange={e => set('subcategory', e.target.value)}
+              className={ic} disabled={!form.category || subcats.length === 0}>
+              <option value="">
+                {!form.category ? '— Select category first —' : subcats.length === 0 ? '— No subcategories —' : '— Select subcategory —'}
+              </option>
+              {subcats.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
           <div className="col-span-2">
@@ -207,6 +239,7 @@ export default function MyExpensesPage() {
                     <td className="px-4 py-3 text-xs font-medium text-gray-500 whitespace-nowrap">{r.expenseId ?? '—'}</td>
                     <td className="px-4 py-3">
                       <p className="text-sm font-medium text-gray-900 max-w-[260px] truncate">{r.title}</p>
+                      {r.category && <p className="text-xs text-gray-400 mt-0.5">{r.category}{r.subcategory ? ` / ${r.subcategory}` : ''}</p>}
                       {r.projectId?.name && <p className="text-xs text-gray-400 mt-0.5">{r.projectId.name}</p>}
                     </td>
                     <td className="px-4 py-3 text-sm font-medium text-gray-800 whitespace-nowrap">{fmt(r.amount, r.currency)}</td>
