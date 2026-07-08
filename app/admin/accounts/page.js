@@ -729,7 +729,14 @@ function ExpenseDetailModal({ expense, onClose }) {
           <div className="rounded-xl bg-gray-50 border border-gray-100 px-4 py-4 space-y-2">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-sm font-semibold text-gray-900">{expense.title}</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-semibold text-gray-900">{expense.title}</p>
+                  {expense.origin === 'REIMBURSEMENT' && (
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-indigo-50 text-indigo-700">
+                      Reimbursement
+                    </span>
+                  )}
+                </div>
                 <p className="text-xs text-gray-500">{expense.category}{expense.subcategory ? ` / ${expense.subcategory}` : ''} · {fmtDate(expense.date)}</p>
               </div>
               <StatusDot status={expense.status} />
@@ -1970,12 +1977,17 @@ function AccountsContent() {
                             className="text-xs font-medium text-gray-800 hover:text-blue-600 hover:underline truncate block text-left w-full">
                             {pr.title ?? pr.description ?? '—'}
                           </button>
+                          {pr.origin === 'REIMBURSEMENT' && (
+                            <span className="inline-flex items-center mt-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-indigo-50 text-indigo-700">
+                              Reimbursement
+                            </span>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-xs text-gray-600">
                           <span>{pr.category ?? '—'}</span>
                           {pr.subcategory && <span className="block text-[11px] text-gray-400">{pr.subcategory}</span>}
                         </td>
-                        <td className="px-4 py-3 text-xs text-gray-500">{pr.projectId?.name ?? (pr.origin === 'SALARY' ? 'Salary' : pr.origin === 'REIMBURSEMENT' ? 'Reimbursement' : '—')}</td>
+                        <td className="px-4 py-3 text-xs text-gray-500">{pr.projectId?.name ?? (pr.origin === 'SALARY' ? 'Salary' : '—')}</td>
                         <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{pr.expenseInvoiceNo ?? '—'}</td>
                         <td className="px-4 py-3 text-right text-sm font-semibold text-gray-800 whitespace-nowrap">{formatCurrency(pr.amount, pr.currency)}</td>
                         <td className="px-4 py-3"><StatusDot status={pr.status} /></td>
