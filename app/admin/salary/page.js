@@ -133,6 +133,9 @@ function GenerateSalaryModal({ open, onClose, employee, period, onGenerated }) {
   }
 
   const ic = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900'
+  // Same styling as `ic` but without a baked-in width, for inputs that sit side
+  // by side in a flex row (ic's `w-full` would fight any w-* appended after it).
+  const icRow = 'border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900'
 
   return (
     <Modal open={open} onOpenChange={(v) => !v && onClose()} title="Generate Salary Slip" size="lg"
@@ -177,9 +180,9 @@ function GenerateSalaryModal({ open, onClose, employee, period, onGenerated }) {
             {items.filter(i => i.type === 'EARNING').map(item => (
               <div key={item.key} className="flex items-center gap-2">
                 <input value={item.label} onChange={e => updateItem(item.key, { label: e.target.value })}
-                  placeholder="e.g. Performance Bonus" className={ic + ' flex-1'} />
+                  placeholder="e.g. Performance Bonus" className={icRow + ' flex-1 min-w-0'} />
                 <input type="number" value={item.amount} onChange={e => updateItem(item.key, { amount: e.target.value })}
-                  placeholder="Amount" className={ic + ' w-32'} />
+                  placeholder="Amount" className={icRow + ' w-32 shrink-0'} />
                 <button onClick={() => removeItem(item.key)} className="p-2 text-gray-400 hover:text-red-500 shrink-0">
                   <Trash2 className="w-4 h-4" />
                 </button>
@@ -203,9 +206,9 @@ function GenerateSalaryModal({ open, onClose, employee, period, onGenerated }) {
             {items.filter(i => i.type === 'DEDUCTION').map(item => (
               <div key={item.key} className="flex items-center gap-2">
                 <input value={item.label} onChange={e => updateItem(item.key, { label: e.target.value })}
-                  placeholder="e.g. Salary Advance" className={ic + ' flex-1'} />
+                  placeholder="e.g. Salary Advance" className={icRow + ' flex-1 min-w-0'} />
                 <input type="number" value={item.amount} onChange={e => updateItem(item.key, { amount: e.target.value })}
-                  placeholder="Amount" className={ic + ' w-32'} />
+                  placeholder="Amount" className={icRow + ' w-32 shrink-0'} />
                 <button onClick={() => removeItem(item.key)} className="p-2 text-gray-400 hover:text-red-500 shrink-0">
                   <Trash2 className="w-4 h-4" />
                 </button>
