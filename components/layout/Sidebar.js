@@ -12,7 +12,7 @@ import {
   BarChart3, UserCog, Building2, ChevronLeft, ChevronRight,
   ArrowRightLeft, ArrowDownLeft, ArrowUpRight as ArrowUpRightIcon,
   CheckCircle, Inbox, ChevronDown, ShieldCheck, Activity, Bell, UserCircle,
-  PieChart, Wallet, Landmark, Globe, Receipt, CreditCard, Percent,
+  PieChart, Wallet, Landmark, Globe, Receipt, CreditCard, Percent, Banknote,
   BellRing, Mail, KeyRound, LineChart, Store, X, MessageCircle, ShieldAlert,
 } from 'lucide-react'
 import Image from 'next/image'
@@ -80,6 +80,7 @@ const NAV_SECTIONS = [
       { href: '/admin/accounts?tab=confirmations', label: 'Payment Confirmations', icon: CheckCircle,    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'finance.payments.confirm',  basePath: '/admin/accounts', tab: 'confirmations' },
       { href: '/admin/accounts?tab=requests',      label: 'Payment Requests',      icon: Inbox,          roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'finance.payments.request',  basePath: '/admin/accounts', tab: 'requests' },
       { href: '/admin/my-expenses',                label: 'My Expenses',           icon: Receipt,        roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'finance.expenses.submit' },
+      { href: '/admin/salary',                     label: 'Salary',                icon: Banknote,       roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'finance.salary.view' },
       { href: '/admin/accounts?tab=pl',            label: 'P&L Report',            icon: LineChart,      roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'finance.reports.view',      basePath: '/admin/accounts', tab: 'pl' },
     ],
   },

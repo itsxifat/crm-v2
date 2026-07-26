@@ -59,6 +59,8 @@ const ProjectExpenseSchema = new mongoose.Schema(
 
     // Salary payouts flow through this pipeline via a linked SALARY-origin expense.
     salaryPayoutId:  { type: mongoose.Schema.Types.ObjectId, ref: 'SalaryPayout', default: null },
+    // Employee payroll (Salary tab) links its generated slip the same way.
+    employeeSalarySlipId: { type: mongoose.Schema.Types.ObjectId, ref: 'SalarySlip', default: null },
 
     // After PAID, synced to Transaction in accounts module
     syncedToAccounts:     { type: Boolean, default: false },
