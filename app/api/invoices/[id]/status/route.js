@@ -5,6 +5,7 @@ import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Invoice } from '@/models'
 import { requirePerm } from '@/lib/rbac'
+import { ensureCombinedInvoice } from '@/lib/combinedInvoice'
 
 // PAID is intentionally excluded from all manual transitions.
 // It is only set automatically when a payment is confirmed via Payment Confirmations.
@@ -40,6 +41,15 @@ export async function PATCH(request, { params }) {
     if (status === 'PARTIALLY_PAID' && paidAmount) invoice.paidAmount = Number(paidAmount)
 
     await invoice.save()
+
+    // Issuing an invoice can push its project over the "needs a combined
+    // invoice" line — make sure one exists.
+    const projectId = invoice.projectId ?? invoice.projectIds?.[0] ?? null
+    if (projectId) {
+      try { await ensureCombinedInvoice(projectId, { createdBy: session.user.id }) }
+      catch (e) { console.error('[PATCH /api/invoices/:id/status] ensureCombinedInvoice', e) }
+    }
+
     return NextResponse.json({ data: invoice.toJSON() })
   } catch (err) {
     console.error('[PATCH /api/invoices/:id/status]', err)

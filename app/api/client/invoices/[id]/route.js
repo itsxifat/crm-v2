@@ -3,8 +3,9 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
-import { Invoice } from '@/models'
+import { Invoice, CombinedInvoice } from '@/models'
 import { getMyCompanyIds } from '@/lib/clientAccess'
+import { toObjectId } from '@/lib/combinedInvoice'
 
 export async function GET(_, { params }) {
   try {
@@ -32,7 +33,24 @@ export async function GET(_, { params }) {
 
     if (!invoice) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-    return NextResponse.json({ data: invoice.toJSON() })
+    // Link to the project's combined invoice when there is more than one issued
+    // invoice on it.
+    const projectId = invoice.projectId?._id ?? invoice.projectId ?? invoice.projectIds?.[0]?._id ?? null
+    let combined = null
+    if (projectId) {
+      const [cmb, siblingCount] = await Promise.all([
+        CombinedInvoice.findOne({ projectId: toObjectId(projectId), clientId: { $in: clientIds } })
+          .select('combinedNumber').lean(),
+        Invoice.countDocuments({
+          $or: [{ projectId: toObjectId(projectId) }, { projectIds: toObjectId(projectId) }],
+          clientId: { $in: clientIds },
+          status: { $nin: ['DRAFT', 'CANCELLED'] },
+        }),
+      ])
+      if (cmb && siblingCount > 1) combined = { id: cmb._id.toString(), combinedNumber: cmb.combinedNumber }
+    }
+
+    return NextResponse.json({ data: invoice.toJSON(), combined })
   } catch (err) {
     console.error('[GET /api/client/invoices/:id]', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

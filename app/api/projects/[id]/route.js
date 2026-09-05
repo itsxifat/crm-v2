@@ -121,12 +121,17 @@ export async function PUT(request, { params }) {
     const discountChanged = newDiscount !== prevDiscount || body.budget !== undefined
     const deadlineChanged = newDeadline !== prevDeadline && newDeadline !== null
 
+    // Sync the linked invoice ONLY when the project has exactly one open invoice.
+    // With several, pushing the project-level discount onto an arbitrary one
+    // would silently corrupt the split — those are edited per invoice instead.
     if (discountChanged || deadlineChanged) {
-      const inv = await Invoice.findOne({
+      const open = await Invoice.find({
         $or: [{ projectId: pid }, { projectIds: pid }],
         status: { $nin: ['PAID', 'CANCELLED'] },
-      })
-      if (inv) {
+      }).limit(2)
+
+      if (open.length === 1) {
+        const inv = open[0]
         if (discountChanged) {
           inv.discount = newDiscount
           inv.total    = Math.max(0, Number(inv.subtotal ?? 0) + Number(inv.taxAmount ?? 0) - newDiscount)
@@ -135,6 +140,13 @@ export async function PUT(request, { params }) {
           inv.dueDate = new Date(project.deadline)
         }
         await inv.save()
+      } else if (open.length > 1 && deadlineChanged) {
+        // A new deadline is unambiguous, so it can still fan out to every
+        // open invoice; the discount deliberately does not.
+        await Invoice.updateMany(
+          { $or: [{ projectId: pid }, { projectIds: pid }], status: { $nin: ['PAID', 'CANCELLED'] } },
+          { $set: { dueDate: new Date(project.deadline) } }
+        )
       }
     }
 

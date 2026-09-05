@@ -53,7 +53,11 @@ InvoiceSchema.pre('validate', async function () {
   this.invoiceNumber = `${prefix}${String(count + 1).padStart(3, '0')}`
 })
 
-InvoiceSchema.index({ projectId: 1 }, { unique: true, sparse: true })
+// A project may carry MANY invoices (phases, retainers, change requests). They
+// are rolled up by CombinedInvoice, so this index is plain — NOT unique.
+// (The old unique index is dropped by scripts/migrate-combined-invoices.js.)
+InvoiceSchema.index({ projectId: 1 })
+InvoiceSchema.index({ clientId: 1, status: 1 })
 
 if (mongoose.models.Invoice) delete mongoose.models.Invoice
 export default mongoose.model('Invoice', InvoiceSchema)

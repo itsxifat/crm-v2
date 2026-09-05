@@ -6,7 +6,7 @@ import Link from 'next/link'
 import toast from 'react-hot-toast'
 import {
   ArrowLeft, CheckCircle, Clock, AlertCircle, XCircle,
-  FileText, CreditCard, X, Printer,
+  FileText, CreditCard, X, Printer, Layers, ExternalLink,
 } from 'lucide-react'
 import InvoicePrintView, { openInvoicePrint } from '@/components/shared/InvoicePrintView'
 import { useConfig } from '@/lib/useConfig'
@@ -146,6 +146,7 @@ export default function ClientInvoiceDetailPage() {
   const fmtMethod = v => v ? (paymentMethods.find(m => m.value === v)?.label ?? v.replace(/_/g, ' ')) : '—'
 
   const [invoice,       setInvoice]       = useState(null)
+  const [combined,      setCombined]      = useState(null)
   const [paymentReqs,   setPaymentReqs]   = useState([])
   const [company,       setCompany]       = useState({})
   const [loading,       setLoading]       = useState(true)
@@ -160,6 +161,7 @@ export default function ClientInvoiceDetailPage() {
       const invJson = await invRes.json()
       if (!invRes.ok) throw new Error(invJson.error ?? 'Not found')
       setInvoice(invJson.data)
+      setCombined(invJson.combined ?? null)
       if (reqRes.ok) {
         const reqJson = await reqRes.json()
         setPaymentReqs(reqJson.data ?? [])
@@ -246,6 +248,25 @@ export default function ClientInvoiceDetailPage() {
           )}
         </div>
       </div>
+
+      {/* Combined statement link */}
+      {combined && (
+        <Link href={`/client/invoices/combined/${combined.id}`}
+          className="flex items-center justify-between gap-3 rounded-2xl border border-blue-100 bg-blue-50/70 px-5 py-3.5 hover:bg-blue-100/70 transition-colors">
+          <div className="flex items-center gap-3 min-w-0">
+            <Layers className="w-4 h-4 text-blue-600 shrink-0" />
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-blue-900">
+                This project has a combined invoice ({combined.combinedNumber})
+              </p>
+              <p className="text-xs text-blue-700/80">
+                See every invoice for this project in one document, with the total paid and due.
+              </p>
+            </div>
+          </div>
+          <ExternalLink className="w-4 h-4 text-blue-500 shrink-0" />
+        </Link>
+      )}
 
       {/* Invoice — same layout as the admin panel */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">

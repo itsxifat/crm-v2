@@ -49,14 +49,22 @@ export async function POST(request, { params }) {
     const parsedDate = paymentDate ? new Date(paymentDate) : new Date()
     const parsedAmt  = Number(amount)
 
-    // Auto-resolve the linked invoice for this project if caller did not supply one
+    // Resolve which invoice this payment settles. A project can carry many
+    // invoices now, so when the caller doesn't name one we apply the payment to
+    // the OLDEST invoice that still has an outstanding balance — the usual
+    // "clear the oldest debt first" convention. Falls back to the oldest
+    // non-cancelled invoice when everything is already settled.
     let invoiceId = bodyInvoiceId || null
     let linkedInvoice = null
     if (!invoiceId) {
-      linkedInvoice = await Invoice.findOne({
+      const candidates = await Invoice.find({
         $or: [{ projectId: params.id }, { projectIds: params.id }],
-        status: { $nin: ['CANCELLED'] },
-      }).select('_id total paidAmount').lean()
+        status: { $nin: ['CANCELLED', 'DRAFT'] },
+      }).select('_id total paidAmount issueDate').sort({ issueDate: 1, createdAt: 1 }).lean()
+
+      linkedInvoice =
+        candidates.find(i => (Number(i.total ?? 0) - Number(i.paidAmount ?? 0)) > 0.01) ??
+        candidates[0] ?? null
       if (linkedInvoice) invoiceId = linkedInvoice._id.toString()
     } else {
       linkedInvoice = await Invoice.findById(invoiceId).select('_id total paidAmount').lean()

@@ -69,10 +69,17 @@ export async function GET(request, { params }) {
 
     const projectId = invoice?.projectId ?? invoice?.projectIds?.[0] ?? null
 
-    // Collect by invoiceId OR by projectId (catches payments without invoiceId set)
+    // Collect by invoiceId, plus any un-linked payment on this project — but the
+    // orphan sweep only applies when the project has a SINGLE invoice. With
+    // several, an unattributed payment can't safely be claimed by any one of
+    // them (and would then be back-filled onto the wrong invoice below).
     const orQuery = [{ invoiceId: params.id }]
     if (projectId) {
-      orQuery.push({ projectId, invoiceId: null })
+      const siblingCount = await Invoice.countDocuments({
+        $or: [{ projectId }, { projectIds: projectId }],
+        status: { $ne: 'CANCELLED' },
+      })
+      if (siblingCount <= 1) orQuery.push({ projectId, invoiceId: null })
     }
 
     const payments = await ProjectPayment.find({ $or: orQuery })

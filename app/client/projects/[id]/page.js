@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import {
   ArrowLeft, CheckCircle, Circle, Clock, File, Download,
-  AlertCircle, ChevronDown, ChevronUp
+  AlertCircle, ChevronDown, ChevronUp, FileText, Layers, ExternalLink
 } from 'lucide-react'
 import ProjectStatusBadge from '@/components/portals/ProjectStatusBadge'
 
@@ -32,6 +32,7 @@ export default function ClientProjectDetailPage() {
   const [error, setError] = useState(null)
   const [showAllTasks, setShowAllTasks] = useState(false)
   const [showAllMilestones, setShowAllMilestones] = useState(false)
+  const [billing, setBilling] = useState(null)   // { data, summary, combined }
 
   const fetchProject = useCallback(async () => {
     try {
@@ -47,6 +48,14 @@ export default function ClientProjectDetailPage() {
   }, [id])
 
   useEffect(() => { fetchProject() }, [fetchProject])
+
+  // Invoices raised against this project, with their live paid / due figures.
+  useEffect(() => {
+    fetch(`/api/client/projects/${id}/invoices`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => setBilling(d))
+      .catch(() => {})
+  }, [id])
 
   if (loading) {
     return (
@@ -171,6 +180,80 @@ export default function ClientProjectDetailPage() {
                 ৳ {project.dueAmount.toLocaleString()}
               </p>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Invoices */}
+      {(billing?.data?.length ?? 0) > 0 && (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <h2 className="text-base font-bold text-gray-900 flex items-center gap-2">
+                <FileText className="w-4 h-4 text-gray-400" /> Invoices
+              </h2>
+              <p className="text-xs text-gray-400 mt-0.5">
+                {billing.data.length} invoice{billing.data.length === 1 ? '' : 's'} for this project
+              </p>
+            </div>
+            {billing.combined && (
+              <Link href={`/client/invoices/combined/${billing.combined.id}`}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 border border-blue-100 text-blue-700 text-xs font-medium rounded-lg hover:bg-blue-100 transition-colors">
+                <Layers className="w-3.5 h-3.5" /> View combined invoice
+              </Link>
+            )}
+          </div>
+
+          {/* Billing totals */}
+          <div className="grid grid-cols-3 divide-x divide-gray-100 border-b border-gray-100">
+            {[
+              { label: 'Total Billed', value: billing.summary?.total,      cls: 'text-gray-900' },
+              { label: 'Paid',         value: billing.summary?.paidAmount, cls: 'text-green-600' },
+              { label: 'Due',          value: billing.summary?.due,        cls: (billing.summary?.due ?? 0) > 0.01 ? 'text-red-600' : 'text-green-600' },
+            ].map(c => (
+              <div key={c.label} className="px-5 py-3.5">
+                <p className="text-xs text-gray-400 font-medium">{c.label}</p>
+                <p className={`text-sm font-bold mt-0.5 ${c.cls}`}>
+                  ৳ {(Number(c.value) || 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          <div className="divide-y divide-gray-50">
+            {billing.data.map(inv => (
+              <Link key={inv.id} href={`/client/invoices/${inv.id}`}
+                className="flex items-center justify-between gap-4 px-5 py-3.5 hover:bg-gray-50/60 transition-colors">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-gray-900">{inv.invoiceNumber}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    Issued {inv.issueDate ? new Date(inv.issueDate).toLocaleDateString() : '—'}
+                    {inv.dueDate ? ` · Due ${new Date(inv.dueDate).toLocaleDateString()}` : ''}
+                  </p>
+                </div>
+                <div className="flex items-center gap-4 shrink-0">
+                  <div className="text-right">
+                    <p className="text-sm font-bold text-gray-900">
+                      ৳ {(Number(inv.total) || 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })}
+                    </p>
+                    <p className={`text-xs mt-0.5 ${inv.due > 0.01 ? 'text-red-500' : 'text-green-600'}`}>
+                      {inv.due > 0.01
+                        ? `৳ ${inv.due.toLocaleString('en-BD', { minimumFractionDigits: 2 })} due`
+                        : 'Paid in full'}
+                    </p>
+                  </div>
+                  <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                    inv.status === 'PAID'           ? 'bg-green-100 text-green-700'  :
+                    inv.status === 'OVERDUE'        ? 'bg-red-100 text-red-600'      :
+                    inv.status === 'PARTIALLY_PAID' ? 'bg-yellow-100 text-yellow-700':
+                    'bg-blue-100 text-blue-700'
+                  }`}>
+                    {inv.status.replace(/_/g, ' ')}
+                  </span>
+                  <ExternalLink className="w-3.5 h-3.5 text-gray-300" />
+                </div>
+              </Link>
+            ))}
           </div>
         </div>
       )}

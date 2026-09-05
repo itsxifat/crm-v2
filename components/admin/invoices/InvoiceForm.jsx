@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, Trash2, Loader2, ArrowLeft, AlertCircle } from 'lucide-react'
+import Link from 'next/link'
+import { Plus, Trash2, Loader2, ArrowLeft, Layers, FileText } from 'lucide-react'
 import toast from 'react-hot-toast'
 import ClientSearch from '@/components/ui/ClientSearch'
 import Select from '@/components/ui/Select'
@@ -36,7 +37,10 @@ export default function InvoiceForm({ invoice, defaultProjectId, defaultClientId
   const [notes,     setNotes]     = useState(invoice?.notes ?? '')
   const [terms,     setTerms]     = useState(invoice?.terms ?? '')
   const [saving,       setSaving]       = useState(false)
-  const [checkingProj, setCheckingProj] = useState(false)
+  // Invoices already raised against the selected project — context, not a block:
+  // a project may carry as many invoices as the billing plan needs.
+  const [siblings,     setSiblings]     = useState(null)
+  const [siblingsLoading, setSiblingsLoading] = useState(false)
 
   // Load projects for client
   useEffect(() => {
@@ -47,35 +51,49 @@ export default function InvoiceForm({ invoice, defaultProjectId, defaultClientId
       .catch(() => {})
   }, [clientId])
 
-  // When a project is selected, check for existing invoice (new mode only)
+  // Load the project's existing invoices so the user can see what has already
+  // been billed before adding another one.
   useEffect(() => {
-    if (isEdit || !projectId) return
-    setCheckingProj(true)
-    fetch(`/api/invoices?projectId=${projectId}&limit=1`)
+    if (!projectId) { setSiblings(null); return }
+    setSiblingsLoading(true)
+    fetch(`/api/invoices?projectId=${projectId}&limit=100&sort=issueDate&dir=asc`)
       .then(r => r.json())
-      .then(j => {
-        const existing = j.data?.[0]
-        if (existing) {
-          toast.error('This project already has an invoice. Opening it to edit.')
-          router.replace(`/admin/invoices/${existing.id}/edit`)
-        }
-      })
-      .catch(() => {})
-      .finally(() => setCheckingProj(false))
-  }, [projectId, isEdit, router])
+      .then(j => setSiblings(j.data ?? []))
+      .catch(() => setSiblings([]))
+      .finally(() => setSiblingsLoading(false))
+  }, [projectId])
 
-  // Auto-fill items when a project is picked (new mode)
+  // Everything already billed against this project (excludes the invoice being
+  // edited and any cancelled ones).
+  const alreadyBilled = (siblings ?? [])
+    .filter(i => i.status !== 'CANCELLED' && i.id !== invoice?.id)
+    .reduce((sum, i) => sum + (Number(i.total) || 0), 0)
+
+  const selectedProject = projects.find(x => (x.id ?? x._id) === projectId) ?? null
+  const projectNet      = selectedProject
+    ? Math.max(0, (Number(selectedProject.budget) || 0) - (Number(selectedProject.discount) || 0))
+    : 0
+  const remainingToBill = Math.max(0, projectNet - alreadyBilled)
+
+  // Auto-fill the first line when a project is picked (new invoices only), using
+  // the amount NOT yet billed rather than the whole contract — that's the number
+  // you want on invoice #2 onward.
   useEffect(() => {
-    if (isEdit || !projectId || projects.length === 0) return
+    if (isEdit || !projectId || projects.length === 0 || siblings === null) return
     const p = projects.find(x => (x.id ?? x._id) === projectId)
     if (!p) return
-    const rate = Math.max(0, (Number(p.budget) || 0) - (Number(p.discount) || 0))
+    const net  = Math.max(0, (Number(p.budget) || 0) - (Number(p.discount) || 0))
+    const done = (siblings ?? []).filter(i => i.status !== 'CANCELLED')
+    const rate = Math.max(0, net - done.reduce((sum, i) => sum + (Number(i.total) || 0), 0))
+    const seq  = done.length + 1
     setItems([{
-      description: `[${p.projectCode ?? p.name}] ${p.name}`,
+      description: done.length > 0
+        ? `[${p.projectCode ?? p.name}] ${p.name} — Invoice ${seq}`
+        : `[${p.projectCode ?? p.name}] ${p.name}`,
       quantity: 1, rate, amount: rate,
     }])
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, projects])
+  }, [projectId, projects, siblings])
 
   const clientProjects = clientId
     ? projects.filter(p => {
@@ -129,15 +147,12 @@ export default function InvoiceForm({ invoice, defaultProjectId, defaultClientId
       const res    = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       const json   = await res.json()
 
-      // Existing invoice conflict → redirect to edit
-      if (res.status === 409 && json.existingInvoiceId) {
-        toast.error('Invoice already exists for this project. Opening it.')
-        router.replace(`/admin/invoices/${json.existingInvoiceId}/edit`)
-        return
-      }
-
       if (!res.ok) throw new Error(json.error ?? 'Failed')
-      toast.success(isEdit ? 'Invoice updated' : 'Invoice created')
+      if (json.combined) {
+        toast.success(`Invoice created — rolled into combined invoice ${json.combined.combinedNumber}`)
+      } else {
+        toast.success(isEdit ? 'Invoice updated' : 'Invoice created')
+      }
       router.push(`/admin/invoices/${json.data.id}`)
     } catch (err) {
       toast.error(err.message)
@@ -156,7 +171,7 @@ export default function InvoiceForm({ invoice, defaultProjectId, defaultClientId
         <div>
           <h1 className="text-2xl font-bold text-gray-900">{isEdit ? 'Edit Invoice' : 'New Invoice'}</h1>
           <p className="text-sm text-gray-500">
-            {isEdit ? `Editing ${invoice.invoiceNumber}` : 'One invoice per project — add all billing as line items'}
+            {isEdit ? `Editing ${invoice.invoiceNumber}` : 'Bill a project in as many invoices as you need — they roll up into a combined invoice'}
           </p>
         </div>
       </div>
@@ -190,11 +205,63 @@ export default function InvoiceForm({ invoice, defaultProjectId, defaultClientId
                   disabled={isEdit}
                 />
               )}
-              {!isEdit && projectId && (
+              {projectId && siblingsLoading && (
                 <p className="text-xs text-gray-400 mt-1.5 flex items-center gap-1">
-                  <AlertCircle className="w-3 h-3" />
-                  Only one invoice is allowed per project. All dues must be added as line items here.
+                  <Loader2 className="w-3 h-3 animate-spin" /> Checking existing invoices…
                 </p>
+              )}
+
+              {/* What has already been billed on this project */}
+              {projectId && !siblingsLoading && (siblings?.length ?? 0) > 0 && (
+                <div className="mt-3 rounded-xl border border-gray-100 bg-gray-50/70 p-3.5">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <p className="text-xs font-semibold text-gray-600 flex items-center gap-1.5">
+                      <FileText className="w-3.5 h-3.5 text-gray-400" />
+                      {siblings.length} existing invoice{siblings.length === 1 ? '' : 's'} on this project
+                    </p>
+                    {siblings[0]?.combined && (
+                      <Link href={`/admin/invoices/combined/${siblings[0].combined.id}`} target="_blank"
+                        className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700">
+                        <Layers className="w-3 h-3" /> {siblings[0].combined.combinedNumber}
+                      </Link>
+                    )}
+                  </div>
+                  <ul className="space-y-1 mb-2.5">
+                    {siblings.map(i => (
+                      <li key={i.id} className="flex items-center justify-between gap-3 text-xs">
+                        <Link href={`/admin/invoices/${i.id}`} target="_blank"
+                          className="font-mono text-gray-600 hover:text-blue-600 truncate">
+                          {i.invoiceNumber}
+                          <span className="ml-2 text-gray-400 font-sans">{i.status.replace(/_/g, ' ')}</span>
+                        </Link>
+                        <span className="text-gray-700 tabular-nums shrink-0">
+                          ৳ {(Number(i.total) || 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="border-t border-gray-200 pt-2 space-y-1">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-gray-500">Already billed</span>
+                      <span className="font-semibold text-gray-800 tabular-nums">
+                        ৳ {alreadyBilled.toLocaleString('en-BD', { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                    {projectNet > 0 && (
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-gray-500">Remaining on contract</span>
+                        <span className={`font-semibold tabular-nums ${remainingToBill > 0 ? 'text-amber-600' : 'text-green-600'}`}>
+                          ৳ {remainingToBill.toLocaleString('en-BD', { minimumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  {!isEdit && (
+                    <p className="text-xs text-gray-400 mt-2">
+                      Adding a second invoice creates (or updates) this project&rsquo;s combined invoice automatically.
+                    </p>
+                  )}
+                </div>
               )}
             </div>
           )}
@@ -338,10 +405,10 @@ export default function InvoiceForm({ invoice, defaultProjectId, defaultClientId
             className="px-5 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors">
             Cancel
           </button>
-          <button type="submit" disabled={saving || checkingProj}
+          <button type="submit" disabled={saving}
             className="px-6 py-2.5 text-sm font-medium text-white bg-blue-600 rounded-xl hover:bg-blue-700 disabled:opacity-60 transition-colors flex items-center gap-2 shadow-sm">
-            {(saving || checkingProj) && <Loader2 className="w-4 h-4 animate-spin" />}
-            {checkingProj ? 'Checking…' : isEdit ? 'Save Changes' : 'Create Invoice'}
+            {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+            {isEdit ? 'Save Changes' : 'Create Invoice'}
           </button>
         </div>
       </form>

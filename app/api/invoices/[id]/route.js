@@ -3,10 +3,11 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
-import { Invoice } from '@/models'
+import { Invoice, CombinedInvoice } from '@/models'
 import { logActivity } from '@/lib/logActivity'
 import { requirePerm } from '@/lib/rbac'
 import { maskDoc, INVOICE_PII } from '@/lib/pii'
+import { toObjectId, projectInvoiceFilter } from '@/lib/combinedInvoice'
 
 async function getPopulated(id) {
   return Invoice.findById(id)
@@ -30,7 +31,25 @@ export async function GET(_, { params }) {
       await invoice.save()
     }
 
-    return NextResponse.json({ data: maskDoc(session, invoice.toJSON(), INVOICE_PII) })
+    // Sibling context: how many invoices this project carries, and whether they
+    // roll up into a combined invoice.
+    const projectId = invoice.projectId?._id ?? invoice.projectId ?? invoice.projectIds?.[0] ?? null
+    let combined = null
+    let siblingCount = 0
+    if (projectId) {
+      const [cmb, count] = await Promise.all([
+        CombinedInvoice.findOne({ projectId: toObjectId(projectId) }).select('combinedNumber').lean(),
+        Invoice.countDocuments({ ...projectInvoiceFilter(projectId), status: { $ne: 'CANCELLED' } }),
+      ])
+      combined = cmb ? { id: cmb._id.toString(), combinedNumber: cmb.combinedNumber } : null
+      siblingCount = count
+    }
+
+    return NextResponse.json({
+      data: maskDoc(session, invoice.toJSON(), INVOICE_PII),
+      combined,
+      meta: { projectInvoiceCount: siblingCount },
+    })
   } catch (err) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }

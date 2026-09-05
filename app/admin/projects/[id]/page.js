@@ -10,7 +10,7 @@ import {
   Wallet, TrendingUp, TrendingDown, Loader2, X, Paperclip,
   CreditCard, Clock, Calendar, Users, Tag, Flag, BarChart2,
   ChevronRight, MoreHorizontal, Check, AlertTriangle, FileText,
-  BookOpen, MessageSquare, Send, Pencil as PencilIcon, Building2,
+  BookOpen, MessageSquare, Send, Pencil as PencilIcon, Building2, Layers,
 } from 'lucide-react'
 import { STATUS_META } from '@/lib/ventures'
 import { useConfig } from '@/lib/useConfig'
@@ -25,6 +25,11 @@ import { currencyOptions, BASE_CURRENCY } from '@/lib/currencies'
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const fmt = (n) => `৳ ${(n ?? 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })}`
+
+const INVOICE_DOT = {
+  DRAFT: 'bg-gray-300', SENT: 'bg-blue-500', PARTIALLY_PAID: 'bg-yellow-400',
+  PAID: 'bg-emerald-500', OVERDUE: 'bg-red-500', CANCELLED: 'bg-gray-200',
+}
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 const fmtDateTime = (d) => d ? new Date(d).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'
 
@@ -566,9 +571,9 @@ function PaymentModal({ projectId, project, onClose, onSaved }) {
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
-const ALL_TABS = ['overview', 'brief', 'discussion', 'tasks', 'expenses', 'payments', 'renewals', 'freelancers', 'agencies']
-const FINANCIAL_TABS = new Set(['expenses', 'payments'])
-const TAB_LABELS = { overview: 'Overview', brief: 'Brief', discussion: 'Discussion', tasks: 'Tasks', expenses: 'Expenses', payments: 'Payments', renewals: 'Renewals', freelancers: 'Freelancers', agencies: 'Agencies' }
+const ALL_TABS = ['overview', 'brief', 'discussion', 'tasks', 'invoices', 'expenses', 'payments', 'renewals', 'freelancers', 'agencies']
+const FINANCIAL_TABS = new Set(['invoices', 'expenses', 'payments'])
+const TAB_LABELS = { overview: 'Overview', brief: 'Brief', discussion: 'Discussion', tasks: 'Tasks', invoices: 'Invoices', expenses: 'Expenses', payments: 'Payments', renewals: 'Renewals', freelancers: 'Freelancers', agencies: 'Agencies' }
 
 export default function ProjectDetailPage() {
   const { id }  = useParams()
@@ -587,6 +592,12 @@ export default function ProjectDetailPage() {
   const [editingTask,    setEditingTask]    = useState(null)
   const [payments,            setPayments]            = useState([])
   const [paymentsLoaded,      setPaymentsLoaded]      = useState(false)
+  // Invoices tab
+  const [invoices,            setInvoices]            = useState([])
+  const [invoiceSummary,      setInvoiceSummary]      = useState(null)
+  const [combinedInvoice,     setCombinedInvoice]     = useState(null)
+  const [invoicesLoaded,      setInvoicesLoaded]      = useState(false)
+  const [generatingCombined,  setGeneratingCombined]  = useState(false)
   const [freelancerAssignments, setFreelancerAssignments] = useState([])
   const [assignModal,         setAssignModal]         = useState(false)
   const [assignForm,          setAssignForm]          = useState({ person: null, freelancerId: '', paymentAmount: '', currency: 'BDT', amountBDT: '', paymentNotes: '' })
@@ -650,9 +661,35 @@ export default function ProjectDetailPage() {
     } catch { /* silent */ }
   }, [id])
 
+  const loadInvoices = useCallback(async () => {
+    try {
+      const res  = await fetch(`/api/projects/${id}/invoices`)
+      const json = await res.json()
+      if (res.ok) {
+        setInvoices(json.data ?? [])
+        setInvoiceSummary(json.summary ?? null)
+        setCombinedInvoice(json.combined ?? null)
+      }
+    } catch { /* silent */ }
+    setInvoicesLoaded(true)
+  }, [id])
+
   useEffect(() => {
     if (tab === 'payments')    loadPayments()
-  }, [tab, loadPayments])
+    if (tab === 'invoices')    loadInvoices()
+  }, [tab, loadPayments, loadInvoices])
+
+  async function handleGenerateCombined() {
+    setGeneratingCombined(true)
+    try {
+      const res  = await fetch(`/api/projects/${id}/invoices`, { method: 'POST' })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error)
+      toast.success(`Combined invoice ${json.data.combinedNumber} ready`)
+      router.push(`/admin/invoices/combined/${json.data.id}`)
+    } catch (err) { toast.error(err.message) }
+    finally { setGeneratingCombined(false) }
+  }
 
   useEffect(() => {
     if (tab === 'freelancers' || tab === 'agencies') {
@@ -1327,6 +1364,126 @@ export default function ProjectDetailPage() {
               })}
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── INVOICES ── */}
+      {tab === 'invoices' && (
+        <div className="space-y-4">
+          {/* Rollup across every issued invoice on this project */}
+          {invoiceSummary && (
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+              {[
+                { label: 'Invoices',   value: invoiceSummary.allCount ?? 0, cls: 'text-gray-900', raw: true },
+                { label: 'Billed',     value: fmt(invoiceSummary.total),      cls: 'text-gray-900' },
+                { label: 'Paid',       value: fmt(invoiceSummary.paidAmount), cls: 'text-emerald-600' },
+                { label: 'Due',        value: fmt(invoiceSummary.due),        cls: invoiceSummary.due > 0.01 ? 'text-red-500' : 'text-emerald-600' },
+                { label: 'Un-invoiced', value: fmt(invoiceSummary.uninvoiced), cls: invoiceSummary.uninvoiced > 0.01 ? 'text-amber-600' : 'text-gray-400' },
+              ].map(c => (
+                <div key={c.label} className="bg-white border border-gray-100 rounded-xl p-4">
+                  <p className="text-xs text-gray-400">{c.label}</p>
+                  <p className={`text-base font-semibold mt-0.5 tabular-nums ${c.cls}`}>{c.value}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+            <div className="px-4 sm:px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <h3 className="text-sm font-medium text-gray-900">Invoices ({invoices.length})</h3>
+                {invoiceSummary?.draftCount > 0 && (
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {invoiceSummary.draftCount} draft{invoiceSummary.draftCount === 1 ? '' : 's'} excluded from the totals above.
+                  </p>
+                )}
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                {combinedInvoice ? (
+                  <Link href={`/admin/invoices/combined/${combinedInvoice.id}`}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 border border-blue-100 text-blue-700 text-xs font-medium rounded-lg hover:bg-blue-100 transition-colors">
+                    <Layers className="w-3.5 h-3.5" /> {combinedInvoice.combinedNumber}
+                  </Link>
+                ) : invoices.length > 1 ? (
+                  <button onClick={handleGenerateCombined} disabled={generatingCombined}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors">
+                    {generatingCombined ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Layers className="w-3.5 h-3.5" />}
+                    Generate Combined Invoice
+                  </button>
+                ) : null}
+                <Link href={`/admin/invoices/new?projectId=${id}&clientId=${project.clientId?.id ?? project.clientId?._id ?? project.clientId ?? ''}`}
+                  className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-50 transition-colors">
+                  <Plus className="w-3.5 h-3.5" /> New Invoice
+                </Link>
+              </div>
+            </div>
+
+            {combinedInvoice && (
+              <div className="px-4 sm:px-6 py-2.5 bg-blue-50/50 border-b border-blue-100 flex items-center gap-2">
+                <Layers className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                <p className="text-xs text-blue-800">
+                  This project has a combined invoice ({combinedInvoice.combinedNumber}). It re-totals itself from the
+                  invoices below every time it is opened — no manual refresh needed.
+                </p>
+              </div>
+            )}
+
+            {!invoicesLoaded ? (
+              <div className="py-10 flex justify-center">
+                <div className="w-5 h-5 border-2 border-gray-200 border-t-gray-500 rounded-full animate-spin" />
+              </div>
+            ) : invoices.length === 0 ? (
+              <div className="py-16 text-center">
+                <FileText className="w-8 h-8 text-gray-200 mx-auto mb-2" />
+                <p className="text-gray-400 text-sm">No invoices raised for this project yet</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[720px]">
+                  <thead>
+                    <tr className="border-b border-gray-100">
+                      {['Invoice No', 'Issued', 'Due Date', 'Status', 'Amount', 'Paid', 'Due', ''].map((h, i) => (
+                        <th key={h + i} className={`px-5 py-3 text-xs text-gray-400 font-medium whitespace-nowrap ${i >= 4 && i <= 6 ? 'text-right' : 'text-left'}`}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {invoices.map(inv => (
+                      <tr key={inv.id} onClick={() => router.push(`/admin/invoices/${inv.id}`)}
+                        className="hover:bg-gray-50/50 cursor-pointer">
+                        <td className="px-5 py-3 text-sm font-mono text-gray-800 whitespace-nowrap">{inv.invoiceNumber}</td>
+                        <td className="px-5 py-3 text-sm text-gray-400 whitespace-nowrap">{fmtDate(inv.issueDate)}</td>
+                        <td className="px-5 py-3 text-sm text-gray-400 whitespace-nowrap">{fmtDate(inv.dueDate)}</td>
+                        <td className="px-5 py-3 whitespace-nowrap">
+                          <div className="flex items-center gap-1.5">
+                            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${INVOICE_DOT[inv.status] ?? 'bg-gray-300'}`} />
+                            <span className="text-xs text-gray-500">{inv.status.replace(/_/g, ' ')}</span>
+                          </div>
+                        </td>
+                        <td className="px-5 py-3 text-right text-sm font-medium text-gray-900 tabular-nums whitespace-nowrap">{fmt(inv.total)}</td>
+                        <td className="px-5 py-3 text-right text-sm text-emerald-600 tabular-nums whitespace-nowrap">{fmt(inv.paidAmount)}</td>
+                        <td className={`px-5 py-3 text-right text-sm font-medium tabular-nums whitespace-nowrap ${inv.due > 0.01 ? 'text-red-500' : 'text-emerald-600'}`}>{fmt(inv.due)}</td>
+                        <td className="px-5 py-3 text-right">
+                          <ChevronRight className="w-4 h-4 text-gray-300 inline" />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 border-gray-100 bg-gray-50/60">
+                      <td colSpan={4} className="px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                        Total ({invoiceSummary?.invoiceCount ?? 0} billable)
+                      </td>
+                      <td className="px-5 py-3 text-right text-sm font-bold text-gray-900 tabular-nums">{fmt(invoiceSummary?.total)}</td>
+                      <td className="px-5 py-3 text-right text-sm font-bold text-emerald-600 tabular-nums">{fmt(invoiceSummary?.paidAmount)}</td>
+                      <td className={`px-5 py-3 text-right text-sm font-bold tabular-nums ${(invoiceSummary?.due ?? 0) > 0.01 ? 'text-red-500' : 'text-emerald-600'}`}>{fmt(invoiceSummary?.due)}</td>
+                      <td />
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

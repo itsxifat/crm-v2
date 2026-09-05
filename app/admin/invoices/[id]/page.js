@@ -7,7 +7,7 @@ import toast from 'react-hot-toast'
 import {
   ArrowLeft, Pencil, Trash2, Send, CheckCircle2, Printer, Loader2,
   X, Wallet, FileText, Clock, AlertTriangle, XCircle,
-  PlusCircle, ExternalLink, CreditCard,
+  PlusCircle, ExternalLink, CreditCard, Layers,
 } from 'lucide-react'
 import FileUpload from '@/components/ui/FileUpload'
 import TkAmt from '@/components/ui/TkAmt'
@@ -292,6 +292,8 @@ export default function InvoiceDetailPage() {
   const [printMode,    setPrintMode]    = useState(false)
   const [historyKey,   setHistoryKey]   = useState(0)
   const [company,      setCompany]      = useState({})
+  const [combined,     setCombined]     = useState(null)
+  const [siblingCount, setSiblingCount] = useState(0)
 
   const load = useCallback(async () => {
     try {
@@ -302,6 +304,8 @@ export default function InvoiceDetailPage() {
       const invJson = await invRes.json()
       if (!invRes.ok) throw new Error(invJson.error)
       setInvoice(invJson.data)
+      setCombined(invJson.combined ?? null)
+      setSiblingCount(invJson.meta?.projectInvoiceCount ?? 0)
       if (pmtRes.ok) {
         const pmtJson = await pmtRes.json()
         setPayments((pmtJson.data ?? []).filter(p => p.status === 'CONFIRMED'))
@@ -424,6 +428,26 @@ export default function InvoiceDetailPage() {
           )}
         </div>
       </div>
+
+      {/* Part of a combined invoice */}
+      {combined && (
+        <Link href={`/admin/invoices/combined/${combined.id}`}
+          className="flex items-center justify-between gap-3 rounded-2xl border border-blue-100 bg-blue-50/70 px-5 py-3.5 hover:bg-blue-100/70 transition-colors">
+          <div className="flex items-center gap-3 min-w-0">
+            <Layers className="w-4 h-4 text-blue-600 shrink-0" />
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-blue-900">
+                Part of combined invoice {combined.combinedNumber}
+              </p>
+              <p className="text-xs text-blue-700/80">
+                This project carries {siblingCount} invoice{siblingCount === 1 ? '' : 's'} — the combined document
+                re-totals itself whenever any of them changes.
+              </p>
+            </div>
+          </div>
+          <ExternalLink className="w-4 h-4 text-blue-500 shrink-0" />
+        </Link>
+      )}
 
       {/* Payable / Paid / Due summary */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
