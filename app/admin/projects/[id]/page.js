@@ -475,9 +475,8 @@ function PaymentModal({ projectId, project, onClose, onSaved }) {
     }
     if (project) {
       const budget = Number(project.budget ?? 0)
-      const disc   = Number(project.discount ?? 0)
       const paid   = Number(project.paidAmount ?? 0)
-      return budget > 0 ? Math.max(0, budget - disc - paid) : null
+      return budget > 0 ? Math.max(0, budget - paid) : null
     }
     return null
   })()
@@ -982,13 +981,10 @@ export default function ProjectDetailPage() {
 
   const TABS           = canViewFinancials ? ALL_TABS : ALL_TABS.filter(t => !FINANCIAL_TABS.has(t))
   const paidAmount     = project.paidAmount  ?? 0
-  const discountAmount = project.discount    ?? 0
-  const budgetAmount   = project.budget      ?? 0
-  const netBudget      = Math.max(0, budgetAmount - discountAmount)
-  const dueAmount      = project.dueAmount   ?? Math.max(0, netBudget - paidAmount)
+  const projectValue   = project.budget      ?? 0   // the net value; no contract/discount split any more
+  const dueAmount      = project.dueAmount   ?? Math.max(0, projectValue - paidAmount)
   const profit         = paidAmount - (project.approvedExpenses ?? 0)
-  const utilization    = budgetAmount > 0 ? Math.round(((project.approvedExpenses ?? 0) / budgetAmount) * 100) : 0
-  const hasDiscount    = discountAmount > 0
+  const utilization    = projectValue > 0 ? Math.round(((project.approvedExpenses ?? 0) / projectValue) * 100) : 0
   const ventureIdx  = ventures.findIndex(v => v.id === project.venture)
   const vm          = ventureIdx >= 0 ? ventures[ventureIdx] : { label: project.venture }
   const vc          = VENTURE_COLOR_PALETTE[ventureIdx >= 0 ? ventureIdx % VENTURE_COLOR_PALETTE.length : 0]
@@ -1057,13 +1053,7 @@ export default function ProjectDetailPage() {
         <div className="flex items-center gap-4 sm:gap-8 mt-5 pb-5 border-b border-gray-100 flex-wrap">
           {[
             ...(canViewFinancials ? [
-              hasDiscount
-                ? { label: 'Contract',  value: fmt(budgetAmount) }
-                : { label: 'Budget',    value: fmt(budgetAmount) },
-              ...(hasDiscount ? [
-                { label: 'Discount',  value: fmt(discountAmount), dimRed: true },
-                { label: 'Net Value', value: fmt(netBudget),      bold: true },
-              ] : []),
+              { label: 'Project Value', value: fmt(projectValue), bold: true },
               { label: 'Paid',     value: fmt(paidAmount),  colored: true, positive: true },
               { label: 'Due',      value: fmt(dueAmount),   colored: dueAmount > 0, positive: false },
               { label: 'Expenses', value: fmt(project.approvedExpenses) },
@@ -1111,12 +1101,12 @@ export default function ProjectDetailPage() {
             </h3>
 
             {/* Progress bars */}
-            {((canViewFinancials && budgetAmount > 0) || totalTasks > 0) && (
+            {((canViewFinancials && projectValue > 0) || totalTasks > 0) && (
               <div className="space-y-3 mb-6 pb-6 border-b border-gray-100">
-                {canViewFinancials && budgetAmount > 0 && (
+                {canViewFinancials && projectValue > 0 && (
                   <div>
                     <div className="flex justify-between text-xs text-gray-400 mb-1.5">
-                      <span>Budget utilisation{hasDiscount ? <span className="text-gray-300"> (of ৳{budgetAmount.toLocaleString()})</span> : ''}</span>
+                      <span>Cost vs project value <span className="text-gray-300">(of ৳{projectValue.toLocaleString()})</span></span>
                       <span>{utilization}%</span>
                     </div>
                     <div className="w-full bg-gray-100 rounded-full h-1">
@@ -1168,22 +1158,12 @@ export default function ProjectDetailPage() {
             </dl>
 
             {/* Financial breakdown — only shown to users who can view financials */}
-            {canViewFinancials && budgetAmount > 0 && (
+            {canViewFinancials && projectValue > 0 && (
               <div className="mt-6 rounded-xl bg-gray-900 text-white p-4 space-y-2.5">
                 <p className="text-xs font-medium text-gray-400 uppercase tracking-widest mb-3">Financial Breakdown</p>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-400">Contract Value</span>
-                  <span className="tabular-nums font-medium">{fmt(budgetAmount)}</span>
-                </div>
-                {hasDiscount && (
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-gray-400">Discount</span>
-                    <span className="tabular-nums text-rose-400 font-medium">− {fmt(discountAmount)}</span>
-                  </div>
-                )}
-                <div className="flex items-center justify-between text-sm border-t border-gray-700 pt-2.5">
-                  <span className="text-gray-300 font-medium">{hasDiscount ? 'Net Value' : 'Budget'}</span>
-                  <span className="tabular-nums font-semibold">{fmt(netBudget)}</span>
+                <div className="flex items-center justify-between text-sm border-b border-gray-700 pb-2.5">
+                  <span className="text-gray-300 font-medium">Project Value</span>
+                  <span className="tabular-nums font-semibold">{fmt(projectValue)}</span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-gray-400">Paid</span>

@@ -435,9 +435,7 @@ export default function ProjectsPage() {
                   const isOverd = due && new Date(due) < new Date() && !['DELIVERED','CANCELLED','APPROVED'].includes(p.status)
 
                   // Financials — profit is cash basis: what client paid minus what was spent
-                  const budget    = Number(p.budget       ?? 0)
-                  const discount  = Number(p.discount     ?? 0)
-                  const netBudget = Math.max(0, budget - discount)
+                  const netBudget = Number(p.budget       ?? 0)   // budget IS the project value
                   const paid      = Number(p.paidAmount   ?? 0)
                   const expense   = Number(p.approvedExpenses ?? 0)
                   const profit    = paid - expense

@@ -35,7 +35,7 @@ export async function GET(_, { params }) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     await connectDB()
 
-    const project = await Project.findById(params.id).select('name projectCode venture budget discount paidAmount currency').lean()
+    const project = await Project.findById(params.id).select('name projectCode venture budget paidAmount currency').lean()
     if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
 
     // Admin view shows drafts too, flagged as excluded from the rollup.
@@ -57,13 +57,12 @@ export async function GET(_, { params }) {
         cancelledCount: children.filter(c => c.status === 'CANCELLED').length,
         status:       deriveStatus(billable, totals),
         currency:     project.currency ?? 'BDT',
-        projectBudget:   Number(project.budget ?? 0),
-        projectDiscount: Number(project.discount ?? 0),
+        projectValue: Number(project.budget ?? 0),
         // What the project is worth vs what has actually been invoiced — the
-        // gap tells you how much of the contract is still un-billed.
+        // gap tells you how much of the project value is still un-billed.
         uninvoiced: Math.max(
           0,
-          Math.round((Number(project.budget ?? 0) - Number(project.discount ?? 0) - totals.total) * 100) / 100
+          Math.round((Number(project.budget ?? 0) - totals.total) * 100) / 100
         ),
       },
       combined: combinedDoc

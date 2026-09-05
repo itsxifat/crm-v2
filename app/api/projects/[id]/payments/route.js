@@ -81,9 +81,8 @@ export async function POST(request, { params }) {
       }
     } else {
       const budget  = Number(project.budget ?? 0)
-      const disc    = Number(project.discount ?? 0)
       const paid    = Number(project.paidAmount ?? 0)
-      const outstanding = Math.max(0, budget - disc - paid)
+      const outstanding = Math.max(0, budget - paid)
       if (budget > 0 && parsedAmt > outstanding + 0.01) {
         return NextResponse.json(
           { error: `Amount exceeds outstanding project balance of BDT ${outstanding.toFixed(2)}` },

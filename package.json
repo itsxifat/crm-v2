@@ -13,7 +13,8 @@
     "db:migrate-expenses": "node scripts/migrate-expenses-approved-to-paid.js",
     "db:migrate-expense-statuses": "node scripts/migrate-expense-statuses.js",
     "db:drop-collections": "node scripts/drop-collections.js",
-    "db:migrate-combined-invoices": "node scripts/migrate-combined-invoices.js"
+    "db:migrate-combined-invoices": "node scripts/migrate-combined-invoices.js",
+    "db:migrate-drop-project-discount": "node scripts/migrate-drop-project-discount.js"
   },
   "dependencies": {
     "@hello-pangea/dnd": "^16.6.0",

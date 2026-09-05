@@ -161,15 +161,9 @@ export default function ClientProjectDetailPage() {
           <h2 className="text-base font-bold text-gray-900 mb-4">Pricing</h2>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <div>
-              <p className="text-xs text-gray-400 font-medium">Project Price</p>
+              <p className="text-xs text-gray-400 font-medium">Project Value</p>
               <p className="text-sm font-semibold text-gray-800 mt-0.5">৳ {project.budget.toLocaleString()}</p>
             </div>
-            {project.discount > 0 && (
-              <div>
-                <p className="text-xs text-gray-400 font-medium">Discount</p>
-                <p className="text-sm font-semibold text-green-600 mt-0.5">- ৳ {project.discount.toLocaleString()}</p>
-              </div>
-            )}
             <div>
               <p className="text-xs text-gray-400 font-medium">Paid</p>
               <p className="text-sm font-semibold text-blue-600 mt-0.5">৳ {project.paidAmount.toLocaleString()}</p>

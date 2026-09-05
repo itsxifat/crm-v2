@@ -27,7 +27,6 @@ const schema = z.object({
   startDate:        z.string().optional(),
   deadline:         z.string().optional(),
   budget:           z.coerce.number().min(0).optional(),
-  discount:         z.coerce.number().min(0).optional(),
   currency:         z.string().default('BDT'),
   tags:             z.string().optional(),
 })
@@ -106,7 +105,6 @@ export default function CreateProjectForm({ project }) {
       startDate:        project.startDate ? project.startDate.slice(0, 10) : '',
       deadline:         project.deadline  ? project.deadline.slice(0, 10)  : '',
       budget:           project.budget    ?? '',
-      discount:         project.discount  ?? '',
       currency:         'BDT',
       tags:             project.tags       ?? '',
     } : {
@@ -120,7 +118,6 @@ export default function CreateProjectForm({ project }) {
   const venture     = watch('venture')
   const projectType = watch('projectType')
   const budget      = watch('budget')
-  const discount    = watch('discount')
   const category    = watch('category')
 
   useEffect(() => {
@@ -153,8 +150,6 @@ export default function CreateProjectForm({ project }) {
   const categories    = venture ? Object.keys(svcMap[venture] ?? {}) : []
   const subcategories = venture && category ? (svcMap[venture]?.[category] ?? []) : []
   const budgetNum     = Number(budget) || 0
-  const discountNum   = Number(discount) || 0
-  const netValue      = budgetNum - discountNum
 
   async function onSubmit(data) {
     try {
@@ -165,7 +160,6 @@ export default function CreateProjectForm({ project }) {
       if (!body.startDate)                                delete body.startDate
       if (!body.deadline)                                 delete body.deadline
       if (body.budget   === '' || body.budget   == null)  delete body.budget
-      if (body.discount === '' || body.discount == null)  delete body.discount
       if (!body.tags)                                     delete body.tags
 
       const url    = isEdit ? `/api/projects/${project.id}` : '/api/projects'
@@ -341,38 +335,23 @@ export default function CreateProjectForm({ project }) {
       {/* ── Financials ── */}
       <SectionCard icon={Wallet} title="Financials">
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Budget (৳)">
-              <input type="number" step="0.01" min="0"
-                {...register('budget')}
-                onKeyDown={e => { if (e.key === '-' || e.key === 'e') e.preventDefault() }}
-                placeholder="0.00" className={ic} />
-            </Field>
-            <Field label="Discount (৳)">
-              <input type="number" step="0.01" min="0"
-                {...register('discount')}
-                onKeyDown={e => { if (e.key === '-' || e.key === 'e') e.preventDefault() }}
-                placeholder="0.00" className={ic} />
-            </Field>
-          </div>
+          <Field label="Project Value (৳)">
+            <input type="number" step="0.01" min="0"
+              {...register('budget')}
+              onKeyDown={e => { if (e.key === '-' || e.key === 'e') e.preventDefault() }}
+              placeholder="0.00" className={ic} />
+            <p className="mt-1.5 text-xs text-gray-400">
+              The net amount the client pays. Bill it across as many invoices as you need.
+            </p>
+          </Field>
 
           {budgetNum > 0 && (
-            <div className="rounded-xl bg-gray-900 text-white p-4 space-y-2">
-              <p className="text-xs text-gray-400 uppercase tracking-widest font-medium mb-3">Financial Summary</p>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-400">Contract Value</span>
-                <span className="font-medium tabular-nums">৳{budgetNum.toLocaleString('en-BD', { minimumFractionDigits: 2 })}</span>
-              </div>
-              {discountNum > 0 && (
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-400">Discount</span>
-                  <span className="text-red-400 font-medium tabular-nums">− ৳{discountNum.toLocaleString('en-BD', { minimumFractionDigits: 2 })}</span>
-                </div>
-              )}
-              <div className="border-t border-gray-700 pt-2 flex items-center justify-between">
-                <span className="text-sm font-semibold">Net Value</span>
-                <span className={`text-base font-bold tabular-nums ${netValue < 0 ? 'text-red-400' : 'text-emerald-400'}`}>
-                  ৳{netValue.toLocaleString('en-BD', { minimumFractionDigits: 2 })}
+            <div className="rounded-xl bg-gray-900 text-white p-4">
+              <p className="text-xs text-gray-400 uppercase tracking-widest font-medium mb-2">Financial Summary</p>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-semibold">Project Value</span>
+                <span className="text-base font-bold tabular-nums text-emerald-400">
+                  ৳{budgetNum.toLocaleString('en-BD', { minimumFractionDigits: 2 })}
                 </span>
               </div>
             </div>

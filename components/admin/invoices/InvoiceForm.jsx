@@ -70,9 +70,7 @@ export default function InvoiceForm({ invoice, defaultProjectId, defaultClientId
     .reduce((sum, i) => sum + (Number(i.total) || 0), 0)
 
   const selectedProject = projects.find(x => (x.id ?? x._id) === projectId) ?? null
-  const projectNet      = selectedProject
-    ? Math.max(0, (Number(selectedProject.budget) || 0) - (Number(selectedProject.discount) || 0))
-    : 0
+  const projectNet      = selectedProject ? Math.max(0, Number(selectedProject.budget) || 0) : 0
   const remainingToBill = Math.max(0, projectNet - alreadyBilled)
 
   // Auto-fill the first line when a project is picked (new invoices only), using
@@ -82,7 +80,7 @@ export default function InvoiceForm({ invoice, defaultProjectId, defaultClientId
     if (isEdit || !projectId || projects.length === 0 || siblings === null) return
     const p = projects.find(x => (x.id ?? x._id) === projectId)
     if (!p) return
-    const net  = Math.max(0, (Number(p.budget) || 0) - (Number(p.discount) || 0))
+    const net  = Math.max(0, Number(p.budget) || 0)
     const done = (siblings ?? []).filter(i => i.status !== 'CANCELLED')
     const rate = Math.max(0, net - done.reduce((sum, i) => sum + (Number(i.total) || 0), 0))
     const seq  = done.length + 1
@@ -199,7 +197,7 @@ export default function InvoiceForm({ invoice, defaultProjectId, defaultClientId
                   onChange={v => setProjectId(v ?? '')}
                   options={clientProjects.map(p => ({
                     value: p.id ?? p._id,
-                    label: `${p.projectCode} — ${p.name}${p.budget > 0 ? ` (৳${((p.budget||0)-(p.discount||0)).toLocaleString()})` : ''}`,
+                    label: `${p.projectCode} — ${p.name}${p.budget > 0 ? ` (৳${(p.budget || 0).toLocaleString()})` : ''}`,
                   }))}
                   placeholder="— No project (standalone invoice) —"
                   disabled={isEdit}
@@ -249,7 +247,7 @@ export default function InvoiceForm({ invoice, defaultProjectId, defaultClientId
                     </div>
                     {projectNet > 0 && (
                       <div className="flex items-center justify-between text-xs">
-                        <span className="text-gray-500">Remaining on contract</span>
+                        <span className="text-gray-500">Remaining to bill</span>
                         <span className={`font-semibold tabular-nums ${remainingToBill > 0 ? 'text-amber-600' : 'text-green-600'}`}>
                           ৳ {remainingToBill.toLocaleString('en-BD', { minimumFractionDigits: 2 })}
                         </span>

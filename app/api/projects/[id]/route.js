@@ -53,13 +53,12 @@ export async function GET(_, { params }) {
 
     if (canViewFinancials) {
       data.profit            = (data.paidAmount ?? 0) - (data.approvedExpenses ?? 0)
-      data.contractedProfit  = (data.budget ?? 0) - (data.discount ?? 0) - (data.approvedExpenses ?? 0)
-      data.dueAmount         = Math.max(0, (data.budget ?? 0) - (data.discount ?? 0) - (data.paidAmount ?? 0))
+      data.contractedProfit  = (data.budget ?? 0) - (data.approvedExpenses ?? 0)
+      data.dueAmount         = Math.max(0, (data.budget ?? 0) - (data.paidAmount ?? 0))
       data.expenses          = expenses.map(e => e.toJSON())
     } else {
       // Strip all financial fields — never expose pricing to unpermitted users
       delete data.budget
-      delete data.discount
       delete data.paidAmount
       delete data.approvedExpenses
       delete data.profit
@@ -90,13 +89,12 @@ export async function PUT(request, { params }) {
     if (!project) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
     // Capture pre-update values to detect what changed
-    const prevDiscount = Number(project.discount ?? 0)
     const prevDeadline = project.deadline?.toISOString().slice(0, 10) ?? null
 
     // Apply allowed fields via read-modify-save so encryption hooks fire correctly
     const ALLOWED = ['name','description','clientId','venture','category','subcategory',
       'projectType','projectManagerId','priority','startDate','deadline',
-      'budget','discount','currency','tags','status']
+      'budget','currency','tags','status']
     for (const field of ALLOWED) {
       if (body[field] !== undefined) {
         if (field === 'startDate' || field === 'deadline') {
@@ -114,46 +112,21 @@ export async function PUT(request, { params }) {
     ])
 
     const pid         = new mongoose.Types.ObjectId(params.id)
-    const newDiscount = Number(project.discount ?? 0)
     const newDeadline = project.deadline?.toISOString().slice(0, 10) ?? null
 
-    // Sync linked invoice: dueDate on deadline change, discount on discount/budget change
-    const discountChanged = newDiscount !== prevDiscount || body.budget !== undefined
-    const deadlineChanged = newDeadline !== prevDeadline && newDeadline !== null
-
-    // Sync the linked invoice ONLY when the project has exactly one open invoice.
-    // With several, pushing the project-level discount onto an arbitrary one
-    // would silently corrupt the split — those are edited per invoice instead.
-    if (discountChanged || deadlineChanged) {
-      const open = await Invoice.find({
-        $or: [{ projectId: pid }, { projectIds: pid }],
-        status: { $nin: ['PAID', 'CANCELLED'] },
-      }).limit(2)
-
-      if (open.length === 1) {
-        const inv = open[0]
-        if (discountChanged) {
-          inv.discount = newDiscount
-          inv.total    = Math.max(0, Number(inv.subtotal ?? 0) + Number(inv.taxAmount ?? 0) - newDiscount)
-        }
-        if (deadlineChanged) {
-          inv.dueDate = new Date(project.deadline)
-        }
-        await inv.save()
-      } else if (open.length > 1 && deadlineChanged) {
-        // A new deadline is unambiguous, so it can still fan out to every
-        // open invoice; the discount deliberately does not.
-        await Invoice.updateMany(
-          { $or: [{ projectId: pid }, { projectIds: pid }], status: { $nin: ['PAID', 'CANCELLED'] } },
-          { $set: { dueDate: new Date(project.deadline) } }
-        )
-      }
+    // A new deadline moves the due date on every still-open invoice. Amounts are
+    // never pushed down from the project — each invoice carries its own figures.
+    if (newDeadline !== prevDeadline && newDeadline !== null) {
+      await Invoice.updateMany(
+        { $or: [{ projectId: pid }, { projectIds: pid }], status: { $nin: ['PAID', 'CANCELLED'] } },
+        { $set: { dueDate: new Date(project.deadline) } }
+      )
     }
 
     const data = project.toJSON()
     data.profit           = (data.paidAmount ?? 0) - (data.approvedExpenses ?? 0)
-    data.contractedProfit = (data.budget ?? 0) - (data.discount ?? 0) - (data.approvedExpenses ?? 0)
-    data.dueAmount        = Math.max(0, (data.budget ?? 0) - (data.discount ?? 0) - (data.paidAmount ?? 0))
+    data.contractedProfit = (data.budget ?? 0) - (data.approvedExpenses ?? 0)
+    data.dueAmount        = Math.max(0, (data.budget ?? 0) - (data.paidAmount ?? 0))
 
     logActivity({
       userId:   session.user.id,

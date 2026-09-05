@@ -25,7 +25,6 @@ const schema = z.object({
   startDate:        z.string().optional().nullable(),
   deadline:         z.string().optional().nullable(),
   budget:           z.coerce.number().min(0).optional(),
-  discount:         z.coerce.number().min(0).optional(),
   currency:         z.string().default('BDT'),
   tags:             z.string().optional().nullable(),
 })
@@ -75,7 +74,7 @@ export async function GET(request) {
       // cash-basis profit: what client paid minus what we spent
       j.profit = (j.paidAmount ?? 0) - (j.approvedExpenses ?? 0)
       // contracted profit: full budget value minus costs (regardless of payment)
-      j.contractedProfit = (j.budget ?? 0) - (j.discount ?? 0) - (j.approvedExpenses ?? 0)
+      j.contractedProfit = (j.budget ?? 0) - (j.approvedExpenses ?? 0)
       return j
     }
 
@@ -143,7 +142,7 @@ export async function POST(request) {
     ])
     const j = project.toJSON()
     j.profit = (j.paidAmount ?? 0) - (j.approvedExpenses ?? 0)
-    j.contractedProfit = (j.budget ?? 0) - (j.discount ?? 0) - (j.approvedExpenses ?? 0)
+    j.contractedProfit = (j.budget ?? 0) - (j.approvedExpenses ?? 0)
 
     logActivity({
       userId:   session.user.id,

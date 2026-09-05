@@ -28,7 +28,7 @@ export async function GET(request) {
     // Explicit projection of client-safe fields only — never expose internal
     // financials like approvedExpenses / profit to the client.
     const projects = await Project.find(filter)
-      .select('projectCode name description category subcategory projectType status priority startDate deadline currentPeriodStart currentPeriodEnd nextBillingDate budget discount paidAmount currency updatedAt')
+      .select('projectCode name description category subcategory projectType status priority startDate deadline currentPeriodStart currentPeriodEnd nextBillingDate budget paidAmount currency updatedAt')
       .sort({ updatedAt: -1 })
       .lean()
 
@@ -47,9 +47,8 @@ export async function GET(request) {
       const completed   = pTasks.filter(t => t.status === 'COMPLETED').length
       const nextMile    = pMilestones.find(m => !m.completed)
       const budget      = Number(p.budget   ?? 0)
-      const discount    = Number(p.discount ?? 0)
       const paid        = Number(p.paidAmount ?? 0)
-      const netValue    = Math.max(0, budget - discount)
+      const netValue    = budget   // budget IS the project value now
       return {
         ...p,
         id:                 p._id.toString(),

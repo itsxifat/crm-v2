@@ -60,7 +60,6 @@ export async function POST(request, { params }) {
       periodStart:     newPeriodStart,
       periodEnd:       newPeriodEnd,
       billingAmount:   old.budget ?? 0,
-      discountApplied: old.discount ?? 0,
       status:          'PENDING',
       renewedBy:       session.user.id,
     }).save()

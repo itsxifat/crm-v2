@@ -33,9 +33,10 @@ const ProjectSchema = new mongoose.Schema(
     nextBillingDate:    { type: Date, default: null },
     renewalStatus:      { type: String, enum: ['ACTIVE','EXPIRING_SOON','RENEWED','CANCELLED'], default: null },
 
-    // Financial fields — Mixed (encrypted Number)
+    // Financial fields — Mixed (legacy Number storage)
+    // `budget` IS the project value. There is no separate contract value or
+    // discount any more: what is stored here is the net value the client pays.
     budget:           { type: mongoose.Schema.Types.Mixed, default: 0 },
-    discount:         { type: mongoose.Schema.Types.Mixed, default: 0 },
     approvedExpenses: { type: mongoose.Schema.Types.Mixed, default: 0 },
     paidAmount:       { type: mongoose.Schema.Types.Mixed, default: 0 },
     currency:         { type: String, default: 'BDT' },
@@ -89,11 +90,35 @@ ProjectSchema.pre('save', async function () {
   this.projectCode = `${pfx}${_seqCode(count)}`
 })
 
+/**
+ * Keep the project value at or above what the client has actually paid.
+ *
+ * A project can carry several invoices. When extra ones are raised on top of the
+ * original scope and paid, the project really is worth more than it was sold
+ * for, so the value grows to match the money received. It never shrinks — an
+ * underpaid project keeps the value it was agreed at, so `dueAmount` still
+ * shows the shortfall.
+ *
+ * This lives on the model (not in the payment routes) because every path that
+ * credits a payment does so via doc.save(), so the invariant cannot be bypassed.
+ */
+export function growProjectValueToPaid(doc) {
+  const paid  = Number(doc.paidAmount ?? 0)
+  const value = Number(doc.budget ?? 0)
+  if (!Number.isFinite(paid) || paid <= value + 0.01) return false
+  doc.budget = Math.round(paid * 100) / 100
+  return true
+}
+
+ProjectSchema.pre('save', function () {
+  growProjectValueToPaid(this)
+})
+
 ProjectSchema.virtual('profit').get(function () {
   return (this.paidAmount ?? 0) - (this.approvedExpenses ?? 0)
 })
 ProjectSchema.virtual('dueAmount').get(function () {
-  return Math.max(0, (this.budget ?? 0) - (this.discount ?? 0) - (this.paidAmount ?? 0))
+  return Math.max(0, (this.budget ?? 0) - (this.paidAmount ?? 0))
 })
 ProjectSchema.virtual('budgetUtilization').get(function () {
   if (!this.budget || this.budget === 0) return 0

@@ -165,7 +165,7 @@ export async function GET(request) {
 
       const projectIds = rows.map(r => r._id).filter(Boolean)
       const [projects, combined] = await Promise.all([
-        Project.find({ _id: { $in: projectIds } }).select('name projectCode venture category budget discount').lean(),
+        Project.find({ _id: { $in: projectIds } }).select('name projectCode venture category budget').lean(),
         CombinedInvoice.find({ projectId: { $in: projectIds } }).select('combinedNumber projectId').lean(),
       ])
       const clients = await Client.find({ _id: { $in: rows.map(r => r.clientId).filter(Boolean) } })

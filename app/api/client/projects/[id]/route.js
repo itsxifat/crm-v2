@@ -42,10 +42,9 @@ export async function GET(request, { params }) {
       _id: undefined,
     })
 
-    const budget    = project.budget    ?? 0
-    const discount  = project.discount  ?? 0
+    const budget     = project.budget     ?? 0   // budget IS the project value
     const paidAmount = project.paidAmount ?? 0
-    const dueAmount  = Math.max(0, budget - discount - paidAmount)
+    const dueAmount  = Math.max(0, budget - paidAmount)
 
     return NextResponse.json({
       project: {
@@ -54,7 +53,6 @@ export async function GET(request, { params }) {
         _id: undefined,
         endDate: project.deadline ?? null,
         budget,
-        discount,
         paidAmount,
         dueAmount,
         tasks: tasks.map(serialize),

@@ -11,7 +11,7 @@ import { maskDoc, INVOICE_PII } from '@/lib/pii'
 
 async function loadPopulated(id) {
   return CombinedInvoice.findById(id)
-    .populate('projectId', 'name projectCode venture category budget discount')
+    .populate('projectId', 'name projectCode venture category budget')
     .populate({ path: 'clientId', populate: { path: 'userId', select: 'name email avatar phone' } })
     .populate('createdBy', 'name')
 }
