@@ -4,6 +4,8 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Purchase } from '@/models'
+import { requirePerm } from '@/lib/rbac'
+import { isValidObjectId } from '@/lib/objectId'
 import { z } from 'zod'
 
 const schema = z.object({
@@ -23,9 +25,9 @@ const schema = z.object({
 export async function PUT(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-    if (!['SUPER_ADMIN', 'MANAGER'].includes(session.user.role))
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const denied = requirePerm(session, 'hr.vendors.manage')
+    if (denied) return denied
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
     await connectDB()
 
@@ -51,13 +53,14 @@ export async function PUT(request, { params }) {
 export async function DELETE(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-    if (!['SUPER_ADMIN', 'MANAGER'].includes(session.user.role))
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const denied = requirePerm(session, 'hr.vendors.manage')
+    if (denied) return denied
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
     await connectDB()
 
-    await Purchase.findByIdAndDelete(params.id)
+    const deleted = await Purchase.findByIdAndDelete(params.id)
+    if (!deleted) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     return NextResponse.json({ success: true })
   } catch (err) {
     console.error('[DELETE /api/purchases/[id]]', err)

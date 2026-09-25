@@ -17,10 +17,26 @@ const loginSchema = z.object({
   password:   z.string().min(1, 'Password is required'),
 })
 
+// Only allow same-origin relative paths as post-login destinations
+// (blocks open redirects and javascript:/data: URLs).
+function safeCallbackUrl(raw) {
+  if (typeof raw !== 'string' || !raw) return '/'
+  try {
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost'
+    const url = new URL(raw, origin)
+    if (url.origin !== origin) return '/'
+    const path = `${url.pathname}${url.search}${url.hash}`
+    if (!path.startsWith('/') || path.startsWith('//')) return '/'
+    return path
+  } catch {
+    return '/'
+  }
+}
+
 export default function LoginPage() {
   const router       = useRouter()
   const searchParams = useSearchParams()
-  const callbackUrl  = searchParams.get('callbackUrl') ?? '/'
+  const callbackUrl  = safeCallbackUrl(searchParams.get('callbackUrl'))
   const passwordSet  = searchParams.get('passwordSet') === '1'
   const [showPass, setShowPass] = useState(false)
   const [loading,  setLoading]  = useState(false)

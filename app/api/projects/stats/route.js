@@ -2,23 +2,38 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { requireStaff } from '@/lib/rbac'
+import mongoose from 'mongoose'
+import { requireStaff, requirePerm } from '@/lib/rbac'
 import connectDB from '@/lib/mongodb'
 import { Project } from '@/models'
 
 export async function GET() {
   try {
     const session = await getServerSession(authOptions)
-    const denied = requireStaff(session)
+    const denied = requireStaff(session) ?? requirePerm(session, 'projects.view')
     if (denied) return denied
     await connectDB()
 
+    // Employees only count the projects they can see in /api/projects
+    // (aggregate() doesn't cast, so use a real ObjectId).
+    const scope = {}
+    if (session.user.role === 'EMPLOYEE') {
+      if (mongoose.Types.ObjectId.isValid(session.user.id)) {
+        const uid = new mongoose.Types.ObjectId(session.user.id)
+        scope.$or = [{ projectManagerId: uid }, { teamMembers: uid }]
+      } else {
+        scope._id = null
+      }
+    }
+
     const [statusCounts, total, missedDeadline] = await Promise.all([
       Project.aggregate([
+        { $match: scope },
         { $group: { _id: '$status', count: { $sum: 1 } } }
       ]),
-      Project.countDocuments(),
+      Project.countDocuments(scope),
       Project.countDocuments({
+        ...scope,
         projectType: 'FIXED',
         deadline: { $lt: new Date() },
         status: { $nin: ['DELIVERED', 'CANCELLED', 'APPROVED'] },

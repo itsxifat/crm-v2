@@ -157,14 +157,14 @@ export default function InvoicePrintView({ invoice, payments = [], company = {} 
             const projectMatch = item.description?.match(/^\[([^\]]+)\]/)
             const projectCode  = projectMatch
               ? projectMatch[1]
-              : (invoice.projectIds?.[i]?.projectCode ?? invoice.projectIds?.[0]?.projectCode ?? '—')
+              : (invoice.projectId?.projectCode ?? invoice.projectIds?.[i]?.projectCode ?? invoice.projectIds?.[0]?.projectCode ?? '—')
             const rawDesc  = projectMatch
               ? item.description.slice(projectMatch[0].length).trim()
               : (item.description ?? '')
             const splitMatch = rawDesc.match(/^([^—\n]+?)(?:\s*—\s*|\n)([\s\S]*)$/)
             const descTitle  = splitMatch ? splitMatch[1].trim() : rawDesc
             const descDetail = splitMatch ? splitMatch[2].trim() : ''
-            const project = invoice.projectIds?.[i] ?? invoice.projectIds?.[0]
+            const project = (invoice.projectId && typeof invoice.projectId === 'object' ? invoice.projectId : null) ?? invoice.projectIds?.[i] ?? invoice.projectIds?.[0]
             const venture = project?.venture
             return (
               <tr key={i}>
@@ -238,7 +238,7 @@ export default function InvoicePrintView({ invoice, payments = [], company = {} 
                 <tr key={i}>
                   <td style={TD({ paddingLeft: 0 })}>{fmtDate(p.paymentDate ?? p.createdAt)}</td>
                   <td style={TD()}>{(p.paymentMethod ?? '—').replace(/_/g, ' ')}</td>
-                  <td style={TD({ textAlign: 'center', fontFamily: 'monospace', fontSize: 11 })}>{p.transactionId ?? p.txnId ?? '—'}</td>
+                  <td style={TD({ textAlign: 'center', fontFamily: 'monospace', fontSize: 11 })}>{p.transactionId?.txnId ?? p.txnId ?? '—'}</td>
                   <td style={TD({ textAlign: 'right', paddingRight: 0, color: '#16a34a', fontWeight: 600 })}><Sym />&nbsp;{(p.amount ?? 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })}</td>
                 </tr>
               ))}

@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import Select from '@/components/ui/Select'
 import { usePermission } from '@/components/auth/Can'
+import TaskDetailModal from '@/components/admin/projects/TaskDetailModal'
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -142,6 +143,7 @@ export default function TasksPage() {
   const [priority, setPriority] = useState('')
   const [search,   setSearch]   = useState('')
   const [searchQ,  setSearchQ]  = useState('')
+  const [openTaskId, setOpenTaskId] = useState(null)
   const limit                   = 30
 
   const { can } = usePermission()
@@ -171,8 +173,8 @@ export default function TasksPage() {
   }, [search])
 
   function handleStatusChange(tab) { setStatusTab(tab); setPage(1) }
-  function handleUpdated(updated)  { setTasks(ts => ts.map(t => t._id === updated._id ? { ...t, ...updated } : t)) }
-  function handleDeleted(id)       { setTasks(ts => ts.filter(t => t._id !== id)); setTotal(n => n - 1) }
+  function handleUpdated(updated)  { setTasks(ts => ts.map(t => t.id === updated.id ? { ...t, ...updated, projectId: t.projectId } : t)) }
+  function handleDeleted(id)       { setTasks(ts => ts.filter(t => t.id !== id)); setTotal(n => n - 1) }
 
   const pages = Math.ceil(total / limit)
 
@@ -271,10 +273,13 @@ export default function TasksPage() {
                 const assignee = task.assignedEmployeeId?.userId?.name ?? task.assignedFreelancerId?.userId?.name ?? null
 
                 return (
-                  <tr key={task._id} className="hover:bg-gray-50/60 transition-colors">
+                  <tr key={task.id} className="hover:bg-gray-50/60 transition-colors">
                     {/* Task */}
                     <td className="px-5 py-3.5 max-w-[280px]">
-                      <p className="text-sm font-medium text-gray-800 truncate">{task.title}</p>
+                      <button type="button" onClick={() => setOpenTaskId(task.id)}
+                        className="block max-w-full text-left text-sm font-medium text-gray-800 truncate hover:text-blue-600 hover:underline">
+                        {task.title}
+                      </button>
                       {task.description && (
                         <p className="text-xs text-gray-400 truncate mt-0.5">{task.description}</p>
                       )}
@@ -288,7 +293,7 @@ export default function TasksPage() {
                     {/* Project */}
                     <td className="px-5 py-3.5">
                       {task.projectId ? (
-                        <Link href={`/admin/projects/${task.projectId._id ?? task.projectId}`}
+                        <Link href={`/admin/projects/${task.projectId.id ?? task.projectId}`}
                           className="text-sm text-blue-600 hover:underline flex items-center gap-1">
                           {task.projectId.name ?? 'Project'}
                           <ExternalLink className="w-3 h-3 opacity-60" />
@@ -316,7 +321,7 @@ export default function TasksPage() {
                     {/* Status */}
                     <td className="px-5 py-3.5">
                       {canUpdateTask
-                        ? <StatusDropdown taskId={task._id} current={task.status} onUpdated={handleUpdated} />
+                        ? <StatusDropdown taskId={task.id} current={task.status} onUpdated={handleUpdated} />
                         : (
                           <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium ${STATUS_CFG[task.status]?.bg} ${STATUS_CFG[task.status]?.text}`}>
                             <span className={`w-1.5 h-1.5 rounded-full ${STATUS_CFG[task.status]?.dot}`} />
@@ -327,7 +332,7 @@ export default function TasksPage() {
                     </td>
                     {/* Actions */}
                     <td className="px-3 py-3.5">
-                      {canDeleteTask && <RowMenu taskId={task._id} onDeleted={handleDeleted} />}
+                      {canDeleteTask && <RowMenu taskId={task.id} onDeleted={handleDeleted} />}
                     </td>
                   </tr>
                 )
@@ -353,6 +358,10 @@ export default function TasksPage() {
           </div>
         )}
       </div>
+
+      {openTaskId && (
+        <TaskDetailModal taskId={openTaskId} onClose={() => setOpenTaskId(null)} onUpdate={load} />
+      )}
     </div>
   )
 }

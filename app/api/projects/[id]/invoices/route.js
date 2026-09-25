@@ -3,24 +3,19 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
-import { Invoice, Project, CombinedInvoice, Employee } from '@/models'
-import { canAccess } from '@/lib/permissions'
+import { Invoice, Project, CombinedInvoice } from '@/models'
 import { requirePerm } from '@/lib/rbac'
+import { isValidObjectId } from '@/lib/objectId'
+import { canAccessProject, canViewProjectFinancials } from '@/lib/projectAccess'
+import { maskDoc, INVOICE_PII } from '@/lib/pii'
 import {
   buildCombined, ensureCombinedInvoice, findProjectInvoices,
   serialiseChild, rollUp, deriveStatus, toObjectId, NON_BILLABLE_STATUSES,
 } from '@/lib/combinedInvoice'
 
-// Financial visibility mirrors GET /api/projects/:id — an employee without the
-// viewFinancials flag must not see invoice amounts via this back door.
-async function canViewFinancials(session) {
-  if (['SUPER_ADMIN', 'MANAGER'].includes(session.user.role)) return true
-  if (session.user.role !== 'EMPLOYEE') return false
-  const emp = await Employee.findOne({ userId: session.user.id })
-    .populate({ path: 'customRoleId', select: 'permissions' })
-    .lean()
-  return emp?.customRoleId?.permissions?.projects?.viewFinancials === true
-}
+// Financial visibility mirrors GET /api/projects/:id (lib/projectAccess) — a
+// user without project financial visibility must not see invoice amounts via
+// this back door.
 
 // GET /api/projects/:id/invoices
 // Every invoice raised against the project, plus a live rollup and a pointer to
@@ -28,15 +23,17 @@ async function canViewFinancials(session) {
 export async function GET(_, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-    if (!canAccess(session, 'invoices', 'read'))
+    const denied  = requirePerm(session, 'sales.invoices.view')
+    if (denied) return denied
+    if (!canViewProjectFinancials(session))
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (!(await canViewFinancials(session)))
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
     await connectDB()
 
     const project = await Project.findById(params.id).select('name projectCode venture budget paidAmount currency').lean()
     if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+    if (!(await canAccessProject(session, params.id)))
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     // Admin view shows drafts too, flagged as excluded from the rollup.
     const all      = await findProjectInvoices(params.id, { billableOnly: false })
@@ -82,6 +79,7 @@ export async function POST(_, { params }) {
     const session = await getServerSession(authOptions)
     const denied  = requirePerm(session, 'sales.invoices.create')
     if (denied) return denied
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
     await connectDB()
 
     const count = await Invoice.countDocuments({
@@ -99,7 +97,7 @@ export async function POST(_, { params }) {
       { path: 'clientId',  populate: { path: 'userId', select: 'name email avatar' } },
     ])
 
-    return NextResponse.json({ data: await buildCombined(doc) }, { status: 201 })
+    return NextResponse.json({ data: maskDoc(session, await buildCombined(doc), INVOICE_PII) }, { status: 201 })
   } catch (err) {
     console.error('[POST /api/projects/:id/invoices]', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

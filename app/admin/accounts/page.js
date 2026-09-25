@@ -110,7 +110,7 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
 
   const { register, control, handleSubmit, watch, reset, setValue, formState: { errors, isSubmitting } } = useForm({
     resolver: zodResolver(txSchema),
-    defaultValues: { type: 'INCOME', currency: 'BDT', date: new Date().toISOString().slice(0,10) },
+    defaultValues: { type: 'INCOME', currency: 'BDT', date: ymdLocal(new Date()) },
   })
   // Keep the latest session user without making it a form-init dependency —
   // it arrives async (undefined → object) and gets a fresh ref on refetches.
@@ -156,7 +156,7 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
         expenseCategory: tx.expenseCategory ?? '',
         receiptUrl:      url,
         txnId:           tx.txnId ?? '',
-      } : { type: 'INCOME', currency: 'BDT', date: new Date().toISOString().slice(0, 10), accountManager: currentUserRef.current?.id ?? '' })
+      } : { type: 'INCOME', currency: 'BDT', date: ymdLocal(new Date()), accountManager: currentUserRef.current?.id ?? '' })
     }
   }, [open, tx, isEdit, reset])
 
@@ -196,6 +196,8 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
 
       // Income, or editing an existing transaction → direct ledger entry.
       const body = { ...data, receiptUrl: receiptUrl || null, txnId: txnIdVal.trim() || null }
+      // The ledger id is fixed once created — never send it on edit.
+      if (isEdit) delete body.txnId
       Object.keys(body).forEach(k => { if (body[k] === '') body[k] = null })
       const url    = isEdit ? `/api/transactions/${tx.id}` : '/api/transactions'
       const method = isEdit ? 'PUT' : 'POST'
@@ -320,8 +322,9 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
             <label className={lc}>Account Manager</label>
             <div className={`${ic} bg-gray-50 cursor-not-allowed flex items-center justify-between`}>
               <span className="text-gray-700">
-                {currentUser?.name ?? '—'}
-                {currentUser?.role && (
+                {/* Editing keeps the stored manager, so show that person — not the current user */}
+                {isEdit ? (tx?.accountManager?.name ?? '—') : (currentUser?.name ?? '—')}
+                {!isEdit && currentUser?.role && (
                   <span className="ml-1.5 text-xs text-gray-400 font-normal">
                     {currentUser.role.replace('_', ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase())}
                   </span>
@@ -332,13 +335,14 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
           <div>
             <label className={lc}>
               Transaction ID
-              <span className="text-gray-400 text-xs ml-1">(optional — auto-generated if blank)</span>
+              <span className="text-gray-400 text-xs ml-1">{isEdit ? '(cannot be changed)' : '(optional — auto-generated if blank)'}</span>
             </label>
             <input
               value={txnIdVal}
               onChange={e => setTxnIdVal(e.target.value)}
               placeholder="e.g. TXN-REF-001"
-              className={ic}
+              readOnly={isEdit}
+              className={`${ic}${isEdit ? ' bg-gray-50 text-gray-500 cursor-not-allowed' : ''}`}
             />
           </div>
         </div>
@@ -365,7 +369,7 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
             <label className={lc}>Link to Invoice <span className="text-gray-400 font-normal text-xs">(syncs invoice paid amount)</span></label>
             <Controller name="invoiceId" control={control} render={({ field }) => (
               <Select value={field.value} onChange={v => field.onChange(v ?? '')}
-                options={invoices.map(inv => ({ value: inv.id, label: `${inv.invoiceNumber} — ${inv.clientId?.name ?? inv.clientId ?? 'Client'} (৳${(inv.total ?? 0).toLocaleString()})` }))}
+                options={invoices.map(inv => ({ value: inv.id, label: `${inv.invoiceNumber} — ${inv.clientId?.userId?.name ?? inv.clientId?.company ?? 'Client'} (${formatCurrency(inv.total ?? 0, inv.currency)})` }))}
                 placeholder="None"
               />
             )} />
@@ -792,8 +796,10 @@ function ConfirmPaymentModal({ payment, currentUser, onClose, onDone }) {
   const fmtMethod = v => v ? (paymentMethods.find(m => m.value === v)?.label ?? v.replace(/_/g, ' ')) : '—'
   const [note,           setNote]           = useState('')
   const [txnId,          setTxnId]          = useState('')
+  const [amountBDT,      setAmountBDT]      = useState(payment.amountBDT ? String(payment.amountBDT) : '')
   const [users,   setUsers]   = useState([])
   const [saving,  setSaving]  = useState(false)
+  const isForeign = (payment.currency ?? 'BDT') !== 'BDT'
 
   useEffect(() => {
     fetch('/api/users?limit=100').then(r => r.json()).then(j => setUsers(j.data ?? []))
@@ -802,6 +808,10 @@ function ConfirmPaymentModal({ payment, currentUser, onClose, onDone }) {
   async function submit(action) {
     if (action === 'confirm' && !payment.receiptUrl && !txnId.trim()) {
       toast.error('Upload payment proof OR enter a Transaction ID to confirm')
+      return
+    }
+    if (action === 'confirm' && isForeign && !(Number(amountBDT) > 0)) {
+      toast.error(`Enter the BDT amount received for this ${payment.currency} payment`)
       return
     }
     setSaving(true)
@@ -814,6 +824,7 @@ function ConfirmPaymentModal({ payment, currentUser, onClose, onDone }) {
           rejectionNote:  note || undefined,
           txnId:          txnId.trim() || undefined,
           accountManager: currentUser?.id || undefined,
+          amountBDT:      isForeign && Number(amountBDT) > 0 ? Number(amountBDT) : undefined,
         }),
       })
       const json = await res.json()
@@ -871,7 +882,7 @@ function ConfirmPaymentModal({ payment, currentUser, onClose, onDone }) {
         </div>
 
         <div className="rounded-lg border border-gray-100 bg-gray-50 px-4 py-2.5 text-xs text-gray-600">
-          Confirming will create an <strong>INCOME transaction</strong> in the Transactions ledger for BDT {Number(payment.amount).toLocaleString('en-BD', { minimumFractionDigits: 2 })}.
+          Confirming will create an <strong>INCOME transaction</strong> in the Transactions ledger for {payment.currency ?? 'BDT'} {Number(payment.amount).toLocaleString('en-BD', { minimumFractionDigits: 2 })}.
         </div>
 
         {/* Account Manager + TxnId */}
@@ -903,6 +914,17 @@ function ConfirmPaymentModal({ payment, currentUser, onClose, onDone }) {
             )}
           </div>
         </div>
+
+        {isForeign && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              BDT received <span className="text-red-500 ml-1">*</span>
+            </label>
+            <input type="number" step="0.01" min="0" value={amountBDT} onChange={e => setAmountBDT(e.target.value)}
+              placeholder={`BDT equivalent of ${payment.currency} ${Number(payment.amount).toLocaleString()}`}
+              className={ic} />
+          </div>
+        )}
 
         {/* Note */}
         <div>
@@ -1074,6 +1096,7 @@ const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct'
 
 function getMonthLabel(offset = 0) {
   const d = new Date()
+  d.setDate(1) // avoid rolling into the next month on the 29th–31st
   d.setMonth(d.getMonth() - offset)
   return `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`
 }
@@ -1098,11 +1121,14 @@ function CalendarDrillDown({ drillKey, onClose }) {
   const fmtAmt = (n) => n == null ? '—' : `BDT ${Number(n).toLocaleString('en-BD', { minimumFractionDigits: 0 })}`
 
   useEffect(() => {
+    // Ignore responses for a month that's no longer selected (out-of-order replies)
+    const ctrl = new AbortController()
     setLoading(true)
-    fetch(`/api/dashboard/stats?drillMonth=${drillKey}`)
+    fetch(`/api/dashboard/stats?drillMonth=${drillKey}`, { signal: ctrl.signal })
       .then(r => r.json())
-      .then(j => { setData(j.data?.dailyData ?? []); setLoading(false) })
-      .catch(() => setLoading(false))
+      .then(j => { if (!ctrl.signal.aborted) { setData(j.data?.dailyData ?? []); setLoading(false) } })
+      .catch(() => { if (!ctrl.signal.aborted) setLoading(false) })
+    return () => ctrl.abort()
   }, [drillKey])
 
   return (
@@ -1289,13 +1315,17 @@ function AccountsContent() {
     const now = new Date()
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
   })
-  const [endDate,   setEndDate]   = useState(() => new Date().toISOString().slice(0, 10))
+  const [endDate,   setEndDate]   = useState(() => ymdLocal(new Date()))
   const [plStart,   setPlStart]   = useState(() => `${new Date().getFullYear()}-01-01`)
-  const [plEnd,     setPlEnd]     = useState(() => new Date().toISOString().slice(0, 10))
+  const [plEnd,     setPlEnd]     = useState(() => ymdLocal(new Date()))
 
 // ── Loaders ──────────────────────────────────────────────────────────────
 
   const loadSummary = useCallback(async () => {
+    if (!session) return
+    // Company-wide summary needs finance.overview.view; without it the overview
+    // still shows the dashboard KPI cards, just not the summary.
+    if (!canDo(session, 'finance.overview.view')) { setLoading(false); return }
     try {
       const params = new URLSearchParams()
       if (startDate) params.set('startDate', startDate)
@@ -1309,7 +1339,7 @@ function AccountsContent() {
     } finally {
       setLoading(false)
     }
-  }, [startDate, endDate])
+  }, [startDate, endDate, session])
 
   const loadTransactions = useCallback(async () => {
     setTxLoading(true)
@@ -1424,8 +1454,9 @@ function AccountsContent() {
   }, [activeTab])
   useEffect(() => { if (activeTab === 'transactions')  loadTransactions()         }, [activeTab, loadTransactions])
   useEffect(() => { if (activeTab === 'confirmations') loadPaymentConfirmations() }, [activeTab, loadPaymentConfirmations])
-  useEffect(() => { if (activeTab === 'requests')      loadPaymentRequests()      }, [activeTab, loadPaymentRequests])
-  useEffect(() => { if (activeTab === 'withdrawals')   { loadWithdrawals(); loadEditRequests() } }, [activeTab, loadWithdrawals, loadEditRequests])
+  // The Pending Edit Requests panel lives on the requests tab. The withdrawals tab is a
+  // static notice (the /api/admin/withdrawal-requests route was removed), so nothing loads there.
+  useEffect(() => { if (activeTab === 'requests')      { loadPaymentRequests(); loadEditRequests() } }, [activeTab, loadPaymentRequests, loadEditRequests])
   useEffect(() => { if (activeTab === 'pl')            loadPL()                   }, [activeTab, loadPL])
 
 
@@ -1549,7 +1580,7 @@ function AccountsContent() {
           <h1 className="text-2xl font-bold text-gray-900">Accounts</h1>
           <p className="text-sm text-gray-400 mt-0.5">Track income, expenses and financial health</p>
         </div>
-        {(activeTab === 'overview' || activeTab === 'transactions') && (
+        {(activeTab === 'overview' || activeTab === 'transactions') && canDo(session, 'finance.transactions.create') && (
           <button
             onClick={() => { setEditingTx(null); setModalOpen(true) }}
             className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 transition-colors"
@@ -1578,7 +1609,7 @@ function AccountsContent() {
             )}
           </div>
 
-          {loading ? <Spinner /> : summary ? (
+          {loading ? <Spinner /> : (summary || dashStats) ? (
             <>
               {(() => {
                 const f = dashStats?.financials ?? {}
@@ -1735,7 +1766,7 @@ function AccountsContent() {
                         </td>
                         <td className="px-4 py-3 text-xs text-gray-700 max-w-[200px] truncate">{tx.description}</td>
                         <td className={`px-4 py-3 text-right text-sm font-semibold whitespace-nowrap ${tx.type === 'INCOME' ? 'text-green-600' : 'text-red-500'}`}>
-                          {tx.type === 'INCOME' ? '+' : '-'}{fmt(tx.amount)}
+                          {tx.type === 'INCOME' ? '+' : '-'}{formatCurrency(tx.amount, tx.currency)}
                         </td>
                         <td className="px-4 py-3 text-xs text-gray-500">{fmtMethod(tx.paymentMethod)}</td>
                         <td className="px-4 py-3 text-xs text-gray-500">
@@ -1809,7 +1840,7 @@ function AccountsContent() {
                         </td>
                         <td className="px-4 py-3 text-xs text-gray-600">{pc.clientId?.userId?.name ?? '—'}</td>
                         <td className="px-4 py-3 text-xs text-gray-500">{pc.invoiceId?.invoiceNumber ?? '—'}</td>
-                        <td className="px-4 py-3 text-right text-sm font-semibold text-gray-800 whitespace-nowrap">{fmt(pc.amount)}</td>
+                        <td className="px-4 py-3 text-right text-sm font-semibold text-gray-800 whitespace-nowrap">{formatCurrency(pc.amount, pc.currency)}</td>
                         <td className="px-4 py-3"><StatusDot status={pc.status} /></td>
                         <td className="px-4 py-3 text-xs text-gray-500">{pc.submittedBy?.name ?? '—'}</td>
                         <td className="px-4 py-3">

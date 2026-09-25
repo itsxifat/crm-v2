@@ -1,4 +1,5 @@
 import mongoose from 'mongoose'
+import { nextSequence } from '../lib/sequence'
 const ProjectSchema = new mongoose.Schema(
   {
     projectCode: { type: String, unique: true, sparse: true },
@@ -60,6 +61,14 @@ const ProjectSchema = new mongoose.Schema(
 
 function _toAlpha(n) { let s = ''; n++; while (n > 0) { n--; s = String.fromCharCode(65 + n % 26) + s; n = Math.floor(n / 26) } return s }
 function _seqCode(count) { return `${_toAlpha(Math.floor(count / 99))}${String((count % 99) + 1).padStart(2, '0')}` }
+// Inverse of _seqCode: 'A01' → 0, 'A99' → 98, 'B01' → 99
+function _seqIndex(code) {
+  const m = /^([A-Z]+)(\d{2})$/.exec(code ?? '')
+  if (!m) return -1
+  let alpha = 0
+  for (const ch of m[1]) alpha = alpha * 26 + (ch.charCodeAt(0) - 64)
+  return (alpha - 1) * 99 + (parseInt(m[2], 10) - 1)
+}
 
 // Derive a 3-char prefix from a venture ID as a last-resort fallback
 // e.g. "ENSTUDIO" → "ENS", "ENTECH" → "ENT", "CRDESIGN" → "CRD"
@@ -86,8 +95,14 @@ ProjectSchema.pre('save', async function () {
   const d    = new Date(this.orderDate ?? Date.now())
   const yymm = `${String(d.getFullYear()).slice(-2)}${String(d.getMonth() + 1).padStart(2, '0')}`
   const pfx  = `${venturePrefix}P-${yymm}`
-  const count = await mongoose.model('Project').countDocuments({ projectCode: { $regex: `^${pfx}` } })
-  this.projectCode = `${pfx}${_seqCode(count)}`
+  // Allocate from the highest code already used (NOT a count — a count reissues an
+  // existing code after any delete and collides on the unique index).
+  const existing = await mongoose.model('Project')
+    .find({ projectCode: { $regex: `^${pfx}[A-Z]+[0-9]{2}$` } })
+    .select('projectCode').lean()
+  const maxUsed = existing.reduce((m, d) => Math.max(m, _seqIndex(d.projectCode.slice(pfx.length)) + 1), 0)
+  const seq = await nextSequence(`project:${pfx}`, maxUsed)
+  this.projectCode = `${pfx}${_seqCode(seq - 1)}`
 })
 
 /**

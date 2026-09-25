@@ -12,7 +12,7 @@ import Avatar from '@/components/ui/Avatar'
 import SearchInput from '@/components/ui/SearchInput'
 import Pagination from '@/components/ui/Pagination'
 import ClientModal from '@/components/admin/clients/ClientModal'
-import { Can } from '@/components/auth/Can'
+import { Can, usePermission } from '@/components/auth/Can'
 import TkAmt from '@/components/ui/TkAmt'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -43,7 +43,10 @@ function StatCard({ label, value, icon: Icon, color }) {
 // ─── Row Menu ─────────────────────────────────────────────────────────────────
 
 function RowMenu({ client, onEdit, onDeactivate, onReactivate }) {
-  const isActive = client.userId?.isActive !== false
+  const isActive = client.isActive !== false && client.userId?.isActive !== false
+  // PATCH /api/clients/[id]/status is SUPER_ADMIN-only
+  const { role } = usePermission()
+  const canToggleStatus = role === 'SUPER_ADMIN'
   const [open, setOpen]   = useState(false)
   const [pos,  setPos]    = useState({ top: 0, left: 0 })
   const btnRef            = useRef(null)
@@ -84,7 +87,7 @@ function RowMenu({ client, onEdit, onDeactivate, onReactivate }) {
             className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
             <Pencil className="w-3.5 h-3.5" /> Edit
           </button>
-          {isActive ? (
+          {!canToggleStatus ? null : isActive ? (
             <button onClick={() => { setOpen(false); onDeactivate(client) }}
               className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50">
               <Trash2 className="w-3.5 h-3.5" /> Deactivate
@@ -135,9 +138,15 @@ export default function ClientsPage() {
 
   useEffect(() => { fetchClients() }, [fetchClients])
 
-  function handleSaved(client, _, emailSent) {
+  function handleSaved(client, _, emailSent, linkedToExisting) {
     if (!editingClient) {
-      toast.success(emailSent !== false ? 'Client created! Login credentials sent to their email.' : 'Client created! (Email delivery failed — check SMTP config)', { duration: 6000 })
+      if (emailSent) {
+        toast.success('Client created! An activation link was sent to their email.', { duration: 6000 })
+      } else if (linkedToExisting) {
+        toast.success('Client created and linked to the existing account. They have been notified in the portal.', { duration: 6000 })
+      } else {
+        toast.success('Client created! (Email delivery failed — check SMTP config)', { duration: 6000 })
+      }
     } else {
       toast.success('Client updated')
     }
@@ -256,7 +265,7 @@ export default function ClientsPage() {
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {clients.map((client) => {
-                  const isActive = client.userId?.isActive
+                  const isActive = client.isActive !== false && client.userId?.isActive !== false
                   return (
                     <tr key={client.id} className="hover:bg-gray-50 transition-colors">
                       <td className="px-6 py-4">

@@ -129,7 +129,7 @@ export async function PUT(request) {
     if (pct === 100 && wasBelow100) {
       const user    = await User.findById(session.user.id).select('name email').lean()
       const appUrl  = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-      const hrUsers = await User.find({ role: { $in: ['SUPER_ADMIN', 'MANAGER'] } }).select('email phone').lean()
+      const hrUsers = await User.find({ role: { $in: ['SUPER_ADMIN', 'MANAGER'] }, isActive: true }).select('email phone').lean()
 
       hrUsers.forEach(hr => {
         sendProfileCompleteToHR({

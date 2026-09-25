@@ -5,6 +5,7 @@ import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { User, Client } from '@/models'
 import { logActivity } from '@/lib/logActivity'
+import { isValidObjectId } from '@/lib/objectId'
 
 // PATCH /api/clients/[id]/status  { isActive: boolean }
 // Deactivate (false) or reactivate (true) a client account. Both are audit-logged.
@@ -15,6 +16,7 @@ export async function PATCH(request, { params }) {
     if (session.user.role !== 'SUPER_ADMIN')
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Client not found' }, { status: 404 })
     await connectDB()
 
     const { isActive } = await request.json()
@@ -24,7 +26,15 @@ export async function PATCH(request, { params }) {
     const client = await Client.findById(params.id).lean()
     if (!client) return NextResponse.json({ error: 'Client not found' }, { status: 404 })
 
-    await User.findByIdAndUpdate(client.userId, { isActive })
+    // Company-level switch: deactivating cuts off every member of THIS company
+    // (see lib/clientAccess.js) without disabling people's own accounts, which
+    // may belong to other companies too.
+    await Client.findByIdAndUpdate(params.id, { $set: { isActive } })
+    // Legacy clients were deactivated by disabling the owner's login; undo that
+    // on reactivation (only ever for CLIENT accounts, never staff).
+    if (isActive) {
+      await User.findOneAndUpdate({ _id: client.userId, role: 'CLIENT', isActive: false }, { $set: { isActive: true } })
+    }
 
     logActivity({
       userId:   session.user.id,

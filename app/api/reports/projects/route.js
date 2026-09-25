@@ -4,17 +4,16 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Project, Invoice, Task } from '@/models'
+import { requirePerm, canDo } from '@/lib/rbac'
 
 // GET /api/reports/projects
 export async function GET(request) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-
-    const allowedRoles = ['SUPER_ADMIN', 'MANAGER']
-    if (!allowedRoles.includes(session.user.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const denied  = requirePerm(session, 'analytics.reports.view')
+    if (denied) return denied
+    // Money columns additionally need finance report access
+    const showMoney = canDo(session, 'finance.reports.view')
 
     await connectDB()
 
@@ -27,7 +26,12 @@ export async function GET(request) {
 
     // aggregate() bypasses Mongoose post-find hooks — Invoice.total and paidAmount are encrypted
     const [invoices, taskCounts] = await Promise.all([
-      Invoice.find({ projectId: { $in: projectIds } }).select('projectId total paidAmount').lean(),
+      // Issued invoices only (DRAFT/CANCELLED aren't billed); match both the
+      // current projectId and legacy projectIds-array styles.
+      Invoice.find({
+        status: { $nin: ['DRAFT', 'CANCELLED'] },
+        $or: [{ projectId: { $in: projectIds } }, { projectIds: { $in: projectIds } }],
+      }).select('projectId projectIds total paidAmount').lean(),
       Task.aggregate([
         { $match: { projectId: { $in: projectIds } } },
         { $group: { _id: '$projectId', count: { $sum: 1 } } },
@@ -36,7 +40,7 @@ export async function GET(request) {
 
     const invoiceMap = {}
     for (const inv of invoices) {
-      const pid = inv.projectId?.toString()
+      const pid = (inv.projectId ?? inv.projectIds?.[0])?.toString()
       if (!pid) continue
       if (!invoiceMap[pid]) invoiceMap[pid] = { invoiced: 0, collected: 0 }
       invoiceMap[pid].invoiced  += Number(inv.total)      || 0
@@ -48,7 +52,7 @@ export async function GET(request) {
     const rows = projects.map(p => {
       const pid        = p._id.toString()
       const budget     = Number(p.budget)     || 0
-      const actualCost = Number(p.actualCost) || 0
+      const actualCost = Number(p.approvedExpenses) || 0 // project costs live in approvedExpenses
       const invoiced   = invoiceMap[pid]?.invoiced  ?? 0
       const collected  = invoiceMap[pid]?.collected ?? 0
       const profit     = budget > 0 ? budget - actualCost : invoiced - actualCost
@@ -69,22 +73,28 @@ export async function GET(request) {
         margin:    Math.round(margin * 10) / 10,
         taskCount: taskCountMap[pid] ?? 0,
         startDate: p.startDate,
-        endDate:   p.endDate,
+        endDate:   p.deadline ?? p.currentPeriodEnd ?? null,
       }
     })
 
     const totalBudget     = rows.reduce((s, r) => s + r.budget,     0)
     const totalActualCost = rows.reduce((s, r) => s + r.actualCost, 0)
     const totalProfit     = rows.reduce((s, r) => s + r.profit,     0)
+    const avgMargin       = rows.length > 0 ? rows.reduce((s, r) => s + r.margin, 0) / rows.length : 0
+
+    const MONEY_FIELDS = ['budget', 'actualCost', 'invoiced', 'collected', 'profit', 'margin']
+    const outRows = showMoney
+      ? rows
+      : rows.map(r => { const o = { ...r }; MONEY_FIELDS.forEach(k => { o[k] = null }); return o })
 
     return NextResponse.json({
       data: {
-        rows,
+        rows: outRows,
         summary: {
-          totalBudget,
-          totalActualCost,
-          totalProfit,
-          avgMargin: rows.length > 0 ? rows.reduce((s, r) => s + r.margin, 0) / rows.length : 0,
+          totalBudget:     showMoney ? totalBudget     : null,
+          totalActualCost: showMoney ? totalActualCost : null,
+          totalProfit:     showMoney ? totalProfit     : null,
+          avgMargin:       showMoney ? avgMargin       : null,
           projectCount: rows.length,
         },
       },

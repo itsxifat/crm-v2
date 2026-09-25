@@ -4,16 +4,18 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Freelancer } from '@/models'
+import { requirePerm } from '@/lib/rbac'
 
-// GET /api/freelancers/[id]/pricing — staff only (not FREELANCER role)
+// GET /api/freelancers/[id]/pricing — staff with hr.freelancers.manage
 export async function GET(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
     if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
 
-    if (session.user.role === 'FREELANCER') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    // Internal rate cards: staff with freelancer-management permission only
+    // (requirePerm rejects CLIENT / FREELANCER / VENDOR).
+    const denied = requirePerm(session, 'hr.freelancers.manage')
+    if (denied) return denied
 
     await connectDB()
 

@@ -2,12 +2,13 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { requirePerm } from '@/lib/rbac'
-import { maskDoc, LEAD_PII } from '@/lib/pii'
+import { requirePerm, canDo } from '@/lib/rbac'
+import { maskDoc, LEAD_PII, restoreMaskedValues } from '@/lib/pii'
 import connectDB from '@/lib/mongodb'
 import Lead, { LeadActivity } from '@/models/Lead'
 import Attachment from '@/models/Attachment'
-import Employee from '@/models/Employee'
+import { LEAD_ASSIGNEE_POPULATE, canAccessLead, findAccessibleLead, leadLinkSchema } from '@/lib/leadAccess'
+import { isValidObjectId } from '@/lib/objectId'
 import { logActivity } from '@/lib/logActivity'
 import { z } from 'zod'
 
@@ -22,16 +23,17 @@ const updateLeadSchema = z.object({
   status:           z.enum(['NEW','CONTACTED','PROPOSAL_SENT','NEGOTIATION','WON','LOST']).optional(),
   priority:         z.enum(['LOW','NORMAL','HIGH','URGENT']).optional(),
   category:         z.string().optional().nullable(),
+  subcategory:      z.string().optional().nullable(),
   service:          z.string().optional().nullable(),
   source:           z.string().optional().nullable(),
   platform:         z.string().optional().nullable(),
   reference:        z.string().optional().nullable(),
   referenceType:    z.enum(['CLIENT', 'EMPLOYEE', 'LEAD']).optional().nullable(),
   referenceId:      z.string().optional().nullable(),
-  links:            z.array(z.string()).optional(),
+  links:            z.array(leadLinkSchema).optional(),
   sendingDate:      z.string().optional().nullable(),
   followUpDate:     z.string().optional().nullable(),
-  value:            z.number().positive().optional().nullable(),
+  value:            z.number().nonnegative().optional().nullable(),
   notes:            z.string().optional().nullable(),
   assignedToId:     z.string().optional().nullable(),
   lostReason:       z.string().optional().nullable(),
@@ -45,12 +47,16 @@ export async function GET(request, { params }) {
     const denied = requirePerm(session, 'sales.leads.view')
     if (denied) return denied
 
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
+
     await connectDB()
 
-    const lead = await Lead.findById(params.id)
-      .populate({ path: 'assignedToId', populate: { path: 'userId', select: 'id name avatar email' } })
+    const lead = await Lead.findById(params.id).populate(LEAD_ASSIGNEE_POPULATE)
 
-    if (!lead) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
+    // EMPLOYEEs may only view leads assigned to them
+    if (!lead || !(await canAccessLead(session, lead))) {
+      return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
+    }
 
     const [activities, attachments] = await Promise.all([
       LeadActivity.find({ leadId: params.id }).sort({ createdAt: -1 }),
@@ -72,8 +78,12 @@ const FIELD_LABELS = {
   platform: 'Platform', reference: 'Reference', sendingDate: 'Sending Date',
   followUpDate: 'Follow-up Date', value: 'Value', notes: 'Notes',
   assignedToId: 'Assigned To', lostReason: 'Lost Reason', links: 'Links',
-  businessCategory: 'Business Category',
+  businessCategory: 'Business Category', subcategory: 'Subcategory',
 }
+
+// PII fields: never write their before/after values into the activity log
+// (activities are shown to users who only see these fields masked).
+const PII_KEYS = new Set(['email', 'phone', 'alternativePhone', 'location', 'value'])
 
 function buildChangeSummary(before, updates) {
   const changes = []
@@ -96,7 +106,7 @@ function buildChangeSummary(before, updates) {
       }
       continue
     }
-    if (key === 'notes') {
+    if (key === 'notes' || PII_KEYS.has(key)) {
       if ((oldVal ?? '') !== (newVal ?? '')) changes.push(`${label} updated`)
       continue
     }
@@ -120,8 +130,14 @@ export async function PUT(request, { params }) {
 
     await connectDB()
 
-    const body   = await request.json()
-    const parsed = updateLeadSchema.safeParse(body)
+    // Fetch before state to diff changes (also enforces EMPLOYEE assignment scoping)
+    const before = await findAccessibleLead(session, params.id)
+    if (!before) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
+
+    // Edit forms are pre-filled from masked GET responses — put the stored value
+    // back for any masked placeholder so it is never written over real data.
+    const body   = restoreMaskedValues(await request.json(), before)
+    const parsed = updateLeadSchema.safeParse(body ?? {})
     if (!parsed.success) {
       return NextResponse.json({ error: 'Validation failed', details: parsed.error.flatten() }, { status: 422 })
     }
@@ -130,12 +146,26 @@ export async function PUT(request, { params }) {
     if (data.followUpDate) data.followUpDate = new Date(data.followUpDate)
     if (data.sendingDate)  data.sendingDate  = new Date(data.sendingDate)
 
-    // Fetch before state to diff changes
-    const before = await Lead.findById(params.id).lean()
-    if (!before) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
+    // Reassigning a lead requires sales.leads.assign
+    if ('assignedToId' in data) {
+      const oldId = before.assignedToId ? before.assignedToId.toString() : null
+      const newId = data.assignedToId || null
+      if (oldId === newId) {
+        delete data.assignedToId
+      } else {
+        if (!canDo(session, 'sales.leads.assign')) {
+          return NextResponse.json({ error: 'You do not have permission to assign leads' }, { status: 403 })
+        }
+        if (newId && !isValidObjectId(newId)) {
+          return NextResponse.json({ error: 'Invalid assignee' }, { status: 400 })
+        }
+        data.assignedToId = newId
+      }
+    }
 
     const lead = await Lead.findByIdAndUpdate(params.id, data, { new: true })
-      .populate({ path: 'assignedToId', populate: { path: 'userId', select: 'name avatar' } })
+      .populate(LEAD_ASSIGNEE_POPULATE)
+    if (!lead) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
 
     // Auto-log activity for this update
     const note = buildChangeSummary(before, data)
@@ -160,7 +190,7 @@ export async function PUT(request, { params }) {
       request,
     })
 
-    return NextResponse.json({ data: lead })
+    return NextResponse.json({ data: maskDoc(session, lead.toJSON(), LEAD_PII) })
   } catch (err) {
     console.error('[PUT /api/leads/[id]]', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -175,7 +205,21 @@ export async function DELETE(request, { params }) {
     if (denied) return denied
 
     await connectDB()
+
+    // EMPLOYEEs may only delete leads assigned to them
+    const existing = await findAccessibleLead(session, params.id, '_id assignedToId')
+    if (!existing) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
+
     const deleted = await Lead.findByIdAndDelete(params.id)
+
+    // Don't leave the lead's activity log (change history) and attachment
+    // records orphaned
+    if (deleted) {
+      await Promise.all([
+        LeadActivity.deleteMany({ leadId: params.id }),
+        Attachment.deleteMany({ leadId: params.id }),
+      ])
+    }
 
     logActivity({
       userId:   session.user.id,

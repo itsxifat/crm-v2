@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Plus, X, Loader2, Check, Ban, Search, CalendarDays } from 'lucide-react'
 import Select from '@/components/ui/Select'
 import DatePicker from '@/components/ui/DatePicker'
+import { Can } from '@/components/auth/Can'
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -32,6 +33,18 @@ const TYPE_CFG = {
   OTHER:     { label: 'Other',     bg: 'bg-gray-100',  text: 'text-gray-600' },
 }
 
+const ALL = '__all' // Select sentinel for "no filter" (Radix forbids '')
+
+// API responses may carry `_id` (lean GET) or `id` (toJSON) — use whichever exists.
+const rid = x => (x && typeof x === 'object' ? (x._id ?? x.id) : x) ?? null
+function normalizeLeave(l) {
+  if (!l) return l
+  const emp = l.employeeId && typeof l.employeeId === 'object'
+    ? { ...l.employeeId, _id: rid(l.employeeId) }
+    : l.employeeId
+  return { ...l, _id: rid(l), employeeId: emp }
+}
+
 function fmtDate(d) {
   if (!d) return '—'
   return new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' })
@@ -39,6 +52,7 @@ function fmtDate(d) {
 
 function calcDays(start, end) {
   if (!start || !end) return '—'
+  if (new Date(end) < new Date(start)) return '—'
   const diff = Math.ceil((new Date(end) - new Date(start)) / 86400000) + 1
   return `${diff} day${diff !== 1 ? 's' : ''}`
 }
@@ -60,6 +74,9 @@ function NewLeaveModal({ employees, onClose, onCreated }) {
 
   async function submit(e) {
     e.preventDefault()
+    if (!form.employeeId) { setError('Please choose an employee'); return }
+    if (!form.startDate || !form.endDate) { setError('Please choose both a start and an end date'); return }
+    if (new Date(form.endDate) < new Date(form.startDate)) { setError('End date cannot be before the start date'); return }
     setSaving(true)
     setError('')
     try {
@@ -95,7 +112,7 @@ function NewLeaveModal({ employees, onClose, onCreated }) {
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Employee</label>
             <Select value={form.employeeId} onChange={v => set('employeeId', v ?? '')}
-              options={employees.map(emp => ({ value: emp._id, label: emp.userId?.name ?? 'Unknown' }))}
+              options={employees.map(emp => ({ value: rid(emp), label: emp.userId?.name ?? 'Unknown' }))}
               placeholder="Select employee…"
             />
           </div>
@@ -155,33 +172,52 @@ export default function LeavesPage() {
   const [search,    setSearch]    = useState('')
   const [showModal, setShowModal] = useState(false)
   const [actioning, setActioning] = useState(null)  // id being approved/rejected
+  const [loadError, setLoadError] = useState('')
+  const reqSeq = useRef(0)
 
   // Fetch employees once
   useEffect(() => {
     fetch('/api/employees?limit=200')
-      .then(r => r.json())
+      .then(r => (r.ok ? r.json() : { data: [] }))
       .then(j => setEmployees(j.data ?? []))
+      .catch(() => setEmployees([]))
   }, [])
 
+  // The status tab is applied client-side so the summary counts always cover
+  // every status. Stale responses (older requests) are ignored.
   const load = useCallback(async () => {
+    const seq = ++reqSeq.current
     setLoading(true)
+    setLoadError('')
     const params = new URLSearchParams()
-    if (statusTab) params.set('status', statusTab)
     if (empFilter) params.set('employeeId', empFilter)
     if (typeFilter)params.set('type', typeFilter)
-    const res  = await fetch(`/api/leaves?${params}`)
-    const json = await res.json()
-    setLeaves(json.data ?? [])
+    try {
+      const res  = await fetch(`/api/leaves?${params}`)
+      const json = await res.json().catch(() => ({}))
+      if (seq !== reqSeq.current) return
+      if (!res.ok) {
+        setLeaves([])
+        setLoadError(json.error ?? 'Failed to load leaves')
+      } else {
+        setLeaves((json.data ?? []).map(normalizeLeave))
+      }
+    } catch {
+      if (seq !== reqSeq.current) return
+      setLeaves([])
+      setLoadError('Network error')
+    }
     setLoading(false)
-  }, [statusTab, empFilter, typeFilter])
+  }, [empFilter, typeFilter])
 
   useEffect(() => { load() }, [load])
 
   async function handleAction(id, status) {
     setActioning(id)
     const res  = await fetch(`/api/leaves/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) })
-    const json = await res.json()
-    if (res.ok) setLeaves(ls => ls.map(l => l._id === id ? { ...l, ...json.data } : l))
+    const json = await res.json().catch(() => ({}))
+    if (res.ok) setLeaves(ls => ls.map(l => l._id === id ? { ...l, ...normalizeLeave(json.data) } : l))
+    else alert(json.error ?? 'Failed to update leave')
     setActioning(null)
   }
 
@@ -189,15 +225,18 @@ export default function LeavesPage() {
     if (!confirm('Delete this leave request?')) return
     const res = await fetch(`/api/leaves/${id}`, { method: 'DELETE' })
     if (res.ok) setLeaves(ls => ls.filter(l => l._id !== id))
+    else alert((await res.json().catch(() => ({}))).error ?? 'Failed to delete leave')
   }
 
-  function handleCreated(leave) {
-    setLeaves(ls => [leave, ...ls])
+  function handleCreated() {
+    // Reload so the new request only shows up where it matches the filters.
     setShowModal(false)
+    load()
   }
 
-  // Filter by search
+  // Filter by status tab + search
   const filtered = leaves.filter(l => {
+    if (statusTab && l.status !== statusTab) return false
     const name = l.employeeId?.userId?.name ?? ''
     return name.toLowerCase().includes(search.toLowerCase())
   })
@@ -268,17 +307,21 @@ export default function LeavesPage() {
             placeholder="Search by employee…"
             className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" />
         </div>
-        <Select value={empFilter} onChange={v => setEmpFilter(v ?? '')}
-          options={employees.map(emp => ({ value: emp._id, label: emp.userId?.name ?? 'Unknown' }))}
+        <Select value={empFilter || ALL} onChange={v => setEmpFilter(!v || v === ALL ? '' : v)}
+          options={[{ value: ALL, label: 'All employees' }, ...employees.map(emp => ({ value: rid(emp), label: emp.userId?.name ?? 'Unknown' }))]}
           placeholder="All employees"
           size="sm"
         />
-        <Select value={typeFilter} onChange={v => setTypeFilter(v ?? '')}
-          options={LEAVE_TYPES.map(t => ({ value: t, label: TYPE_CFG[t]?.label ?? t }))}
+        <Select value={typeFilter || ALL} onChange={v => setTypeFilter(!v || v === ALL ? '' : v)}
+          options={[{ value: ALL, label: 'All types' }, ...LEAVE_TYPES.map(t => ({ value: t, label: TYPE_CFG[t]?.label ?? t }))]}
           placeholder="All types"
           size="sm"
         />
       </div>
+
+      {loadError && (
+        <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{loadError}</p>
+      )}
 
       {/* Table */}
       <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
@@ -347,6 +390,7 @@ export default function LeavesPage() {
                     {/* Actions */}
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-1.5">
+                        <Can perm="hr.leaves.approve">
                         {isPending && (
                           <>
                             <button onClick={() => handleAction(l._id, 'APPROVED')} disabled={isBusy}
@@ -365,6 +409,7 @@ export default function LeavesPage() {
                           className="px-2.5 py-1 text-xs text-gray-400 border border-gray-200 rounded-lg hover:bg-gray-50 hover:text-red-500 transition-colors">
                           <X className="w-3 h-3" />
                         </button>
+                        </Can>
                       </div>
                     </td>
                   </tr>

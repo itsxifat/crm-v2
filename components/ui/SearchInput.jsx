@@ -27,7 +27,13 @@ export default function SearchInput({
     }, debounceMs)
   }
 
+  // Cancel any pending debounce on unmount.
+  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current) }, [])
+
   const handleClear = () => {
+    // Drop the pending debounce so it can't re-apply the old text after clearing.
+    if (timerRef.current) clearTimeout(timerRef.current)
+    timerRef.current = null
     setLocalValue('')
     onChange?.('')
   }

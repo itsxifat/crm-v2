@@ -27,7 +27,12 @@ async function main() {
 
   const expenses = mongoose.connection.collection('projectexpenses')
 
-  const paidCount = await expenses.countDocuments({ status: 'PAID' })
+  // Only LEGACY PAID rows (old PAID required the signed scan). Under the current
+  // lifecycle PAID means "awaiting the signed scan" (signedInvoiceUrl null), so
+  // this filter keeps the script idempotent — re-running it never skips the
+  // authorization step for current PAID rows.
+  const legacyPaidFilter = { status: 'PAID', signedInvoiceUrl: { $nin: [null, ''] } }
+  const paidCount = await expenses.countDocuments(legacyPaidFilter)
   const apprCount = await expenses.countDocuments({ status: 'APPROVED' })
   const apprNoTxn = await expenses.countDocuments({ status: 'APPROVED', accountsTransactionId: { $in: [null, undefined] } })
 
@@ -38,7 +43,7 @@ async function main() {
   if (APPLY) {
     // 1) PAID → AUTHORIZED (settled rows with a ledger entry). Set authorizedAt from paidAt.
     const r1 = await expenses.updateMany(
-      { status: 'PAID' },
+      legacyPaidFilter,
       [{ $set: { status: 'AUTHORIZED', authorizedAt: { $ifNull: ['$paidAt', '$updatedAt'] }, authorizedBy: '$paidBy' } }],
     )
     console.log(`Updated ${r1.modifiedCount} row(s) → AUTHORIZED.`)

@@ -6,6 +6,9 @@ import { requirePerm } from '@/lib/rbac'
 import connectDB from '@/lib/mongodb'
 import { Quotation } from '@/models'
 import { logActivity } from '@/lib/logActivity'
+import { restoreMaskedValues } from '@/lib/pii'
+import { isValidObjectId } from '@/lib/objectId'
+import { QUOTATION_POPULATE, quotationJSON, computeQuotation } from '@/lib/quotation'
 
 // GET /api/quotations/[id]
 export async function GET(request, { params }) {
@@ -13,15 +16,13 @@ export async function GET(request, { params }) {
     const session = await getServerSession(authOptions)
     const denied = requirePerm(session, 'sales.quotations.view')
     if (denied) return denied
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     await connectDB()
 
-    const q = await Quotation.findById(params.id)
-      .populate('leadId',    'name company email phone location')
-      .populate('clientId',  'company contactPerson address city country', null, { populate: { path: 'userId', select: 'name email phone' } })
-      .populate('createdBy', 'name avatar')
+    const q = await Quotation.findById(params.id).populate(QUOTATION_POPULATE)
     if (!q) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-    return NextResponse.json({ data: q.toJSON() })
+    return NextResponse.json({ data: quotationJSON(session, q) })
   } catch (err) {
     console.error('[GET /api/quotations/[id]]', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -35,37 +36,39 @@ export async function PUT(request, { params }) {
     const denied = requirePerm(session, 'sales.quotations.update')
     if (denied) return denied
 
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     await connectDB()
 
-    const body = await request.json()
+    const existing = await Quotation.findById(params.id).lean()
+    if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    if (existing.status !== 'DRAFT')
+      return NextResponse.json({ error: 'Only draft quotations can be edited' }, { status: 409 })
+
+    // The edit form is pre-filled from the masked GET response — put the real
+    // values back for any placeholder that was posted unchanged.
+    const body = restoreMaskedValues(await request.json(), existing) ?? {}
     const {
       recipientName, recipientCompany, recipientEmail, recipientPhone, recipientAddress,
-      items = [], issueDate, validUntil, taxRate = 0, discount = 0,
+      items, issueDate, validUntil, taxRate = 0, discount = 0,
       notes, terms, currency, itemPriceOnly,
     } = body
 
-    const processedItems = items.map(item => {
-      const qty  = Number(item.quantity) || 1
-      const rate = Number(item.rate)     || 0
-      return { description: item.description, venture: item.venture || null, service: item.service || null, quantity: qty, rate, amount: qty * rate }
-    })
+    const calc = computeQuotation({ items, taxRate, discount })
+    if (calc.error) return NextResponse.json({ error: calc.error }, { status: 422 })
 
-    const subtotal  = Math.round(processedItems.reduce((s, i) => s + i.amount, 0) * 100) / 100
-    const taxAmount = Math.round(subtotal * ((Number(taxRate) || 0) / 100) * 100) / 100
-    const total     = Math.round((subtotal + taxAmount - (Number(discount) || 0)) * 100) / 100
-
-    const q = await Quotation.findByIdAndUpdate(params.id, {
+    // Conditional on DRAFT so a concurrent status change can't be overwritten
+    const q = await Quotation.findOneAndUpdate({ _id: params.id, status: 'DRAFT' }, {
       recipientName, recipientCompany, recipientEmail, recipientPhone, recipientAddress,
-      items: processedItems,
+      items: calc.items,
       issueDate:  issueDate  ? new Date(issueDate)  : undefined,
       validUntil: validUntil ? new Date(validUntil) : null,
-      subtotal, taxRate: Number(taxRate), taxAmount, discount: Number(discount), total,
+      subtotal: calc.subtotal, taxRate: calc.taxRate, taxAmount: calc.taxAmount, discount: calc.discount, total: calc.total,
       ...(currency && { currency }),
       notes: notes ?? null, terms: terms ?? null,
       ...(itemPriceOnly !== undefined && { itemPriceOnly: !!itemPriceOnly }),
-    }, { new: true })
+    }, { new: true }).populate(QUOTATION_POPULATE)
 
-    if (!q) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    if (!q) return NextResponse.json({ error: 'Only draft quotations can be edited' }, { status: 409 })
 
     logActivity({
       userId:   session.user.id,
@@ -77,7 +80,7 @@ export async function PUT(request, { params }) {
       request,
     })
 
-    return NextResponse.json({ data: q.toJSON() })
+    return NextResponse.json({ data: quotationJSON(session, q) })
   } catch (err) {
     console.error('[PUT /api/quotations/[id]]', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

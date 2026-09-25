@@ -3,7 +3,18 @@
 import { ChevronLeft, ChevronRight, MoreHorizontal } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-export default function Pagination({ page, pages, total, limit, onPageChange }) {
+export default function Pagination({ page: pageProp, pages: pagesProp, total: totalProp, limit: limitProp, meta, onPageChange: onPageChangeProp, onChange }) {
+  // Accept either explicit props or an API `meta` object ({ page, pages, total, limit }),
+  // and `onChange` as an alias of `onPageChange`.
+  const page         = Number(pageProp ?? meta?.page ?? 1) || 1
+  const pages        = Number(pagesProp ?? meta?.pages ?? 1) || 1
+  const total        = totalProp ?? meta?.total
+  const limit        = limitProp ?? meta?.limit
+  const onPageChange = (p) => {
+    if (p < 1 || p > pages || p === page) return
+    ;(onPageChangeProp ?? onChange)?.(p)
+  }
+
   if (pages <= 1) return null
 
   const getPageNumbers = () => {
@@ -22,14 +33,19 @@ export default function Pagination({ page, pages, total, limit, onPageChange }) 
     return range
   }
 
-  const from = (page - 1) * limit + 1
-  const to   = Math.min(page * limit, total)
+  const hasRange = Number.isFinite(Number(total)) && Number(limit) > 0
+  const from = hasRange ? (page - 1) * limit + 1 : 0
+  const to   = hasRange ? Math.min(page * limit, total) : 0
 
   return (
     <div className="flex items-center justify-between">
-      <p className="text-sm text-gray-500">
-        Showing <span className="font-medium text-gray-700">{from}</span>–<span className="font-medium text-gray-700">{to}</span> of <span className="font-medium text-gray-700">{total}</span> results
-      </p>
+      {hasRange ? (
+        <p className="text-sm text-gray-500">
+          Showing <span className="font-medium text-gray-700">{from}</span>–<span className="font-medium text-gray-700">{to}</span> of <span className="font-medium text-gray-700">{total}</span> results
+        </p>
+      ) : (
+        <p className="text-sm text-gray-500">Page {page} of {pages}</p>
+      )}
       <div className="flex items-center gap-1">
         <button
           onClick={() => onPageChange(page - 1)}

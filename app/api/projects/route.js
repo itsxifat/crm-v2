@@ -3,9 +3,13 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
-import { Project } from '@/models'
+import { Project, Vendor, ProjectVendor } from '@/models'
 import { resolveActiveClient } from '@/lib/clientAccess'
+import { canDo, requirePerm } from '@/lib/rbac'
+import { isValidObjectId } from '@/lib/objectId'
+import { canViewProjectFinancials } from '@/lib/projectAccess'
 import { calcPeriodEnd } from '@/lib/ventures'
+import { dhakaDayKey, parseDhakaDay } from '@/lib/dhakaTime'
 import { searchEncrypted } from '@/lib/searchMatch'
 import { logActivity } from '@/lib/logActivity'
 import { z } from 'zod'
@@ -37,40 +41,75 @@ export async function GET(request) {
     await connectDB()
 
     const { searchParams } = new URL(request.url)
-    const page        = parseInt(searchParams.get('page')  ?? '1',  10)
-    const limit       = parseInt(searchParams.get('limit') ?? '20', 10)
+    const page        = Math.max(1, parseInt(searchParams.get('page')  ?? '1',  10) || 1)
+    const limit       = Math.min(200, Math.max(1, parseInt(searchParams.get('limit') ?? '20', 10) || 20))
     const venture        = searchParams.get('venture')
     const projectType    = searchParams.get('projectType')
     const status         = searchParams.get('status')
     const search         = searchParams.get('search')
     const clientIdFilter = searchParams.get('clientId')
+    const startDateParam = searchParams.get('startDate')
+    const endDateParam   = searchParams.get('endDate')
     const skip           = (page - 1) * limit
+
+    if (clientIdFilter && !isValidObjectId(clientIdFilter))
+      return NextResponse.json({ error: 'Invalid clientId' }, { status: 400 })
+
+    // Date range on the project start date, as Asia/Dhaka calendar days
+    // ('YYYY-MM-DD'); endDate is inclusive.
+    const rangeFrom = startDateParam ? parseDhakaDay(startDateParam) : null
+    const rangeTo   = endDateParam   ? parseDhakaDay(endDateParam)   : null
+    if ((startDateParam && !rangeFrom) || (endDateParam && !rangeTo))
+      return NextResponse.json({ error: 'Invalid date range' }, { status: 400 })
 
     const filter = {}
     if (venture)        filter.venture     = venture
     if (projectType)    filter.projectType = projectType
     if (status)         filter.status      = status
     if (clientIdFilter) filter.clientId    = clientIdFilter
+    if (rangeFrom || rangeTo) {
+      filter.startDate = {}
+      if (rangeFrom) filter.startDate.$gte = rangeFrom.start
+      if (rangeTo)   filter.startDate.$lt  = rangeTo.next
+    }
 
     // Ownership scoping (kept separate from search so neither clobbers the other)
-    if (session.user.role === 'CLIENT') {
+    const role = session.user.role
+    if (role === 'CLIENT') {
       const { clientId } = await resolveActiveClient(session)
       // No resolvable company → no projects (avoid leaking all projects)
       filter.clientId = clientId ?? null
-    }
-    if (['EMPLOYEE','FREELANCER'].includes(session.user.role)) {
+    } else if (role === 'VENDOR') {
+      // Vendors only see projects they are explicitly linked to.
+      const vendor = await Vendor.findOne({ userId: session.user.id }).select('_id').lean()
+      const links  = vendor ? await ProjectVendor.find({ vendorId: vendor._id }).select('projectId').lean() : []
+      filter._id = { $in: links.map(l => l.projectId) }
+    } else if (
+      role === 'EMPLOYEE' || role === 'FREELANCER' ||
+      (role === 'MANAGER' && !canDo(session, 'projects.view'))
+    ) {
       filter.$or = [
         { projectManagerId: session.user.id },
         { teamMembers: session.user.id },
       ]
+    } else if (role !== 'SUPER_ADMIN' && role !== 'MANAGER') {
+      filter._id = { $in: [] }
     }
 
     const populate = [
-      { path: 'clientId', populate: { path: 'userId', select: 'name avatar' } },
+      { path: 'clientId', select: 'userId clientCode clientType company contactPerson', populate: { path: 'userId', select: 'name avatar' } },
       { path: 'projectManagerId', select: 'name avatar' },
     ]
+    const showFinancials = canViewProjectFinancials(session)
+    const VENDOR_FIELDS  = ['id', 'projectCode', 'name', 'venture', 'category', 'status', 'startDate', 'deadline']
     const enrich = (p) => {
       const j = p.toJSON()
+      if (role === 'VENDOR') return Object.fromEntries(VENDOR_FIELDS.map(k => [k, j[k] ?? null]))
+      if (!showFinancials) {
+        // Internal cost / margin data — same stripping as GET /api/projects/:id
+        for (const k of ['budget', 'paidAmount', 'approvedExpenses', 'profit', 'dueAmount', 'budgetUtilization']) delete j[k]
+        return j
+      }
       // cash-basis profit: what client paid minus what we spent
       j.profit = (j.paidAmount ?? 0) - (j.approvedExpenses ?? 0)
       // contracted profit: full budget value minus costs (regardless of payment)
@@ -108,9 +147,8 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-    if (!['SUPER_ADMIN','MANAGER'].includes(session.user.role))
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const denied  = requirePerm(session, 'projects.create')
+    if (denied) return denied
     await connectDB()
 
     const body   = await request.json()
@@ -120,10 +158,14 @@ export async function POST(request) {
     const data = { ...parsed.data }
     delete data.orderDate                                  // always set server-side
     data.orderDate  = new Date()
-    const startDate = data.startDate ? new Date(data.startDate) : new Date()
+    // Date-only values are stored as UTC midnight of the calendar day; the
+    // default is today's date in the business timezone (Asia/Dhaka).
+    const startDate = new Date(data.startDate || dhakaDayKey())
     data.startDate  = startDate
 
-    if (data.deadline) data.deadline = new Date(data.deadline)
+    // Monthly retainers have billing periods, not a deadline.
+    if (data.projectType === 'MONTHLY') delete data.deadline
+    else if (data.deadline) data.deadline = new Date(data.deadline)
     if (!data.status) {
       data.status = data.projectType === 'MONTHLY' ? 'ACTIVE' : 'PENDING'
     }
@@ -137,7 +179,7 @@ export async function POST(request) {
 
     const project = await new Project(data).save()
     await project.populate([
-      { path: 'clientId', populate: { path: 'userId', select: 'name avatar' } },
+      { path: 'clientId', select: 'userId clientCode clientType company contactPerson', populate: { path: 'userId', select: 'name avatar' } },
       { path: 'projectManagerId', select: 'name avatar' },
     ])
     const j = project.toJSON()

@@ -4,6 +4,28 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Invoice, ProjectPayment } from '@/models'
+import { canDo } from '@/lib/rbac'
+import { getMyCompanyIds } from '@/lib/clientAccess'
+import { isValidObjectId } from '@/lib/objectId'
+import { pendingPaymentTotal } from '@/lib/paymentLedger'
+
+const STAFF_ROLES = ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE']
+
+/**
+ * Can this session act on this invoice's payments?
+ * - staff: need the given permission
+ * - CLIENT: the invoice must belong to one of their companies and be issued (not DRAFT)
+ * - everyone else: no
+ */
+async function canAccessInvoice(session, invoice, staffPerm) {
+  const role = session?.user?.role
+  if (STAFF_ROLES.includes(role)) return canDo(session, staffPerm)
+  if (role !== 'CLIENT') return false
+  if (!invoice?.clientId || invoice.status === 'DRAFT') return false
+  const companyIds = await getMyCompanyIds(session.user.id)
+  const clientId   = (invoice.clientId._id ?? invoice.clientId).toString()
+  return companyIds.some(c => c.toString() === clientId)
+}
 
 // POST /api/invoices/:id/payment-request
 // Records a payment against an invoice — goes to Payment Confirmations for manual approval.
@@ -12,23 +34,37 @@ export async function POST(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
     if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
     await connectDB()
 
     const invoice = await Invoice.findById(params.id).populate('projectIds')
     if (!invoice) return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
 
-    if (['PAID', 'CANCELLED'].includes(invoice.status))
+    const staff = STAFF_ROLES.includes(session.user?.role)
+    if (!(await canAccessInvoice(session, invoice, 'finance.payments.request'))) {
+      // Don't reveal other tenants' invoices to external users
+      return staff
+        ? NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+        : NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
+    }
+
+    // Payments are only taken against issued invoices (SENT / PARTIALLY_PAID / OVERDUE)
+    if (['DRAFT', 'PAID', 'CANCELLED'].includes(invoice.status))
       return NextResponse.json({ error: `Cannot add payment to a ${invoice.status.toLowerCase()} invoice` }, { status: 409 })
 
     const body = await request.json()
     const { amount, paymentMethod, paymentDate, description, notes, receiptUrl } = body
 
-    if (!amount || Number(amount) <= 0)
+    if (!amount || !Number.isFinite(Number(amount)) || Number(amount) <= 0)
       return NextResponse.json({ error: 'Amount must be greater than 0' }, { status: 422 })
 
-    const balance = invoice.total - (invoice.paidAmount ?? 0)
+    // Money already sitting in pending requests is claimed — it must not be requested twice.
+    const pending = await pendingPaymentTotal({ invoiceId: invoice._id })
+    const balance = Math.max(0, Number(invoice.total ?? 0) - Number(invoice.paidAmount ?? 0) - pending)
     if (Number(amount) > balance + 0.01)
-      return NextResponse.json({ error: `Amount exceeds outstanding balance of BDT ${balance.toFixed(2)}` }, { status: 422 })
+      return NextResponse.json({
+        error: `Amount exceeds outstanding balance of ${invoice.currency ?? 'BDT'} ${balance.toFixed(2)}${pending > 0 ? ' (after pending payment requests)' : ''}`,
+      }, { status: 422 })
 
     // Resolve project: prefer singular projectId (new), fall back to legacy projectIds array
     const projectId = invoice.projectId ?? invoice.projectIds?.[0]?._id ?? invoice.projectIds?.[0] ?? null
@@ -55,47 +91,34 @@ export async function POST(request, { params }) {
   }
 }
 
-// GET /api/invoices/:id/payment-request — list all payment requests for this invoice
-// Matches on invoiceId directly OR on projectId (for payments recorded from the project
-// page before invoiceId tracking was in place, or when invoiceId was not supplied).
+// GET /api/invoices/:id/payment-request — list all payment requests for this invoice.
+// Read-only: payments recorded against the project before it had an invoice
+// (invoiceId null) stay project-level; they are NOT retroactively attached here,
+// since that would list them on the invoice without crediting its paidAmount.
 export async function GET(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
     if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     await connectDB()
 
-    // Load the invoice so we know its projectId
-    const invoice = await Invoice.findById(params.id).select('projectId projectIds').lean()
+    const invoice = await Invoice.findById(params.id).select('clientId status').lean()
+    if (!invoice) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-    const projectId = invoice?.projectId ?? invoice?.projectIds?.[0] ?? null
-
-    // Collect by invoiceId, plus any un-linked payment on this project — but the
-    // orphan sweep only applies when the project has a SINGLE invoice. With
-    // several, an unattributed payment can't safely be claimed by any one of
-    // them (and would then be back-filled onto the wrong invoice below).
-    const orQuery = [{ invoiceId: params.id }]
-    if (projectId) {
-      const siblingCount = await Invoice.countDocuments({
-        $or: [{ projectId }, { projectIds: projectId }],
-        status: { $ne: 'CANCELLED' },
-      })
-      if (siblingCount <= 1) orQuery.push({ projectId, invoiceId: null })
+    const staff = STAFF_ROLES.includes(session.user?.role)
+    if (!(await canAccessInvoice(session, invoice, 'sales.invoices.view'))) {
+      return staff
+        ? NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+        : NextResponse.json({ error: 'Not found' }, { status: 404 })
     }
 
-    const payments = await ProjectPayment.find({ $or: orQuery })
+    const payments = await ProjectPayment.find({ invoiceId: params.id })
       .sort({ createdAt: -1 })
-      .populate('submittedBy', 'name email')
+      // Staff email addresses are not exposed to client users
+      .populate('submittedBy', staff ? 'name email' : 'name')
       .populate('confirmedBy', 'name')
+      .populate('transactionId', 'txnId')
       .lean()
-
-    // Back-fill invoiceId on payments that were missing it so future queries find them
-    const missing = payments.filter(p => !p.invoiceId)
-    if (missing.length > 0) {
-      await ProjectPayment.updateMany(
-        { _id: { $in: missing.map(p => p._id) } },
-        { $set: { invoiceId: params.id } }
-      )
-    }
 
     return NextResponse.json({ data: payments.map(p => ({ ...p, id: p._id.toString() })) })
   } catch (err) {

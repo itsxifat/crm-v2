@@ -64,8 +64,11 @@ const FreelancerSchema = new mongoose.Schema(
       designation: { type: String, default: null }, // encrypted
     },
 
-    inviteToken:       { type: String, sparse: true, unique: true, default: null },
-    inviteTokenExpiry: { type: Date, default: null },
+    // Bearer credential for the set-password invite link: never selected or
+    // serialised by default. Uniqueness is enforced by the partial index below
+    // (a sparse index still indexes explicit nulls, allowing only one null).
+    inviteToken:       { type: String, default: null, select: false },
+    inviteTokenExpiry: { type: Date, default: null, select: false },
     inviteAccepted:    { type: Boolean, default: false },
 
     // ── KYC / verification (mirrors the Employee onboarding flow) ──────────────
@@ -92,9 +95,19 @@ const FreelancerSchema = new mongoose.Schema(
     timestamps: true,
     toJSON: {
       virtuals: true,
-      transform(_, ret) { ret.id = ret._id.toString(); delete ret._id; delete ret.__v; return ret },
+      transform(_, ret) {
+        ret.id = ret._id.toString()
+        delete ret._id; delete ret.__v
+        delete ret.inviteToken; delete ret.inviteTokenExpiry
+        return ret
+      },
     },
   }
+)
+
+FreelancerSchema.index(
+  { inviteToken: 1 },
+  { unique: true, partialFilterExpression: { inviteToken: { $type: 'string' } } }
 )
 
 // Type-aware KYC completion — agencies and individuals require different fields.

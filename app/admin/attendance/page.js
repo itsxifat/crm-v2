@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { ChevronLeft, ChevronRight, Plus, X, Loader2, Search, UserCheck, Users } from 'lucide-react'
 import Select from '@/components/ui/Select'
 import DatePicker from '@/components/ui/DatePicker'
+import { Can } from '@/components/auth/Can'
+import { dhakaDayKey } from '@/lib/dhakaTime'
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -17,14 +19,34 @@ const STATUS_CFG = {
 
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
 
+// Attendance days and times are in the business timezone (Asia/Dhaka).
+const TZ = 'Asia/Dhaka'
+const TIMED_STATUSES = ['PRESENT', 'LATE', 'HALF_DAY']
+const ALL = '__all' // Select sentinel for "no filter" (Radix forbids '')
+
+// API responses may carry `_id` (lean GET) or `id` (toJSON) — use whichever exists.
+const rid = x => (x && typeof x === 'object' ? (x._id ?? x.id) : x) ?? null
+function normalizeRecord(r) {
+  if (!r) return r
+  const emp = r.employeeId && typeof r.employeeId === 'object'
+    ? { ...r.employeeId, _id: rid(r.employeeId) }
+    : r.employeeId
+  return { ...r, _id: rid(r), employeeId: emp }
+}
+
 function fmtTime(d) {
   if (!d) return '—'
-  return new Date(d).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
+  return new Date(d).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: TZ })
 }
 
 function fmtDate(d) {
   if (!d) return '—'
-  return new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+  return new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: TZ })
+}
+
+// 'HH:mm' of an instant in Dhaka time.
+function dhakaTime(d) {
+  return new Date(d).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: TZ }).slice(0, 5)
 }
 
 function diffHours(checkIn, checkOut) {
@@ -36,15 +58,15 @@ function diffHours(checkIn, checkOut) {
 // ─── Mark attendance modal ────────────────────────────────────────────────────
 
 function AttendanceModal({ employees, prefill, onClose, onSaved }) {
-  const isEdit = !!prefill?._id
-  const today  = new Date().toISOString().split('T')[0]
+  const isEdit = !!rid(prefill)
+  const today  = dhakaDayKey()
 
   const [form, setForm] = useState({
-    employeeId: prefill?.employeeId?._id ?? prefill?.employeeId ?? '',
-    date:       prefill?.date ? new Date(prefill.date).toISOString().split('T')[0] : today,
+    employeeId: rid(prefill?.employeeId) ?? '',
+    date:       prefill?.day ?? (prefill?.date ? dhakaDayKey(prefill.date) : today),
     status:     prefill?.status ?? 'PRESENT',
-    checkIn:    prefill?.checkIn  ? new Date(prefill.checkIn).toTimeString().slice(0,5)  : '',
-    checkOut:   prefill?.checkOut ? new Date(prefill.checkOut).toTimeString().slice(0,5) : '',
+    checkIn:    prefill?.checkIn  ? dhakaTime(prefill.checkIn)  : '',
+    checkOut:   prefill?.checkOut ? dhakaTime(prefill.checkOut) : '',
     notes:      prefill?.notes ?? '',
   })
   const [saving, setSaving] = useState(false)
@@ -54,25 +76,34 @@ function AttendanceModal({ employees, prefill, onClose, onSaved }) {
 
   function toDatetime(dateStr, timeStr) {
     if (!timeStr) return null
-    return new Date(`${dateStr}T${timeStr}:00`).toISOString()
+    return new Date(`${dateStr}T${timeStr}:00+06:00`).toISOString()
   }
 
   async function submit(e) {
     e.preventDefault()
+    if (!isEdit && !form.employeeId) { setError('Please choose an employee'); return }
+    if (!form.date) { setError('Please choose a date'); return }
+    const timed = TIMED_STATUSES.includes(form.status)
+    if (timed && form.checkIn && form.checkOut && form.checkOut <= form.checkIn) {
+      setError('Check out must be after check in'); return
+    }
     setSaving(true)
     setError('')
-    const body = {
-      employeeId: form.employeeId,
-      date:       new Date(form.date).toISOString(),
-      status:     form.status,
-      checkIn:    toDatetime(form.date, form.checkIn),
-      checkOut:   toDatetime(form.date, form.checkOut),
-      notes:      form.notes || null,
-    }
     try {
+      // Check-in/out only apply to worked statuses; the date cannot change on edit.
+      const body = {
+        status:     form.status,
+        checkIn:    timed ? toDatetime(form.date, form.checkIn)  : null,
+        checkOut:   timed ? toDatetime(form.date, form.checkOut) : null,
+        notes:      form.notes || null,
+      }
+      if (!isEdit) {
+        body.employeeId = form.employeeId
+        body.date       = new Date(`${form.date}T00:00:00+06:00`).toISOString()
+      }
       let res
       if (isEdit) {
-        res = await fetch(`/api/attendance/${prefill._id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+        res = await fetch(`/api/attendance/${rid(prefill)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       } else {
         res = await fetch('/api/attendance', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       }
@@ -101,7 +132,7 @@ function AttendanceModal({ employees, prefill, onClose, onSaved }) {
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">Employee</label>
               <Select value={form.employeeId} onChange={v => set('employeeId', v ?? '')}
-                options={employees.map(emp => ({ value: emp._id, label: emp.userId?.name ?? 'Unknown' }))}
+                options={employees.map(emp => ({ value: rid(emp), label: emp.userId?.name ?? 'Unknown' }))}
                 placeholder="Select employee…"
               />
             </div>
@@ -109,7 +140,7 @@ function AttendanceModal({ employees, prefill, onClose, onSaved }) {
 
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Date</label>
-            <DatePicker value={form.date || null} onChange={v => set('date', v ?? '')} />
+            <DatePicker value={form.date || null} onChange={v => set('date', v ?? '')} disabled={isEdit} />
           </div>
 
           <div>
@@ -120,7 +151,7 @@ function AttendanceModal({ employees, prefill, onClose, onSaved }) {
             />
           </div>
 
-          {['PRESENT', 'LATE', 'HALF_DAY'].includes(form.status) && (
+          {TIMED_STATUSES.includes(form.status) && (
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">Check In</label>
@@ -172,26 +203,44 @@ export default function AttendancePage() {
   const [statusFilter, setStatusFilter] = useState('')
   const [search,   setSearch]   = useState('')
   const [modal,    setModal]    = useState(null)  // null | 'new' | record object
+  const [loadError, setLoadError] = useState('')
+  const reqSeq = useRef(0)
 
   const monthKey = `${year}-${String(month).padStart(2, '0')}`
 
   // Fetch employees once
   useEffect(() => {
     fetch('/api/employees?limit=200')
-      .then(r => r.json())
+      .then(r => (r.ok ? r.json() : { data: [] }))
       .then(j => setEmployees(j.data ?? []))
+      .catch(() => setEmployees([]))
   }, [])
 
+  // The status filter is applied client-side so the stat cards always show
+  // every status for the month. Stale responses (older requests) are ignored.
   const load = useCallback(async () => {
+    const seq = ++reqSeq.current
     setLoading(true)
+    setLoadError('')
     const params = new URLSearchParams({ month: monthKey })
-    if (empFilter)    params.set('employeeId', empFilter)
-    if (statusFilter) params.set('status', statusFilter)
-    const res  = await fetch(`/api/attendance?${params}`)
-    const json = await res.json()
-    setRecords(json.data ?? [])
+    if (empFilter) params.set('employeeId', empFilter)
+    try {
+      const res  = await fetch(`/api/attendance?${params}`)
+      const json = await res.json().catch(() => ({}))
+      if (seq !== reqSeq.current) return
+      if (!res.ok) {
+        setRecords([])
+        setLoadError(json.error ?? 'Failed to load attendance')
+      } else {
+        setRecords((json.data ?? []).map(normalizeRecord))
+      }
+    } catch {
+      if (seq !== reqSeq.current) return
+      setRecords([])
+      setLoadError('Network error')
+    }
     setLoading(false)
-  }, [monthKey, empFilter, statusFilter])
+  }, [monthKey, empFilter])
 
   useEffect(() => { load() }, [load])
 
@@ -199,13 +248,13 @@ export default function AttendancePage() {
   function nextMonth() { if (month === 12){ setYear(y => y + 1); setMonth(1)  } else setMonth(m => m + 1) }
 
   function handleSaved(record, isEdit) {
-    if (isEdit) {
-      setRecords(rs => rs.map(r => r._id === record._id ? record : r))
+    const saved = normalizeRecord(record)
+    if (isEdit && saved?._id) {
+      setRecords(rs => rs.map(r => r._id === saved._id ? { ...r, ...saved } : r))
     } else {
-      setRecords(rs => {
-        const idx = rs.findIndex(r => r._id === record._id)
-        return idx >= 0 ? rs.map(r => r._id === record._id ? record : r) : [record, ...rs]
-      })
+      // Creation upserts by employee + day and may fall outside the viewed
+      // month or filters — reload instead of guessing where it belongs.
+      load()
     }
     setModal(null)
   }
@@ -216,8 +265,9 @@ export default function AttendancePage() {
     if (res.ok) setRecords(rs => rs.filter(r => r._id !== id))
   }
 
-  // Filter by search
+  // Filter by status + search
   const filtered = records.filter(r => {
+    if (statusFilter && r.status !== statusFilter) return false
     const name = r.employeeId?.userId?.name ?? ''
     return name.toLowerCase().includes(search.toLowerCase())
   })
@@ -236,11 +286,13 @@ export default function AttendancePage() {
           <h1 className="text-xl font-semibold text-gray-900">Attendance</h1>
           <p className="text-sm text-gray-400 mt-0.5">{records.length} record{records.length !== 1 ? 's' : ''} for {MONTHS[month - 1]} {year}</p>
         </div>
+        <Can perm="hr.attendance.manage">
         <button onClick={() => setModal('new')}
           className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors">
           <Plus className="w-4 h-4" />
           Mark Attendance
         </button>
+        </Can>
       </div>
 
       {/* Month navigator */}
@@ -276,8 +328,8 @@ export default function AttendancePage() {
             placeholder="Search by employee…"
             className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" />
         </div>
-        <Select value={empFilter} onChange={v => setEmpFilter(v ?? '')}
-          options={employees.map(emp => ({ value: emp._id, label: emp.userId?.name ?? 'Unknown' }))}
+        <Select value={empFilter || ALL} onChange={v => setEmpFilter(!v || v === ALL ? '' : v)}
+          options={[{ value: ALL, label: 'All employees' }, ...employees.map(emp => ({ value: rid(emp), label: emp.userId?.name ?? 'Unknown' }))]}
           placeholder="All employees"
           size="sm"
         />
@@ -288,6 +340,10 @@ export default function AttendancePage() {
           </button>
         )}
       </div>
+
+      {loadError && (
+        <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{loadError}</p>
+      )}
 
       {/* Table */}
       <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
@@ -314,7 +370,7 @@ export default function AttendancePage() {
               ) : filtered.map(r => {
                 const cfg   = STATUS_CFG[r.status] ?? STATUS_CFG.ABSENT
                 const name  = r.employeeId?.userId?.name ?? '—'
-                const hours = diffHours(r.checkIn, r.checkOut)
+                const hours = TIMED_STATUSES.includes(r.status) ? diffHours(r.checkIn, r.checkOut) : null
                 return (
                   <tr key={r._id} className="hover:bg-gray-50/60 transition-colors">
                     <td className="px-5 py-3.5">
@@ -342,6 +398,7 @@ export default function AttendancePage() {
                       <span className="text-xs text-gray-400 truncate block">{r.notes || '—'}</span>
                     </td>
                     <td className="px-3 py-3.5">
+                      <Can perm="hr.attendance.manage">
                       <div className="flex items-center gap-1">
                         <button onClick={() => setModal(r)}
                           className="px-2.5 py-1 text-xs text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
@@ -352,6 +409,7 @@ export default function AttendancePage() {
                           Del
                         </button>
                       </div>
+                      </Can>
                     </td>
                   </tr>
                 )

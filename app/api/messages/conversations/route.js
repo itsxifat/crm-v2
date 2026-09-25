@@ -2,8 +2,10 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
+import mongoose from 'mongoose'
 import connectDB from '@/lib/mongodb'
 import { Message } from '@/models'
+import { isValidObjectId } from '@/lib/objectId'
 
 // GET /api/messages/conversations
 export async function GET() {
@@ -14,6 +16,7 @@ export async function GET() {
     await connectDB()
 
     const userId = session.user.id
+    if (!isValidObjectId(userId)) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
 
     const messages = await Message.find({
       $or: [{ senderId: userId }, { receiverId: userId }],
@@ -40,9 +43,10 @@ export async function GET() {
       }
     })
 
-    // Count unread messages per conversation
+    // Count unread messages per conversation. Aggregations are not cast by
+    // Mongoose, so the session's string id must be converted to an ObjectId.
     const unreadAgg = await Message.aggregate([
-      { $match: { receiverId: userId, isRead: false } },
+      { $match: { receiverId: new mongoose.Types.ObjectId(userId), isRead: false } },
       { $group: { _id: '$senderId', count: { $sum: 1 } } },
     ])
     unreadAgg.forEach(u => {

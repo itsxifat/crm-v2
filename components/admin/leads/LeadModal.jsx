@@ -14,7 +14,9 @@ import { invalidateConfigCache } from '@/lib/useConfig'
 const schema = z.object({
   name:             z.string().min(1, 'Name is required'),
   designation:      z.string().optional().nullable(),
-  email:            z.string().email('Invalid email').optional().or(z.literal('')).nullable(),
+  // A masked email ('j•••@g••.com') is allowed through — the API keeps the stored value
+  email:            z.string().optional().nullable()
+    .refine(v => !v || v.includes('••') || z.string().email().safeParse(v).success, 'Invalid email'),
   phone:            z.string().optional().nullable(),
   alternativePhone: z.string().optional().nullable(),
   company:          z.string().optional().nullable(),
@@ -82,6 +84,7 @@ export default function LeadModal({ open, onClose, lead, onSuccess }) {
   const refDebounce = useRef(null)
   const refWrapRef  = useRef(null)
   const isEdit = !!lead
+  const canEditConfig = session?.user?.role === 'SUPER_ADMIN'   // /api/config writes are SUPER_ADMIN-only
 
   const { register, handleSubmit, reset, control, setValue, formState: { errors } } = useForm({
     resolver: zodResolver(schema),
@@ -113,9 +116,6 @@ export default function LeadModal({ open, onClose, lead, onSuccess }) {
 
   useEffect(() => {
     if (!open) return
-    // Reset cascade guards so initial form population doesn't trigger cascade clears
-    mountedService.current  = false
-    mountedCategory.current = false
     fetch('/api/employees?limit=100').then(r => r.json()).then(d => setEmployees(d.data ?? [])).catch(() => {})
     fetch('/api/config').then(r => r.json()).then(j => {
       const d = j.data ?? {}
@@ -149,7 +149,7 @@ export default function LeadModal({ open, onClose, lead, onSuccess }) {
         referenceId:      lead.referenceId      ?? null,
         sendingDate:      lead.sendingDate  ? new Date(lead.sendingDate).toISOString().slice(0,10)  : '',
         followUpDate:     lead.followUpDate ? new Date(lead.followUpDate).toISOString().slice(0,10) : '',
-        value:            lead.value ? String(lead.value) : '',
+        value:            lead.value != null ? String(lead.value) : '',
         assignedToId:     typeof lead.assignedToId === 'object' ? (lead.assignedToId?.id ?? '') : (lead.assignedToId ?? ''),
         notes:            lead.notes ?? '',
       })
@@ -175,20 +175,8 @@ export default function LeadModal({ open, onClose, lead, onSuccess }) {
     setCommentText('')
   }, [open, lead, reset])
 
-  // Reset category + subcategory when venture changes (skip on first mount)
-  const mountedService = useRef(false)
-  useEffect(() => {
-    if (!mountedService.current) { mountedService.current = true; return }
-    setValue('category', '')
-    setValue('subcategory', '')
-  }, [watchedService]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Reset subcategory when category changes (skip on first mount)
-  const mountedCategory = useRef(false)
-  useEffect(() => {
-    if (!mountedCategory.current) { mountedCategory.current = true; return }
-    setValue('subcategory', '')
-  }, [watchedCategory]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Venture → category → subcategory cascade: clear dependants only when the
+  // user actually changes the parent (done in the Select onChange handlers).
 
   // Sync refQuery with form value when editing
   useEffect(() => {
@@ -233,28 +221,34 @@ export default function LeadModal({ open, onClose, lead, onSuccess }) {
     setSavingBizCat(true)
     try {
       const updated = [...businessCategories, name]
-      const newConfig = { ...configData, leadBusinessCategories: updated }
-      await fetch('/api/config', {
-        method: 'PUT',
+      // PATCH merges just this key, so config changes made meanwhile aren't overwritten
+      const res = await fetch('/api/config', {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newConfig),
+        body: JSON.stringify({ leadBusinessCategories: updated }),
       })
-      setBusinessCategories(updated)
-      setConfigData(newConfig)
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json.error ?? 'Failed to save category')
+      const saved = json.data?.leadBusinessCategories ?? updated
+      setBusinessCategories(saved)
+      setConfigData(json.data ?? { ...configData, leadBusinessCategories: saved })
       setValue('businessCategory', name)
       setAddingBizCat(false)
       setNewBizCatInput('')
       invalidateConfigCache()
-    } catch {
-      toast.error('Failed to save category')
+    } catch (err) {
+      toast.error(err.message || 'Failed to save category')
     } finally {
       setSavingBizCat(false)
     }
   }
 
   function addLink() {
-    const url = linkInput.trim()
-    if (!url) return
+    const raw = linkInput.trim()
+    if (!raw) return
+    // Same rule as the API: http(s) URLs only; scheme-less input gets https://
+    const url = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`
+    try { new URL(url) } catch { toast.error('Enter a valid link, e.g. facebook.com/page'); return }
     setLinks(l => [...l, url])
     setLinkInput('')
   }
@@ -313,7 +307,8 @@ export default function LeadModal({ open, onClose, lead, onSuccess }) {
         reference:        values.reference        || null,
         referenceType:    values.reference ? (refType ?? null) : null,
         referenceId:      values.reference ? (refId   ?? null) : null,
-        value:            values.value ? parseFloat(values.value) : null,
+        // A masked value ('••••••') is sent unchanged so the API keeps the stored amount.
+        value:            String(values.value ?? '').includes('••') ? values.value : (values.value ? parseFloat(values.value) : null),
         assignedToId:     values.assignedToId     || null,
         followUpDate:     values.followUpDate ? new Date(values.followUpDate).toISOString() : null,
         sendingDate:      values.sendingDate  ? new Date(values.sendingDate).toISOString()  : null,
@@ -435,15 +430,17 @@ export default function LeadModal({ open, onClose, lead, onSuccess }) {
                     <Controller name="businessCategory" control={control} render={({ field }) => (
                       <Select value={field.value} onChange={field.onChange}
                         options={businessCategories.map(c => ({ value: c, label: c }))}
-                        placeholder={businessCategories.length === 0 ? 'No categories — click + to add' : 'Select category…'}
+                        placeholder={businessCategories.length === 0 ? (canEditConfig ? 'No categories — click + to add' : 'No categories — add in Config') : 'Select category…'}
                       />
                     )} />
                   </div>
-                  <button type="button" onClick={() => setAddingBizCat(true)}
-                    className="px-2.5 py-2 text-sm bg-gray-100 text-gray-600 rounded-lg hover:bg-blue-100 hover:text-blue-700 shrink-0 transition-colors"
-                    title="Add new business category">
-                    <Plus className="w-4 h-4" />
-                  </button>
+                  {canEditConfig && (
+                    <button type="button" onClick={() => setAddingBizCat(true)}
+                      className="px-2.5 py-2 text-sm bg-gray-100 text-gray-600 rounded-lg hover:bg-blue-100 hover:text-blue-700 shrink-0 transition-colors"
+                      title="Add new business category">
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -470,7 +467,11 @@ export default function LeadModal({ open, onClose, lead, onSuccess }) {
             <div>
               <label className={lc}>Service / Sister Concern</label>
               <Controller name="service" control={control} render={({ field }) => (
-                <Select value={field.value} onChange={field.onChange}
+                <Select value={field.value}
+                  onChange={(v) => {
+                    if ((v ?? '') !== (field.value ?? '')) { setValue('category', ''); setValue('subcategory', '') }
+                    field.onChange(v)
+                  }}
                   options={ventures.map(v => ({ value: v.id, label: v.label }))}
                   placeholder={ventures.length === 0 ? 'No ventures — add in Config' : 'Select venture…'}
                   disabled={ventures.length === 0}
@@ -480,7 +481,11 @@ export default function LeadModal({ open, onClose, lead, onSuccess }) {
             <div>
               <label className={lc}>Category</label>
               <Controller name="category" control={control} render={({ field }) => (
-                <Select value={field.value} onChange={field.onChange}
+                <Select value={field.value}
+                  onChange={(v) => {
+                    if ((v ?? '') !== (field.value ?? '')) setValue('subcategory', '')
+                    field.onChange(v)
+                  }}
                   options={categoryOptions}
                   placeholder={!watchedService ? 'Select venture first…' : categoryOptions.length === 0 ? 'No categories for this venture' : 'Select category…'}
                   disabled={categoryOptions.length === 0}

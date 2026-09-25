@@ -4,8 +4,13 @@ import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { FreelancerAssignment, Freelancer, Project, User } from '@/models'
 import { createNotification } from '@/lib/createNotification'
-import { requireStaff } from '@/lib/rbac'
+import { requireStaff, canDo } from '@/lib/rbac'
+import { maskMoney, maskEmail } from '@/lib/pii'
 import { BASE_CURRENCY } from '@/lib/currencies'
+
+// Display-only freelancer fields for populated responses — never bank, KYC,
+// salary or invite-token data.
+const FREELANCER_DISPLAY_FIELDS = 'type agencyInfo.agencyName employmentMode paymentCurrency userId'
 
 export async function GET(req) {
   try {
@@ -34,15 +39,34 @@ export async function GET(req) {
     }
 
     const assignments = await FreelancerAssignment.find(filter)
-      .populate({ path: 'projectId', select: 'name projectCode venture' })
+      .populate({ path: 'projectId', select: 'name projectCode venture projectManagerId' })
       .populate({
         path: 'freelancerId',
+        select: FREELANCER_DISPLAY_FIELDS,
         populate: { path: 'userId', select: 'name email avatar' },
       })
       .populate({ path: 'assignedBy', select: 'name email' })
       .populate({ path: 'approvedBy', select: 'name email' })
       .sort({ createdAt: -1 })
       .lean()
+
+    // Staff without freelancer-management / financial visibility only see the
+    // engagement amounts on projects they manage, and masked freelancer emails.
+    if (session.user.role !== 'FREELANCER') {
+      const seeAllAmounts = canDo(session, 'hr.freelancers.manage') || canDo(session, 'pii.financial.view')
+      const seeContact    = canDo(session, 'pii.contact.view')
+      for (const a of assignments) {
+        const isPM = String(a.projectId?.projectManagerId ?? '') === String(session.user.id)
+        if (!seeAllAmounts && !isPM) {
+          a.paymentAmount = maskMoney(a.paymentAmount)
+          a.amountBDT     = maskMoney(a.amountBDT)
+        }
+        if (!seeContact && a.freelancerId?.userId?.email) {
+          a.freelancerId.userId.email = maskEmail(a.freelancerId.userId.email)
+        }
+        if (a.projectId) delete a.projectId.projectManagerId
+      }
+    }
 
     return Response.json({ data: assignments })
   } catch (err) {
@@ -120,6 +144,7 @@ export async function POST(req) {
       .populate({ path: 'projectId', select: 'name projectCode venture' })
       .populate({
         path: 'freelancerId',
+        select: FREELANCER_DISPLAY_FIELDS,
         populate: { path: 'userId', select: 'name email avatar' },
       })
       .lean()

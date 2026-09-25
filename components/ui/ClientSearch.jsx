@@ -20,6 +20,7 @@ export default function ClientSearch({ value, onChange, error, placeholder = 'Se
   const containerRef = useRef(null)
   const inputRef     = useRef(null)
   const debounceRef  = useRef(null)
+  const reqIdRef     = useRef(0)
 
   // Close on outside click
   useEffect(() => {
@@ -42,17 +43,19 @@ export default function ClientSearch({ value, onChange, error, placeholder = 'Se
   // Debounced search
   const search = useCallback((q) => {
     clearTimeout(debounceRef.current)
+    const id = ++reqIdRef.current // any older in-flight response is now stale
     if (!q.trim()) { setResults([]); setLoading(false); return }
     setLoading(true)
     debounceRef.current = setTimeout(async () => {
       try {
         const res  = await fetch(`/api/clients?search=${encodeURIComponent(q)}&limit=10`)
         const json = await res.json()
+        if (id !== reqIdRef.current) return
         setResults(json.data ?? [])
       } catch {
-        setResults([])
+        if (id === reqIdRef.current) setResults([])
       } finally {
-        setLoading(false)
+        if (id === reqIdRef.current) setLoading(false)
       }
     }, 280)
   }, [])

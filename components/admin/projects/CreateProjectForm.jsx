@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -13,6 +13,7 @@ import toast from 'react-hot-toast'
 import ClientSearch from '@/components/ui/ClientSearch'
 import Select from '@/components/ui/Select'
 import DatePicker from '@/components/ui/DatePicker'
+import { dhakaDayKey } from '@/lib/dhakaTime'
 
 const schema = z.object({
   name:             z.string().min(1, 'Project name required'),
@@ -90,7 +91,7 @@ export default function CreateProjectForm({ project }) {
   const [svcMap,        setSvcMap]        = useState({})
   const [configLoading, setConfigLoading] = useState(true)
 
-  const { register, control, handleSubmit, watch, setValue, formState: { errors, isSubmitting } } = useForm({
+  const { register, control, handleSubmit, watch, setValue, getValues, formState: { errors, isSubmitting } } = useForm({
     resolver: zodResolver(schema),
     defaultValues: isEdit ? {
       name:             project.name             ?? '',
@@ -102,8 +103,9 @@ export default function CreateProjectForm({ project }) {
       projectType:      project.projectType       ?? 'FIXED',
       projectManagerId: extractId(project.projectManagerId),
       priority:         project.priority          ?? 'MEDIUM',
-      startDate:        project.startDate ? project.startDate.slice(0, 10) : '',
-      deadline:         project.deadline  ? project.deadline.slice(0, 10)  : '',
+      // Calendar day in the business timezone (Asia/Dhaka), not the UTC date.
+      startDate:        project.startDate ? dhakaDayKey(project.startDate) : '',
+      deadline:         project.deadline  ? dhakaDayKey(project.deadline)  : '',
       budget:           project.budget    ?? '',
       currency:         'BDT',
       tags:             project.tags       ?? '',
@@ -143,9 +145,20 @@ export default function CreateProjectForm({ project }) {
       .finally(() => setConfigLoading(false))
   }, [])
 
+  // When the venture changes (create or edit), drop a category / subcategory
+  // that does not exist under the new venture.
+  const prevVenture = useRef(venture)
   useEffect(() => {
-    if (!isEdit) { setValue('category', ''); setValue('subcategory', '') }
-  }, [venture, isEdit, setValue])
+    if (prevVenture.current === venture) return
+    prevVenture.current = venture
+    const cats = svcMap[venture] ?? {}
+    const cat  = getValues('category')
+    if (!cat || !Object.prototype.hasOwnProperty.call(cats, cat)) {
+      setValue('category', ''); setValue('subcategory', '')
+    } else if (!(cats[cat] ?? []).includes(getValues('subcategory'))) {
+      setValue('subcategory', '')
+    }
+  }, [venture, svcMap, getValues, setValue])
 
   const categories    = venture ? Object.keys(svcMap[venture] ?? {}) : []
   const subcategories = venture && category ? (svcMap[venture]?.[category] ?? []) : []
@@ -154,13 +167,18 @@ export default function CreateProjectForm({ project }) {
   async function onSubmit(data) {
     try {
       const body = { ...data }
-      if (!body.description)                              delete body.description
-      if (!body.subcategory)                              delete body.subcategory
-      if (!body.projectManagerId)                         delete body.projectManagerId
-      if (!body.startDate)                                delete body.startDate
-      if (!body.deadline)                                 delete body.deadline
+      // Monthly retainers have billing periods, not a deadline.
+      if (body.projectType === 'MONTHLY') body.deadline = ''
+      // Create: omit empty optional fields. Edit: send them as null so a
+      // cleared value is actually cleared (PUT only touches fields present).
+      const clear = (k) => { if (isEdit) body[k] = null; else delete body[k] }
+      if (!body.description)                              clear('description')
+      if (!body.subcategory)                              clear('subcategory')
+      if (!body.projectManagerId)                         clear('projectManagerId')
+      if (!body.startDate)                                clear('startDate')
+      if (!body.deadline)                                 clear('deadline')
       if (body.budget   === '' || body.budget   == null)  delete body.budget
-      if (!body.tags)                                     delete body.tags
+      if (!body.tags)                                     clear('tags')
 
       const url    = isEdit ? `/api/projects/${project.id}` : '/api/projects'
       const method = isEdit ? 'PUT' : 'POST'
@@ -219,9 +237,16 @@ export default function CreateProjectForm({ project }) {
             const active = projectType === value
             return (
               <button key={value} type="button"
-                onClick={() => setValue('projectType', value, { shouldValidate: true })}
+                // The lifecycle is fixed once the project exists (the API rejects a change).
+                disabled={isEdit && !active}
+                onClick={() => {
+                  if (isEdit) return
+                  setValue('projectType', value, { shouldValidate: true })
+                  if (value === 'MONTHLY') setValue('deadline', '')
+                }}
                 className={`p-4 rounded-xl border-2 text-left transition-all duration-150
-                  ${active ? 'bg-gray-900 border-gray-900' : 'bg-gray-50 border-gray-200 hover:border-gray-300 hover:bg-white'}`}>
+                  ${active ? 'bg-gray-900 border-gray-900' : 'bg-gray-50 border-gray-200 hover:border-gray-300 hover:bg-white'}
+                  ${isEdit && !active ? 'opacity-40 cursor-not-allowed hover:bg-gray-50 hover:border-gray-200' : ''}`}>
                 <p className={`text-lg mb-1 ${active ? 'text-white' : 'text-gray-400'}`}>{icon}</p>
                 <p className={`text-sm font-semibold ${active ? 'text-white' : 'text-gray-700'}`}>{label}</p>
                 <p className={`text-xs mt-0.5 ${active ? 'text-gray-300' : 'text-gray-500'}`}>{desc}</p>
@@ -230,6 +255,7 @@ export default function CreateProjectForm({ project }) {
           })}
         </div>
         {errors.projectType && <p className="mt-2 text-xs text-red-500">{errors.projectType.message}</p>}
+        {isEdit && <p className="mt-2 text-xs text-gray-400">The project type cannot be changed after creation.</p>}
       </SectionCard>
 
       {/* ── Details ── */}
@@ -250,7 +276,11 @@ export default function CreateProjectForm({ project }) {
           <div className="grid grid-cols-2 gap-3">
             <Field label="Category" required error={errors.category?.message}>
               <Controller name="category" control={control} render={({ field }) => (
-                <Select value={field.value} onChange={v => field.onChange(v ?? '')}
+                <Select value={field.value} onChange={v => {
+                  // Subcategories belong to a category — reset on change.
+                  if ((v ?? '') !== field.value) setValue('subcategory', '')
+                  field.onChange(v ?? '')
+                }}
                   options={categories.map(c => ({ value: c, label: c }))}
                   placeholder="Select…"
                   disabled={!venture || configLoading}

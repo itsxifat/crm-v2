@@ -4,6 +4,8 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Project, ProjectDiscussion } from '@/models'
+import { isValidObjectId } from '@/lib/objectId'
+import { canAccessProject } from '@/lib/projectAccess'
 
 // Check if user is a member of the project (team member, PM, or admin/manager)
 async function isMember(session, projectId) {
@@ -22,7 +24,11 @@ export async function GET(_, { params }) {
   try {
     const session = await getServerSession(authOptions)
     if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     await connectDB()
+
+    if (!(await canAccessProject(session, params.id)))
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     const messages = await ProjectDiscussion.find({ projectId: params.id })
       .sort({ createdAt: 1 })
@@ -34,12 +40,15 @@ export async function GET(_, { params }) {
         id:        m._id.toString(),
         content:   m.content,
         createdAt: m.createdAt,
-        user: {
-          id:     m.userId._id.toString(),
-          name:   m.userId.name,
-          avatar: m.userId.avatar ?? null,
-          role:   m.userId.role,
-        },
+        // Author's account may have been deleted since — don't let that 500 the thread.
+        user: m.userId
+          ? {
+              id:     m.userId._id.toString(),
+              name:   m.userId.name,
+              avatar: m.userId.avatar ?? null,
+              role:   m.userId.role,
+            }
+          : { id: null, name: 'Deleted user', avatar: null, role: null },
       })),
     })
   } catch (err) {
@@ -53,6 +62,7 @@ export async function POST(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
     if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     await connectDB()
 
     const allowed = await isMember(session, params.id)

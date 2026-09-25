@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
+import { useSession } from 'next-auth/react'
 import {
   Mail, Plus, Trash2, Pencil, Save, X, Check, Loader2,
   Eye, EyeOff, Send, ChevronDown, ChevronUp, ShieldCheck,
@@ -13,6 +14,21 @@ import { cn } from '@/lib/utils'
 import { invalidateConfigCache, normalizeCategories } from '@/lib/useConfig'
 
 // ── Constants ──────────────────────────────────────────────────────────────────
+
+// Build a unique id from a label. Labels written only in non-Latin script (e.g.
+// Bengali) or symbols slug to '' — fall back to a random suffix so every item
+// gets a distinct, non-empty id.
+function uniqueId(label, taken, { upper = false } = {}) {
+  let slug = upper
+    ? label.trim().toUpperCase().replace(/\s+/g, '_').replace(/[^A-Z0-9_]/g, '')
+    : label.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+  if (!slug || taken.includes(slug)) {
+    const suffix = crypto.randomUUID().slice(0, 8)
+    if (upper) slug = slug ? `${slug}_${suffix.toUpperCase()}` : `METHOD_${suffix.toUpperCase()}`
+    else       slug = slug ? `${slug}-${suffix}` : `item-${suffix}`
+  }
+  return slug
+}
 
 const PURPOSES = [
   { id: 'general',      label: 'General',            description: 'Default fallback for all emails' },
@@ -443,8 +459,8 @@ function CategoryGroupManager({ items, onChange }) {
   // Coerce any legacy shape (flat strings / objects missing subcategories) to the nested form
   const list = normalizeCategories(items)
   function addCategory(label) {
-    const id = label.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
-    if (list.some(c => c.id === id || c.label.toLowerCase() === label.toLowerCase())) { toast.error('Category already exists'); return }
+    if (list.some(c => c.label.toLowerCase() === label.toLowerCase())) { toast.error('Category already exists'); return }
+    const id = uniqueId(label, list.map(c => c.id))
     onChange([...list, { id, label, subcategories: [] }])
   }
   function updateCategory(updated) { onChange(list.map(c => c.id === updated.id ? updated : c)) }
@@ -461,8 +477,8 @@ function CategoryGroupManager({ items, onChange }) {
 function VenturePanel({ ventureId, services, config, onChange }) {
   const venture = config.ventures?.find(v => v.id === ventureId)
   function addService(label) {
-    const id = label.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
-    if (services.some(s => s.id === id || s.label === label)) { toast.error('Service already exists'); return }
+    if (services.some(s => s.label.toLowerCase() === label.toLowerCase())) { toast.error('Service already exists'); return }
+    const id = uniqueId(label, services.map(s => s.id))
     onChange([...services, { id, label, subcategories: [] }])
   }
   function updateService(updated) { onChange(services.map(s => s.id === updated.id ? updated : s)) }
@@ -766,6 +782,22 @@ function ConfigContent() {
   const searchParams = useSearchParams()
   const router       = useRouter()
   const activeTab    = searchParams.get('tab') ?? 'ventures'
+  const { data: session } = useSession()
+  // Email/WhatsApp hold credentials — their APIs are SUPER_ADMIN-only.
+  const isSuperAdmin = session?.user?.role === 'SUPER_ADMIN'
+
+  // Per-section load failures. A failed load must not look like an empty list
+  // (a later full-replace save would wipe real data), and must not auto-retry
+  // in a loop — the user retries explicitly.
+  const [loadErrors, setLoadErrors] = useState({}) // { config?, company?, email?, whatsapp? }
+  function setLoadError(key, msg) { setLoadErrors(e => ({ ...e, [key]: msg || 'Request failed' })) }
+  function retryLoad(key)          { setLoadErrors(e => { const n = { ...e }; delete n[key]; return n }) }
+  async function fetchJson(url) {
+    const res = await fetch(url)
+    const j   = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(j.error || `Request failed (${res.status})`)
+    return j
+  }
 
   // ── Config state ──────────────────────────────────────────────────────────────
   const [config,       setConfig]       = useState(null)
@@ -819,10 +851,9 @@ function ConfigContent() {
 
   useEffect(() => {
     const needsConfig = ['ventures', 'leads', 'verification', 'payment'].includes(activeTab)
-    if (!needsConfig || configLoaded || configLoading) return
+    if (!needsConfig || configLoaded || configLoading || loadErrors.config) return
     setConfigLoading(true)
-    fetch('/api/config')
-      .then(r => r.json())
+    fetchJson('/api/config')
       .then(j => {
         const data = j.data ?? {}
         setConfig(data)
@@ -833,40 +864,41 @@ function ConfigContent() {
         setConfigLoaded(true)
         setConfigLoading(false)
       })
-      .catch(() => { toast.error('Failed to load configuration'); setConfigLoading(false) })
-  }, [activeTab, configLoaded, configLoading])
+      .catch(err => { toast.error('Failed to load configuration'); setLoadError('config', err.message); setConfigLoading(false) })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, configLoaded, configLoading, loadErrors.config])
 
   useEffect(() => {
-    if (activeTab !== 'company' || companyLoaded || companyLoading) return
+    if (activeTab !== 'company' || companyLoaded || companyLoading || loadErrors.company) return
     setCompanyLoading(true)
-    fetch('/api/settings?group=company')
-      .then(r => r.json())
+    fetchJson('/api/settings?group=company')
       .then(j => {
         const d = j.data ?? {}
         setCompany({ name: d.company_name ?? '', address: d.company_address ?? '', phone: d.company_phone ?? '', email: d.company_email ?? '', website: d.company_website ?? '' })
         setCompanyLoaded(true)
         setCompanyLoading(false)
       })
-      .catch(() => setCompanyLoading(false))
-  }, [activeTab, companyLoaded, companyLoading])
+      .catch(err => { setLoadError('company', err.message); setCompanyLoading(false) })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, companyLoaded, companyLoading, loadErrors.company])
 
   useEffect(() => {
-    if (activeTab !== 'email' || emailLoaded || emailLoading) return
+    if (activeTab !== 'email' || !isSuperAdmin || emailLoaded || emailLoading || loadErrors.email) return
     setEmailLoading(true)
-    fetch('/api/settings/email')
-      .then(r => r.json())
+    fetchJson('/api/settings/email')
       .then(j => { setAccounts(j.data ?? []); setEmailLoaded(true); setEmailLoading(false) })
-      .catch(() => { toast.error('Failed to load email settings'); setEmailLoading(false) })
-  }, [activeTab, emailLoaded, emailLoading])
+      .catch(err => { toast.error('Failed to load email settings'); setLoadError('email', err.message); setEmailLoading(false) })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, isSuperAdmin, emailLoaded, emailLoading, loadErrors.email])
 
   useEffect(() => {
-    if (activeTab !== 'whatsapp' || waLoaded || waLoading) return
+    if (activeTab !== 'whatsapp' || !isSuperAdmin || waLoaded || waLoading || loadErrors.whatsapp) return
     setWaLoading(true)
-    fetch('/api/settings/whatsapp')
-      .then(r => r.json())
+    fetchJson('/api/settings/whatsapp')
       .then(j => { setWaAccounts(j.data ?? []); setWaLoaded(true); setWaLoading(false) })
-      .catch(() => { toast.error('Failed to load WhatsApp settings'); setWaLoading(false) })
-  }, [activeTab, waLoaded, waLoading])
+      .catch(err => { toast.error('Failed to load WhatsApp settings'); setLoadError('whatsapp', err.message); setWaLoading(false) })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, isSuperAdmin, waLoaded, waLoading, loadErrors.whatsapp])
 
   // ── Config (ventures/leads) handlers ─────────────────────────────────────────
 
@@ -895,7 +927,11 @@ function ConfigContent() {
   async function saveConfig() {
     setSaving(true)
     try {
-      const res = await fetch('/api/config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(config) })
+      // Verification and payment methods are saved on their own (PATCH) — never
+      // send the page-load copies back, or they would revert those changes.
+      // eslint-disable-next-line no-unused-vars
+      const { verification: _v, paymentMethods: _pm, ...owned } = config
+      const res = await fetch('/api/config', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(owned) })
       if (!res.ok) throw new Error((await res.json()).error)
       toast.success('Configuration saved')
       invalidateConfigCache()
@@ -928,6 +964,7 @@ function ConfigContent() {
       const res = await fetch('/api/config', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ verification: updated }) })
       if (!res.ok) throw new Error((await res.json()).error)
       setVerification(updated)
+      setConfig(c => (c ? { ...c, verification: updated } : c))
       invalidateConfigCache()
       toast.success('Verification settings saved')
     } catch (err) { toast.error(err.message || 'Failed to save') }
@@ -943,17 +980,17 @@ function ConfigContent() {
       const res = await fetch('/api/config', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ paymentMethods: methods }) })
       if (!res.ok) throw new Error((await res.json()).error)
       setPaymentMethods(methods)
+      setConfig(c => (c ? { ...c, paymentMethods: methods } : c))
       invalidateConfigCache()
       toast.success('Payment methods saved')
     } catch (err) { toast.error(err.message || 'Failed to save') }
     finally { setPmSaving(false) }
   }
-  function pmLabelToValue(label) { return label.trim().toUpperCase().replace(/\s+/g, '_').replace(/[^A-Z0-9_]/g, '') }
   function addPaymentMethod() {
     const label = pmNewLabel.trim()
     if (!label) { toast.error('Enter a method name'); return }
-    const value = pmLabelToValue(label)
-    if (paymentMethods.some(m => m.value === value)) { toast.error('A method with this name already exists'); return }
+    if (paymentMethods.some(m => m.label.toLowerCase() === label.toLowerCase())) { toast.error('A method with this name already exists'); return }
+    const value = uniqueId(label, paymentMethods.map(m => m.value), { upper: true })
     savePm([...paymentMethods, { value, label }])
     setPmNewLabel('')
   }
@@ -1011,7 +1048,19 @@ function ConfigContent() {
 
   function setTab(id) { router.push(`/admin/config?tab=${id}`, { scroll: false }) }
 
-  const configNeedsLoad = ['ventures', 'leads', 'verification', 'payment'].includes(activeTab) && (configLoading || !configLoaded)
+  const configNeedsLoad = ['ventures', 'leads', 'verification', 'payment'].includes(activeTab) && !loadErrors.config && (configLoading || !configLoaded)
+  const visibleTabs     = TABS.filter(t => isSuperAdmin || (t.id !== 'email' && t.id !== 'whatsapp'))
+
+  function renderLoadError(section, label) {
+    return (
+      <div className="text-center py-14 border-2 border-dashed border-red-100 rounded-2xl">
+        <AlertTriangle className="w-8 h-8 text-red-300 mx-auto mb-3" />
+        <p className="text-sm text-gray-700 font-semibold">Could not load {label}</p>
+        <p className="text-xs text-gray-400 mt-1 mb-5">{loadErrors[section]}</p>
+        <button onClick={() => retryLoad(section)} className={btnPrimary + ' mx-auto'}>Retry</button>
+      </div>
+    )
+  }
 
   // ── Render ────────────────────────────────────────────────────────────────────
 
@@ -1058,7 +1107,7 @@ function ConfigContent() {
 
       {/* Tab bar */}
       <div className="flex items-center gap-0.5 border-b border-gray-100 overflow-x-auto">
-        {TABS.map(t => (
+        {visibleTabs.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
             className={cn(
               'px-4 py-2.5 text-sm whitespace-nowrap transition-colors border-b-2 -mb-px',
@@ -1068,6 +1117,9 @@ function ConfigContent() {
           </button>
         ))}
       </div>
+
+      {['ventures', 'leads', 'verification', 'payment'].includes(activeTab) && loadErrors.config &&
+        renderLoadError('config', 'configuration')}
 
       {/* Loading */}
       {configNeedsLoad && (
@@ -1186,7 +1238,9 @@ function ConfigContent() {
             <h2 className="text-base font-bold text-gray-900 tracking-tight">Company Information</h2>
             <p className="text-sm text-gray-400 mt-0.5">This information appears on printed invoices and quotations.</p>
           </div>
-          {companyLoading ? (
+          {loadErrors.company ? (
+            renderLoadError('company', 'company information')
+          ) : companyLoading || !companyLoaded ? (
             <div className="flex items-center justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-gray-300" /></div>
           ) : (
             <form onSubmit={saveCompany} className="bg-white border border-gray-100 rounded-2xl p-6 space-y-4 shadow-sm">
@@ -1208,7 +1262,7 @@ function ConfigContent() {
       )}
 
       {/* ── Verification tab ─────────────────────────────────────────────────── */}
-      {activeTab === 'verification' && (
+      {activeTab === 'verification' && configLoaded && (
         <div className="space-y-4">
           <div>
             <h2 className="text-base font-bold text-gray-900 tracking-tight">Verification &amp; Access</h2>
@@ -1249,7 +1303,7 @@ function ConfigContent() {
       )}
 
       {/* ── Finance tab ──────────────────────────────────────────────────────── */}
-      {activeTab === 'payment' && (
+      {activeTab === 'payment' && configLoaded && (
         <div className="space-y-8">
 
           {/* Transaction Categories — each category owns its subcategories (parent → children) */}
@@ -1330,7 +1384,7 @@ function ConfigContent() {
       )}
 
       {/* ── Email tab ────────────────────────────────────────────────────────── */}
-      {activeTab === 'email' && (
+      {activeTab === 'email' && isSuperAdmin && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
@@ -1340,14 +1394,16 @@ function ConfigContent() {
               </h2>
               <p className="text-sm text-gray-400 mt-0.5">SMTP accounts used to send emails from the CRM</p>
             </div>
-            {emailMode === 'list' && !emailLoading && (
+            {emailMode === 'list' && emailLoaded && !emailLoading && (
               <button onClick={() => { setEmailEditing(null); setEmailMode('add') }} className={btnPrimary}>
                 <Plus className="w-4 h-4" /> Add Account
               </button>
             )}
           </div>
 
-          {emailLoading ? (
+          {loadErrors.email ? (
+            renderLoadError('email', 'email accounts')
+          ) : emailLoading || !emailLoaded ? (
             <div className="flex items-center justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-gray-300" /></div>
           ) : (
             <>
@@ -1394,7 +1450,7 @@ function ConfigContent() {
       )}
 
       {/* ── WhatsApp tab ─────────────────────────────────────────────────────── */}
-      {activeTab === 'whatsapp' && (
+      {activeTab === 'whatsapp' && isSuperAdmin && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
@@ -1404,14 +1460,16 @@ function ConfigContent() {
               </h2>
               <p className="text-sm text-gray-400 mt-0.5">API keys used to send WhatsApp notifications</p>
             </div>
-            {waMode === 'list' && !waLoading && (
+            {waMode === 'list' && waLoaded && !waLoading && (
               <button onClick={() => { setWaEditing(null); setWaMode('add') }} className={btnPrimary}>
                 <Plus className="w-4 h-4" /> Add Account
               </button>
             )}
           </div>
 
-          {waLoading ? (
+          {loadErrors.whatsapp ? (
+            renderLoadError('whatsapp', 'WhatsApp accounts')
+          ) : waLoading || !waLoaded ? (
             <div className="flex items-center justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-gray-300" /></div>
           ) : (
             <>

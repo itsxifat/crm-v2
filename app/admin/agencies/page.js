@@ -7,6 +7,7 @@ import SearchInput from '@/components/ui/SearchInput'
 import Pagination from '@/components/ui/Pagination'
 import ActionMenu from '@/components/ui/ActionMenu'
 import FreelancerModal from '@/components/admin/freelancers/FreelancerModal'
+import InviteCredentialsModal from '@/components/admin/freelancers/InviteCredentialsModal'
 import { formatCurrency } from '@/lib/utils'
 
 function InviteBadge({ accepted }) {
@@ -38,6 +39,7 @@ export default function AgenciesPage() {
   const [verify,     setVerify]     = useState('all') // all | pending | verified | unverified
   const [modalOpen,  setModalOpen]  = useState(false)
   const [editing,    setEditing]    = useState(null)
+  const [unsent,     setUnsent]     = useState(null)  // create result whose invite email failed
 
   const fetchAgencies = useCallback(async () => {
     setLoading(true)
@@ -59,10 +61,22 @@ export default function AgenciesPage() {
 
   useEffect(() => { fetchAgencies() }, [fetchAgencies])
 
-  function handleSaved() {
-    toast.success(editing ? 'Agency updated' : 'Agency invitation sent!')
+  function handleSaved(result) {
+    const wasEditing = !!editing
     setEditing(null)
     fetchAgencies()
+
+    if (wasEditing) { toast.success('Agency updated'); return }
+
+    // The API returns 201 even when the invite email fails; the link / temp
+    // password is returned only once, so show it for manual sharing.
+    if (result?.emailSent === false) {
+      if (result.link || result.tempPassword) setUnsent(result)
+      else toast.error('Agency created, but the invitation email could not be sent.', { duration: 8000 })
+      return
+    }
+
+    toast.success('Agency invitation sent!')
   }
 
   async function handleDelete(f) {
@@ -178,6 +192,7 @@ export default function AgenciesPage() {
                   <td className="px-6 py-4 text-sm text-gray-600">{f.agencyInfo?.type ?? '—'}</td>
                   <td className="px-6 py-4 text-sm font-medium text-gray-900 whitespace-nowrap">
                     {f.finance?.owedBDT ? formatCurrency(f.finance.owedBDT) : <span className="text-gray-300">—</span>}
+                    {f.finance?.owedOther?.map(o => <div key={o.currency} className="text-xs text-gray-500">{o.currency} {Number(o.total).toLocaleString()}</div>)}
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -200,7 +215,7 @@ export default function AgenciesPage() {
                       return (
                         <ActionMenu
                           items={[
-                            { label: 'View details', icon: Eye, href: `/admin/freelancers/${f.id}` },
+                            { label: 'View details', icon: Eye, href: `/admin/agencies/${f.id}` },
                             { label: 'Edit', icon: Pencil, onClick: () => { setEditing(f); setModalOpen(true) } },
                             disabled
                               ? { label: 'Reactivate', icon: RotateCcw, onClick: () => handleToggle(f, false) }
@@ -233,6 +248,8 @@ export default function AgenciesPage() {
         onSaved={handleSaved}
         defaultType="AGENCY"
       />
+
+      <InviteCredentialsModal result={unsent} onClose={() => setUnsent(null)} label="Agency" />
     </div>
   )
 }

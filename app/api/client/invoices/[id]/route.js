@@ -5,6 +5,7 @@ import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Invoice, CombinedInvoice } from '@/models'
 import { getMyCompanyIds } from '@/lib/clientAccess'
+import { isValidObjectId } from '@/lib/objectId'
 import { toObjectId } from '@/lib/combinedInvoice'
 
 export async function GET(_, { params }) {
@@ -12,6 +13,7 @@ export async function GET(_, { params }) {
     const session = await getServerSession(authOptions)
     if (!session || session.user.role !== 'CLIENT')
       return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
     await connectDB()
 
@@ -27,7 +29,8 @@ export async function GET(_, { params }) {
       clientId: { $in: clientIds },
       status: { $ne: 'DRAFT' },
     })
-      .populate({ path: 'clientId', populate: { path: 'userId', select: 'name email phone' } })
+      // Client-safe fields only: never internal notes, KYC, priority, etc.
+      .populate({ path: 'clientId', select: 'company clientCode designation address city country userId', populate: { path: 'userId', select: 'name email phone' } })
       .populate('projectId',  'name projectCode venture category')
       .populate('projectIds', 'name projectCode venture category')
 

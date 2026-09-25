@@ -3,11 +3,14 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
-import { Invoice, CombinedInvoice } from '@/models'
+import { Invoice, CombinedInvoice, ProjectPayment, Payment } from '@/models'
 import { logActivity } from '@/lib/logActivity'
 import { requirePerm } from '@/lib/rbac'
 import { maskDoc, INVOICE_PII } from '@/lib/pii'
 import { toObjectId, projectInvoiceFilter } from '@/lib/combinedInvoice'
+import { computeInvoiceTotals } from '@/lib/invoiceTotals'
+import { isValidObjectId } from '@/lib/objectId'
+import { dhakaDayStart } from '@/lib/dhakaTime'
 
 async function getPopulated(id) {
   return Invoice.findById(id)
@@ -21,14 +24,20 @@ export async function GET(_, { params }) {
     const session = await getServerSession(authOptions)
     const denied  = requirePerm(session, 'sales.invoices.view')   // admin view; clients use /api/client/invoices
     if (denied) return denied
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     await connectDB()
     const invoice = await getPopulated(params.id)
     if (!invoice) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-    // Auto-transition to OVERDUE when past due date
-    if (['SENT', 'PARTIALLY_PAID'].includes(invoice.status) && invoice.dueDate && invoice.dueDate < new Date()) {
-      invoice.status = 'OVERDUE'
-      await invoice.save()
+    // Auto-transition to OVERDUE once the due DAY has passed. The due date is a
+    // calendar day (stored as 00:00Z), so it only becomes overdue from the start
+    // of the next Asia/Dhaka day, not from 06:00 on the day it is due.
+    if (['SENT', 'PARTIALLY_PAID'].includes(invoice.status) && invoice.dueDate && invoice.dueDate < dhakaDayStart()) {
+      const res = await Invoice.updateOne(
+        { _id: invoice._id, status: { $in: ['SENT', 'PARTIALLY_PAID'] } },
+        { $set: { status: 'OVERDUE' } },
+      )
+      if (res.modifiedCount > 0) invoice.status = 'OVERDUE'
     }
 
     // Sibling context: how many invoices this project carries, and whether they
@@ -60,34 +69,52 @@ export async function PUT(request, { params }) {
     const session = await getServerSession(authOptions)
     const denied = requirePerm(session, 'sales.invoices.update')
     if (denied) return denied
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     await connectDB()
 
     const body = await request.json()
-    const { items, issueDate, dueDate, taxRate, discount, ...rest } = body
+    // Whitelist: status / paidAmount / paidAt / invoiceNumber / createdBy etc.
+    // are never writable here (payments go through Payment Confirmations).
+    const { clientId, projectId, items, issueDate, dueDate, taxRate, discount, notes, terms, currency } = body ?? {}
 
-    const processedItems = (items ?? []).map(item => ({
-      description: item.description,
-      quantity:    Number(item.quantity) || 1,
-      rate:        Number(item.rate)     || 0,
-      amount:      (Number(item.quantity) || 1) * (Number(item.rate) || 0),
-    }))
-    const subtotal = Math.round(processedItems.reduce((s, i) => s + i.amount, 0) * 100) / 100
-    const taxAmt   = Math.round(subtotal * ((Number(taxRate) || 0) / 100) * 100) / 100
-    const total    = Math.round((subtotal + taxAmt - (Number(discount) || 0)) * 100) / 100
+    const existing = await Invoice.findById(params.id).select('status').lean()
+    if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    // Only drafts are editable: an issued invoice's totals are what the client
+    // was billed and what payments were recorded against.
+    if (existing.status !== 'DRAFT')
+      return NextResponse.json({ error: `Only draft invoices can be edited (this one is ${existing.status})` }, { status: 409 })
 
-    const invoice = await Invoice.findByIdAndUpdate(
-      params.id,
-      {
-        ...rest,
-        items:     processedItems,
-        issueDate: issueDate ? new Date(issueDate) : undefined,
-        dueDate:   dueDate   ? new Date(dueDate)   : null,
-        subtotal, taxRate: Number(taxRate) || 0, taxAmount: taxAmt,
-        discount: Number(discount) || 0, total,
-      },
+    if (clientId !== undefined && !isValidObjectId(clientId))
+      return NextResponse.json({ error: 'Invalid client' }, { status: 400 })
+    if (projectId && !isValidObjectId(projectId))
+      return NextResponse.json({ error: 'Invalid project' }, { status: 400 })
+
+    const calc = computeInvoiceTotals({ items, taxRate, discount })
+    if (calc.error) return NextResponse.json({ error: calc.error }, { status: 422 })
+
+    const update = {
+      items:     calc.items,
+      subtotal:  calc.subtotal,
+      taxRate:   calc.taxRate,
+      taxAmount: calc.taxAmount,
+      discount:  calc.discount,
+      total:     calc.total,
+      dueDate:   dueDate ? new Date(dueDate) : null,
+    }
+    if (issueDate)               update.issueDate = new Date(issueDate)
+    if (clientId !== undefined)  update.clientId  = clientId
+    if (projectId !== undefined) update.projectId = projectId || null
+    if (notes !== undefined)     update.notes     = notes || null
+    if (terms !== undefined)     update.terms     = terms || null
+    if (currency)                update.currency  = String(currency)
+
+    // Conditional on DRAFT so a concurrent send/cancel can't be overwritten
+    const invoice = await Invoice.findOneAndUpdate(
+      { _id: params.id, status: 'DRAFT' },
+      { $set: update },
       { new: true, runValidators: true }
     )
-    if (!invoice) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    if (!invoice) return NextResponse.json({ error: 'Only draft invoices can be edited' }, { status: 409 })
     await invoice.populate([
       { path: 'clientId',  populate: { path: 'userId', select: 'name email avatar' } },
       { path: 'projectId', select: 'name projectCode venture category' },
@@ -110,14 +137,30 @@ export async function PUT(request, { params }) {
   }
 }
 
-export async function DELETE(_, { params }) {
+export async function DELETE(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
     const denied = requirePerm(session, 'sales.invoices.delete')
     if (denied) return denied
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     await connectDB()
-    const invoice = await Invoice.findByIdAndDelete(params.id)
-    if (!invoice) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+    const existing = await Invoice.findById(params.id).select('status').lean()
+    if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    // Issued invoices are cancelled, never deleted: deleting would orphan their
+    // payments / income records and drop billed amounts from the books.
+    if (existing.status !== 'DRAFT')
+      return NextResponse.json({ error: 'Only draft invoices can be deleted. Cancel an issued invoice instead.' }, { status: 409 })
+
+    const [ppCount, legacyCount] = await Promise.all([
+      ProjectPayment.countDocuments({ invoiceId: params.id }),
+      Payment.countDocuments({ invoiceId: params.id }),
+    ])
+    if (ppCount + legacyCount > 0)
+      return NextResponse.json({ error: 'This invoice has payments recorded against it and cannot be deleted.' }, { status: 409 })
+
+    const invoice = await Invoice.findOneAndDelete({ _id: params.id, status: 'DRAFT' })
+    if (!invoice) return NextResponse.json({ error: 'Only draft invoices can be deleted' }, { status: 409 })
 
     logActivity({
       userId:   session.user.id,

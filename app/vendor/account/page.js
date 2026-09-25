@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { Lock, Eye, EyeOff, Loader2, CheckCircle } from 'lucide-react'
 import toast, { Toaster } from 'react-hot-toast'
+import { validateStrongPassword } from '@/lib/passwordPolicy'
 
 const inputCls = 'w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition bg-white text-gray-800 placeholder:text-gray-400'
 
@@ -19,7 +20,8 @@ export default function VendorAccountPage() {
 
   async function handleSubmit(e) {
     e.preventDefault()
-    if (pw.new.length < 8)    { toast.error('New password must be at least 8 characters'); return }
+    const pwError = validateStrongPassword(pw.new)
+    if (pwError)               { toast.error(pwError); return }
     if (pw.new !== pw.confirm) { toast.error('Passwords do not match'); return }
     if (pw.old === pw.new)     { toast.error('New password must differ from current'); return }
 

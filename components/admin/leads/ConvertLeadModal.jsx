@@ -8,10 +8,18 @@ import toast from 'react-hot-toast'
 import { Loader2, RefreshCw, Eye, EyeOff, Copy, Check, UserCheck, ExternalLink } from 'lucide-react'
 import Modal from '@/components/ui/Modal'
 import Select from '@/components/ui/Select'
+import { isStrongPassword } from '@/lib/passwordPolicy'
+
+// Lead fields arrive masked ('+880••••78') for users without PII permissions
+const isMasked = (v) => typeof v === 'string' && v.includes('••')
 
 const schema = z.object({
-  email:    z.string().min(1, 'Email is required for login').email('Invalid email'),
-  password: z.string().min(6, 'At least 6 characters').optional().or(z.literal('')),
+  // A masked lead email is accepted — the server substitutes the real address
+  email:    z.string().min(1, 'Email is required for login')
+    .refine(v => isMasked(v) || z.string().email().safeParse(v).success, 'Invalid email'),
+  password: z.string()
+    .refine(v => !v || isStrongPassword(v), 'At least 8 characters with upper & lower case letters, a number and a symbol')
+    .optional().or(z.literal('')),
   requirePasswordChange: z.boolean().default(true),
   name:     z.string().min(1, 'Name is required'),
   phone:    z.string().optional().or(z.literal('')),
@@ -33,7 +41,7 @@ const CLIENT_TYPES = [
 ]
 
 function genPassword() {
-  return Math.random().toString(36).slice(-8) + 'A1!'
+  return Math.random().toString(36).slice(-8) + 'aA1!'
 }
 
 export default function ConvertLeadModal({ open, onClose, lead, onSuccess }) {
@@ -61,7 +69,8 @@ export default function ConvertLeadModal({ open, onClose, lead, onSuccess }) {
       password:     '',
       requirePasswordChange: true,
       name:         lead?.name         ?? '',
-      phone:        lead?.phone        ?? '',
+      // Don't pre-fill masked values — left blank, the server uses the stored lead data
+      phone:        isMasked(lead?.phone) ? '' : (lead?.phone ?? ''),
       clientType:   lead?.company ? 'COMPANY' : 'INDIVIDUAL',
       company:      lead?.company      ?? '',
       designation:  lead?.designation  ?? '',
@@ -70,7 +79,7 @@ export default function ConvertLeadModal({ open, onClose, lead, onSuccess }) {
       industry:     '',
       website:      '',
       address:      '',
-      city:         lead?.location     ?? '',
+      city:         isMasked(lead?.location) ? '' : (lead?.location ?? ''),
       country:      '',
     })
     // Key on lead?.id (not the object) so a post-convert refresh of the lead

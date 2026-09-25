@@ -144,7 +144,7 @@ export default function TaskDetailModal({ taskId, onClose, onUpdate }) {
     return [h, m, s].map((v) => String(v).padStart(2, '0')).join(':')
   }
 
-  const assignee = task?.assignedEmployee?.user ?? task?.assignedFreelancer?.user
+  const assignee = task?.assignedEmployeeId?.userId ?? task?.assignedFreelancerId?.userId
   const totalLogged = (task?.timesheets ?? []).reduce((s, t) => s + t.hours, 0)
 
   return (
@@ -158,7 +158,7 @@ export default function TaskDetailModal({ taskId, onClose, onUpdate }) {
             ) : (
               <>
                 <h2 className="font-semibold text-gray-900 text-lg leading-tight truncate">{task?.title}</h2>
-                <p className="text-xs text-gray-500 mt-0.5">{task?.project?.name}</p>
+                <p className="text-xs text-gray-500 mt-0.5">{task?.projectId?.name}</p>
               </>
             )}
           </div>
@@ -306,7 +306,7 @@ export default function TaskDetailModal({ taskId, onClose, onUpdate }) {
                 {(task.timesheets ?? []).length > 0 && (
                   <div className="mt-3 space-y-1.5 max-h-32 overflow-y-auto">
                     {task.timesheets.slice(0, 5).map((ts) => {
-                      const who = ts.employee?.user ?? ts.freelancer?.user
+                      const who = ts.employeeId?.userId ?? ts.freelancerId?.userId
                       return (
                         <div key={ts.id} className="flex items-center justify-between text-xs text-gray-600 py-1 border-b border-gray-50 last:border-0">
                           <span>{who?.name ?? 'Unknown'}</span>
@@ -331,11 +331,11 @@ export default function TaskDetailModal({ taskId, onClose, onUpdate }) {
                     task.comments.map((c) => (
                       <div key={c.id} className="flex gap-2.5">
                         <div className="w-7 h-7 rounded-full bg-gray-200 text-gray-600 text-xs flex items-center justify-center font-semibold shrink-0">
-                          {getInitials(c.author?.name ?? '?')}
+                          {getInitials(c.authorId?.name ?? '?')}
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-0.5">
-                            <span className="text-xs font-semibold text-gray-800">{c.author?.name}</span>
+                            <span className="text-xs font-semibold text-gray-800">{c.authorId?.name}</span>
                             {c.isInternal && (
                               <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded text-2xs">
                                 <Lock className="w-2.5 h-2.5" /> Internal

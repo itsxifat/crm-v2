@@ -5,11 +5,12 @@ import { useRouter } from 'next/navigation'
 import { useState, useRef, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import {
-  Bell, Search, LogOut, User, Settings, ChevronDown,
+  Bell, LogOut, User, Settings, ChevronDown,
   CheckCheck, Loader2, Menu,
 } from 'lucide-react'
 import Image from 'next/image'
 import { cn, getInitials, getRoleLabel } from '@/lib/utils'
+import { canDo } from '@/lib/rbac'
 
 const TYPE_STYLES = {
   TASK:      'bg-purple-100 text-purple-700',
@@ -36,7 +37,6 @@ export default function Header({ onMenuClick }) {
 
   const [profileOpen, setProfileOpen]   = useState(false)
   const [notifOpen,   setNotifOpen]     = useState(false)
-  const [searchQuery, setSearchQuery]   = useState('')
   const [notifications, setNotifications] = useState([])
   const [unreadCount,   setUnreadCount]   = useState(0)
   const [notifLoading,  setNotifLoading]  = useState(false)
@@ -117,19 +117,8 @@ export default function Header({ onMenuClick }) {
         <Menu className="w-5 h-5" />
       </button>
 
-      {/* Left – Search */}
-      <div className="flex-1 lg:flex-none lg:w-72">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-          <input
-            type="search"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search anything…"
-            className="w-full pl-9 pr-4 py-2 text-sm bg-gray-100 border border-transparent rounded-lg focus:outline-none focus:bg-white focus:border-primary focus:ring-1 focus:ring-primary transition-colors placeholder-gray-400"
-          />
-        </div>
-      </div>
+      {/* Left – spacer (the global search box was removed: it had no search backend) */}
+      <div className="flex-1 lg:flex-none lg:w-72" />
 
       {/* Right – Notifications + Profile */}
       <div className="flex items-center gap-2 ml-auto">
@@ -245,14 +234,16 @@ export default function Header({ onMenuClick }) {
                   <User className="w-4 h-4 text-gray-400" />
                   My Account
                 </Link>
-                <Link
-                  href="/settings"
-                  onClick={() => setProfileOpen(false)}
-                  className="flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                >
-                  <Settings className="w-4 h-4 text-gray-400" />
-                  Settings
-                </Link>
+                {canDo(session, 'system.config.view') && (
+                  <Link
+                    href="/admin/config"
+                    onClick={() => setProfileOpen(false)}
+                    className="flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                  >
+                    <Settings className="w-4 h-4 text-gray-400" />
+                    Settings
+                  </Link>
+                )}
               </div>
 
               <div className="border-t border-gray-100 py-1">

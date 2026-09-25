@@ -52,8 +52,10 @@ export default function FreelancerSetupPage() {
         .catch(() => {})
         .finally(() => setLoadingProfile(false))
     }
+  // Depend on primitives only: SessionProvider re-polls and hands back a new
+  // `session` object every 20s, which would reload the profile and clobber edits.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, session])
+  }, [status, session?.user?.role])
 
   async function handleSubmit(e) {
     e.preventDefault()

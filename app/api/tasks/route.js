@@ -8,6 +8,9 @@ import { resolveActiveClient } from '@/lib/clientAccess'
 import { createNotification } from '@/lib/createNotification'
 import { searchEncrypted } from '@/lib/searchMatch'
 import { logActivity } from '@/lib/logActivity'
+import { canDo, requirePerm } from '@/lib/rbac'
+import { isValidObjectId } from '@/lib/objectId'
+import { TASK_ASSIGNEE_SELECT } from '@/lib/taskAccess'
 import { z } from 'zod'
 
 const createTaskSchema = z.object({
@@ -19,7 +22,6 @@ const createTaskSchema = z.object({
   dueDate:              z.string().datetime().optional().nullable(),
   estimatedHours:       z.number().positive().optional().nullable(),
   assignedEmployeeId:   z.string().optional().nullable(),
-  assignedFreelancerId: z.string().optional().nullable(),
   isClientVisible:      z.boolean().default(false),
   position:             z.number().int().default(0),
 })
@@ -30,6 +32,11 @@ export async function GET(request) {
     const session = await getServerSession(authOptions)
     if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
 
+    // Only staff, assigned freelancers and clients have a task view; everyone
+    // else (VENDOR, unknown roles) gets nothing.
+    if (!['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE', 'FREELANCER', 'CLIENT'].includes(session.user.role))
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+
     await connectDB()
 
     const { searchParams } = new URL(request.url)
@@ -38,21 +45,27 @@ export async function GET(request) {
     const projectId = searchParams.get('projectId')
     const status    = searchParams.get('status')
     const search    = searchParams.get('search')
+    const priority  = searchParams.get('priority')
     const skip      = (page - 1) * limit
 
     // title/description are encrypted → DB regex can't match them (handled in JS below)
     const filter = {}
     if (projectId) filter.projectId = projectId
     if (status)    filter.status    = status
+    if (['LOW', 'MEDIUM', 'HIGH', 'URGENT'].includes(priority)) filter.priority = priority
 
+    // A missing profile must match nothing — filtering on `null` would match
+    // every unassigned task.
     if (session.user.role === 'FREELANCER') {
-      const freelancer = await Freelancer.findOne({ userId: session.user.id }).lean()
-      filter.assignedFreelancerId = freelancer?._id ?? null
+      const freelancer = await Freelancer.findOne({ userId: session.user.id }).select('_id').lean()
+      if (freelancer) filter.assignedFreelancerId = freelancer._id
+      else filter._id = null
     }
 
     if (session.user.role === 'EMPLOYEE') {
-      const employee = await Employee.findOne({ userId: session.user.id }).lean()
-      filter.assignedEmployeeId = employee?._id ?? null
+      const employee = await Employee.findOne({ userId: session.user.id }).select('_id').lean()
+      if (employee) filter.assignedEmployeeId = employee._id
+      else filter._id = null
     }
 
     if (session.user.role === 'CLIENT') {
@@ -67,8 +80,8 @@ export async function GET(request) {
     const sort = { position: 1, createdAt: -1 }
     const populate = [
       { path: 'projectId', select: 'id name' },
-      { path: 'assignedEmployeeId', populate: { path: 'userId', select: 'name avatar' } },
-      { path: 'assignedFreelancerId', populate: { path: 'userId', select: 'name avatar' } },
+      { path: 'assignedEmployeeId', select: TASK_ASSIGNEE_SELECT, populate: { path: 'userId', select: 'name avatar' } },
+      { path: 'assignedFreelancerId', select: TASK_ASSIGNEE_SELECT, populate: { path: 'userId', select: 'name avatar' } },
     ]
 
     let tasks, total
@@ -117,10 +130,8 @@ export async function POST(request) {
     const session = await getServerSession(authOptions)
     if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
 
-    const allowedRoles = ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE']
-    if (!allowedRoles.includes(session.user.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const denied = requirePerm(session, 'tasks.create')
+    if (denied) return denied
 
     await connectDB()
 
@@ -130,19 +141,29 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Validation failed', details: parsed.error.flatten() }, { status: 422 })
     }
 
+    if (!isValidObjectId(parsed.data.projectId))
+      return NextResponse.json({ error: 'Invalid project' }, { status: 400 })
+    // Assigning a task to someone needs the separate 'Assign Tasks' permission.
+    if (parsed.data.assignedEmployeeId) {
+      if (!canDo(session, 'tasks.assign'))
+        return NextResponse.json({ error: 'You do not have permission to assign tasks' }, { status: 403 })
+      if (!isValidObjectId(parsed.data.assignedEmployeeId))
+        return NextResponse.json({ error: 'Invalid assignee' }, { status: 400 })
+    }
+    if (!(await Project.exists({ _id: parsed.data.projectId })))
+      return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+
     const data = { ...parsed.data }
     if (data.dueDate) data.dueDate = new Date(data.dueDate)
 
     const task = await new Task(data).save()
     await task.populate([
       { path: 'projectId', select: 'name' },
-      { path: 'assignedEmployeeId', populate: { path: 'userId', select: 'name id' } },
-      { path: 'assignedFreelancerId', populate: { path: 'userId', select: 'name id' } },
+      { path: 'assignedEmployeeId', select: TASK_ASSIGNEE_SELECT, populate: { path: 'userId', select: 'name id' } },
     ])
 
     // Notify assigned employee or freelancer
     const assignedUserId = task.assignedEmployeeId?.userId?.id
-      ?? task.assignedFreelancerId?.userId?.id
     if (assignedUserId && assignedUserId !== session.user.id) {
       await createNotification({
         userId:  assignedUserId,

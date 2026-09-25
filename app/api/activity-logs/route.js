@@ -4,18 +4,17 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { AuditLog } from '@/models'
-
-const ALLOWED_ROLES = ['SUPER_ADMIN', 'MANAGER']
+import { requirePerm } from '@/lib/rbac'
+import { parseDhakaDay } from '@/lib/dhakaTime'
 
 // GET /api/activity-logs
 // Query params: userId, action, userRole, from, to, page (default 1), limit (default 25)
 export async function GET(request) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-    if (!ALLOWED_ROLES.includes(session.user.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    // Same permission that gates the /admin/activity-logs page.
+    const denied  = requirePerm(session, 'system.logs.view')
+    if (denied) return denied
 
     await connectDB()
 
@@ -34,9 +33,18 @@ export async function GET(request) {
     if (action)   filter.action   = action
     if (userRole) filter.userRole = userRole
     if (from || to) {
+      // Bare 'YYYY-MM-DD' values are whole Asia/Dhaka calendar days, so the
+      // selected end day is included in full.
       filter.createdAt = {}
-      if (from) filter.createdAt.$gte = new Date(from)
-      if (to)   filter.createdAt.$lte = new Date(to)
+      if (from) {
+        const day = parseDhakaDay(from)
+        filter.createdAt.$gte = day ? day.start : new Date(from)
+      }
+      if (to) {
+        const day = parseDhakaDay(to)
+        if (day) filter.createdAt.$lt  = day.next
+        else     filter.createdAt.$lte = new Date(to)
+      }
     }
 
     const [logs, total] = await Promise.all([

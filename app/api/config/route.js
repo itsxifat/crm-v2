@@ -5,6 +5,7 @@ import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Setting } from '@/models'
 import { invalidateConfigCache } from '@/lib/getConfig'
+import { canDo } from '@/lib/rbac'
 
 const CONFIG_KEY = 'crm_config'
 
@@ -73,13 +74,16 @@ export async function PUT(request) {
   try {
     const session = await getServerSession(authOptions)
     if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-    if (session.user.role !== 'SUPER_ADMIN') {
+    if (!canDo(session, 'system.config.update')) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
     await connectDB()
 
     const body = await request.json()
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return NextResponse.json({ error: 'Body must be an object' }, { status: 422 })
+    }
     await Setting.findOneAndUpdate(
       { key: CONFIG_KEY },
       { key: CONFIG_KEY, value: JSON.stringify(body), group: 'config' },
@@ -99,13 +103,16 @@ export async function PATCH(request) {
   try {
     const session = await getServerSession(authOptions)
     if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-    if (session.user.role !== 'SUPER_ADMIN') {
+    if (!canDo(session, 'system.config.update')) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
     await connectDB()
 
     const patch   = await request.json()
+    if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
+      return NextResponse.json({ error: 'Body must be an object' }, { status: 422 })
+    }
     const setting = await Setting.findOne({ key: CONFIG_KEY }).lean()
     const current = setting?.value ? JSON.parse(setting.value) : {}
 

@@ -8,6 +8,7 @@ import {
   ShoppingCart,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { dhakaDayKey } from '@/lib/dhakaTime'
 
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 const fmt     = (n) => `৳ ${(n ?? 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })}`
@@ -237,7 +238,7 @@ const STATUS_COLORS = {
 
 function PurchaseModal({ vendorId, purchase, onClose, onSaved }) {
   const isEdit = !!purchase
-  const today  = new Date().toISOString().slice(0, 10)
+  const today  = dhakaDayKey()
   const [form, setForm] = useState({
     item:        purchase?.item        ?? '',
     description: purchase?.description ?? '',

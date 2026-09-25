@@ -10,10 +10,12 @@ import {
 } from 'lucide-react'
 import InvoicePrintView, { openInvoicePrint } from '@/components/shared/InvoicePrintView'
 import { useConfig } from '@/lib/useConfig'
+import { formatMoney } from '@/lib/currencies'
 
 const fmtDate = (d) =>
   d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
-const fmtAmt  = (n) => `৳ ${(n ?? 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })}`
+// Amounts are shown in the invoice's own currency, never a fixed ৳.
+const fmtAmt  = (n, cur) => formatMoney(n, cur)
 
 const STATUS_MAP = {
   DRAFT:          { label: 'Draft',            bg: 'bg-gray-100',    text: 'text-gray-600',   icon: FileText },
@@ -72,7 +74,7 @@ function PaymentModal({ invoice, onClose, onDone }) {
           <h3 className="text-base font-semibold text-gray-900">Submit Payment</h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
         </div>
-        <p className="text-sm text-gray-500">Outstanding balance: <span className="font-semibold text-gray-800">{fmtAmt(balance)}</span></p>
+        <p className="text-sm text-gray-500">Outstanding balance: <span className="font-semibold text-gray-800">{fmtAmt(balance, invoice?.currency)}</span></p>
         <form onSubmit={submit} className="space-y-3">
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Amount *</label>
@@ -285,7 +287,7 @@ export default function ClientInvoiceDetailPage() {
               return (
                 <div key={req._id ?? req.id} className="px-5 py-3.5 flex items-center justify-between gap-4">
                   <div>
-                    <p className="text-sm font-medium text-gray-800">{fmtAmt(req.amount)}</p>
+                    <p className="text-sm font-medium text-gray-800">{fmtAmt(req.amount, req.currency ?? invoice?.currency)}</p>
                     <p className="text-xs text-gray-400 mt-0.5">
                       {fmtMethod(req.paymentMethod)} · {fmtDate(req.paymentDate ?? req.createdAt)}
                     </p>

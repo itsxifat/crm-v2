@@ -3,16 +3,28 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
-import { ProjectPayment, Transaction, Invoice, Project } from '@/models'
+import { ProjectPayment, Transaction, Invoice } from '@/models'
 import { createNotification } from '@/lib/createNotification'
+import { requirePerm } from '@/lib/rbac'
+import { isValidObjectId } from '@/lib/objectId'
+import { BASE_CURRENCY } from '@/lib/currencies'
+import { PAYABLE_INVOICE_STATUSES, applyInvoicePayment, creditProjectPaid } from '@/lib/paymentLedger'
+
+// Undo an atomic confirm claim when a later step fails, so the payment can be retried.
+async function releaseClaim(paymentId) {
+  await ProjectPayment.updateOne(
+    { _id: paymentId, status: 'CONFIRMED', transactionId: null },
+    { $set: { status: 'PENDING_CONFIRMATION', confirmedBy: null, confirmedAt: null } },
+  )
+}
 
 // PATCH /api/project-payments/:pid  — confirm or reject
 export async function PATCH(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-    if (!['SUPER_ADMIN', 'MANAGER'].includes(session.user.role))
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const denied  = requirePerm(session, 'finance.payments.confirm')
+    if (denied) return denied
+    if (!isValidObjectId(params.pid)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     await connectDB()
 
     const payment = await ProjectPayment.findById(params.pid).populate('projectId').populate('invoiceId')
@@ -23,88 +35,121 @@ export async function PATCH(request, { params }) {
     const { action, rejectionNote, txnId, accountManager, currency, amountBDT } = await request.json()
 
     if (action === 'confirm') {
-      const project = payment.projectId
-      const invoiceId = payment.invoiceId?._id ?? payment.invoiceId ?? null
+      const project   = payment.projectId
+      const invoice   = payment.invoiceId
+      // populated() keeps the original id even when the invoice has since been deleted
+      const invoiceId = invoice?._id ?? payment.populated('invoiceId') ?? null
+      const amount    = Number(payment.amount)
 
-      // Currency + BDT-equivalent: confirmer may set the actual BDT received for a
-      // foreign-currency payment; falls back to what the payment carried.
-      const txnCurrency = currency ?? payment.currency ?? 'BDT'
-      const bdt = (amountBDT ?? payment.amountBDT ?? payment.amount) || 0
-      payment.currency  = txnCurrency
-      payment.amountBDT = bdt
+      // Currency + BDT-equivalent. A foreign-currency payment MUST carry the BDT
+      // actually received — falling back to the foreign amount would book USD 1,000
+      // as ৳1,000 in the ledger and on the project.
+      const txnCurrency = currency || payment.currency || BASE_CURRENCY
+      let bdt
+      if (txnCurrency === BASE_CURRENCY) {
+        bdt = Number(amountBDT ?? payment.amountBDT ?? amount)
+      } else {
+        bdt = Number(amountBDT ?? payment.amountBDT)
+        if (!Number.isFinite(bdt) || bdt <= 0)
+          return NextResponse.json({ error: `Enter the BDT amount received for this ${txnCurrency} payment` }, { status: 422 })
+      }
+      if (!Number.isFinite(bdt) || bdt <= 0)
+        return NextResponse.json({ error: 'Invalid BDT amount' }, { status: 422 })
 
-      const tx = await new Transaction({
-        type:           'INCOME',
-        category:       'Project Revenue',
-        amount:         payment.amount,
-        currency:       txnCurrency,
-        amountBDT:      bdt,
-        description:    `Payment received${payment.description ? ': ' + payment.description : ''} — ${project?.name ?? (payment.invoiceId?.invoiceNumber ?? 'Invoice')}`,
-        date:           payment.paymentDate,
-        reference:      project?.projectCode ?? payment.invoiceId?.invoiceNumber ?? null,
-        projectId:      payment.projectId?._id ?? payment.projectId ?? null,
-        invoiceId,
-        clientId:       payment.clientId?.toString() ?? null,
-        paymentMethod:  payment.paymentMethod,
-        receiptUrl:     payment.receiptUrl ?? null,
-        txnId:          txnId || undefined,
-        accountManager: accountManager || session.user.id,
-        createdBy:      session.user.id,
-      }).save()
-
-      payment.status        = 'CONFIRMED'
-      payment.confirmedBy   = session.user.id
-      payment.confirmedAt   = new Date()
-      payment.transactionId = tx._id
-      await payment.save()
-
-      // ── Sync paidAmount on Project (BDT — project budget is tracked in BDT) ──
-      if (payment.projectId) {
-        const proj = payment.projectId
-        proj.paidAmount = (proj.paidAmount ?? 0) + bdt
-        await proj.save()
+      // Re-validate the linked invoice now — balance may have changed since submission.
+      if (invoiceId) {
+        if (!invoice || typeof invoice !== 'object' || !invoice.status)
+          return NextResponse.json({ error: 'The linked invoice no longer exists' }, { status: 409 })
+        if (!PAYABLE_INVOICE_STATUSES.includes(invoice.status))
+          return NextResponse.json({ error: `Invoice ${invoice.invoiceNumber ?? ''} is ${String(invoice.status).toLowerCase()} and cannot take this payment. Reject it instead.` }, { status: 409 })
+        const outstanding = Number(invoice.total ?? 0) - Number(invoice.paidAmount ?? 0)
+        if (amount > outstanding + 0.01)
+          return NextResponse.json({ error: `Amount exceeds the invoice's outstanding balance of ${outstanding.toFixed(2)}` }, { status: 409 })
       }
 
-      // ── Auto-update linked invoice ────────────────────────────────────────
-      if (payment.invoiceId) {
-        const invoice = await Invoice.findById(payment.invoiceId._id ?? payment.invoiceId)
-        if (invoice && invoice.status !== 'CANCELLED') {
-          const newPaid = Math.min(
-            (invoice.paidAmount ?? 0) + payment.amount,
-            invoice.total
-          )
-          invoice.paidAmount = newPaid
-          const balance = invoice.total - newPaid
-          if (balance <= 0.01) {
-            invoice.status = 'PAID'
-            if (!invoice.paidAt) invoice.paidAt = new Date()
-          } else {
-            invoice.status = 'PARTIALLY_PAID'
-          }
-          await invoice.save()
+      // The typed reference goes into the ledger's unique txnId — refuse a reused one clearly.
+      if (txnId && await Transaction.exists({ txnId }))
+        return NextResponse.json({ error: `Transaction ID "${txnId}" is already used by another ledger entry` }, { status: 409 })
+
+      // Atomically claim the payment: only one confirm can move it out of PENDING.
+      const now = new Date()
+      const claimed = await ProjectPayment.findOneAndUpdate(
+        { _id: payment._id, status: 'PENDING_CONFIRMATION' },
+        { $set: {
+          status: 'CONFIRMED', confirmedBy: session.user.id, confirmedAt: now,
+          currency: txnCurrency, amountBDT: bdt,
+        } },
+        { new: true },
+      )
+      if (!claimed) return NextResponse.json({ error: 'Payment already processed' }, { status: 409 })
+
+      let tx
+      try {
+        tx = await new Transaction({
+          type:           'INCOME',
+          category:       'Project Revenue',
+          amount,
+          currency:       txnCurrency,
+          amountBDT:      bdt,
+          description:    `Payment received${payment.description ? ': ' + payment.description : ''} — ${project?.name ?? (invoice?.invoiceNumber ?? 'Invoice')}`,
+          date:           payment.paymentDate,
+          reference:      project?.projectCode ?? invoice?.invoiceNumber ?? null,
+          projectId:      project?._id ?? project ?? null,
+          invoiceId,
+          clientId:       payment.clientId?.toString() ?? null,
+          paymentMethod:  payment.paymentMethod,
+          receiptUrl:     payment.receiptUrl ?? null,
+          txnId:          txnId || undefined,
+          accountManager: accountManager || session.user.id,
+          createdBy:      session.user.id,
+        }).save()
+      } catch (err) {
+        await releaseClaim(payment._id)
+        if (err?.code === 11000)
+          return NextResponse.json({ error: `Transaction ID "${txnId}" is already used by another ledger entry` }, { status: 409 })
+        throw err
+      }
+
+      // ── Auto-update linked invoice (atomic; fails if the balance no longer fits) ──
+      if (invoiceId) {
+        const updated = await applyInvoicePayment(invoiceId, amount, now)
+        if (!updated) {
+          await Transaction.deleteOne({ _id: tx._id })
+          await releaseClaim(payment._id)
+          return NextResponse.json({ error: 'The invoice was paid or changed in the meantime — this payment no longer fits its balance' }, { status: 409 })
         }
       }
+
+      await ProjectPayment.updateOne({ _id: payment._id }, { $set: { transactionId: tx._id } })
+      claimed.transactionId = tx._id
+
+      // ── Sync paidAmount on Project (BDT — project value is tracked in BDT) ──
+      if (project) await creditProjectPaid(project._id ?? project, bdt)
 
       // Notify requester
       if (payment.submittedBy && payment.submittedBy.toString() !== session.user.id) {
         await createNotification({
           userId:  payment.submittedBy.toString(),
           title:   'Payment confirmed',
-          message: `Your payment of ৳${payment.amount.toLocaleString()} has been confirmed.`,
+          message: `Your payment of ${txnCurrency === BASE_CURRENCY ? '৳' : txnCurrency + ' '}${amount.toLocaleString()} has been confirmed.`,
           type:    'PAYMENT',
-          link:    payment.invoiceId ? `/admin/invoices/${payment.invoiceId._id ?? payment.invoiceId}` : '/admin/accounts',
+          link:    invoiceId ? `/admin/invoices/${invoiceId}` : '/admin/accounts',
         })
       }
 
-      return NextResponse.json({ data: payment.toJSON() })
+      return NextResponse.json({ data: claimed.toJSON() })
     }
 
     if (action === 'reject') {
-      payment.status        = 'REJECTED'
-      payment.confirmedBy   = session.user.id
-      payment.confirmedAt   = new Date()
-      payment.rejectionNote = rejectionNote || null
-      await payment.save()
+      const rejected = await ProjectPayment.findOneAndUpdate(
+        { _id: payment._id, status: 'PENDING_CONFIRMATION' },
+        { $set: {
+          status: 'REJECTED', confirmedBy: session.user.id, confirmedAt: new Date(),
+          rejectionNote: rejectionNote || null,
+        } },
+        { new: true },
+      )
+      if (!rejected) return NextResponse.json({ error: 'Payment already processed' }, { status: 409 })
 
       // Notify requester
       if (payment.submittedBy && payment.submittedBy.toString() !== session.user.id) {
@@ -117,7 +162,7 @@ export async function PATCH(request, { params }) {
         })
       }
 
-      return NextResponse.json({ data: payment.toJSON() })
+      return NextResponse.json({ data: rejected.toJSON() })
     }
 
     return NextResponse.json({ error: 'Invalid action. Use "confirm" or "reject".' }, { status: 400 })

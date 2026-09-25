@@ -32,6 +32,8 @@ export default function FileUpload({ value, onUploaded, label = 'Receipt / Invoi
       toast.error(err.message)
     } finally {
       setUploading(false)
+      // Reset so picking the same file again (e.g. retry after a failure) fires onChange.
+      if (inputRef.current) inputRef.current.value = ''
     }
   }
 

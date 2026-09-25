@@ -131,7 +131,7 @@ export async function PUT(request) {
     if (pct === 100 && wasBelow100) {
       const user    = await User.findById(session.user.id).select('name email').lean()
       const appUrl  = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-      const admins  = await User.find({ role: { $in: ['SUPER_ADMIN', 'MANAGER'] } }).select('email').lean()
+      const admins  = await User.find({ role: { $in: ['SUPER_ADMIN', 'MANAGER'] }, isActive: true }).select('email').lean()
       admins.forEach(admin => {
         sendFreelancerKycSubmittedToAdmin({
           to:             admin.email,
@@ -143,7 +143,11 @@ export async function PUT(request) {
       })
     }
 
-    return NextResponse.json({ data: fl, profileCompletionPct: pct, profileStatus: fl.profileStatus })
+    // pricing is staff-only (GET selects '-pricing'); never echo it back
+    const out = fl.toJSON()
+    delete out.pricing
+
+    return NextResponse.json({ data: out, profileCompletionPct: pct, profileStatus: fl.profileStatus })
   } catch (err) {
     console.error('[PUT /api/freelancers/profile]', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

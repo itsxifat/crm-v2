@@ -4,6 +4,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { AuditLog } from '@/models'
+import { ciContains } from '@/lib/searchMatch'
 
 // GET /api/audit-logs
 export async function GET(request) {
@@ -29,7 +30,7 @@ export async function GET(request) {
 
     const filter = {}
     if (userId) filter.userId = userId
-    if (action) filter.action = { $regex: action, $options: 'i' }
+    if (action) filter.action = ciContains(action)
     if (entity) filter.entity = entity
     if (startDate || endDate) {
       filter.createdAt = {}

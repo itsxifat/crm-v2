@@ -2,18 +2,38 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
+import connectDB from '@/lib/mongodb'
+import { Setting } from '@/models'
 import { createTransporterFromAccount, buildTestEmailHtml } from '@/lib/mailer'
+
+const MASK = '••••••••'
 
 // POST /api/settings/email/test
 // Body: { account: {...}, sendTo: "email@example.com" }
 export async function POST(request) {
+  // Declared outside the try so the error handler can safely read it even when
+  // request.json() itself fails.
+  let account
   try {
     const session = await getServerSession(authOptions)
     if (!session || session.user.role !== 'SUPER_ADMIN') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    const { account, sendTo } = await request.json()
+    const body = await request.json()
+    account = body?.account
+    const sendTo = body?.sendTo
+
+    // Editing a saved account seeds the form with the masked password — swap it
+    // for the stored secret (as PUT /api/settings/email does) before testing.
+    if (account?.password === MASK && account?.id) {
+      await connectDB()
+      const setting = await Setting.findOne({ key: 'email_accounts' }).lean()
+      const stored = setting ? JSON.parse(setting.value) : []
+      const prev = stored.find(e => e.id === account.id)
+      account = { ...account, password: prev?.password ?? '' }
+    }
+
     if (!account?.host || !account?.user || !account?.password) {
       return NextResponse.json({ error: 'Incomplete account details' }, { status: 400 })
     }

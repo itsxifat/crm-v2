@@ -6,22 +6,15 @@ import connectDB from '@/lib/mongodb'
 import Lead from '@/models/Lead'
 import { Client, Employee, User } from '@/models'
 import { ciContains } from '@/lib/searchMatch'
-import { requireStaff } from '@/lib/rbac'
+import { requireStaff, canDo } from '@/lib/rbac'
+import { maskEmail, maskPhone } from '@/lib/pii'
 
-// Fetch a batch, decrypt via Mongoose plugin, then filter in JS.
-// This is the only reliable approach for AES-GCM encrypted fields
-// where MongoDB-level regex cannot operate on ciphertext.
-const BATCH = 300
-
-function matchesQuery(value, q) {
-  if (!value) return false
-  return String(value).toLowerCase().includes(q)
-}
+const LIMIT = 8
 
 export async function GET(request) {
   try {
     const session = await getServerSession(authOptions)
-    const denied  = requireStaff(session)   // global PII search — staff only
+    const denied  = requireStaff(session)
     if (denied) return denied
 
     await connectDB()
@@ -29,102 +22,97 @@ export async function GET(request) {
     const q = (new URL(request.url).searchParams.get('q') ?? '').trim()
     if (!q || q.length < 1) return NextResponse.json({ data: [] })
 
-    const qLower = q.toLowerCase()
+    // Only search what the caller may view, and only match / return raw
+    // email & phone when they hold pii.contact.view (otherwise this becomes a
+    // reverse lookup of who owns an email or phone number).
+    const canContact   = canDo(session, 'pii.contact.view')
+    const canLeads     = canDo(session, 'sales.leads.view')
+    const canClients   = canDo(session, 'sales.customers.view')
+    const email = v => (canContact ? v : maskEmail(v))
+    const phone = v => (canContact ? v : maskPhone(v))
+    const rx    = ciContains(q)
 
-    // ── Match users by name / email / phone (plaintext substring) ──────────
-    const exactUsers = await User.find({
-      $or: [{ name: ciContains(q) }, { email: ciContains(q) }, { phone: ciContains(q) }],
-    }).select('name email phone').lean()
-    const exactUserIds = new Set(exactUsers.map(u => u._id.toString()))
+    // ── Users matching by name (and email / phone when allowed) ────────────
+    const userOr = [{ name: rx }]
+    if (canContact) userOr.push({ email: rx }, { phone: rx })
+    const matchedUsers = await User.find({ $or: userOr }).select('_id').limit(500).lean()
+    const matchedUserIds = matchedUsers.map(u => u._id)
 
     // ── Leads ──────────────────────────────────────────────────────────────
-    // Fetch recent leads; Mongoose post('find') hook decrypts all fields
-    const leads = await Lead.find({})
-      .select('name email phone company designation')
-      .sort({ createdAt: -1 })
-      .limit(BATCH)
+    let matchedLeads = []
+    if (canLeads) {
+      const leadOr = [{ name: rx }, { company: rx }, { designation: rx }]
+      if (canContact) leadOr.push({ email: rx }, { phone: rx })
+      const leads = await Lead.find({ $or: leadOr })
+        .select('name email phone company designation')
+        .sort({ createdAt: -1 })
+        .limit(LIMIT)
+        .lean()
 
-    const matchedLeads = leads
-      .filter(l =>
-        matchesQuery(l.name,        qLower) ||
-        matchesQuery(l.email,       qLower) ||
-        matchesQuery(l.phone,       qLower) ||
-        matchesQuery(l.company,     qLower) ||
-        matchesQuery(l.designation, qLower)
-      )
-      .slice(0, 8)
-      .map(l => ({
+      matchedLeads = leads.map(l => ({
         type:     'LEAD',
         group:    'Lead',
         label:    l.name,
-        sublabel: l.company ?? l.email ?? l.phone ?? '',
+        sublabel: l.company ?? (l.email ? email(l.email) : null) ?? (l.phone ? phone(l.phone) : null) ?? '',
         value:    l.name,
-        id:       l.id ?? l._id.toString(),
+        id:       l._id.toString(),
       }))
+    }
 
     // ── Clients ────────────────────────────────────────────────────────────
-    const clients = await Client.find({})
-      .select('company contactPerson clientCode clientType')
-      .sort({ createdAt: -1 })
-      .limit(BATCH)
-      .populate({ path: 'userId', select: 'name email phone' })
-
-    const matchedClients = clients
-      .filter(c => {
-        const uid = c.userId?._id?.toString()
-        return (
-          (uid && exactUserIds.has(uid)) ||
-          matchesQuery(c.userId?.name,    qLower) ||
-          matchesQuery(c.userId?.email,   qLower) ||
-          matchesQuery(c.userId?.phone,   qLower) ||
-          matchesQuery(c.company,         qLower) ||
-          matchesQuery(c.contactPerson,   qLower) ||
-          matchesQuery(c.clientCode,      qLower)
-        )
+    let matchedClients = []
+    if (canClients) {
+      const clients = await Client.find({
+        $or: [
+          { userId: { $in: matchedUserIds } },
+          { company: rx }, { contactPerson: rx }, { clientCode: rx },
+        ],
       })
-      .slice(0, 8)
-      .map(c => {
-        const displayName = c.userId?.name ?? c.contactPerson ?? c.company ?? ''
-        return {
-          type:     'CLIENT',
-          group:    'Client',
-          label:    displayName,
-          sublabel: c.company ?? c.userId?.email ?? '',
-          value:    displayName,
-          id:       c.id ?? c._id.toString(),
-        }
-      })
-      .filter(c => c.label)
+        .select('company contactPerson clientCode clientType userId')
+        .sort({ createdAt: -1 })
+        .limit(LIMIT)
+        .populate({ path: 'userId', select: 'name email' })
+        .lean()
 
-    // ── Employees ──────────────────────────────────────────────────────────
-    const employees = await Employee.find({ resigned: { $ne: true } })
-      .select('employeeId designation')
+      matchedClients = clients
+        .map(c => {
+          const displayName = c.userId?.name ?? c.contactPerson ?? c.company ?? ''
+          return {
+            type:     'CLIENT',
+            group:    'Client',
+            label:    displayName,
+            sublabel: c.company ?? (c.userId?.email ? email(c.userId.email) : ''),
+            value:    displayName,
+            id:       c._id.toString(),
+          }
+        })
+        .filter(c => c.label)
+    }
+
+    // ── Employees (names/designations are visible to all staff) ────────────
+    const employees = await Employee.find({
+      resigned: { $ne: true },
+      $or: [
+        { userId: { $in: matchedUserIds } },
+        { employeeId: rx }, { designation: rx },
+      ],
+    })
+      .select('employeeId designation userId')
       .sort({ createdAt: -1 })
-      .limit(BATCH)
-      .populate({ path: 'userId', select: 'name email phone' })
+      .limit(LIMIT)
+      .populate({ path: 'userId', select: 'name email' })
+      .lean()
 
     const matchedEmployees = employees
-      .filter(e => {
-        const uid = e.userId?._id?.toString()
-        return (
-          (uid && exactUserIds.has(uid)) ||
-          matchesQuery(e.userId?.name,    qLower) ||
-          matchesQuery(e.userId?.email,   qLower) ||
-          matchesQuery(e.userId?.phone,   qLower) ||
-          matchesQuery(e.employeeId,      qLower) ||
-          matchesQuery(e.designation,     qLower)
-        )
-      })
-      .slice(0, 8)
       .map(e => {
         const name = e.userId?.name ?? ''
         return {
           type:     'EMPLOYEE',
           group:    'Employee',
           label:    name,
-          sublabel: e.userId?.email ?? e.designation ?? e.employeeId ?? '',
+          sublabel: (e.userId?.email ? email(e.userId.email) : null) ?? e.designation ?? e.employeeId ?? '',
           value:    name,
-          id:       e.id ?? e._id.toString(),
+          id:       e._id.toString(),
         }
       })
       .filter(e => e.label)

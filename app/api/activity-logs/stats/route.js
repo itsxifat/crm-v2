@@ -4,8 +4,8 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { User } from '@/models'
-
-const ALLOWED_ROLES = ['SUPER_ADMIN', 'MANAGER']
+import { requirePerm, canDo } from '@/lib/rbac'
+import { maskEmail } from '@/lib/pii'
 
 const ROLE_META = {
   SUPER_ADMIN: { label: 'Super Admin',  color: 'violet' },
@@ -22,10 +22,9 @@ const ROLE_META = {
 export async function GET(request) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-    if (!ALLOWED_ROLES.includes(session.user.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    // Same permission that gates the /admin/activity-logs page.
+    const denied  = requirePerm(session, 'system.logs.view')
+    if (denied) return denied
 
     await connectDB()
 
@@ -34,6 +33,9 @@ export async function GET(request) {
 
     // ── Active users list for a specific role ────────────────────────────────
     if (roleFilter) {
+      if (!ROLE_META[roleFilter]) return NextResponse.json({ error: 'Invalid role' }, { status: 400 })
+      // Emails are contact PII — masked unless the viewer holds pii.contact.view
+      const showEmail = canDo(session, 'pii.contact.view')
       const users = await User.find({ role: roleFilter, isActive: true })
         .select('name email avatar lastLogin role createdAt')
         .sort({ lastLogin: -1 })
@@ -43,7 +45,7 @@ export async function GET(request) {
         users: users.map(u => ({
           id:        u._id.toString(),
           name:      u.name,
-          email:     u.email,
+          email:     showEmail ? u.email : maskEmail(u.email),
           avatar:    u.avatar ?? null,
           role:      u.role,
           lastLogin: u.lastLogin ?? null,

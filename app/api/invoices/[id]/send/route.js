@@ -25,11 +25,21 @@ export async function POST(request, { params }) {
       return NextResponse.json({ error: `Cannot send an invoice with status ${invoice.status}` }, { status: 400 })
     }
 
-    const updated = await Invoice.findByIdAndUpdate(
-      params.id,
-      { status: 'SENT', sentAt: new Date() },
-      { new: true }
-    )
+    // Only a DRAFT moves to SENT. Re-sending a PARTIALLY_PAID / OVERDUE / SENT
+    // invoice just stamps sentAt and keeps its payment / overdue state.
+    const updated = invoice.status === 'DRAFT'
+      ? await Invoice.findOneAndUpdate(
+          { _id: params.id, status: 'DRAFT' },
+          { $set: { status: 'SENT', sentAt: new Date() } },
+          { new: true }
+        )
+      : await Invoice.findOneAndUpdate(
+          { _id: params.id, status: { $nin: ['PAID', 'CANCELLED'] } },
+          { $set: { sentAt: new Date() } },
+          { new: true }
+        )
+    if (!updated)
+      return NextResponse.json({ error: 'Invoice status changed in the meantime. Reload and try again.' }, { status: 409 })
 
     logActivity({
       userId:   session.user.id,
@@ -37,7 +47,7 @@ export async function POST(request, { params }) {
       action:   'SEND',
       entity:   'INVOICE',
       entityId: params.id,
-      changes:  JSON.stringify({ invoiceNumber: invoice.invoiceNumber, status: 'SENT', sentAt: updated.sentAt }),
+      changes:  JSON.stringify({ invoiceNumber: invoice.invoiceNumber, status: updated.status, sentAt: updated.sentAt }),
       request,
     })
 

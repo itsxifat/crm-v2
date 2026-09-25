@@ -2,9 +2,13 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { requireManager } from '@/lib/rbac'
+import { requirePerm, canDo } from '@/lib/rbac'
 import connectDB from '@/lib/mongodb'
 import Attendance from '@/models/Attendance'
+import Employee from '@/models/Employee'
+import { isValidObjectId } from '@/lib/objectId'
+import { dhakaDate } from '@/lib/dhakaTime'
+import { isOwnEmployeeRecord, upsertAttendance } from '@/lib/hrAccess'
 import { z } from 'zod'
 
 const attendanceSchema = z.object({
@@ -19,21 +23,27 @@ const attendanceSchema = z.object({
 export async function GET(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    const denied = requireManager(session)
+    const denied = requirePerm(session, 'hr.attendance.view')
     if (denied) return denied
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
     await connectDB()
+
+    // View-only holders may read only their own attendance.
+    if (!canDo(session, 'hr.attendance.manage') && !(await isOwnEmployeeRecord(session, params.id)))
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     const { searchParams } = new URL(request.url)
     const month = searchParams.get('month')
     const year  = searchParams.get('year')
 
     const filter = { employeeId: params.id }
-    if (month) {
+    // Month / year boundaries in the business timezone (Asia/Dhaka).
+    if (month && /^\d{4}-\d{2}$/.test(month)) {
       const [y, m] = month.split('-').map(Number)
-      filter.date = { $gte: new Date(y, m - 1, 1), $lt: new Date(y, m, 1) }
-    } else if (year) {
-      filter.date = { $gte: new Date(Number(year), 0, 1), $lt: new Date(Number(year) + 1, 0, 1) }
+      filter.date = { $gte: dhakaDate(y, m - 1, 1), $lt: dhakaDate(y, m, 1) }
+    } else if (year && /^\d{4}$/.test(year)) {
+      filter.date = { $gte: dhakaDate(Number(year), 0, 1), $lt: dhakaDate(Number(year) + 1, 0, 1) }
     }
 
     const attendance = await Attendance.find(filter).sort({ date: -1 })
@@ -48,14 +58,16 @@ export async function GET(request, { params }) {
 export async function POST(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-
-    const allowedRoles = ['SUPER_ADMIN', 'MANAGER']
-    if (!allowedRoles.includes(session.user.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const denied = requirePerm(session, 'hr.attendance.manage')
+    if (denied) return denied
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
     await connectDB()
+
+    if (!(await Employee.exists({ _id: params.id })))
+      return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
+    if (session.user.role !== 'SUPER_ADMIN' && await isOwnEmployeeRecord(session, params.id))
+      return NextResponse.json({ error: 'You cannot edit your own attendance' }, { status: 403 })
 
     const body   = await request.json()
     const parsed = attendanceSchema.safeParse(body)
@@ -65,27 +77,14 @@ export async function POST(request, { params }) {
 
     const { date, checkIn, checkOut, status, notes } = parsed.data
 
-    const dayStart = new Date(date); dayStart.setHours(0,0,0,0)
-    const dayEnd   = new Date(date); dayEnd.setHours(23,59,59,999)
-
-    const existing = await Attendance.findOne({
-      employeeId: params.id,
-      date: { $gte: dayStart, $lte: dayEnd },
-    })
-
     const updateData = {
       checkIn:  checkIn  ? new Date(checkIn)  : null,
       checkOut: checkOut ? new Date(checkOut) : null,
       status,
-      notes,
+      notes:    notes ?? null,
     }
 
-    let record
-    if (existing) {
-      record = await Attendance.findByIdAndUpdate(existing._id, updateData, { new: true })
-    } else {
-      record = await new Attendance({ employeeId: params.id, date: new Date(date), ...updateData }).save()
-    }
+    const record = await upsertAttendance(params.id, date, updateData)
 
     return NextResponse.json({ data: record }, { status: 201 })
   } catch (err) {

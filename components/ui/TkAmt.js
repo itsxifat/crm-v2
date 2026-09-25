@@ -5,8 +5,10 @@
  * Usage: <TkAmt value={5000} /> → ৳ 5,000
  */
 export default function TkAmt({ value, decimals = 0, className = '' }) {
+  // Masked money from the PII layer ('••••••') is shown as-is, not 'NaN'.
+  const masked = typeof value === 'string' && value.includes('••')
   const num = (value == null || value === '') ? 0 : Number(value)
-  const formatted = num.toLocaleString('en-BD', {
+  const formatted = masked ? value : num.toLocaleString('en-BD', {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
   })

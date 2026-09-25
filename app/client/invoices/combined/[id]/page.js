@@ -8,9 +8,11 @@ import {
   ArrowLeft, Printer, Layers, CheckCircle, Clock, AlertCircle, ExternalLink, CreditCard,
 } from 'lucide-react'
 import CombinedInvoicePrintView, { openCombinedInvoicePrint } from '@/components/shared/CombinedInvoicePrintView'
+import { formatMoney } from '@/lib/currencies'
 
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
-const fmtAmt  = (n) => `৳ ${(Number(n) || 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })}`
+// Amounts use the combined invoice's own currency (or each child's), never a fixed ৳.
+const fmtAmt  = (n, cur) => formatMoney(n, cur)
 
 const STATUS_MAP = {
   SENT:           { label: 'Awaiting Payment', bg: 'bg-blue-100',   text: 'text-blue-700',   icon: Clock },
@@ -115,13 +117,19 @@ export default function ClientCombinedInvoicePage() {
         </div>
       </div>
 
+      {combined.mixedCurrency && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          These invoices are in different currencies. The totals below add the amounts as-is without conversion — check each invoice for its exact amount.
+        </div>
+      )}
+
       {/* Totals */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           { label: 'Invoices',      value: String(t.invoiceCount ?? 0), cls: 'text-gray-900' },
-          { label: 'Total Payable', value: fmtAmt(t.total),             cls: 'text-gray-900' },
-          { label: 'Total Paid',    value: fmtAmt(t.paidAmount),        cls: 'text-green-600' },
-          { label: 'Total Due',     value: fmtAmt(t.due),               cls: t.due > 0.01 ? 'text-red-500' : 'text-green-600' },
+          { label: 'Total Payable', value: fmtAmt(t.total, combined.currency),             cls: 'text-gray-900' },
+          { label: 'Total Paid',    value: fmtAmt(t.paidAmount, combined.currency),        cls: 'text-green-600' },
+          { label: 'Total Due',     value: fmtAmt(t.due, combined.currency),               cls: t.due > 0.01 ? 'text-red-500' : 'text-green-600' },
         ].map(c => (
           <div key={c.label} className="bg-white border border-gray-100 rounded-xl p-4">
             <p className="text-xs text-gray-500">{c.label}</p>
@@ -134,7 +142,7 @@ export default function ClientCombinedInvoicePage() {
         <div className="bg-white border border-gray-100 rounded-2xl p-5">
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-medium text-gray-700">Payment Progress</span>
-            <span className="text-sm text-gray-500">{fmtAmt(t.paidAmount)} of {fmtAmt(t.total)}</span>
+            <span className="text-sm text-gray-500">{fmtAmt(t.paidAmount, combined.currency)} of {fmtAmt(t.total, combined.currency)}</span>
           </div>
           <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
             <div className="h-full bg-green-500 rounded-full transition-all" style={{ width: `${t.paidPct ?? 0}%` }} />
@@ -170,9 +178,9 @@ export default function ClientCombinedInvoicePage() {
                       {c.status.replace(/_/g, ' ')}
                     </span>
                   </td>
-                  <td className="px-5 py-3.5 text-right text-sm font-bold text-gray-900 whitespace-nowrap">{fmtAmt(c.total)}</td>
-                  <td className="px-5 py-3.5 text-right text-sm text-green-600 whitespace-nowrap">{fmtAmt(c.paidAmount)}</td>
-                  <td className={`px-5 py-3.5 text-right text-sm font-semibold whitespace-nowrap ${c.due > 0.01 ? 'text-red-500' : 'text-green-600'}`}>{fmtAmt(c.due)}</td>
+                  <td className="px-5 py-3.5 text-right text-sm font-bold text-gray-900 whitespace-nowrap">{fmtAmt(c.total, c.currency)}</td>
+                  <td className="px-5 py-3.5 text-right text-sm text-green-600 whitespace-nowrap">{fmtAmt(c.paidAmount, c.currency)}</td>
+                  <td className={`px-5 py-3.5 text-right text-sm font-semibold whitespace-nowrap ${c.due > 0.01 ? 'text-red-500' : 'text-green-600'}`}>{fmtAmt(c.due, c.currency)}</td>
                   <td className="px-5 py-3.5 text-right">
                     <Link href={`/client/invoices/${c.id}`}
                       className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${

@@ -1,12 +1,15 @@
 export const dynamic = 'force-dynamic'
+import { randomBytes } from 'crypto'
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { ProjectExpense, Setting } from '@/models'
 import { requirePerm } from '@/lib/rbac'
-import { computeBatchRef } from '@/lib/expensePayment'
+import { computeBatchRef, allocateBatchRef, sharedBatchRef } from '@/lib/expensePayment'
 import { getConfig } from '@/lib/getConfig'
+import { escapeHtml } from '@/lib/html'
+import { isValidObjectId } from '@/lib/objectId'
 
 const fmtDate = (d) =>
   d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
@@ -17,14 +20,14 @@ function money(amount, currency = 'BDT') {
   if (!currency || currency === 'BDT') {
     return `<span style="font-size:13px;font-weight:400;letter-spacing:-0.5px;font-family:Georgia,serif">৳</span>&nbsp;${n}`
   }
-  return `${currency}&nbsp;${n}`
+  return `${escapeHtml(currency)}&nbsp;${n}`
 }
 
 function payeeOf(e) {
   return (
     e.freelancerId?.userId?.name ??
     e.agencyId?.userId?.name ??
-    e.vendorId?.companyName ?? e.vendorId?.name ??
+    e.vendorId?.company ??
     e.paidToEmployeeId?.userId?.name ??
     e.paidToName ?? '—'
   )
@@ -48,13 +51,14 @@ export async function GET(request) {
     const idsParam = new URL(request.url).searchParams.get('ids') ?? ''
     const ids = idsParam.split(',').map(s => s.trim()).filter(Boolean)
     if (ids.length === 0) return NextResponse.json({ error: 'No expenses selected' }, { status: 422 })
+    if (!ids.every(isValidObjectId)) return NextResponse.json({ error: 'Invalid expense id' }, { status: 400 })
 
     const [rows, settingsDocs] = await Promise.all([
       ProjectExpense.find({ _id: { $in: ids } })
         .sort({ date: 1, createdAt: 1 })
         .populate({ path: 'freelancerId',     populate: { path: 'userId', select: 'name' } })
         .populate({ path: 'agencyId',         populate: { path: 'userId', select: 'name' } })
-        .populate({ path: 'vendorId',         select: 'name companyName' })
+        .populate({ path: 'vendorId',         select: 'company' })
         .populate({ path: 'paidToEmployeeId', populate: { path: 'userId', select: 'name' } })
         .populate({ path: 'projectId',        select: 'name projectCode' }),
       Setting.find({ group: 'company' }).lean(),
@@ -72,15 +76,31 @@ export async function GET(request) {
     }
 
     const list       = rows.map(r => r.toJSON())
-    const batchRef   = computeBatchRef(list)
+    // Batch reference: the one these expenses already share, else — for a
+    // fresh group of paid expenses — allocate a unique one and persist it so the
+    // printed invoice number matches what batch-authorize records. Anything
+    // else (mixed / unpaid selection) gets a non-persisted preview reference.
+    let rawBatchRef = sharedBatchRef(list)
+    if (!rawBatchRef) {
+      if (list.every(e => e.status === 'PAID' && !e.batchInvoiceNo)) {
+        rawBatchRef = await allocateBatchRef(list)
+        await ProjectExpense.updateMany(
+          { _id: { $in: list.map(e => e.id) }, status: 'PAID', batchInvoiceNo: null },
+          { $set: { batchInvoiceNo: rawBatchRef } },
+        )
+      } else {
+        rawBatchRef = computeBatchRef(list)
+      }
+    }
+    const batchRef   = escapeHtml(rawBatchRef)
     const currencies = [...new Set(list.map(e => e.currency ?? 'BDT'))]
     const mixed      = currencies.length > 1
     const totalBDT   = list.reduce((s, e) => s + (e.amountBDT ?? e.amount ?? 0), 0)
     const dayLabels  = [...new Set(list.map(e => fmtDate(e.date)))]
     const period     = dayLabels.length === 1 ? dayLabels[0] : `${dayLabels[0]} – ${dayLabels[dayLabels.length - 1]}`
     const categories = [...new Set(list.map(e => e.category || '—'))]
-    const catLabel   = categories.length === 1 ? categories[0] : 'Multiple categories'
-    const title      = categories.length === 1 ? categories[0] : 'Combined Expenses'
+    const catLabel   = escapeHtml(categories.length === 1 ? categories[0] : 'Multiple categories')
+    const title      = escapeHtml(categories.length === 1 ? categories[0] : 'Combined Expenses')
     const accent     = '#2563eb'
 
     // Payment method / transaction id (shown once the group is paid).
@@ -95,6 +115,7 @@ export async function GET(request) {
 
     const contactLine = [company.phone, company.email].filter(Boolean).join(' – ')
 
+    const cspNonce = randomBytes(16).toString('base64')
     const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -118,11 +139,11 @@ export async function GET(request) {
   <!-- HEADER -->
   <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;">
     <div>
-      <img src="/en-logo.png" alt="${company.name}" width="120" height="38" style="object-fit:contain;display:block;margin-bottom:7px;" />
-      ${company.name    ? `<p style="margin:0 0 2px;font-size:13px;font-weight:700;color:#0f172a;">${company.name}</p>` : ''}
-      ${company.address ? `<p style="margin:0 0 2px;font-size:11px;color:#64748b;">${company.address}</p>` : ''}
-      ${contactLine     ? `<p style="margin:0 0 2px;font-size:11px;color:#64748b;">${contactLine}</p>` : ''}
-      ${company.website ? `<p style="margin:0;font-size:11px;color:#64748b;">${company.website}</p>` : ''}
+      <img src="/en-logo.png" alt="${escapeHtml(company.name)}" width="120" height="38" style="object-fit:contain;display:block;margin-bottom:7px;" />
+      ${company.name    ? `<p style="margin:0 0 2px;font-size:13px;font-weight:700;color:#0f172a;">${escapeHtml(company.name)}</p>` : ''}
+      ${company.address ? `<p style="margin:0 0 2px;font-size:11px;color:#64748b;">${escapeHtml(company.address)}</p>` : ''}
+      ${contactLine     ? `<p style="margin:0 0 2px;font-size:11px;color:#64748b;">${escapeHtml(contactLine)}</p>` : ''}
+      ${company.website ? `<p style="margin:0;font-size:11px;color:#64748b;">${escapeHtml(company.website)}</p>` : ''}
     </div>
     <div style="text-align:right;">
       <p style="margin:0;font-size:11px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:#94a3b8;">Expense Invoice</p>
@@ -152,7 +173,7 @@ export async function GET(request) {
       <span style="font-size:11px;font-weight:400;color:#94a3b8;margin-left:6px;">(Ref: ${batchRef})</span>
     </p>
     <p style="margin:0;font-size:11px;color:#64748b;">${list.length} expense${list.length > 1 ? 's' : ''} · ${period}</p>
-    ${hasPayment ? `<p style="margin:6px 0 0;font-size:11px;color:#475569;">Paid via <strong style="color:#0f172a;">${methodLabel ?? '—'}</strong>${txnLabel ? ` · Txn ID: <strong style="color:#0f172a;">${txnLabel}</strong>` : ''}</p>` : ''}
+    ${hasPayment ? `<p style="margin:6px 0 0;font-size:11px;color:#475569;">Paid via <strong style="color:#0f172a;">${escapeHtml(methodLabel ?? '—')}</strong>${txnLabel ? ` · Txn ID: <strong style="color:#0f172a;">${escapeHtml(txnLabel)}</strong>` : ''}</p>` : ''}
   </div>
 
   <!-- ITEMS TABLE -->
@@ -169,15 +190,15 @@ export async function GET(request) {
     <tbody>
       ${list.map(e => `
       <tr>
-        <td style="${TD}padding-left:0;font-size:12px;font-weight:600;color:#0f172a;white-space:nowrap;">${e.expenseId ?? '—'}</td>
+        <td style="${TD}padding-left:0;font-size:12px;font-weight:600;color:#0f172a;white-space:nowrap;">${escapeHtml(e.expenseId ?? '—')}</td>
         <td style="${TD}font-size:12px;font-weight:500;color:#334155;white-space:nowrap;">${fmtDate(e.date)}</td>
         <td style="${TD}">
-          ${e.category ? `<p style="margin:0 0 2px;font-size:10px;font-weight:500;color:#94a3b8;line-height:1.3;text-transform:uppercase;letter-spacing:0.06em;">${e.category}${e.subcategory ? ` / ${e.subcategory}` : ''}</p>` : ''}
-          <p style="margin:0;font-size:13px;font-weight:600;color:#0f172a;line-height:1.4;">${e.title}</p>
-          ${e.projectId?.name ? `<p style="margin:3px 0 0;font-size:10px;font-weight:400;color:#64748b;line-height:1.6;">${e.projectId.name}${e.projectId.projectCode ? ` (#${e.projectId.projectCode})` : ''}</p>` : ''}
-          ${e.notes ? `<p style="margin:3px 0 0;font-size:10px;font-weight:400;color:#94a3b8;line-height:1.5;">${e.notes}</p>` : ''}
+          ${e.category ? `<p style="margin:0 0 2px;font-size:10px;font-weight:500;color:#94a3b8;line-height:1.3;text-transform:uppercase;letter-spacing:0.06em;">${escapeHtml(e.category)}${e.subcategory ? ` / ${escapeHtml(e.subcategory)}` : ''}</p>` : ''}
+          <p style="margin:0;font-size:13px;font-weight:600;color:#0f172a;line-height:1.4;">${escapeHtml(e.title)}</p>
+          ${e.projectId?.name ? `<p style="margin:3px 0 0;font-size:10px;font-weight:400;color:#64748b;line-height:1.6;">${escapeHtml(e.projectId.name)}${e.projectId.projectCode ? ` (#${escapeHtml(e.projectId.projectCode)})` : ''}</p>` : ''}
+          ${e.notes ? `<p style="margin:3px 0 0;font-size:10px;font-weight:400;color:#94a3b8;line-height:1.5;">${escapeHtml(e.notes)}</p>` : ''}
         </td>
-        <td style="${TD}color:#64748b;">${payeeOf(e)}</td>
+        <td style="${TD}color:#64748b;">${escapeHtml(payeeOf(e))}</td>
         <td style="${TD}text-align:right;padding-right:0;font-weight:700;color:#0f172a;white-space:nowrap;">
           ${money(e.amount, e.currency)}
           ${(e.currency && e.currency !== 'BDT') ? `<div style="font-size:10px;font-weight:400;color:#94a3b8;">≈ ${money(e.amountBDT ?? 0, 'BDT')}</div>` : ''}
@@ -196,7 +217,7 @@ export async function GET(request) {
       </div>
       ${mixed ? `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f1f5f9;">
         <span style="font-size:12px;color:#64748b;">Currencies</span>
-        <span style="font-size:12px;color:#334155;font-weight:500;">${currencies.join(', ')}</span>
+        <span style="font-size:12px;color:#334155;font-weight:500;">${escapeHtml(currencies.join(', '))}</span>
       </div>` : ''}
       <div style="display:flex;justify-content:space-between;padding:9px 16px;margin-top:3px;margin-left:-16px;margin-right:-16px;border-radius:8px;background:#f8fafc;">
         <span style="font-size:14px;font-weight:800;color:#0f172a;">Total (BDT)</span>
@@ -227,18 +248,20 @@ export async function GET(request) {
   <!-- FOOTER -->
   <div style="border-top:1px solid #e2e8f0;padding-top:12px;margin-top:20px;text-align:center;">
     <p style="margin:0 0 3px;font-size:11px;color:#94a3b8;">Official combined expense record · Ref ${batchRef} · Generated ${fmtDate(new Date())}</p>
-    ${company.name ? `<p style="margin:0;font-size:10px;color:#cbd5e1;letter-spacing:0.04em;">${company.name}</p>` : ''}
+    ${company.name ? `<p style="margin:0;font-size:10px;color:#cbd5e1;letter-spacing:0.04em;">${escapeHtml(company.name)}</p>` : ''}
   </div>
 
 </div>
-<script>window.onload = () => window.print()</script>
+<script nonce="${cspNonce}">window.onload = () => window.print()</script>
 </body>
 </html>`
 
     return new Response(html, {
       headers: {
         'Content-Type': 'text/html; charset=utf-8',
-        'Content-Disposition': `inline; filename="combined-expense-${batchRef}.html"`,
+        // Only our own nonce'd print script may run in this document.
+        'Content-Security-Policy': `default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; script-src 'nonce-${cspNonce}'; base-uri 'self'; form-action 'none'; frame-ancestors 'self'`,
+        'Content-Disposition': `inline; filename="combined-expense-${batchRef.replace(/[^A-Za-z0-9_-]/g, '')}.html"`,
       },
     })
   } catch (err) {

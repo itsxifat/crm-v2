@@ -13,6 +13,7 @@ import {
 import Avatar from '@/components/ui/Avatar'
 import Badge from '@/components/ui/Badge'
 import ClientModal from '@/components/admin/clients/ClientModal'
+import { usePermission } from '@/components/auth/Can'
 import ClientMembersPanel from '@/components/admin/clients/ClientMembersPanel'
 import CustomerCompaniesPanel from '@/components/admin/clients/CustomerCompaniesPanel'
 
@@ -62,6 +63,9 @@ export default function ClientDetailPage() {
   const [loading,     setLoading]     = useState(true)
   const [tab,         setTab]         = useState('Overview')
   const [editOpen,    setEditOpen]    = useState(false)
+  // PATCH /api/clients/[id]/status is SUPER_ADMIN-only
+  const { role } = usePermission()
+  const canToggleStatus = role === 'SUPER_ADMIN'
 
   async function load() {
     try {
@@ -127,6 +131,7 @@ export default function ClientDetailPage() {
 
   const { userId: user, projects = [], invoices = [], documents = [], agreements = [], linkedClients = [], totalRevenue, outstandingBalance, activeProjectCount, kyc } = data
   const kycStatus = kyc?.status ?? 'NOT_SUBMITTED'
+  const isActive  = data.isActive !== false && user?.isActive !== false
   const kycMeta = KYC_STATUS_META[kycStatus] ?? KYC_STATUS_META.NOT_SUBMITTED
 
   return (
@@ -150,8 +155,8 @@ export default function ClientDetailPage() {
                 <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${data.clientType === 'COMPANY' ? 'bg-violet-100 text-violet-700' : 'bg-blue-100 text-blue-700'}`}>
                   {data.clientType === 'COMPANY' ? 'Company' : 'Individual'}
                 </span>
-                <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${user?.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                  {user?.isActive ? 'Active' : 'Inactive'}
+                <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                  {isActive ? 'Active' : 'Inactive'}
                 </span>
                 <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${kycMeta.color}`}>
                   KYC: {kycMeta.label}
@@ -192,7 +197,7 @@ export default function ClientDetailPage() {
           >
             <Pencil className="w-4 h-4" /> Edit
           </button>
-          {user?.isActive !== false ? (
+          {!canToggleStatus ? null : isActive ? (
             <button
               onClick={() => toggleActive(false)}
               className="flex items-center gap-2 px-4 py-2 bg-white border border-red-200 text-red-600 text-sm font-medium rounded-lg hover:bg-red-50 transition-colors"
@@ -285,7 +290,7 @@ export default function ClientDetailPage() {
                     <FolderOpen className="w-4 h-4 text-blue-500 shrink-0" />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-gray-900 truncate">{p.name}</p>
-                      {p.dueDate && <p className="text-xs text-gray-400">Due {new Date(p.dueDate).toLocaleDateString()}</p>}
+                      {p.deadline && <p className="text-xs text-gray-400">Due {new Date(p.deadline).toLocaleDateString()}</p>}
                     </div>
                     <Badge status={p.status} />
                   </Link>
@@ -322,10 +327,10 @@ export default function ClientDetailPage() {
                       {p.description && <p className="text-xs text-gray-400 truncate mt-0.5">{p.description}</p>}
                     </div>
                     <div className="flex items-center gap-3 shrink-0">
-                      {p.dueDate && (
+                      {p.deadline && (
                         <span className="flex items-center gap-1 text-xs text-gray-400">
                           <Calendar className="w-3.5 h-3.5" />
-                          {new Date(p.dueDate).toLocaleDateString()}
+                          {new Date(p.deadline).toLocaleDateString()}
                         </span>
                       )}
                       <Badge status={p.status} />
@@ -362,7 +367,7 @@ export default function ClientDetailPage() {
                       </td>
                       <td className="py-3 text-sm text-gray-500">{new Date(inv.issueDate).toLocaleDateString()}</td>
                       <td className="py-3 text-sm text-gray-500">{inv.dueDate ? new Date(inv.dueDate).toLocaleDateString() : '—'}</td>
-                      <td className="py-3 text-sm font-semibold text-gray-900 text-right">${inv.total.toLocaleString()}</td>
+                      <td className="py-3 text-sm font-semibold text-gray-900 text-right">{inv.currency && inv.currency !== 'BDT' ? `${inv.currency} ` : '৳'}{Number(inv.total ?? 0).toLocaleString()}</td>
                       <td className="py-3 pl-6"><Badge status={inv.status} /></td>
                     </tr>
                   ))}
@@ -540,8 +545,8 @@ export default function ClientDetailPage() {
                       <p className="font-medium text-gray-900">{d.title ?? d.name}</p>
                       {d.createdAt && <p className="text-xs text-gray-400 mt-0.5">{new Date(d.createdAt).toLocaleDateString()}</p>}
                     </div>
-                    {d.url && (
-                      <a href={d.url} target="_blank" rel="noreferrer" className="text-xs text-blue-600 hover:underline">Open</a>
+                    {d.fileUrl && /^(\/|https?:\/\/)/i.test(d.fileUrl) && (
+                      <a href={d.fileUrl} target="_blank" rel="noreferrer" className="text-xs text-blue-600 hover:underline">Open</a>
                     )}
                   </div>
                 ))}

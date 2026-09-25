@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   ChevronLeft, ChevronRight, Users, Clock, CheckCircle2, FileWarning,
   Plus, Trash2, X, Loader2, Printer, Ban, ExternalLink, Banknote,
@@ -104,6 +104,7 @@ function GenerateSalaryModal({ open, onClose, employee, period, onGenerated }) {
     if (net <= 0) { toast.error('Net pay must be greater than zero'); return }
     const invalid = items.some(i => !i.label.trim() || !(Number(i.amount) > 0))
     if (invalid) { toast.error('Every line needs a label and an amount greater than zero'); return }
+    if (isForeign && baseSalary > 0) { toast.error("This employee's base salary is in BDT — generate the slip in BDT"); return }
     if (isForeign && !(Number(amtBDT) > 0)) { toast.error('Enter the BDT-equivalent for this foreign-currency salary'); return }
 
     setSaving(true)
@@ -223,6 +224,11 @@ function GenerateSalaryModal({ open, onClose, employee, period, onGenerated }) {
             <label className="block text-sm font-medium text-gray-700 mb-1">Currency</label>
             <Select value={currency} onChange={v => setCurrency(v ?? BASE_CURRENCY)} options={currencyOptions} />
           </div>
+          {isForeign && baseSalary > 0 && (
+            <p className="text-xs text-red-600 sm:col-span-2">
+              The base salary is in BDT, so this slip must be generated in BDT. Foreign currency is only for employees with no base salary.
+            </p>
+          )}
           {isForeign && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -264,7 +270,7 @@ function GenerateSalaryModal({ open, onClose, employee, period, onGenerated }) {
         <button onClick={onClose} disabled={saving} className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">
           Cancel
         </button>
-        <button onClick={submit} disabled={saving || net <= 0}
+        <button onClick={submit} disabled={saving || net <= 0 || (isForeign && baseSalary > 0)}
           className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 disabled:opacity-60 flex items-center gap-1.5">
           {saving && <Loader2 className="w-4 h-4 animate-spin" />}
           <Banknote className="w-4 h-4" /> Generate Slip
@@ -299,7 +305,11 @@ export default function SalaryPage() {
     fetch('/api/departments').then(r => r.json()).then(j => setDepartments(j.data ?? [])).catch(() => {})
   }, [])
 
+  // Only the latest request may update the table (filters/period can change
+  // while an earlier fetch is still in flight).
+  const loadSeq = useRef(0)
   const load = useCallback(() => {
+    const seq = ++loadSeq.current
     setLoading(true)
     const p = new URLSearchParams({ period, page: String(page), limit: String(limit) })
     if (search)     p.set('search', search)
@@ -309,16 +319,26 @@ export default function SalaryPage() {
     fetch(`/api/salary?${p.toString()}`)
       .then(r => r.json())
       .then(j => {
+        if (seq !== loadSeq.current) return
         setRows(j.data ?? [])
         setMeta(j.meta ?? { total: 0, pages: 1 })
         setSummary(j.summary ?? {})
       })
-      .catch(() => toast.error('Failed to load salary data'))
-      .finally(() => setLoading(false))
+      .catch(() => { if (seq === loadSeq.current) toast.error('Failed to load salary data') })
+      .finally(() => { if (seq === loadSeq.current) setLoading(false) })
   }, [period, search, department, venture, status, page])
 
-  useEffect(() => { load() }, [load])
-  useEffect(() => { setPage(1) }, [period, search, department, venture, status])
+  // Reset to page 1 when a filter changes. Skip the fetch for the stale
+  // (old page) combination in that same render; the page-1 fetch follows.
+  const filterKey = [period, search, department, venture, status].join('|')
+  const lastFilterKey = useRef(filterKey)
+  useEffect(() => {
+    if (lastFilterKey.current !== filterKey) {
+      lastFilterKey.current = filterKey
+      if (page !== 1) { setPage(1); return }
+    }
+    load()
+  }, [load, filterKey, page])
 
   async function cancelSlip(row) {
     if (!confirm(`Cancel the salary slip for ${row.name} (${periodLabel(period)})? This cannot be undone.`)) return
@@ -363,7 +383,9 @@ export default function SalaryPage() {
     },
     {
       key: 'baseSalary', label: 'Base Salary',
-      render: (row) => row.baseSalary > 0 ? <TkAmt value={row.baseSalary} /> : <span className="text-gray-300">—</span>,
+      render: (row) => typeof row.baseSalary === 'string'
+        ? <span className="text-gray-400">{row.baseSalary}</span>
+        : row.baseSalary > 0 ? <TkAmt value={row.baseSalary} /> : <span className="text-gray-300">—</span>,
     },
     {
       key: 'netPay', label: 'Net Pay',
@@ -389,7 +411,7 @@ export default function SalaryPage() {
           },
           row.salaryStatus === 'PENDING' && canPay && {
             label: 'Pay in Accounts →', icon: ExternalLink,
-            href: '/admin/accounts?tab=confirmations',
+            href: '/admin/accounts?tab=requests',
           },
           row.salaryStatus === 'PENDING' && canPay && {
             label: 'Cancel Slip', icon: Ban, danger: true, onClick: () => cancelSlip(row),

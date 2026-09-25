@@ -3,8 +3,13 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
-import { Invoice, Payment } from '@/models'
+import crypto from 'crypto'
+import { Invoice, Payment, ProjectPayment } from '@/models'
 import { getMyCompanyIds } from '@/lib/clientAccess'
+import { canDo } from '@/lib/rbac'
+import { escapeHtml } from '@/lib/html'
+import { isValidObjectId } from '@/lib/objectId'
+import { maskDoc, INVOICE_PII } from '@/lib/pii'
 
 function formatCurrency(amount, currency = 'BDT') {
   const n = amount ?? 0
@@ -24,6 +29,7 @@ export async function GET(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
     if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
     await connectDB()
 
@@ -35,21 +41,38 @@ export async function GET(request, { params }) {
 
     // Authorisation: staff may view any invoice; a client only their own; others denied.
     // (Previously any authenticated user could fetch any invoice PDF by id — IDOR.)
-    const role = session.user.role
-    if (!['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'].includes(role)) {
+    const role    = session.user.role
+    const isStaff = ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'].includes(role)
+    if (isStaff) {
+      if (!canDo(session, 'sales.invoices.view'))
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    } else {
       const ownerId = String(invoice.clientId?._id ?? invoice.clientId ?? '')
       const clientIds = role === 'CLIENT' ? await getMyCompanyIds(session.user.id) : []
       if (!clientIds.some(id => String(id) === ownerId))
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      // Clients never see unissued drafts (same as /api/client/invoices/*)
+      if (invoice.status === 'DRAFT')
+        return NextResponse.json({ error: 'Not found' }, { status: 404 })
     }
 
-    const [items, payments] = await Promise.all([
-      Promise.resolve(Array.isArray(invoice.toJSON().items) ? invoice.toJSON().items : []),
-      Payment.find({ invoiceId: params.id }).sort({ createdAt: -1 }),
+    // Payment history: confirmed ProjectPayments (the main flow) plus any
+    // legacy Payment rows, newest first.
+    const [projectPayments, legacyPayments] = await Promise.all([
+      ProjectPayment.find({ invoiceId: params.id, status: 'CONFIRMED' }).sort({ paymentDate: -1 }).lean(),
+      Payment.find({ invoiceId: params.id }).sort({ createdAt: -1 }).lean(),
     ])
+    const payments = [
+      ...projectPayments.map(p => ({ date: p.paymentDate ?? p.confirmedAt ?? p.createdAt, method: p.paymentMethod, reference: null, amount: p.amount })),
+      ...legacyPayments.map(p => ({ date: p.paidAt ?? p.createdAt, method: p.method, reference: p.reference, amount: p.amount })),
+    ].sort((a, b) => new Date(b.date) - new Date(a.date))
 
-    const inv          = invoice.toJSON()
+    // Staff without pii.* permissions get the same masking as the invoice API
+    const inv          = isStaff ? maskDoc(session, invoice.toJSON(), INVOICE_PII) : invoice.toJSON()
+    const items        = Array.isArray(inv.items) ? inv.items : []
     const client       = inv.clientId
+    const e            = escapeHtml
+    const nonce        = crypto.randomBytes(16).toString('base64')
     const companyName    = 'En-Tech Agency'
     const companyAddress = '123 Business Ave, Suite 100, New York, NY 10001'
     const companyEmail   = 'billing@en-tech.agency'
@@ -59,7 +82,7 @@ export async function GET(request, { params }) {
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>Invoice ${inv.invoiceNumber}</title>
+<title>Invoice ${e(inv.invoiceNumber)}</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: 'Segoe UI', Arial, sans-serif; color: #1a1a2e; background: #fff; font-size: 14px; line-height: 1.5; }
@@ -126,25 +149,25 @@ export async function GET(request, { params }) {
     </div>
     <div class="invoice-meta">
       <div class="invoice-title">INVOICE</div>
-      <div class="invoice-number">#${inv.invoiceNumber}</div>
-      <span class="status-badge status-${inv.status}">${inv.status.replace('_', ' ')}</span>
+      <div class="invoice-number">#${e(inv.invoiceNumber)}</div>
+      <span class="status-badge status-${e(inv.status)}">${e(String(inv.status ?? '').replace('_', ' '))}</span>
     </div>
   </div>
 
   <div class="billing-section">
     <div class="billing-block">
       <h3>Bill To</h3>
-      <div class="name">${client?.userId?.name ?? 'Client'}</div>
-      ${client?.company ? `<div class="info">${client.company}</div>` : ''}
-      ${client?.userId?.email ? `<div class="info">${client.userId.email}</div>` : ''}
-      ${client?.address ? `<div class="info">${client.address}</div>` : ''}
+      <div class="name">${e(client?.userId?.name ?? 'Client')}</div>
+      ${client?.company ? `<div class="info">${e(client.company)}</div>` : ''}
+      ${client?.userId?.email ? `<div class="info">${e(client.userId.email)}</div>` : ''}
+      ${client?.address ? `<div class="info">${e(client.address)}</div>` : ''}
     </div>
     <div class="billing-block dates-block">
       <h3>Invoice Details</h3>
       <div class="date-row"><span class="label">Issue Date</span><span class="value">${formatDate(inv.issueDate)}</span></div>
       <div class="date-row"><span class="label">Due Date</span><span class="value">${formatDate(inv.dueDate)}</span></div>
-      ${inv.projectId ? `<div class="date-row"><span class="label">Project</span><span class="value">${inv.projectId.name}</span></div>` : ''}
-      <div class="date-row"><span class="label">Currency</span><span class="value">${inv.currency}</span></div>
+      ${inv.projectId ? `<div class="date-row"><span class="label">Project</span><span class="value">${e(inv.projectId.name)}</span></div>` : ''}
+      <div class="date-row"><span class="label">Currency</span><span class="value">${e(inv.currency)}</span></div>
     </div>
   </div>
 
@@ -160,8 +183,8 @@ export async function GET(request, { params }) {
     <tbody>
       ${items.map(item => `
       <tr>
-        <td>${item.description}</td>
-        <td>${item.quantity}</td>
+        <td>${e(item.description)}</td>
+        <td>${e(item.quantity)}</td>
         <td>${formatCurrency(item.rate, inv.currency)}</td>
         <td>${formatCurrency(item.amount, inv.currency)}</td>
       </tr>`).join('')}
@@ -171,7 +194,7 @@ export async function GET(request, { params }) {
   <div class="totals-section">
     <div class="totals-table">
       <div class="totals-row"><span class="label">Subtotal</span><span class="amount">${formatCurrency(inv.subtotal, inv.currency)}</span></div>
-      ${inv.taxRate > 0 ? `<div class="totals-row"><span class="label">Tax (${inv.taxRate}%)</span><span class="amount">${formatCurrency(inv.taxAmount, inv.currency)}</span></div>` : ''}
+      ${inv.taxRate > 0 ? `<div class="totals-row"><span class="label">Tax (${e(inv.taxRate)}%)</span><span class="amount">${formatCurrency(inv.taxAmount, inv.currency)}</span></div>` : ''}
       ${inv.discount > 0 ? `<div class="totals-row"><span class="label">Discount</span><span class="amount">-${formatCurrency(inv.discount, inv.currency)}</span></div>` : ''}
       <div class="totals-row final"><span class="label">Total</span><span class="amount">${formatCurrency(inv.total, inv.currency)}</span></div>
       ${inv.paidAmount > 0 ? `<div class="totals-row"><span class="label">Amount Paid</span><span class="amount">${formatCurrency(inv.paidAmount, inv.currency)}</span></div>` : ''}
@@ -189,7 +212,7 @@ export async function GET(request, { params }) {
     <h3>Payment History</h3>
     ${payments.map(p => `
     <div class="payment-row">
-      <span>${formatDate(p.paidAt)} — ${p.method}${p.reference ? ` (Ref: ${p.reference})` : ''}</span>
+      <span>${formatDate(p.date)} — ${e(String(p.method ?? '—').replace(/_/g, ' '))}${p.reference ? ` (Ref: ${e(p.reference)})` : ''}</span>
       <span style="font-weight:600;color:#065f46">${formatCurrency(p.amount, inv.currency)}</span>
     </div>`).join('')}
   </div>` : ''}
@@ -197,14 +220,14 @@ export async function GET(request, { params }) {
   ${inv.notes ? `
   <div class="notes-section">
     <h3>Notes</h3>
-    <p>${inv.notes}</p>
+    <p>${e(inv.notes)}</p>
   </div>` : ''}
 
   <div class="notes-section" style="margin-bottom:32px">
     <h3>Payment Instructions</h3>
     <p>Please transfer the amount to the following account:<br>
     Bank: First National Bank | Account: 0012-3456-789 | Routing: 021000021<br>
-    Reference your invoice number <strong>${inv.invoiceNumber}</strong> when making payment.</p>
+    Reference your invoice number <strong>${e(inv.invoiceNumber)}</strong> when making payment.</p>
   </div>
 
   <div class="footer">
@@ -212,14 +235,16 @@ export async function GET(request, { params }) {
     <p style="margin-top:8px">Generated on ${formatDate(new Date())} | ${companyName}</p>
   </div>
 </div>
-<script>window.onload = () => window.print()</script>
+<script nonce="${nonce}">window.onload = () => window.print()</script>
 </body>
 </html>`
 
     return new Response(html, {
       headers: {
         'Content-Type': 'text/html; charset=utf-8',
-        'Content-Disposition': `inline; filename="invoice-${inv.invoiceNumber}.html"`,
+        'Content-Disposition': `inline; filename="invoice-${String(inv.invoiceNumber ?? '').replace(/[^A-Za-z0-9_-]/g, '')}.html"`,
+        // Only our own nonce'd print script may run in this document.
+        'Content-Security-Policy': `default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; script-src 'nonce-${nonce}'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'`,
       },
     })
   } catch (err) {

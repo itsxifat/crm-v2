@@ -24,7 +24,10 @@ if (!MONGODB_URI) {
 
 // Numbering must match models/CombinedInvoice.js: ENV-YYMMC###
 function combinedNumberFor(seq, date = new Date()) {
-  const yymm = `${String(date.getFullYear()).slice(-2)}${String(date.getMonth() + 1).padStart(2, '0')}`
+  // Month follows the business timezone (Asia/Dhaka), matching models/CombinedInvoice.js
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Dhaka', year: '2-digit', month: '2-digit' })
+    .formatToParts(date).map(p => [p.type, p.value]))
+  const yymm = `${parts.year}${parts.month}`
   return `ENV-${yymm}C${String(seq).padStart(3, '0')}`
 }
 
@@ -83,7 +86,13 @@ async function backfillCombined(db) {
   // Continue the ENV-YYMMC### sequence from whatever is already stored.
   const now    = new Date()
   const prefix = combinedNumberFor(1, now).slice(0, -3)
-  const used   = await combineds.countDocuments({ combinedNumber: { $regex: `^${prefix}` } })
+  // Highest suffix already issued (NOT a count — a count reissues an existing
+  // number after any delete and collides on the unique index).
+  const usedDocs = await combineds
+    .find({ combinedNumber: { $regex: `^${prefix}[0-9]+$` } })
+    .project({ combinedNumber: 1 })
+    .toArray()
+  const used = usedDocs.reduce((m, d) => Math.max(m, parseInt(d.combinedNumber.slice(prefix.length), 10) || 0), 0)
 
   const docs = []
   for (let i = 0; i < missing.length; i++) {

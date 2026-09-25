@@ -28,7 +28,12 @@ const TaskSchema = new mongoose.Schema(
     acceptedAt:           { type: Date, default: null },
     declinedAt:           { type: Date, default: null },
     isClientVisible:      { type: Boolean, default: false },
+    // Free-text, comma-separated tags (entered in the task modal).
+    tags:                 { type: String,  default: null },
     position:             { type: Number,  default: 0 },
+    // Set when the task moves into COMPLETED (cleared when it leaves it) — used
+    // for "completed this month" metrics; updatedAt changes on any edit.
+    completedAt:          { type: Date,    default: null },
   },
   {
     timestamps: true,
@@ -38,5 +43,27 @@ const TaskSchema = new mongoose.Schema(
     },
   }
 )
+
+// Keep completedAt in sync with status transitions.
+TaskSchema.pre('save', function (next) {
+  if (this.isModified('status')) {
+    this.completedAt = this.status === 'COMPLETED' ? (this.completedAt ?? new Date()) : null
+  }
+  next()
+})
+
+TaskSchema.pre(['findOneAndUpdate', 'updateOne'], async function () {
+  const update = this.getUpdate() ?? {}
+  const status = update.$set?.status ?? update.status
+  if (status === undefined) return
+  if (status !== 'COMPLETED') {
+    this.set('completedAt', null)
+    return
+  }
+  // Only stamp on the transition INTO COMPLETED (reorders/edits within the column keep it)
+  const current = await this.model.findOne(this.getQuery()).select('status').lean()
+  if (current?.status === 'COMPLETED') return
+  this.set('completedAt', new Date())
+})
 
 export default mongoose.models.Task ?? mongoose.model('Task', TaskSchema)

@@ -1,4 +1,6 @@
 import mongoose from 'mongoose'
+import { nextSequence } from '../lib/sequence'
+import { dhakaParts } from '../lib/dhakaTime'
 
 // A generated payslip for one employee for one period ('YYYY-MM'). Snapshots the
 // earnings/deductions breakdown at generation time. Payment state is NOT
@@ -42,15 +44,24 @@ const SalarySlipSchema = new mongoose.Schema(
 
 // One slip per employee per period — regenerating requires cancelling the old one first.
 SalarySlipSchema.index({ employeeId: 1, period: 1 }, { unique: true })
+// Slip numbers are official document numbers — never shared by two slips.
+SalarySlipSchema.index({ slipNo: 1 }, { unique: true, partialFilterExpression: { slipNo: { $type: 'string' } } })
 
-// Human-readable slip number (SLP-YYMM-####), assigned on creation.
+// Human-readable slip number (SLP-YYMM-####), assigned on creation. YYMM is
+// the Asia/Dhaka month. Allocated from an atomic counter (floored at the highest
+// number already used) so a cancelled/deleted slip never frees its number for
+// reuse and concurrent generations can't receive the same number.
 SalarySlipSchema.pre('validate', async function () {
   if (this.slipNo) return
-  const now    = new Date()
-  const yymm   = `${String(now.getFullYear()).slice(-2)}${String(now.getMonth() + 1).padStart(2, '0')}`
+  const { year, month } = dhakaParts()
+  const yymm   = `${String(year).slice(-2)}${String(month + 1).padStart(2, '0')}`
   const prefix = `SLP-${yymm}-`
-  const count  = await mongoose.model('SalarySlip').countDocuments({ slipNo: { $regex: `^${prefix}` } })
-  this.slipNo = `${prefix}${String(count + 1).padStart(4, '0')}`
+  const existing = await mongoose.model('SalarySlip')
+    .find({ slipNo: { $regex: `^${prefix}[0-9]+$` } })
+    .select('slipNo').lean()
+  const maxUsed = existing.reduce((m, d) => Math.max(m, parseInt(d.slipNo.slice(prefix.length), 10) || 0), 0)
+  const seq = await nextSequence(`salarySlip:${prefix}`, maxUsed)
+  this.slipNo = `${prefix}${String(seq).padStart(4, '0')}`
 })
 
 if (mongoose.models.SalarySlip) delete mongoose.models.SalarySlip

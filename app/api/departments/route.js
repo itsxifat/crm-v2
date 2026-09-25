@@ -3,8 +3,10 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
-import { Department } from '@/models'
+import { Department, Employee, EmployeeOnboarding } from '@/models'
 import { generateShortCode } from '@/models/Department'
+
+const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 export async function GET() {
   try {
@@ -31,16 +33,45 @@ export async function POST(request) {
     if (!name?.trim()) return NextResponse.json({ error: 'Department name is required' }, { status: 400 })
 
     const code = (shortCode?.trim() || generateShortCode(name)).toUpperCase()
+    const nameRegex = { $regex: `^${escapeRegex(name.trim())}$`, $options: 'i' }
+
+    // A previously deleted (inactive) department with the same name is restored
+    // rather than blocking the name forever. It keeps its old short code unless a
+    // new one is given explicitly, so employees still referencing it reattach.
+    const inactive = await Department.findOne({ name: nameRegex, isActive: false })
+    if (inactive) {
+      const nextCode = shortCode?.trim() ? code : inactive.shortCode
+      if (nextCode !== inactive.shortCode) {
+        const clash = await Department.findOne({ shortCode: nextCode, _id: { $ne: inactive._id } }).select('_id').lean()
+        if (clash) return NextResponse.json({ error: `Short code "${nextCode}" is already in use` }, { status: 409 })
+      }
+      const oldCode = inactive.shortCode
+      inactive.isActive    = true
+      inactive.shortCode   = nextCode
+      if (description !== undefined) inactive.description = description?.trim() || null
+      await inactive.save()
+      // Employees still carrying the old code follow the department to its new code.
+      if (oldCode && nextCode !== oldCode) {
+        const match = { $regex: `^${escapeRegex(oldCode)}$`, $options: 'i' }
+        await Promise.all([
+          Employee.updateMany({ department: match }, { $set: { department: nextCode } }),
+          EmployeeOnboarding.updateMany({ 'hrData.department': match }, { $set: { 'hrData.department': nextCode } }),
+        ])
+      }
+      return NextResponse.json({ data: inactive.toJSON() }, { status: 201 })
+    }
 
     // Check uniqueness
     const existing = await Department.findOne({ $or: [
-      { name: { $regex: `^${name.trim()}$`, $options: 'i' } },
+      { name: nameRegex },
       { shortCode: code },
     ]})
     if (existing) {
       if (existing.name.toLowerCase() === name.trim().toLowerCase())
         return NextResponse.json({ error: 'A department with this name already exists' }, { status: 409 })
-      return NextResponse.json({ error: `Short code "${code}" is already in use` }, { status: 409 })
+      return NextResponse.json({ error: existing.isActive === false
+        ? `Short code "${code}" belongs to a deleted department — choose another code`
+        : `Short code "${code}" is already in use` }, { status: 409 })
     }
 
     const dept = await Department.create({

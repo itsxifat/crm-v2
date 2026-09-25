@@ -18,6 +18,9 @@ import LeadModal from '@/components/admin/leads/LeadModal'
 import ConvertLeadModal from '@/components/admin/leads/ConvertLeadModal'
 import { formatCurrency, formatDate } from '@/lib/utils'
 
+// Value is a masked string ('••••••') for users without pii.financial.view
+const formatValue = (v) => (typeof v === 'string' ? v : formatCurrency(v))
+
 function refHref(type, id) {
   if (!id) return null
   if (type === 'CLIENT')   return `/admin/clients/${id}`
@@ -348,7 +351,7 @@ export default function LeadDetailPage() {
               {lead.value && (
                 <div className="flex items-center gap-2 text-gray-800 font-semibold">
                   <Wallet className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                  {formatCurrency(lead.value)}
+                  {formatValue(lead.value)}
                 </div>
               )}
               {lead.sendingDate && (
@@ -636,7 +639,7 @@ export default function LeadDetailPage() {
           {lead.value && (
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Deal Value</p>
-              <p className="text-2xl font-bold text-gray-900">{formatCurrency(lead.value)}</p>
+              <p className="text-2xl font-bold text-gray-900">{formatValue(lead.value)}</p>
             </div>
           )}
 

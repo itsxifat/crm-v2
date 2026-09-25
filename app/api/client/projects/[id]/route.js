@@ -5,12 +5,14 @@ import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Project, Task, Milestone, Document } from '@/models'
 import { resolveActiveClient } from '@/lib/clientAccess'
+import { isValidObjectId } from '@/lib/objectId'
 
 export async function GET(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
     if (!session || session.user.role !== 'CLIENT')
       return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
 
     await connectDB()
 
@@ -18,7 +20,11 @@ export async function GET(request, { params }) {
     if (error === 'SELECT_COMPANY') return NextResponse.json({ error: 'SELECT_COMPANY' }, { status: 409 })
     if (!client) return NextResponse.json({ error: 'Client not found' }, { status: 404 })
 
-    const project = await Project.findOne({ _id: params.id, clientId: client._id }).lean()
+    // Explicit projection of client-safe fields only (same as the list route) —
+    // never expose approvedExpenses, team, tags, cancelReason, etc.
+    const project = await Project.findOne({ _id: params.id, clientId: client._id })
+      .select('projectCode name description category subcategory projectType status priority startDate deadline currentPeriodStart currentPeriodEnd nextBillingDate budget paidAmount currency updatedAt')
+      .lean()
     if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
 
     const [tasks, milestones, documents] = await Promise.all([
@@ -30,7 +36,9 @@ export async function GET(request, { params }) {
         .select('title description dueDate completed')
         .sort({ dueDate: 1 })
         .lean(),
-      Document.find({ projectId: project._id })
+      // Only documents filed for this client — never internal freelancer /
+      // vendor paperwork that merely references the project.
+      Document.find({ projectId: project._id, clientId: client._id })
         .select('name description fileUrl mimeType createdAt')
         .sort({ createdAt: -1 })
         .lean(),

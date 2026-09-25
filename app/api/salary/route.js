@@ -5,12 +5,23 @@ import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { User, Employee, SalarySlip, ProjectExpense } from '@/models'
 import { normalizeDeptCode } from '@/models/Employee'
-import { requirePerm } from '@/lib/rbac'
-import { ciContains } from '@/lib/searchMatch'
+import { requirePerm, canDo } from '@/lib/rbac'
+import { ciEquals, ciContains } from '@/lib/searchMatch'
+import { maskMoney } from '@/lib/pii'
+import { isValidCurrency } from '@/lib/currencies'
+import { isValidObjectId } from '@/lib/objectId'
+import { dhakaParts, dhakaDate } from '@/lib/dhakaTime'
 
+// Current payroll period in the business timezone (Asia/Dhaka), not server UTC.
 function currentPeriod() {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  const { year, month } = dhakaParts()
+  return `${year}-${String(month + 1).padStart(2, '0')}`
+}
+
+// 'YYYY-MM' with a real month (01-12).
+function isValidPeriod(period) {
+  const m = /^(\d{4})-(\d{2})$/.exec(period)
+  return !!m && Number(m[2]) >= 1 && Number(m[2]) <= 12
 }
 
 // GET /api/salary?period=YYYY-MM&department=&venture=&status=&search=&page=&limit=
@@ -28,6 +39,7 @@ export async function GET(request) {
 
     const { searchParams } = new URL(request.url)
     const period     = searchParams.get('period') || currentPeriod()
+    if (!isValidPeriod(period)) return NextResponse.json({ error: 'Period must be in YYYY-MM format' }, { status: 422 })
     const department = searchParams.get('department')
     const venture    = searchParams.get('venture')
     const search     = searchParams.get('search')
@@ -36,10 +48,22 @@ export async function GET(request) {
     const page       = parseInt(searchParams.get('page')  ?? '1',  10)
     const limit      = parseInt(searchParams.get('limit') ?? '20', 10)
 
-    const filter = empStatus === 'active' ? { resigned: { $ne: true } } : {}
+    const filter = {}
+    if (empStatus === 'active') {
+      // "Active" for a period = not resigned, OR resigned on/after the period
+      // started (their final month), OR already has a slip for this period —
+      // so final-month slips can be generated and past totals stay complete.
+      const [py, pm] = period.split('-').map(Number)
+      const slipEmployeeIds = await SalarySlip.distinct('employeeId', { period })
+      filter.$and = [{ $or: [
+        { resigned: { $ne: true } },
+        { resignDate: { $gte: dhakaDate(py, pm - 1, 1) } },
+        { _id: { $in: slipEmployeeIds } },
+      ] }]
+    }
     if (department) {
       const code = normalizeDeptCode(department)
-      filter.department = code ? { $regex: `^${code}$`, $options: 'i' } : { $regex: department, $options: 'i' }
+      filter.department = code ? ciEquals(code) : ciContains(department)
     }
     if (venture) filter.venture = venture
     if (search) {
@@ -58,9 +82,13 @@ export async function GET(request) {
       .lean()
 
     const slips = await SalarySlip.find({ period, employeeId: { $in: employees.map(e => e._id) } })
-      .populate({ path: 'expenseId', select: 'status paidAt paymentMethod paymentTxnId expenseId expenseInvoiceNo signedInvoiceUrl' })
+      .populate({ path: 'expenseId', select: 'status amountBDT paidAt paymentMethod paymentTxnId expenseId expenseInvoiceNo signedInvoiceUrl' })
       .lean()
     const slipByEmployee = new Map(slips.map(s => [s.employeeId.toString(), s]))
+
+    // Base salary is financial PII: visible to payroll operators (who need it to
+    // generate slips) and to pii.financial.view holders only.
+    const canSeeSalary = canDo(session, 'pii.financial.view') || canDo(session, 'finance.salary.pay')
 
     let rows = employees.map(e => {
       const slip = slipByEmployee.get(e._id.toString()) ?? null
@@ -68,7 +96,6 @@ export async function GET(request) {
       return {
         id:          e._id.toString(),
         name:        e.userId?.name ?? '—',
-        email:       e.userId?.email ?? null,
         avatar:      e.userId?.avatar ?? null,
         employeeId:  e.employeeId ?? null,
         department:  e.department ?? null,
@@ -76,7 +103,7 @@ export async function GET(request) {
         designation: e.designation ?? null,
         venture:     e.venture ?? null,
         resigned:    !!e.resigned,
-        baseSalary:  e.salary ?? null,
+        baseSalary:  canSeeSalary ? (e.salary ?? null) : maskMoney(e.salary ?? null),
         slip: slip ? {
           id:        slip._id.toString(),
           slipNo:    slip.slipNo,
@@ -98,7 +125,9 @@ export async function GET(request) {
       paidCount:      rows.filter(r => ['PAID', 'AUTHORIZED'].includes(r.salaryStatus)).length,
       paidAmountBDT:  rows
         .filter(r => ['PAID', 'AUTHORIZED'].includes(r.salaryStatus))
-        .reduce((sum, r) => sum + (r.slip?.amountBDT ?? r.slip?.netPay ?? 0), 0),
+        // Prefer the BDT actually paid (written to the expense on payment) over
+        // the generation-time estimate on the slip.
+        .reduce((sum, r) => sum + (r.slip?.expense?.amountBDT ?? r.slip?.amountBDT ?? r.slip?.netPay ?? 0), 0),
     }
 
     if (status) rows = rows.filter(r => r.salaryStatus === status)
@@ -132,7 +161,9 @@ export async function POST(request) {
     const period     = String(body.period ?? '').trim()
 
     if (!employeeId) return NextResponse.json({ error: 'Employee is required' }, { status: 422 })
-    if (!/^\d{4}-\d{2}$/.test(period)) return NextResponse.json({ error: 'Period must be in YYYY-MM format' }, { status: 422 })
+    if (!isValidObjectId(employeeId)) return NextResponse.json({ error: 'Invalid employee' }, { status: 400 })
+    if (!isValidPeriod(period)) return NextResponse.json({ error: 'Period must be in YYYY-MM format' }, { status: 422 })
+    if (period > currentPeriod()) return NextResponse.json({ error: 'Cannot generate a salary slip for a future period' }, { status: 422 })
 
     const employee = await Employee.findById(employeeId).populate('userId', 'name')
     if (!employee) return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
@@ -158,7 +189,13 @@ export async function POST(request) {
     if (netPay <= 0) return NextResponse.json({ error: 'Net pay must be greater than zero' }, { status: 422 })
 
     const currency  = body.currency || 'BDT'
-    const amountBDT = currency === 'BDT' ? netPay : (Number(body.amountBDT) || null)
+    if (!isValidCurrency(currency)) return NextResponse.json({ error: 'Invalid currency' }, { status: 422 })
+    // Employee.salary is a Taka amount — it can't be summed with foreign-currency
+    // items and relabelled as that currency.
+    if (currency !== 'BDT' && baseSalary > 0)
+      return NextResponse.json({ error: "This employee's base salary is in BDT — generate the slip in BDT" }, { status: 422 })
+    const rawBDT    = Number(body.amountBDT)
+    const amountBDT = currency === 'BDT' ? netPay : (Number.isFinite(rawBDT) && rawBDT > 0 ? rawBDT : null)
     if (currency !== 'BDT' && !amountBDT)
       return NextResponse.json({ error: 'Enter the BDT-equivalent for this foreign-currency salary' }, { status: 422 })
 

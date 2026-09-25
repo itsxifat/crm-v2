@@ -31,7 +31,9 @@ export async function GET(request) {
       matchingUserIds = users.map(u => u._id)
     }
 
-    const results = []
+    // Collected per type, then interleaved so one type can't crowd out the rest.
+    const employeeResults   = []
+    const freelancerResults = []
 
     if (types.includes('EMPLOYEE')) {
       const filter = { resigned: { $ne: true } }
@@ -43,7 +45,7 @@ export async function GET(request) {
         .populate({ path: 'userId', select: 'name avatar isActive' }).lean()
       for (const e of employees) {
         if (e.userId?.isActive === false) continue
-        results.push({
+        employeeResults.push({
           id: e._id.toString(), type: 'EMPLOYEE',
           name: e.userId?.name ?? 'Employee', avatar: e.userId?.avatar ?? null,
           sub: [e.designation || e.position, e.department].filter(Boolean).join(' · ') || 'Employee',
@@ -66,7 +68,7 @@ export async function GET(request) {
       for (const f of freelancers) {
         if (f.userId?.isActive === false || f.disabledAt) continue
         const isAgency = f.type === 'AGENCY'
-        results.push({
+        freelancerResults.push({
           id: f._id.toString(), type: f.type,
           name: isAgency ? (f.agencyInfo?.agencyName ?? f.userId?.name ?? 'Agency') : (f.userId?.name ?? 'Freelancer'),
           avatar: f.userId?.avatar ?? null,
@@ -77,7 +79,13 @@ export async function GET(request) {
       }
     }
 
-    return Response.json({ data: results.slice(0, limit) })
+    const results = []
+    for (let i = 0; results.length < limit && (i < employeeResults.length || i < freelancerResults.length); i++) {
+      if (i < employeeResults.length)   results.push(employeeResults[i])
+      if (i < freelancerResults.length && results.length < limit) results.push(freelancerResults[i])
+    }
+
+    return Response.json({ data: results })
   } catch (err) {
     console.error('[people/search GET]', err)
     return Response.json({ error: err.message }, { status: 500 })

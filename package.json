@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbo",
-    "build": "node --require ./patch-readlink.cjs node_modules/.bin/next build",
-    "start": "node --require ./patch-readlink.cjs node_modules/.bin/next start",
+    "build": "node --require ./patch-readlink.cjs node_modules/next/dist/bin/next build",
+    "start": "node --require ./patch-readlink.cjs node_modules/next/dist/bin/next start",
     "lint": "next lint",
     "db:seed": "node scripts/seed.js",
     "db:decrypt": "node scripts/decrypt-migrate.js",
@@ -32,6 +32,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
+    "dotenv": "^17.3.1",
     "lucide-react": "^0.454.0",
     "mongoose": "^8.8.0",
     "multer": "^1.4.5-lts.1",
@@ -51,7 +52,6 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "dotenv": "^17.3.1",
     "eslint": "^8.57.1",
     "eslint-config-next": "14.2.35"
   }

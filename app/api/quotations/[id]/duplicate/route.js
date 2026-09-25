@@ -4,15 +4,26 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Quotation } from '@/models'
+import { requirePerm } from '@/lib/rbac'
+import { isValidObjectId } from '@/lib/objectId'
+import { quotationJSON } from '@/lib/quotation'
+
+// Today's calendar date in the business timezone, stored as UTC midnight —
+// the same shape a YYYY-MM-DD date input produces.
+function businessToday() {
+  const ymd = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dhaka' }).format(new Date())
+  return new Date(`${ymd}T00:00:00.000Z`)
+}
 
 // POST /api/quotations/[id]/duplicate
 export async function POST(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-    if (!['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'].includes(session.user.role))
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    // The source document is read and returned, and a new one is created
+    const denied = requirePerm(session, 'sales.quotations.view') || requirePerm(session, 'sales.quotations.create')
+    if (denied) return denied
 
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     await connectDB()
 
     const original = await Quotation.findById(params.id).lean()
@@ -23,13 +34,13 @@ export async function POST(request, { params }) {
     const copy = await new Quotation({
       ...rest,
       status:           'DRAFT',
-      issueDate:        new Date(),
+      issueDate:        businessToday(),
       validUntil:       null,
       createdBy:        session.user.id,
       duplicatedFromId: _id,
     }).save()
 
-    return NextResponse.json({ data: copy.toJSON() }, { status: 201 })
+    return NextResponse.json({ data: quotationJSON(session, copy) }, { status: 201 })
   } catch (err) {
     console.error('[POST /api/quotations/[id]/duplicate]', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

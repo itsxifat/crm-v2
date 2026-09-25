@@ -1,6 +1,7 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { redirect } from 'next/navigation'
+import { headers } from 'next/headers'
 import connectDB from '@/lib/mongodb'
 import { Freelancer } from '@/models'
 import FreelancerShell from './FreelancerShell'
@@ -9,6 +10,12 @@ export const metadata = { title: 'Freelancer Portal' }
 
 export default async function FreelancerLayout({ children }) {
   const session = await getServerSession(authOptions)
+  // The public invite-activation page (/freelancer/invite/[token]) is nested under
+  // this layout; middleware flags it (only for visitors with no token). Render it
+  // without the portal shell instead of bouncing the invitee to /login.
+  if (!session && headers().get('x-freelancer-invite') === '1') {
+    return children
+  }
   if (!session || session.user.role !== 'FREELANCER') {
     redirect('/login')
   }

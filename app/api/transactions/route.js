@@ -3,10 +3,12 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
-import { Transaction, Invoice } from '@/models'
-import { canAccess } from '@/lib/permissions'
+import { Transaction, Invoice, Project } from '@/models'
+import { requirePerm } from '@/lib/rbac'
 import { logActivity } from '@/lib/logActivity'
 import { isValidCurrency, BASE_CURRENCY } from '@/lib/currencies'
+import { isValidObjectId } from '@/lib/objectId'
+import { parseDhakaDay } from '@/lib/dhakaTime'
 import { z } from 'zod'
 
 const transactionSchema = z.object({
@@ -46,9 +48,8 @@ const transactionSchema = z.object({
 export async function GET(request) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-    if (!canAccess(session, 'accounts', 'view'))
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const denied  = requirePerm(session, 'finance.transactions.view')
+    if (denied) return denied
     await connectDB()
 
     const { searchParams } = new URL(request.url)
@@ -67,10 +68,15 @@ export async function GET(request) {
     if (type)        filter.type            = type
     if (category)    filter.category        = category
     if (subcategory) filter.expenseCategory = subcategory
+    // Date-only filters are Asia/Dhaka calendar days; the end day is inclusive.
     if (startDate || endDate) {
       filter.date = {}
-      if (startDate) filter.date.$gte = new Date(startDate)
-      if (endDate)   filter.date.$lte = new Date(new Date(endDate).setHours(23, 59, 59, 999))
+      if (startDate) filter.date.$gte = parseDhakaDay(startDate)?.start ?? new Date(startDate)
+      if (endDate) {
+        const end = parseDhakaDay(endDate)
+        if (end) filter.date.$lt  = end.next
+        else     filter.date.$lte = new Date(endDate)
+      }
     }
 
     const sort = { date: -1, createdAt: -1 }
@@ -98,9 +104,8 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-    if (!canAccess(session, 'accounts', 'addTransaction'))
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const denied  = requirePerm(session, 'finance.transactions.create')
+    if (denied) return denied
     await connectDB()
 
     const body   = await request.json()
@@ -109,6 +114,16 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Validation failed', details: parsed.error.flatten() }, { status: 422 })
 
     const { date, ...rest } = parsed.data
+
+    // Expenses are never written to the ledger directly — they must go through
+    // the expense-request pipeline (/api/expenses → Paid → Authorized), which
+    // creates the EXPENSE transaction when the expense is paid.
+    if (rest.type === 'EXPENSE')
+      return NextResponse.json({ error: 'Expenses cannot be added directly. Submit an expense request instead.' }, { status: 422 })
+
+    const txDate = new Date(date)
+    if (Number.isNaN(txDate.getTime()))
+      return NextResponse.json({ error: 'Invalid date' }, { status: 422 })
 
     // txnId, receipt, reference, project etc. are all optional —
     // the pre-save hook auto-generates a txnId when none is provided.
@@ -122,27 +137,70 @@ export async function POST(request) {
     // the manually-entered value (validated above).
     const amountBDT = clean.currency === BASE_CURRENCY ? clean.amount : clean.amountBDT
 
+    // Amount of this transaction expressed in `targetCurrency`, or null when it
+    // cannot be converted (foreign → a different foreign currency).
+    const amountIn = (targetCurrency) => {
+      const cur = targetCurrency || BASE_CURRENCY
+      if (cur === clean.currency) return clean.amount
+      if (cur === BASE_CURRENCY)  return amountBDT
+      return null
+    }
+
+    // Validate the invoice link BEFORE writing the ledger row, so a bad link can
+    // never leave an orphan income entry behind.
+    let invoice = null, invoiceCredit = null
+    if (clean.invoiceId) {
+      if (!isValidObjectId(clean.invoiceId))
+        return NextResponse.json({ error: 'Invalid invoiceId' }, { status: 400 })
+      invoice = await Invoice.findById(clean.invoiceId)
+      if (!invoice) return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
+      if (!['PAID', 'CANCELLED'].includes(invoice.status)) {
+        invoiceCredit = amountIn(invoice.currency)
+        if (invoiceCredit == null)
+          return NextResponse.json({
+            error: `This invoice is in ${invoice.currency}. Record the payment in ${invoice.currency} or ${BASE_CURRENCY} to link it.`,
+          }, { status: 422 })
+      }
+    }
+
     const transaction = await new Transaction({
       ...clean,
       amountBDT,
-      date:      new Date(date),
+      date:      txDate,
       createdBy: session.user.id,
     }).save()
 
-    // Sync invoice paidAmount/status when an income transaction is linked to an invoice
-    if (clean.type === 'INCOME' && clean.invoiceId) {
-      const invoice = await Invoice.findById(clean.invoiceId)
-      if (invoice && !['PAID', 'CANCELLED'].includes(invoice.status)) {
-        const newPaid = Math.min((invoice.paidAmount ?? 0) + clean.amount, invoice.total)
+    // Sync invoice paidAmount/status when an income transaction is linked to an
+    // invoice (credited in the invoice's own currency).
+    if (invoice && invoiceCredit != null) {
+      try {
+        const total   = Number(invoice.total) || 0
+        const newPaid = Math.min((Number(invoice.paidAmount) || 0) + invoiceCredit, total)
         invoice.paidAmount = newPaid
-        const balance = invoice.total - newPaid
+        const balance = total - newPaid
         if (balance <= 0.01) {
           invoice.status = 'PAID'
-          if (!invoice.paidAt) invoice.paidAt = new Date(clean.date)
+          if (!invoice.paidAt) invoice.paidAt = txDate
         } else {
           invoice.status = 'PARTIALLY_PAID'
         }
         await invoice.save()
+      } catch (err) {
+        // Undo the ledger row so a retry cannot double-count the income.
+        await Transaction.deleteOne({ _id: transaction._id }).catch(() => {})
+        throw err
+      }
+
+      // Credit the project too, as the other payment paths do, so its
+      // paidAmount / dueAmount / profit agree with its invoices.
+      const projectId = invoice.projectId ?? clean.projectId
+      if (projectId && isValidObjectId(projectId)) {
+        const project = await Project.findById(projectId)
+        const projectCredit = project ? amountIn(project.currency) : null
+        if (project && projectCredit != null) {
+          project.paidAmount = (Number(project.paidAmount) || 0) + projectCredit
+          await project.save()
+        }
       }
     }
 

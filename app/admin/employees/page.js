@@ -54,6 +54,9 @@ function RoleBadge({ role }) {
 function EmployeeModal({ open, onClose, employee, onSaved, customRoles = [], ventures = [], departments = [] }) {
   const isEdit = !!employee
   const [saving, setSaving] = useState(false)
+  // Assigning a custom role is role management (the API requires hr.roles.manage).
+  const { can } = usePermission()
+  const canManageRoles = can('hr.roles.manage')
   const [form, setForm] = useState({
     name: '', email: '', phone: '', password: '',
     venture: '', department: '', position: '', designation: '', salary: '',
@@ -113,7 +116,8 @@ function EmployeeModal({ open, onClose, employee, onSaved, customRoles = [], ven
         department:           form.department || null,
         position:             form.position || null,
         designation:          form.designation || null,
-        salary:               form.salary ? Number(form.salary) : null,
+        // A masked salary ('••••••') is sent back as-is so the server keeps the stored value.
+        salary:               String(form.salary).includes('••') ? form.salary : (form.salary ? Number(form.salary) : null),
         hireDate:             form.hireDate ? new Date(form.hireDate).toISOString() : null,
         role:                 form.role,
         bloodGroup:           form.bloodGroup || null,
@@ -126,6 +130,13 @@ function EmployeeModal({ open, onClose, employee, onSaved, customRoles = [], ven
         customRoleId:         form.customRoleId || null,
       }
       if (form.password) body.password = form.password
+      // Never round-trip masked display values (email, salary, address, NID…):
+      // an untouched masked field is left out so the stored value is kept.
+      if (isEdit) {
+        for (const k of Object.keys(body)) {
+          if (typeof body[k] === 'string' && body[k].includes('••')) delete body[k]
+        }
+      }
 
       const url    = isEdit ? `/api/employees/${employee.id}` : '/api/employees'
       const method = isEdit ? 'PUT' : 'POST'
@@ -209,7 +220,7 @@ function EmployeeModal({ open, onClose, employee, onSaved, customRoles = [], ven
                 <label className={lc}>Designation</label>
                 <input value={form.designation} onChange={e => set('designation', e.target.value)} placeholder="Creative Lead" className={ic} />
               </div>
-              <div>
+              {canManageRoles && <div>
                 <label className={lc}>Org Role & Permissions</label>
                 <Select value={form.customRoleId} onChange={v => set('customRoleId', v ?? '')}
                   options={customRoles.map(r => ({ value: r.id, label: `${r.title} · ${r.department}` }))}
@@ -224,7 +235,7 @@ function EmployeeModal({ open, onClose, employee, onSaved, customRoles = [], ven
                     </p>
                   ) : null
                 })()}
-              </div>
+              </div>}
               <div>
                 <label className={lc}>Monthly Salary (৳)</label>
                 <input type="number" min="0" value={form.salary} onChange={e => set('salary', e.target.value)} placeholder="50000" className={ic} />
@@ -702,7 +713,7 @@ function RowMenu({ employee, onEdit, onResigned, onCustomRoleChanged, onEditPerm
                 <Pencil className="w-3.5 h-3.5 text-gray-400" /> Edit
               </button>
             )}
-            {canEdit && (
+            {canManageRoles && (
               <button onClick={() => setRoleMode(true)}
                 className="w-full flex items-center gap-2.5 px-4 py-2 text-gray-700 hover:bg-gray-50">
                 <Shield className="w-3.5 h-3.5 text-gray-400" /> Change Role
@@ -827,12 +838,16 @@ export default function EmployeesPage() {
 
   useEffect(() => { load() }, [load])
 
+  // Only role managers can list/assign custom roles — skip the fetch otherwise.
+  const { can: canPerm } = usePermission()
+  const canListRoles = canPerm('hr.roles.manage')
   useEffect(() => {
+    if (!canListRoles) return
     fetch('/api/custom-roles')
       .then(r => r.json())
       .then(j => setCustomRoles(j.data ?? []))
       .catch(() => {})
-  }, [])
+  }, [canListRoles])
 
   function loadDepartments() {
     fetch('/api/departments')

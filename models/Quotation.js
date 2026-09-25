@@ -1,4 +1,5 @@
 import mongoose from 'mongoose'
+import { nextSequence } from '../lib/sequence'
 const QuotationSchema = new mongoose.Schema(
   {
     quotationNumber: { type: String, unique: true, sparse: true },
@@ -57,16 +58,14 @@ const QuotationSchema = new mongoose.Schema(
 QuotationSchema.pre('save', async function (next) {
   if (this.quotationNumber) return next()
   try {
-    const last = await mongoose.model('Quotation').findOne(
-      { quotationNumber: { $exists: true, $ne: null } },
-      { quotationNumber: 1 },
-      { sort: { createdAt: -1 } }
-    ).lean()
-    let nextNum = 1
-    if (last?.quotationNumber) {
-      const match = last.quotationNumber.match(/(\d+)$/)
-      if (match) nextNum = parseInt(match[1], 10) + 1
-    }
+    // Highest number already issued is only a floor for the atomic counter, so
+    // concurrent creates never get the same number and a deleted quotation's
+    // number is never reissued.
+    const existing = await mongoose.model('Quotation')
+      .find({ quotationNumber: { $regex: '^QT-[0-9]+$' } }, { quotationNumber: 1 })
+      .lean()
+    const maxUsed = existing.reduce((m, d) => Math.max(m, parseInt(d.quotationNumber.slice(3), 10) || 0), 0)
+    const nextNum = await nextSequence('quotation', maxUsed)
     this.quotationNumber = `QT-${String(nextNum).padStart(5, '0')}`
     next()
   } catch (err) {

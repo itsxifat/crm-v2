@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import connectDB from '@/lib/mongodb'
 import { User, Freelancer } from '@/models'
 import bcrypt from 'bcryptjs'
+import { validateStrongPassword } from '@/lib/passwordPolicy'
 
 // GET /api/freelancers/invite/[token] — public, validate token
 export async function GET(request, { params }) {
@@ -40,27 +41,29 @@ export async function POST(request, { params }) {
     const { token } = await params
     const { password } = await request.json()
 
-    if (!password || password.length < 6) {
-      return NextResponse.json({ error: 'Password must be at least 6 characters' }, { status: 422 })
+    const pwError = validateStrongPassword(typeof password === 'string' ? password : '')
+    if (pwError) {
+      return NextResponse.json({ error: pwError }, { status: 422 })
     }
 
-    const freelancer = await Freelancer.findOne({
-      inviteToken: token,
-      inviteTokenExpiry: { $gt: new Date() },
-    }).populate({ path: 'userId', select: 'id email' })
-
-    if (!freelancer) {
+    if (typeof token !== 'string' || !token) {
       return NextResponse.json({ valid: false, error: 'Invalid or expired invitation link' }, { status: 404 })
     }
 
     const hashedPassword = await bcrypt.hash(password, 12)
 
-    await User.findByIdAndUpdate(freelancer.userId._id, { password: hashedPassword })
+    // Consume the token atomically so it can only ever be used once.
+    const freelancer = await Freelancer.findOneAndUpdate(
+      { inviteToken: token, inviteTokenExpiry: { $gt: new Date() } },
+      { $set: { inviteAccepted: true }, $unset: { inviteToken: '', inviteTokenExpiry: '' } },
+      { new: true }
+    ).populate({ path: 'userId', select: 'id email' })
 
-    freelancer.inviteAccepted    = true
-    freelancer.inviteToken       = null
-    freelancer.inviteTokenExpiry = null
-    await freelancer.save()
+    if (!freelancer || !freelancer.userId) {
+      return NextResponse.json({ valid: false, error: 'Invalid or expired invitation link' }, { status: 404 })
+    }
+
+    await User.findByIdAndUpdate(freelancer.userId._id, { password: hashedPassword })
 
     return NextResponse.json({ success: true, email: freelancer.userId.email })
   } catch (err) {

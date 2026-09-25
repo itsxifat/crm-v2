@@ -5,7 +5,8 @@ import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { ProjectExpense } from '@/models'
 import { requirePerm } from '@/lib/rbac'
-import { authorizeExpense, computeBatchRef } from '@/lib/expensePayment'
+import { authorizeExpense, allocateBatchRef, sharedBatchRef } from '@/lib/expensePayment'
+import { isValidObjectId } from '@/lib/objectId'
 
 // POST /api/expenses/batch-authorize
 // Authorizes a group of PAID expenses against ONE combined invoice: they all
@@ -21,6 +22,8 @@ export async function POST(request) {
     const { ids, signedInvoiceUrl } = await request.json()
     if (!Array.isArray(ids) || ids.length === 0)
       return NextResponse.json({ error: 'Select at least one paid expense' }, { status: 422 })
+    if (!ids.every(isValidObjectId))
+      return NextResponse.json({ error: 'Invalid expense id' }, { status: 400 })
     if (!signedInvoiceUrl)
       return NextResponse.json({ error: 'Upload the scan of the authorized combined invoice first' }, { status: 422 })
 
@@ -28,7 +31,9 @@ export async function POST(request) {
     if (expenses.length === 0)
       return NextResponse.json({ error: 'None of the selected expenses are paid & awaiting authorization' }, { status: 422 })
 
-    const batchInvoiceNo = computeBatchRef(expenses)
+    // Reuse the reference persisted when this combined invoice was printed;
+    // otherwise allocate one no other batch uses.
+    const batchInvoiceNo = sharedBatchRef(expenses) ?? await allocateBatchRef(expenses)
 
     for (const expense of expenses) {
       await authorizeExpense(expense, { userId: session.user.id, signedInvoiceUrl, batchInvoiceNo })

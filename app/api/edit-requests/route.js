@@ -3,22 +3,32 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
-import { EditRequest } from '@/models'
+import { EditRequest, ProjectExpense } from '@/models'
+import { requirePerm, requireStaff } from '@/lib/rbac'
+import { isValidObjectId } from '@/lib/objectId'
 
 // POST /api/edit-requests  — create an edit request
 export async function POST(request) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    // Staff only (canDo is false for CLIENT / FREELANCER / VENDOR).
+    const denied  = requirePerm(session, 'finance.expenses.submit')
+    if (denied) return denied
 
     const { itemType, itemId, reason } = await request.json()
-    if (!itemType || !itemId || !reason?.trim())
+    if (!itemType || !itemId || typeof reason !== 'string' || !reason.trim())
       return NextResponse.json({ error: 'itemType, itemId and reason are required' }, { status: 400 })
+    if (itemType !== 'PROJECT_EXPENSE' || !isValidObjectId(itemId))
+      return NextResponse.json({ error: 'Invalid item' }, { status: 400 })
 
     await connectDB()
 
-    // Only one PENDING request per item at a time
-    const existing = await EditRequest.findOne({ itemId, itemType, status: 'PENDING' })
+    if (!(await ProjectExpense.exists({ _id: itemId })))
+      return NextResponse.json({ error: 'Item not found' }, { status: 404 })
+
+    // Only one PENDING request per requester per item at a time — someone else's
+    // pending request can't block yours.
+    const existing = await EditRequest.findOne({ itemId, itemType, requesterId: session.user.id, status: 'PENDING' })
     if (existing)
       return NextResponse.json({ error: 'A pending edit request already exists for this item' }, { status: 409 })
 
@@ -40,7 +50,8 @@ export async function POST(request) {
 export async function GET(request) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    const denied  = requireStaff(session)
+    if (denied) return denied
 
     await connectDB()
 

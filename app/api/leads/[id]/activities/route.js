@@ -2,9 +2,10 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { requireStaff } from '@/lib/rbac'
+import { requirePerm } from '@/lib/rbac'
 import connectDB from '@/lib/mongodb'
-import Lead, { LeadActivity } from '@/models/Lead'
+import { LeadActivity } from '@/models/Lead'
+import { findAccessibleLead } from '@/lib/leadAccess'
 import { z } from 'zod'
 
 const activitySchema = z.object({
@@ -16,10 +17,14 @@ const activitySchema = z.object({
 export async function GET(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    const denied = requireStaff(session)
+    const denied = requirePerm(session, 'sales.leads.view')
     if (denied) return denied
 
     await connectDB()
+
+    // EMPLOYEEs may only read activity for leads assigned to them
+    const lead = await findAccessibleLead(session, params.id, '_id assignedToId')
+    if (!lead) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
 
     const activities = await LeadActivity.find({ leadId: params.id }).sort({ createdAt: -1 })
     return NextResponse.json({ data: activities })
@@ -33,7 +38,7 @@ export async function GET(request, { params }) {
 export async function POST(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    const denied = requireStaff(session)
+    const denied = requirePerm(session, 'sales.leads.update')
     if (denied) return denied
 
     await connectDB()
@@ -44,7 +49,8 @@ export async function POST(request, { params }) {
       return NextResponse.json({ error: 'Validation failed', details: parsed.error.flatten() }, { status: 422 })
     }
 
-    const lead = await Lead.findById(params.id)
+    // EMPLOYEEs may only log activity on leads assigned to them
+    const lead = await findAccessibleLead(session, params.id, '_id assignedToId')
     if (!lead) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
 
     const activity = await new LeadActivity({

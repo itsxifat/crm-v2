@@ -4,17 +4,17 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Transaction, Client } from '@/models'
+import { requirePerm } from '@/lib/rbac'
+import { isValidObjectId } from '@/lib/objectId'
+import { dhakaParts, parseDhakaDay } from '@/lib/dhakaTime'
 
 // GET /api/reports/revenue?startDate=&endDate=&groupBy=month&clientId=
 export async function GET(request) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-
-    const allowedRoles = ['SUPER_ADMIN', 'MANAGER']
-    if (!allowedRoles.includes(session.user.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    // Revenue per client is both a report and finance data
+    const denied  = requirePerm(session, 'analytics.reports.view') ?? requirePerm(session, 'finance.reports.view')
+    if (denied) return denied
 
     await connectDB()
 
@@ -27,23 +27,36 @@ export async function GET(request) {
     const filter = { type: 'INCOME' }
     if (startDate || endDate) {
       filter.date = {}
-      if (startDate) filter.date.$gte = new Date(startDate)
-      if (endDate)   filter.date.$lte = new Date(endDate)
+      // Date-only values are whole Asia/Dhaka calendar days (endDate inclusive)
+      if (startDate) filter.date.$gte = parseDhakaDay(startDate)?.start ?? new Date(startDate)
+      if (endDate) {
+        const day = parseDhakaDay(endDate)
+        if (day) filter.date.$lt  = day.next
+        else     filter.date.$lte = new Date(endDate)
+      }
+      if (Object.values(filter.date).some(d => Number.isNaN(d.getTime())))
+        return NextResponse.json({ error: 'Invalid date' }, { status: 400 })
     }
-    if (clientId) filter.clientId = clientId
+    if (clientId) {
+      if (!isValidObjectId(clientId)) return NextResponse.json({ error: 'Invalid clientId' }, { status: 400 })
+      filter.clientId = clientId
+    }
 
     const transactions = await Transaction.find(filter).sort({ date: 1 }).lean()
+
+    // amount is in the transaction's own currency; amountBDT is what all metrics roll up in
+    const amt = (tx) => Number(tx.amountBDT ?? tx.amount) || 0
 
     const grouped = {}
     transactions.forEach(tx => {
       let key
-      const d = new Date(tx.date)
-      if (groupBy === 'year')         key = `${d.getFullYear()}`
-      else if (groupBy === 'quarter') key = `${d.getFullYear()} Q${Math.ceil((d.getMonth() + 1) / 3)}`
-      else                            key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      const { year, month } = dhakaParts(tx.date) // business-timezone periods
+      if (groupBy === 'year')         key = `${year}`
+      else if (groupBy === 'quarter') key = `${year} Q${Math.ceil((month + 1) / 3)}`
+      else                            key = `${year}-${String(month + 1).padStart(2, '0')}`
 
       if (!grouped[key]) grouped[key] = { period: key, revenue: 0, count: 0 }
-      grouped[key].revenue += tx.amount
+      grouped[key].revenue += amt(tx)
       grouped[key].count   += 1
     })
 
@@ -52,7 +65,7 @@ export async function GET(request) {
       if (!tx.clientId) return
       const cid = tx.clientId.toString()
       if (!clientRevenue[cid]) clientRevenue[cid] = { clientId: cid, revenue: 0 }
-      clientRevenue[cid].revenue += tx.amount
+      clientRevenue[cid].revenue += amt(tx)
     })
 
     const clientIds = Object.keys(clientRevenue)
@@ -67,7 +80,7 @@ export async function GET(request) {
     }
 
     const rows         = Object.values(grouped).sort((a, b) => a.period.localeCompare(b.period))
-    const totalRevenue = transactions.reduce((s, tx) => s + tx.amount, 0)
+    const totalRevenue = transactions.reduce((s, tx) => s + amt(tx), 0)
 
     return NextResponse.json({
       data: {

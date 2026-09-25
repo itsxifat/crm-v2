@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Bell, X, CheckCheck, Loader2 } from 'lucide-react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 
 export default function NotificationBell() {
   const [open, setOpen] = useState(false)
@@ -10,6 +11,7 @@ export default function NotificationBell() {
   const [unreadCount, setUnreadCount] = useState(0)
   const [loading, setLoading] = useState(false)
   const dropdownRef = useRef(null)
+  const router = useRouter()
 
   const fetchNotifications = async () => {
     setLoading(true)
@@ -46,6 +48,19 @@ export default function NotificationBell() {
       setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })))
       setUnreadCount(0)
     } catch {}
+  }
+
+  const openNotification = async (n) => {
+    if (!n.isRead) {
+      setNotifications((prev) => prev.map((x) => (x.id === n.id ? { ...x, isRead: true } : x)))
+      setUnreadCount((c) => Math.max(0, c - 1))
+      fetch(`/api/notifications/${n.id}`, { method: 'PATCH' }).catch(() => {})
+    }
+    // Only follow in-app links (never protocol-relative or external URLs).
+    if (typeof n.link === 'string' && n.link.startsWith('/') && !n.link.startsWith('//')) {
+      setOpen(false)
+      router.push(n.link)
+    }
   }
 
   const typeColors = {
@@ -116,6 +131,7 @@ export default function NotificationBell() {
             {!loading && notifications.map((n) => (
               <div
                 key={n.id}
+                onClick={() => openNotification(n)}
                 className={`px-4 py-3 border-b border-gray-50 hover:bg-gray-50 transition-colors cursor-pointer ${!n.isRead ? 'bg-blue-50/50' : ''}`}
               >
                 <div className="flex items-start gap-3">

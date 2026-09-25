@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
@@ -220,6 +220,7 @@ export default function UserActivityLogPage() {
   const [actionFilter, setActionFilter]= useState('')
   const [fromDate,     setFromDate]    = useState('')
   const [toDate,       setToDate]      = useState('')
+  const logsReqId = useRef(0)
 
   // Load user info
   useEffect(() => {
@@ -233,6 +234,9 @@ export default function UserActivityLogPage() {
 
   // Load logs
   const loadLogs = useCallback(() => {
+    // A filter change fires one fetch with the old page and another after the
+    // page resets — only the latest request may update state.
+    const id = ++logsReqId.current
     setLogsLoading(true)
     const params = new URLSearchParams({ userId, page, limit: 25 })
     if (actionFilter) params.set('action', actionFilter)
@@ -241,11 +245,12 @@ export default function UserActivityLogPage() {
     fetch(`/api/activity-logs?${params}`)
       .then(r => r.json())
       .then(d => {
+        if (id !== logsReqId.current) return
         setLogs(d.data ?? [])
         setMeta(d.meta ?? { page: 1, total: 0, pages: 1 })
       })
-      .catch(() => setLogs([]))
-      .finally(() => setLogsLoading(false))
+      .catch(() => { if (id === logsReqId.current) setLogs([]) })
+      .finally(() => { if (id === logsReqId.current) setLogsLoading(false) })
   }, [userId, page, actionFilter, fromDate, toDate])
 
   useEffect(() => { setPage(1) }, [actionFilter, fromDate, toDate])

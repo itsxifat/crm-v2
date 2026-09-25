@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import {
@@ -220,8 +220,12 @@ function UsersTable({ search, roleFilter }) {
   const [meta,  setMeta]      = useState({ page: 1, total: 0, pages: 1 })
   const [page,  setPage]      = useState(1)
   const [loading, setLoading] = useState(true)
+  const reqId = useRef(0)
 
   const load = useCallback(async () => {
+    // Only the latest request may update state (a search change fetches with
+    // the old page before the page-reset effect fetches page 1).
+    const id = ++reqId.current
     setLoading(true)
     const params = new URLSearchParams({ page, limit: 20 })
     if (search)     params.set('search', search)
@@ -229,12 +233,13 @@ function UsersTable({ search, roleFilter }) {
     try {
       const res  = await fetch(`/api/users?${params}`)
       const json = await res.json()
+      if (id !== reqId.current) return
       setUsers(json.data ?? [])
       setMeta(json.meta ?? { page: 1, total: 0, pages: 1 })
     } catch {
-      setUsers([])
+      if (id === reqId.current) setUsers([])
     } finally {
-      setLoading(false)
+      if (id === reqId.current) setLoading(false)
     }
   }, [page, search, roleFilter])
 

@@ -169,7 +169,7 @@ export default function LeadsPage() {
         />
         <StatsCard
           title="Pipeline Value"
-          value={stats ? formatCurrency(stats.pipelineValue) : '—'}
+          value={stats ? (typeof stats.pipelineValue === 'string' ? stats.pipelineValue : formatCurrency(stats.pipelineValue)) : '—'}
           icon={Wallet}
           color="emerald"
         />

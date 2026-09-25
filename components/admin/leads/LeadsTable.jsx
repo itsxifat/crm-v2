@@ -11,6 +11,9 @@ import Avatar from '@/components/ui/Avatar'
 import ConvertLeadModal from '@/components/admin/leads/ConvertLeadModal'
 import { formatCurrency, formatDate } from '@/lib/utils'
 
+// Value is a masked string ('••••••') for users without pii.financial.view
+const formatValue = (v) => (typeof v === 'string' ? v : formatCurrency(v))
+
 const PRIORITY_STYLES = {
   LOW:    'bg-gray-100 text-gray-500',
   NORMAL: 'bg-blue-50 text-blue-600',
@@ -178,6 +181,9 @@ function ActionMenu({ lead, onEdit, onDelete, onConvert }) {
 export default function LeadsTable({ leads = [], onEdit, onRefresh, onStatusChange }) {
   const router = useRouter()
   const [convertLead, setConvertLead] = useState(null)
+  // Refresh only after the convert modal closes: refreshing immediately swaps the
+  // table for a loading skeleton, unmounting the modal and its one-time password.
+  const [converted,   setConverted]   = useState(false)
 
   const handleDelete = async (lead) => {
     if (!confirm(`Delete lead "${lead.name}"? This cannot be undone.`)) return
@@ -274,7 +280,7 @@ export default function LeadsTable({ leads = [], onEdit, onRefresh, onStatusChan
                     {/* Mobile-only: show value + priority inline */}
                     <div className="flex items-center gap-1.5 mt-1 md:hidden">
                       {lead.value && (
-                        <span className="text-xs font-semibold text-gray-700">{formatCurrency(lead.value)}</span>
+                        <span className="text-xs font-semibold text-gray-700">{formatValue(lead.value)}</span>
                       )}
                       {lead.priority && lead.priority !== 'NORMAL' && (
                         <span className={`inline-flex items-center px-1 py-0.5 rounded text-[10px] font-medium ${PRIORITY_STYLES[lead.priority] ?? ''}`}>
@@ -341,7 +347,7 @@ export default function LeadsTable({ leads = [], onEdit, onRefresh, onStatusChan
               {/* Value */}
               <td className="px-4 py-3 hidden md:table-cell">
                 <span className="text-sm font-semibold text-gray-800">
-                  {lead.value ? formatCurrency(lead.value) : '—'}
+                  {lead.value ? formatValue(lead.value) : '—'}
                 </span>
               </td>
 
@@ -404,9 +410,12 @@ export default function LeadsTable({ leads = [], onEdit, onRefresh, onStatusChan
 
     <ConvertLeadModal
       open={!!convertLead}
-      onClose={() => setConvertLead(null)}
+      onClose={() => {
+        setConvertLead(null)
+        if (converted) { setConverted(false); onRefresh?.() }
+      }}
       lead={convertLead}
-      onSuccess={() => onRefresh?.()}
+      onSuccess={() => setConverted(true)}
     />
     </>
   )

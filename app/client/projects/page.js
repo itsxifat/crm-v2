@@ -5,8 +5,10 @@ import { useRouter } from 'next/navigation'
 import { FolderOpen, Search, Clock, ChevronRight } from 'lucide-react'
 import { STATUS_META } from '@/lib/ventures'
 import ProjectStatusBadge from '@/components/portals/ProjectStatusBadge'
+import { CURRENCIES } from '@/lib/currencies'
 
-const fmtTk = (n) => `৳ ${(Number(n) || 0).toLocaleString('en-BD', { minimumFractionDigits: 0 })}`
+// Each project's amounts are shown in that project's own currency.
+const fmtTk = (n, cur = 'BDT') => `${CURRENCIES.find(c => c.code === cur)?.symbol ?? cur} ${(Number(n) || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}`
 const fmtDate = (d) =>
   d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 
@@ -170,10 +172,10 @@ export default function ClientProjectsPage() {
                       <td className="px-4 py-3 whitespace-nowrap">
                         <span className="text-xs text-gray-500">{isMonthly ? 'Monthly' : 'Fixed'}</span>
                       </td>
-                      <td className="px-4 py-3 text-right whitespace-nowrap text-sm text-gray-700">{fmtTk(p.netValue)}</td>
-                      <td className="px-4 py-3 text-right whitespace-nowrap text-sm text-green-600">{fmtTk(p.paidAmount)}</td>
+                      <td className="px-4 py-3 text-right whitespace-nowrap text-sm text-gray-700">{fmtTk(p.netValue, p.currency)}</td>
+                      <td className="px-4 py-3 text-right whitespace-nowrap text-sm text-green-600">{fmtTk(p.paidAmount, p.currency)}</td>
                       <td className="px-4 py-3 text-right whitespace-nowrap">
-                        <span className={`text-sm ${p.dueAmount > 0 ? 'text-amber-600' : 'text-gray-400'}`}>{fmtTk(p.dueAmount)}</span>
+                        <span className={`text-sm ${p.dueAmount > 0 ? 'text-amber-600' : 'text-gray-400'}`}>{fmtTk(p.dueAmount, p.currency)}</span>
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         {due ? (

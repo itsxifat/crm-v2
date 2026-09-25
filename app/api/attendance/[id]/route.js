@@ -4,7 +4,25 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Attendance } from '@/models'
+import { requirePerm } from '@/lib/rbac'
+import { isValidObjectId } from '@/lib/objectId'
+import { isOwnEmployeeRecord } from '@/lib/hrAccess'
 import { z } from 'zod'
+
+const EMP_POPULATE = {
+  path: 'employeeId', select: 'employeeId designation department position userId',
+  populate: { path: 'userId', select: 'name avatar' },
+}
+
+// Load the record and refuse edits to the caller's own attendance (Super Admin excepted).
+async function loadEditable(session, id) {
+  if (!isValidObjectId(id)) return { error: NextResponse.json({ error: 'Not found' }, { status: 404 }) }
+  const existing = await Attendance.findById(id).select('employeeId').lean()
+  if (!existing) return { error: NextResponse.json({ error: 'Not found' }, { status: 404 }) }
+  if (session.user.role !== 'SUPER_ADMIN' && await isOwnEmployeeRecord(session, existing.employeeId))
+    return { error: NextResponse.json({ error: 'You cannot edit your own attendance' }, { status: 403 }) }
+  return { existing }
+}
 
 const updateSchema = z.object({
   checkIn:  z.string().datetime().optional().nullable(),
@@ -17,11 +35,13 @@ const updateSchema = z.object({
 export async function PUT(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-    if (!['SUPER_ADMIN', 'MANAGER'].includes(session.user.role))
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const denied  = requirePerm(session, 'hr.attendance.manage')
+    if (denied) return denied
 
     await connectDB()
+
+    const { error } = await loadEditable(session, params.id)
+    if (error) return error
 
     const body   = await request.json()
     const parsed = updateSchema.safeParse(body)
@@ -35,7 +55,7 @@ export async function PUT(request, { params }) {
     if ('notes'    in parsed.data) update.notes    = parsed.data.notes ?? null
 
     const record = await Attendance.findByIdAndUpdate(params.id, update, { new: true })
-      .populate({ path: 'employeeId', populate: { path: 'userId', select: 'name avatar' } })
+      .populate(EMP_POPULATE)
 
     if (!record) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
@@ -50,11 +70,13 @@ export async function PUT(request, { params }) {
 export async function DELETE(_, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-    if (!['SUPER_ADMIN', 'MANAGER'].includes(session.user.role))
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const denied  = requirePerm(session, 'hr.attendance.manage')
+    if (denied) return denied
 
     await connectDB()
+
+    const { error } = await loadEditable(session, params.id)
+    if (error) return error
 
     const record = await Attendance.findByIdAndDelete(params.id)
     if (!record) return NextResponse.json({ error: 'Not found' }, { status: 404 })

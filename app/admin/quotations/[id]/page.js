@@ -10,6 +10,8 @@ import toast from 'react-hot-toast'
 import Link from 'next/link'
 import Image from 'next/image'
 import { useConfig } from '@/lib/useConfig'
+import { usePermission } from '@/components/auth/Can'
+import { CURRENCIES } from '@/lib/currencies'
 
 const STATUS_STYLES = {
   DRAFT:    { badge: 'bg-gray-100 text-gray-600',    label: 'Draft' },
@@ -28,12 +30,20 @@ const TRANSITIONS = {
   REJECTED: [{ to: 'DRAFT', label: 'Revert to Draft', icon: RotateCcw, cls: 'bg-gray-700 hover:bg-gray-800 text-white' }],
 }
 
-const fmt     = (n) => `৳ ${(n ?? 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })}`
-const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
-const toDateInput = (d) => d ? new Date(d).toISOString().split('T')[0] : ''
+const curSymbol = (code) => CURRENCIES.find(c => c.code === (code || 'BDT'))?.symbol ?? code
+const fmt     = (n, cur) => `${curSymbol(cur)} ${(Number(n) || 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })}`
+const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Dhaka' }) : '—'
+// YYYY-MM-DD in the business timezone (toISOString() would give the UTC date)
+const toDateInput = (d) => d ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dhaka' }).format(new Date(d)) : ''
+// Items don't always carry their category (older quotations) — recover it from the service
+const categoryFor = (ventureCategories, venture, service) => {
+  if (!venture || !service) return ''
+  const cats = ventureCategories?.[venture] || {}
+  return Object.keys(cats).find(c => (cats[c] || []).includes(service)) || ''
+}
 const emptyItem   = () => ({ description: '', venture: '', service_category: '', service: '', quantity: 1, rate: '', amount: 0 })
 
-function ItemCard({ item, idx, onChange, onRemove, editing, ventures, ventureCategories }) {
+function ItemCard({ item, idx, onChange, onRemove, editing, ventures, ventureCategories, currency }) {
   const venture    = item.venture || ''
   const categories = venture ? Object.keys(ventureCategories[venture] || {}) : []
   const services   = (venture && item.service_category) ? (ventureCategories[venture]?.[item.service_category] || []) : []
@@ -57,12 +67,12 @@ function ItemCard({ item, idx, onChange, onRemove, editing, ventures, ventureCat
       <div className="border border-gray-100 rounded-xl p-4 space-y-2 bg-gray-50/30">
         <div className="flex items-start justify-between gap-4">
           <p className="text-sm font-medium text-gray-800 flex-1">{item.description || '—'}</p>
-          <p className="text-sm font-semibold text-gray-900 shrink-0">{fmt(item.amount)}</p>
+          <p className="text-sm font-semibold text-gray-900 shrink-0">{fmt(item.amount, currency)}</p>
         </div>
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
           {item.venture  && <span className="font-medium text-gray-700">{ventureLabel}</span>}
           {item.service  && <span>{item.service}</span>}
-          <span>Qty: {item.quantity} × {fmt(item.rate)}</span>
+          <span>Qty: {item.quantity} × {fmt(item.rate, currency)}</span>
         </div>
       </div>
     )
@@ -114,14 +124,14 @@ function ItemCard({ item, idx, onChange, onRemove, editing, ventures, ventureCat
             className={inputCls + ' text-right'} />
         </div>
         <div>
-          <label className={labelCls}>Rate (৳)</label>
+          <label className={labelCls}>Rate ({curSymbol(currency)})</label>
           <input type="number" min="0" value={item.rate} onChange={e => upd('rate', e.target.value)}
             className={inputCls + ' text-right'} />
         </div>
         <div>
           <label className={labelCls}>Amount</label>
           <div className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white text-right font-semibold text-gray-800">
-            ৳ {(item.amount || 0).toLocaleString()}
+            {curSymbol(currency)} {(item.amount || 0).toLocaleString()}
           </div>
         </div>
       </div>
@@ -323,6 +333,7 @@ export default function QuotationDetailPage() {
   const { id } = useParams()
   const router  = useRouter()
   const { ventures, ventureCategories } = useConfig()
+  const { can } = usePermission()
 
   const [q,        setQ]        = useState(null)
   const [loading,  setLoading]  = useState(true)
@@ -392,7 +403,7 @@ export default function QuotationDetailPage() {
     setRecipientEmail(q.recipientEmail || '')
     setRecipientPhone(q.recipientPhone || '')
     setRecipientAddress(q.recipientAddress || '')
-    setItems((q.items || []).map(it => ({ ...it, service_category: '' })))
+    setItems((q.items || []).map(it => ({ ...it, service_category: it.service_category || categoryFor(ventureCategories, it.venture, it.service) })))
     setTaxRate(q.taxRate ?? 0)
     setDiscount(q.discount ?? 0)
     setIssueDate(toDateInput(q.issueDate))
@@ -407,11 +418,17 @@ export default function QuotationDetailPage() {
   function cancelEdit() { setEditing(false) }
 
   async function saveEdit() {
+    if (!items.length) return toast.error('Add at least one item')
+    if (items.some(i => !(Number(i.quantity) > 0))) return toast.error('Each item needs a quantity greater than 0')
+    if (items.some(i => Number(i.rate) < 0)) return toast.error('Rates cannot be negative')
+    if (Number(discount) < 0) return toast.error('Discount cannot be negative')
+    if (Number(discount) > subtotal + taxAmount) return toast.error('Discount cannot exceed the total')
+    if (Number(taxRate) < 0 || Number(taxRate) > 100) return toast.error('Tax must be between 0 and 100%')
     setSaving(true)
     try {
       const payload = {
         recipientName, recipientCompany, recipientEmail, recipientPhone, recipientAddress,
-        items: items.map(({ service_category, ...rest }) => ({ ...rest, quantity: Number(rest.quantity) || 1, rate: Number(rest.rate) || 0 })),
+        items: items.map(it => ({ ...it, quantity: Number(it.quantity), rate: Number(it.rate) || 0 })),
         issueDate, validUntil: validUntil || null,
         taxRate: Number(taxRate), discount: Number(discount),
         currency, notes: notes || null, terms: terms || null,
@@ -478,8 +495,10 @@ export default function QuotationDetailPage() {
   )
 
   const s     = STATUS_STYLES[q.status] ?? STATUS_STYLES.DRAFT
-  const trans = TRANSITIONS[q.status]   ?? []
-  const canEdit = q.status === 'DRAFT'
+  // Accept / Reject are approval decisions; other transitions need edit rights
+  const trans = (TRANSITIONS[q.status] ?? []).filter(t =>
+    (t.to === 'ACCEPTED' || t.to === 'REJECTED') ? can('sales.quotations.approve') : can('sales.quotations.update'))
+  const canEdit = q.status === 'DRAFT' && can('sales.quotations.update')
 
   if (printMode) {
     return (
@@ -551,10 +570,12 @@ export default function QuotationDetailPage() {
             <Printer className="w-3.5 h-3.5" /> Print / PDF
           </button>
 
-          <button onClick={duplicate}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-            <Copy className="w-3.5 h-3.5" /> Duplicate
-          </button>
+          {can('sales.quotations.create') && (
+            <button onClick={duplicate}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+              <Copy className="w-3.5 h-3.5" /> Duplicate
+            </button>
+          )}
 
           {canEdit && !editing && (
             <button onClick={startEdit}
@@ -576,10 +597,12 @@ export default function QuotationDetailPage() {
             </>
           )}
 
-          <button onClick={del} disabled={deleting}
-            className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50">
-            {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-          </button>
+          {can('sales.quotations.delete') && (
+            <button onClick={del} disabled={deleting}
+              className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50">
+              {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+            </button>
+          )}
         </div>
       </div>
 
@@ -637,7 +660,7 @@ export default function QuotationDetailPage() {
               <ItemCard key={idx} item={item} idx={idx} editing
                 onChange={(i, u) => setItems(prev => prev.map((x, j) => j === i ? u : x))}
                 onRemove={(i) => setItems(prev => prev.filter((_, j) => j !== i))}
-                ventures={ventures} ventureCategories={ventureCategories} />
+                ventures={ventures} ventureCategories={ventureCategories} currency={currency} />
             ))}
             <button type="button" onClick={() => setItems(prev => [...prev, emptyItem()])}
               className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800 font-medium pt-1">
@@ -649,7 +672,7 @@ export default function QuotationDetailPage() {
           <div className="flex justify-end p-6 border-t border-gray-100">
             <div className="w-64 space-y-2">
               <div className="flex justify-between text-sm text-gray-600">
-                <span>Subtotal</span><span>{fmt(subtotal)}</span>
+                <span>Subtotal</span><span>{fmt(subtotal, currency)}</span>
               </div>
               <div className="flex items-center justify-between gap-2">
                 <label className="text-sm text-gray-600">Tax (%)</label>
@@ -658,17 +681,17 @@ export default function QuotationDetailPage() {
               </div>
               {taxAmount > 0 && (
                 <div className="flex justify-between text-sm text-gray-500">
-                  <span>Tax Amount</span><span>{fmt(taxAmount)}</span>
+                  <span>Tax Amount</span><span>{fmt(taxAmount, currency)}</span>
                 </div>
               )}
               <div className="flex items-center justify-between gap-2">
-                <label className="text-sm text-gray-600">Discount (৳)</label>
+                <label className="text-sm text-gray-600">Discount ({curSymbol(currency)})</label>
                 <input type="number" min="0" value={discount} onChange={e => setDiscount(e.target.value)}
                   className="w-24 border border-gray-200 rounded-lg px-2 py-1 text-sm text-right focus:outline-none" />
               </div>
               <div className="border-t border-gray-200 pt-2 flex justify-between">
                 <span className="text-sm font-semibold text-gray-700">Total</span>
-                <span className="text-base font-bold text-gray-900">{fmt(editTotal)}</span>
+                <span className="text-base font-bold text-gray-900">{fmt(editTotal, currency)}</span>
               </div>
               <label className="flex items-center gap-2 pt-2 cursor-pointer select-none">
                 <input type="checkbox" checked={itemPriceOnly} onChange={e => setItemPriceOnly(e.target.checked)}

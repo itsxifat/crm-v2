@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Bell, CheckCheck, Trash2, Loader2 } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -35,30 +35,42 @@ export default function NotificationsPage() {
   const [page,          setPage]          = useState(1)
   const [total,         setTotal]         = useState(0)
   const [unreadOnly,    setUnreadOnly]    = useState(false)
+  const [unreadCount,   setUnreadCount]   = useState(0)
   const limit = 25
+  const reqId = useRef(0)
 
   const load = useCallback(async () => {
+    const id = ++reqId.current // ignore responses from superseded requests
     setLoading(true)
     try {
       const p   = new URLSearchParams({ page, limit })
       if (unreadOnly) p.set('unread', 'true')
       const res  = await fetch(`/api/notifications?${p}`)
       const json = await res.json()
+      if (id !== reqId.current) return
       setNotifications(json.data ?? [])
       setTotal(json.meta?.total ?? 0)
-    } catch { toast.error('Failed to load notifications') }
-    finally { setLoading(false) }
+      setUnreadCount(json.unreadCount ?? 0)
+    } catch { if (id === reqId.current) toast.error('Failed to load notifications') }
+    finally { if (id === reqId.current) setLoading(false) }
   }, [page, unreadOnly])
 
   useEffect(() => { load() }, [load])
-  useEffect(() => { setPage(1) }, [unreadOnly])
+
+  // Reset to page 1 in the same update as the filter change (one fetch, not two).
+  function changeUnreadOnly(checked) {
+    setUnreadOnly(checked)
+    setPage(1)
+  }
 
   async function markOne(id) {
+    if (notifications.some(n => n.id === id && !n.isRead)) setUnreadCount(c => Math.max(0, c - 1))
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n))
     await fetch(`/api/notifications/${id}`, { method: 'PATCH' })
   }
 
   async function deleteOne(id) {
+    if (notifications.some(n => n.id === id && !n.isRead)) setUnreadCount(c => Math.max(0, c - 1))
     setNotifications(prev => prev.filter(n => n.id !== id))
     setTotal(t => t - 1)
     await fetch(`/api/notifications/${id}`, { method: 'DELETE' })
@@ -69,12 +81,12 @@ export default function NotificationsPage() {
     try {
       await fetch('/api/notifications', { method: 'PATCH' })
       setNotifications(prev => prev.map(n => ({ ...n, isRead: true })))
+      setUnreadCount(0)
       toast.success('All marked as read')
     } catch { toast.error('Failed') }
     finally { setMarkingAll(false) }
   }
 
-  const unreadCount = notifications.filter(n => !n.isRead).length
   const pages = Math.ceil(total / limit)
 
   const readCount = notifications.filter(n => n.isRead).length
@@ -93,7 +105,7 @@ export default function NotificationsPage() {
         </div>
         <div className="flex items-center gap-2">
           <label className="flex items-center gap-1.5 text-sm text-gray-600 cursor-pointer">
-            <input type="checkbox" checked={unreadOnly} onChange={e => setUnreadOnly(e.target.checked)}
+            <input type="checkbox" checked={unreadOnly} onChange={e => changeUnreadOnly(e.target.checked)}
               className="rounded border-gray-300" />
             Unread only
           </label>
@@ -229,7 +241,7 @@ export default function NotificationsPage() {
               </button>
             )}
             <label className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-600 bg-gray-50 hover:bg-gray-100 rounded-lg cursor-pointer transition-colors">
-              <input type="checkbox" checked={unreadOnly} onChange={e => setUnreadOnly(e.target.checked)}
+              <input type="checkbox" checked={unreadOnly} onChange={e => changeUnreadOnly(e.target.checked)}
                 className="rounded border-gray-300" />
               Show unread only
             </label>

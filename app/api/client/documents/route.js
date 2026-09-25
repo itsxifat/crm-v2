@@ -5,6 +5,7 @@ import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Document } from '@/models'
 import { resolveActiveClient } from '@/lib/clientAccess'
+import { ciContains } from '@/lib/searchMatch'
 
 export async function GET(request) {
   try {
@@ -28,7 +29,7 @@ export async function GET(request) {
 
     const filter = { clientId: client._id }
     if (category && category !== 'ALL') filter.category = category
-    if (search) filter.name = { $regex: search, $options: 'i' }
+    if (search) filter.name = ciContains(String(search).slice(0, 100))
 
     const [documents, total] = await Promise.all([
       Document.find(filter)

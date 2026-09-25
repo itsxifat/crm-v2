@@ -5,6 +5,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { User, Setting } from '@/models'
+import { validateStrongPassword } from '@/lib/passwordPolicy'
 
 // GET /api/account — own profile (all roles)
 export async function GET() {
@@ -54,14 +55,31 @@ export async function PUT(request) {
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(next))
         return NextResponse.json({ error: 'Enter a valid email address' }, { status: 422 })
       if (next !== user.email) {
+        // The login email is an identity claim that staff onboarding flows trust
+        // (existing accounts are linked to companies by email). Without a
+        // verification step, only a SUPER_ADMIN may change their own; everyone
+        // else asks an administrator.
+        if (session.user.role !== 'SUPER_ADMIN')
+          return NextResponse.json({ error: 'Your login email can only be changed by an administrator' }, { status: 403 })
         const taken = await User.exists({ email: next, _id: { $ne: user._id } })
         if (taken) return NextResponse.json({ error: 'That email is already in use' }, { status: 409 })
         user.email = next
       }
     }
 
+    // Phone is also a login identifier — require a real phone number (digits,
+    // spaces, dashes, optional leading +) so it can never shadow a Client ID, and
+    // keep it unique so it cannot hijack another account's phone login.
+    const nextPhone = phone ? String(phone).trim() : null
+    if (nextPhone && nextPhone !== user.phone) {
+      if (!/^\+?[0-9][0-9\s-]{5,19}$/.test(nextPhone))
+        return NextResponse.json({ error: 'Enter a valid phone number' }, { status: 422 })
+      const phoneTaken = await User.exists({ phone: nextPhone, _id: { $ne: user._id } })
+      if (phoneTaken) return NextResponse.json({ error: 'That phone number is already in use' }, { status: 409 })
+    }
+
     user.name  = String(name).trim()
-    user.phone = phone ? String(phone).trim() : null
+    user.phone = nextPhone
     if (avatar !== undefined) user.avatar = avatar || null
     await user.save()
 
@@ -85,8 +103,9 @@ export async function PATCH(request) {
 
     if (!oldPassword || !newPassword)
       return NextResponse.json({ error: 'oldPassword and newPassword are required' }, { status: 422 })
-    if (typeof newPassword !== 'string' || newPassword.length < 8)
-      return NextResponse.json({ error: 'New password must be at least 8 characters' }, { status: 422 })
+    const pwError = validateStrongPassword(typeof newPassword === 'string' ? newPassword : '')
+    if (pwError)
+      return NextResponse.json({ error: pwError }, { status: 422 })
     if (oldPassword === newPassword)
       return NextResponse.json({ error: 'New password must differ from current password' }, { status: 422 })
 

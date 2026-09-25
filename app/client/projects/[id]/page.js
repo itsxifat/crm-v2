@@ -8,6 +8,7 @@ import {
   AlertCircle, ChevronDown, ChevronUp, FileText, Layers, ExternalLink
 } from 'lucide-react'
 import ProjectStatusBadge from '@/components/portals/ProjectStatusBadge'
+import { formatMoney } from '@/lib/currencies'
 
 function TaskStatusBadge({ status }) {
   const map = {
@@ -162,16 +163,16 @@ export default function ClientProjectDetailPage() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <div>
               <p className="text-xs text-gray-400 font-medium">Project Value</p>
-              <p className="text-sm font-semibold text-gray-800 mt-0.5">৳ {project.budget.toLocaleString()}</p>
+              <p className="text-sm font-semibold text-gray-800 mt-0.5">{formatMoney(project.budget, project.currency)}</p>
             </div>
             <div>
               <p className="text-xs text-gray-400 font-medium">Paid</p>
-              <p className="text-sm font-semibold text-blue-600 mt-0.5">৳ {project.paidAmount.toLocaleString()}</p>
+              <p className="text-sm font-semibold text-blue-600 mt-0.5">{formatMoney(project.paidAmount, project.currency)}</p>
             </div>
             <div>
               <p className="text-xs text-gray-400 font-medium">Due</p>
               <p className={`text-sm font-bold mt-0.5 ${project.dueAmount > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                ৳ {project.dueAmount.toLocaleString()}
+                {formatMoney(project.dueAmount, project.currency)}
               </p>
             </div>
           </div>
@@ -208,7 +209,7 @@ export default function ClientProjectDetailPage() {
               <div key={c.label} className="px-5 py-3.5">
                 <p className="text-xs text-gray-400 font-medium">{c.label}</p>
                 <p className={`text-sm font-bold mt-0.5 ${c.cls}`}>
-                  ৳ {(Number(c.value) || 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })}
+                  {formatMoney(c.value, billing.summary?.currency)}
                 </p>
               </div>
             ))}
@@ -228,11 +229,11 @@ export default function ClientProjectDetailPage() {
                 <div className="flex items-center gap-4 shrink-0">
                   <div className="text-right">
                     <p className="text-sm font-bold text-gray-900">
-                      ৳ {(Number(inv.total) || 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })}
+                      {formatMoney(inv.total, inv.currency)}
                     </p>
                     <p className={`text-xs mt-0.5 ${inv.due > 0.01 ? 'text-red-500' : 'text-green-600'}`}>
                       {inv.due > 0.01
-                        ? `৳ ${inv.due.toLocaleString('en-BD', { minimumFractionDigits: 2 })} due`
+                        ? `${formatMoney(inv.due, inv.currency)} due`
                         : 'Paid in full'}
                     </p>
                   </div>

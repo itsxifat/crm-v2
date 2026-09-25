@@ -5,6 +5,9 @@ import { authOptions } from '@/lib/auth'
 import { requireStaff } from '@/lib/rbac'
 import connectDB from '@/lib/mongodb'
 import { EditRequest } from '@/models'
+import { isValidObjectId } from '@/lib/objectId'
+
+const MAX_OTP_ATTEMPTS = 5
 
 // POST /api/edit-requests/[id]/verify  — verify OTP
 export async function POST(request, { params }) {
@@ -16,10 +19,14 @@ export async function POST(request, { params }) {
     const { otp } = await request.json()
     if (!otp) return NextResponse.json({ valid: false, error: 'OTP is required' }, { status: 400 })
 
+    if (!isValidObjectId(params.id))
+      return NextResponse.json({ valid: false, error: 'Edit request not found' }, { status: 404 })
+
     await connectDB()
 
     const doc = await EditRequest.findById(params.id)
-    if (!doc)
+    // Only the requester can redeem their OTP (others could otherwise burn it).
+    if (!doc || String(doc.requesterId) !== String(session.user.id))
       return NextResponse.json({ valid: false, error: 'Edit request not found' }, { status: 404 })
 
     if (doc.status !== 'APPROVED')
@@ -31,12 +38,21 @@ export async function POST(request, { params }) {
     if (!doc.otpExpiry || new Date() > doc.otpExpiry)
       return NextResponse.json({ valid: false, error: 'OTP has expired' }, { status: 400 })
 
-    if (doc.otp !== String(otp).trim())
-      return NextResponse.json({ valid: false, error: 'Invalid OTP' }, { status: 400 })
+    if ((doc.otpAttempts ?? 0) >= MAX_OTP_ATTEMPTS)
+      return NextResponse.json({ valid: false, error: 'Too many attempts — please submit a new edit request' }, { status: 429 })
 
-    // Mark as used
-    doc.otpUsed = true
-    await doc.save()
+    if (doc.otp !== String(otp).trim()) {
+      await EditRequest.updateOne({ _id: doc._id }, { $inc: { otpAttempts: 1 } })
+      return NextResponse.json({ valid: false, error: 'Invalid OTP' }, { status: 400 })
+    }
+
+    // Mark as used — atomically, so the same OTP can't be redeemed twice.
+    const used = await EditRequest.findOneAndUpdate(
+      { _id: doc._id, otpUsed: { $ne: true }, otp: doc.otp },
+      { $set: { otpUsed: true } }
+    )
+    if (!used)
+      return NextResponse.json({ valid: false, error: 'OTP has already been used' }, { status: 400 })
 
     return NextResponse.json({ valid: true })
   } catch (err) {

@@ -3,8 +3,10 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
-import { Task, Comment, Attachment } from '@/models'
-import { canAccess } from '@/lib/permissions'
+import { Task, Comment, Attachment, Employee } from '@/models'
+import { requirePerm, requireStaff } from '@/lib/rbac'
+import { isValidObjectId } from '@/lib/objectId'
+import { TASK_ASSIGNEE_SELECT } from '@/lib/taskAccess'
 import { logActivity } from '@/lib/logActivity'
 import { z } from 'zod'
 
@@ -17,9 +19,11 @@ const statusSchema = z.object({
 export async function PATCH(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-    if (!canAccess(session, 'tasks', 'update'))
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const notStaff = requireStaff(session)
+    if (notStaff) return notStaff
+    const denied = requirePerm(session, 'tasks.update')
+    if (denied) return denied
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Task not found' }, { status: 404 })
 
     await connectDB()
 
@@ -33,9 +37,18 @@ export async function PATCH(request, { params }) {
     const updateData = { status }
     if (position !== undefined) updateData.position = position
 
-    const task = await Task.findByIdAndUpdate(params.id, updateData, { new: true })
-      .populate({ path: 'assignedEmployeeId',   populate: { path: 'userId', select: 'id name avatar' } })
-      .populate({ path: 'assignedFreelancerId', populate: { path: 'userId', select: 'id name avatar' } })
+    // Employees may only move tasks assigned to them.
+    const filter = { _id: params.id }
+    if (session.user.role === 'EMPLOYEE') {
+      const employee = await Employee.findOne({ userId: session.user.id }).select('_id').lean()
+      if (!employee) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      filter.assignedEmployeeId = employee._id
+    }
+
+    const task = await Task.findOneAndUpdate(filter, updateData, { new: true })
+      .populate({ path: 'assignedEmployeeId',   select: TASK_ASSIGNEE_SELECT, populate: { path: 'userId', select: 'id name avatar' } })
+      .populate({ path: 'assignedFreelancerId', select: TASK_ASSIGNEE_SELECT, populate: { path: 'userId', select: 'id name avatar' } })
+    if (!task) return NextResponse.json({ error: 'Task not found' }, { status: 404 })
 
     const [commentCount, attachmentCount] = await Promise.all([
       Comment.countDocuments({ taskId: params.id }),
@@ -48,7 +61,7 @@ export async function PATCH(request, { params }) {
       action:   'STATUS_CHANGE',
       entity:   'TASK',
       entityId: params.id,
-      changes:  JSON.stringify({ title: task?.title, status }),
+      changes:  JSON.stringify({ title: task.title, status }),
       request,
     })
 

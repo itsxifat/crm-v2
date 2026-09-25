@@ -5,6 +5,7 @@ import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Agreement } from '@/models'
 import { z } from 'zod'
+import { agreementScopeFilter, AGREEMENT_POPULATE } from '@/lib/agreementAccess'
 
 const createSchema = z.object({
   title:        z.string().min(1),
@@ -28,22 +29,23 @@ export async function GET(request) {
     await connectDB()
 
     const { searchParams } = new URL(request.url)
-    const page   = parseInt(searchParams.get('page')  ?? '1',  10)
-    const limit  = parseInt(searchParams.get('limit') ?? '20', 10)
+    const page   = Math.max(1, parseInt(searchParams.get('page')  ?? '1',  10) || 1)
+    const limit  = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') ?? '20', 10) || 20))
     const status = searchParams.get('status')
     const skip   = (page - 1) * limit
 
-    const filter = {}
-    if (status) filter.status = status
+    const scope = await agreementScopeFilter(session)
+    if (!scope) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+
+    const filter = { ...scope }
+    if (status) filter.$and = [{ status }]
 
     const [agreements, total] = await Promise.all([
       Agreement.find(filter)
         .skip(skip)
         .limit(limit)
         .sort({ createdAt: -1 })
-        .populate({ path: 'clientId',     populate: { path: 'userId', select: 'name' } })
-        .populate({ path: 'freelancerId', populate: { path: 'userId', select: 'name' } })
-        .populate({ path: 'vendorId', select: 'id company' }),
+        .populate(AGREEMENT_POPULATE),
       Agreement.countDocuments(filter),
     ])
 

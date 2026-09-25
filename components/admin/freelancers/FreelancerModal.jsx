@@ -14,10 +14,15 @@ const AGENCY_TYPES = ['Production House', 'Design Studio', 'Marketing Agency', '
 
 // ── Schemas ──────────────────────────────────────────────────────────────────
 
+// Edit forms are pre-filled from masked API responses ('j•••@g••.com', '••••••').
+// Accept an untouched masked value; the API restores the stored value for it.
+const masked = z.string().refine(v => v.includes('••'))
+const isMasked = v => typeof v === 'string' && v.includes('••')
+
 const salaryFields = {
   employmentMode:  z.enum(['PROJECT', 'SALARY']).default('PROJECT'),
   paymentCurrency: z.string().default('BDT'),
-  salaryAmount:    z.coerce.number().positive().optional().or(z.literal('')),
+  salaryAmount:    masked.or(z.coerce.number().positive()).optional().or(z.literal('')),
   salaryCurrency:  z.string().optional(),
   salaryDay:       z.coerce.number().int().min(1).max(28).optional().or(z.literal('')),
   salaryStartDate: z.string().optional(),
@@ -26,7 +31,7 @@ const salaryFields = {
 
 const freelancerSchema = z.object({
   name:   z.string().min(1, 'Name is required'),
-  email:  z.string().email('Valid email required'),
+  email:  z.string().email('Valid email required').or(masked),
   phone:  z.string().optional(),
   skills: z.string().optional(),
   bio:    z.string().optional(),
@@ -39,14 +44,14 @@ const freelancerSchema = z.object({
 })
 
 const agencySchema = z.object({
-  email:              z.string().email('Valid email required'),
+  email:              z.string().email('Valid email required').or(masked),
   agencyName:         z.string().min(1, 'Agency name is required'),
   agencyPhone:        z.string().optional(),
   agencyAddress:      z.string().optional(),
   agencyType:         z.string().optional(),
   contactName:        z.string().min(1, 'Contact name is required'),
   contactPhone:       z.string().optional(),
-  contactEmail:       z.string().email().optional().or(z.literal('')),
+  contactEmail:       z.string().email().or(masked).optional().or(z.literal('')),
   contactDesignation: z.string().optional(),
   paymentCurrency:    z.string().default('BDT'),
 })
@@ -63,13 +68,14 @@ function Field({ label, error, children }) {
   )
 }
 
-function Input({ register, name, type = 'text', placeholder, className = '' }) {
+function Input({ register, name, type = 'text', placeholder, className = '', readOnly = false }) {
   return (
     <input
       type={type}
       placeholder={placeholder}
+      readOnly={readOnly}
       {...register(name)}
-      className={`w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition ${className}`}
+      className={`w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition ${readOnly ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''} ${className}`}
     />
   )
 }
@@ -132,7 +138,8 @@ export default function FreelancerModal({ open, onOpenChange, freelancer, onSave
     if (isAgency) {
       body = {
         type: 'AGENCY',
-        email: data.email,
+        // The login email can't be changed from this form (the API ignores it on edit).
+        ...(!isEdit && { email: data.email }),
         paymentCurrency: data.paymentCurrency || 'BDT',
         agencyInfo: {
           agencyName: data.agencyName,
@@ -151,14 +158,14 @@ export default function FreelancerModal({ open, onOpenChange, freelancer, onSave
       body = {
         type: 'FREELANCER',
         name:            data.name,
-        email:           data.email,
+        ...(!isEdit && { email: data.email }),
         phone:           data.phone  || null,
         skills:          data.skills || null,
         bio:             data.bio    || null,
         employmentMode:  data.employmentMode || 'PROJECT',
         paymentCurrency: data.paymentCurrency || 'BDT',
         ...(data.employmentMode === 'SALARY' ? {
-          salaryAmount:    data.salaryAmount ? Number(data.salaryAmount) : null,
+          salaryAmount:    isMasked(data.salaryAmount) ? data.salaryAmount : (data.salaryAmount ? Number(data.salaryAmount) : null),
           salaryCurrency:  data.salaryCurrency || data.paymentCurrency || 'BDT',
           salaryDay:       data.salaryDay ? Number(data.salaryDay) : null,
           salaryStartDate: data.salaryStartDate || null,
@@ -202,7 +209,8 @@ export default function FreelancerModal({ open, onOpenChange, freelancer, onSave
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
                 <div className="sm:col-span-2">
                   <Field label="Agency Email *" error={errors.email?.message}>
-                    <Input register={register} name="email" type="email" placeholder="agency@example.com" />
+                    <Input register={register} name="email" type="email" placeholder="agency@example.com" readOnly={isEdit} />
+                    {isEdit && <p className="mt-1 text-xs text-gray-400">The login email can&apos;t be changed here.</p>}
                   </Field>
                 </div>
                 <div className="sm:col-span-2">
@@ -252,7 +260,8 @@ export default function FreelancerModal({ open, onOpenChange, freelancer, onSave
                 <Input register={register} name="name" placeholder="John Doe" />
               </Field>
               <Field label="Email *" error={errors.email?.message}>
-                <Input register={register} name="email" type="email" placeholder="john@example.com" />
+                <Input register={register} name="email" type="email" placeholder="john@example.com" readOnly={isEdit} />
+                {isEdit && <p className="mt-1 text-xs text-gray-400">The login email can&apos;t be changed here.</p>}
               </Field>
               <div className="sm:col-span-2">
                 <Field label="Phone" error={errors.phone?.message}>

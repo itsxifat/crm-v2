@@ -4,6 +4,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Agreement } from '@/models'
+import { isValidObjectId } from '@/lib/objectId'
 
 // POST /api/agreements/[id]/send
 export async function POST(request, { params }) {
@@ -16,6 +17,8 @@ export async function POST(request, { params }) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Agreement not found' }, { status: 404 })
+
     await connectDB()
 
     const agreement = await Agreement.findById(params.id)
@@ -25,15 +28,20 @@ export async function POST(request, { params }) {
 
     if (!agreement) return NextResponse.json({ error: 'Agreement not found' }, { status: 404 })
 
-    if (agreement.status === 'SIGNED') {
-      return NextResponse.json({ error: 'Agreement is already signed' }, { status: 400 })
+    // Only drafts can be sent (or an already-sent agreement re-sent). Signed,
+    // cancelled and expired agreements must not be reopened.
+    if (!['DRAFT', 'SENT'].includes(agreement.status)) {
+      return NextResponse.json({ error: `Cannot send an agreement that is ${agreement.status.toLowerCase()}` }, { status: 400 })
     }
 
-    const updated = await Agreement.findByIdAndUpdate(
-      params.id,
+    const updated = await Agreement.findOneAndUpdate(
+      { _id: params.id, status: { $in: ['DRAFT', 'SENT'] } },
       { status: 'SENT' },
       { new: true }
     )
+    if (!updated) {
+      return NextResponse.json({ error: 'Agreement status changed; it can no longer be sent' }, { status: 409 })
+    }
 
     const recipientEmail =
       agreement.clientId?.userId?.email ||

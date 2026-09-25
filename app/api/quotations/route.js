@@ -6,7 +6,11 @@ import connectDB from '@/lib/mongodb'
 import { Quotation, Lead, Client } from '@/models'
 import { searchEncrypted } from '@/lib/searchMatch'
 import { logActivity } from '@/lib/logActivity'
-import { requirePerm } from '@/lib/rbac'
+import { requirePerm, canDo } from '@/lib/rbac'
+import { maskList, stripMaskedValues, QUOTATION_PII } from '@/lib/pii'
+import { isValidObjectId } from '@/lib/objectId'
+import { findAccessibleLead } from '@/lib/leadAccess'
+import { quotationJSON, computeQuotation } from '@/lib/quotation'
 
 // GET /api/quotations
 export async function GET(request) {
@@ -37,12 +41,16 @@ export async function GET(request) {
       { path: 'createdBy', select: 'name avatar' },
     ]
 
+    // Searching on a masked field would confirm whether a given email exists
+    const searchFields = ['quotationNumber', 'recipientName', 'recipientCompany']
+    if (canDo(session, 'pii.contact.view')) searchFields.push('recipientEmail')
+
     let quotations, total
     if (search) {
       // recipientName/Company/Email are encrypted; quotationNumber is plain — match all in JS
       ;({ docs: quotations, total } = await searchEncrypted(Quotation, {
         baseFilter: filter, search,
-        fields: ['quotationNumber', 'recipientName', 'recipientCompany', 'recipientEmail'],
+        fields: searchFields,
         page, limit, sort: { createdAt: -1 }, populate,
       }))
     } else {
@@ -55,7 +63,7 @@ export async function GET(request) {
 
     return NextResponse.json({
       // hydrated docs (not .lean()) so populated Client.company decrypts correctly
-      data: quotations.map(q => q.toJSON()),
+      data: maskList(session, quotations.map(q => q.toJSON()), QUOTATION_PII),
       meta: { page, limit, total, pages: Math.ceil(total / limit) },
     })
   } catch (err) {
@@ -73,7 +81,8 @@ export async function POST(request) {
 
     await connectDB()
 
-    const body = await request.json()
+    // Recipient fields may be pre-filled from masked lead/client data; never store a mask
+    const body = stripMaskedValues(await request.json()) ?? {}
     const {
       sourceType, leadId, clientId,
       recipientName, recipientCompany, recipientEmail, recipientPhone, recipientAddress,
@@ -83,29 +92,45 @@ export async function POST(request) {
 
     if (!sourceType || !['LEAD', 'CLIENT'].includes(sourceType))
       return NextResponse.json({ error: 'sourceType must be LEAD or CLIENT' }, { status: 422 })
-    if (sourceType === 'LEAD'   && !leadId)   return NextResponse.json({ error: 'leadId required' },   { status: 422 })
-    if (sourceType === 'CLIENT' && !clientId) return NextResponse.json({ error: 'clientId required' }, { status: 422 })
-    if (!items.length) return NextResponse.json({ error: 'At least one item required' }, { status: 422 })
+    if (sourceType === 'LEAD'   && !isValidObjectId(leadId))   return NextResponse.json({ error: 'leadId required' },   { status: 422 })
+    if (sourceType === 'CLIENT' && !isValidObjectId(clientId)) return NextResponse.json({ error: 'clientId required' }, { status: 422 })
 
-    const processedItems = items.map(item => {
-      const qty    = Number(item.quantity) || 1
-      const rate   = Number(item.rate)     || 0
-      return { description: item.description, venture: item.venture || null, service: item.service || null, quantity: qty, rate, amount: qty * rate }
-    })
+    const calc = computeQuotation({ items, taxRate, discount })
+    if (calc.error) return NextResponse.json({ error: calc.error }, { status: 422 })
 
-    const subtotal  = Math.round(processedItems.reduce((s, i) => s + i.amount, 0) * 100) / 100
-    const taxAmount = Math.round(subtotal * ((Number(taxRate) || 0) / 100) * 100) / 100
-    const total     = Math.round((subtotal + taxAmount - (Number(discount) || 0)) * 100) / 100
+    // Snapshot the recipient server-side for any field left blank (or stripped
+    // because it was masked), so the stored quotation holds the real values.
+    let source
+    if (sourceType === 'LEAD') {
+      const lead = await findAccessibleLead(session, leadId, 'name company email phone location assignedToId')
+      if (!lead) return NextResponse.json({ error: 'Lead not found' }, { status: 422 })
+      source = { name: lead.name, company: lead.company, email: lead.email, phone: lead.phone, address: lead.location }
+    } else {
+      const client = await Client.findById(clientId).populate('userId', 'name email phone')
+      if (!client) return NextResponse.json({ error: 'Client not found' }, { status: 422 })
+      source = {
+        name:    client.contactPerson || client.userId?.name,
+        company: client.company,
+        email:   client.userId?.email,
+        phone:   client.userId?.phone,
+        address: [client.address, client.city, client.country].filter(Boolean).join(', '),
+      }
+    }
+    const pick = (v, fallback) => (v == null || v === '' ? (fallback || null) : v)
 
     const quotation = await new Quotation({
       sourceType,
       leadId:   sourceType === 'LEAD'   ? leadId   : null,
       clientId: sourceType === 'CLIENT' ? clientId : null,
-      recipientName, recipientCompany, recipientEmail, recipientPhone, recipientAddress,
-      items: processedItems,
+      recipientName:    pick(recipientName,    source.name),
+      recipientCompany: pick(recipientCompany, source.company),
+      recipientEmail:   pick(recipientEmail,   source.email),
+      recipientPhone:   pick(recipientPhone,   source.phone),
+      recipientAddress: pick(recipientAddress, source.address),
+      items: calc.items,
       issueDate:  issueDate  ? new Date(issueDate)  : new Date(),
       validUntil: validUntil ? new Date(validUntil) : null,
-      subtotal, taxRate: Number(taxRate), taxAmount, discount: Number(discount), total,
+      subtotal: calc.subtotal, taxRate: calc.taxRate, taxAmount: calc.taxAmount, discount: calc.discount, total: calc.total,
       currency, notes: notes || null, terms: terms || null,
       itemPriceOnly: !!itemPriceOnly,
       createdBy: session.user.id,
@@ -121,7 +146,7 @@ export async function POST(request) {
       request,
     })
 
-    return NextResponse.json({ data: quotation.toJSON() }, { status: 201 })
+    return NextResponse.json({ data: quotationJSON(session, quotation) }, { status: 201 })
   } catch (err) {
     console.error('[POST /api/quotations]', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

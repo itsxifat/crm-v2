@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import { Lock, Eye, EyeOff, Loader2, CheckCircle, Shield, UserCog } from 'lucide-react'
 import toast, { Toaster } from 'react-hot-toast'
+import { validateStrongPassword } from '@/lib/passwordPolicy'
 import Avatar from '@/components/ui/Avatar'
 import FileUpload from '@/components/ui/FileUpload'
 
@@ -97,7 +98,8 @@ export default function AdminAccountPage() {
 
   async function handleSubmit(e) {
     e.preventDefault()
-    if (pw.new.length < 8)    { toast.error('New password must be at least 8 characters'); return }
+    const pwError = validateStrongPassword(pw.new)
+    if (pwError)               { toast.error(pwError); return }
     if (pw.new !== pw.confirm) { toast.error('Passwords do not match'); return }
     if (pw.old === pw.new)     { toast.error('New password must differ from current'); return }
 
@@ -230,8 +232,8 @@ export default function AdminAccountPage() {
             />
           </div>
 
-          {pw.new && pw.new.length < 8 && (
-            <p className="text-xs text-red-500">Password must be at least 8 characters</p>
+          {pw.new && validateStrongPassword(pw.new) && (
+            <p className="text-xs text-red-500">{validateStrongPassword(pw.new)}</p>
           )}
           {pw.new && pw.confirm && pw.new !== pw.confirm && (
             <p className="text-xs text-red-500">Passwords do not match</p>

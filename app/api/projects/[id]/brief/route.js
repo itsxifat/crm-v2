@@ -4,6 +4,8 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Project } from '@/models'
+import { isValidObjectId } from '@/lib/objectId'
+import { canAccessProject } from '@/lib/projectAccess'
 
 // Who can edit the brief: SUPER_ADMIN, MANAGER, or the project's own projectManager
 async function canEdit(session, projectId) {
@@ -17,7 +19,11 @@ export async function GET(_, { params }) {
   try {
     const session = await getServerSession(authOptions)
     if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     await connectDB()
+
+    if (!(await canAccessProject(session, params.id)))
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     const project = await Project.findById(params.id)
       .select('brief briefUpdatedAt briefUpdatedBy')
@@ -42,6 +48,7 @@ export async function PATCH(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
     if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     await connectDB()
 
     const allowed = await canEdit(session, params.id)

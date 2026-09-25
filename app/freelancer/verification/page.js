@@ -270,7 +270,7 @@ export default function FreelancerVerificationPage() {
                 {docUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
                 {docUploading ? 'Uploading…' : 'Upload'}
               </button>
-              <input ref={fileRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={e => uploadDoc(e.target.files?.[0])} />
+              <input ref={fileRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={e => { uploadDoc(e.target.files?.[0]); e.target.value = '' }} />
             </div>
           </div>
         )}

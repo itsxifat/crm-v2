@@ -8,6 +8,7 @@ import toast from 'react-hot-toast'
 import ClientSearch from '@/components/ui/ClientSearch'
 import Select from '@/components/ui/Select'
 import DatePicker from '@/components/ui/DatePicker'
+import { dhakaDayKey } from '@/lib/dhakaTime'
 
 const ic = 'w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
 const lc = 'block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5'
@@ -30,7 +31,7 @@ export default function InvoiceForm({ invoice, defaultProjectId, defaultClientId
   )
   const [projects,  setProjects]  = useState([])
   const [items,     setItems]     = useState(invoice?.items ?? [{ description: '', quantity: 1, rate: 0, amount: 0 }])
-  const [issueDate, setIssueDate] = useState(invoice?.issueDate?.slice(0,10) ?? new Date().toISOString().slice(0,10))
+  const [issueDate, setIssueDate] = useState(invoice?.issueDate?.slice(0,10) ?? dhakaDayKey())
   const [dueDate,   setDueDate]   = useState(invoice?.dueDate?.slice(0,10) ?? '')
   const [taxRate,   setTaxRate]   = useState(invoice?.taxRate ?? 0)
   const [discount,  setDiscount]  = useState(invoice?.discount ?? 0)
@@ -55,12 +56,16 @@ export default function InvoiceForm({ invoice, defaultProjectId, defaultClientId
   // been billed before adding another one.
   useEffect(() => {
     if (!projectId) { setSiblings(null); return }
+    // Ignore a response for a project that is no longer selected (a slow reply
+    // for project A must not overwrite project B's siblings).
+    let stale = false
     setSiblingsLoading(true)
     fetch(`/api/invoices?projectId=${projectId}&limit=100&sort=issueDate&dir=asc`)
       .then(r => r.json())
-      .then(j => setSiblings(j.data ?? []))
-      .catch(() => setSiblings([]))
-      .finally(() => setSiblingsLoading(false))
+      .then(j => { if (!stale) setSiblings(j.data ?? []) })
+      .catch(() => { if (!stale) setSiblings([]) })
+      .finally(() => { if (!stale) setSiblingsLoading(false) })
+    return () => { stale = true }
   }, [projectId])
 
   // Everything already billed against this project (excludes the invoice being
@@ -130,6 +135,12 @@ export default function InvoiceForm({ invoice, defaultProjectId, defaultClientId
     if (!clientId) { toast.error('Please select a client'); return }
     if (items.length === 0 || items.every(i => !i.description.trim())) {
       toast.error('Add at least one item'); return
+    }
+    if (items.some(i => !(Number(i.quantity) > 0))) {
+      toast.error('Each item needs a quantity greater than 0'); return
+    }
+    if ((Number(discount) || 0) < 0 || (Number(discount) || 0) > subtotal + taxAmount) {
+      toast.error('Discount cannot exceed the subtotal'); return
     }
     setSaving(true)
     try {
@@ -312,7 +323,7 @@ export default function InvoiceForm({ invoice, defaultProjectId, defaultClientId
                   <input type="number" min="0.01" step="0.01"
                     value={item.quantity}
                     onChange={e => updateItem(idx, 'quantity', e.target.value)}
-                    className={ic} />
+                    className={ic} required />
                 </div>
                 <div className="col-span-2">
                   <input type="number" min="0" step="0.01"
@@ -353,7 +364,7 @@ export default function InvoiceForm({ invoice, defaultProjectId, defaultClientId
             )}
             <div className="flex items-center justify-between gap-4">
               <label className="text-sm text-gray-500">Discount (৳)</label>
-              <input type="number" min="0" step="0.01" value={discount}
+              <input type="number" min="0" max={Math.max(0, subtotal + taxAmount)} step="0.01" value={discount}
                 onChange={e => setDiscount(e.target.value)}
                 className="w-28 border border-gray-200 rounded-xl px-3 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>

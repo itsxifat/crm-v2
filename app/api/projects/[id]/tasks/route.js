@@ -3,8 +3,12 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
-import { Task, Comment, Attachment, Timesheet, Employee, Freelancer, Client } from '@/models'
+import { Task, Comment, Attachment, Timesheet, Employee, Freelancer, Project } from '@/models'
 import { canAccess } from '@/lib/permissions'
+import { canDo } from '@/lib/rbac'
+import { getMyCompanyIds } from '@/lib/clientAccess'
+import { isValidObjectId } from '@/lib/objectId'
+import { TASK_ASSIGNEE_SELECT } from '@/lib/taskAccess'
 import { createNotification } from '@/lib/createNotification'
 import { z } from 'zod'
 
@@ -27,6 +31,11 @@ export async function GET(request, { params }) {
     const session = await getServerSession(authOptions)
     if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
 
+    const { role } = session.user
+    if (!['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE', 'FREELANCER', 'CLIENT'].includes(role))
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
     await connectDB()
 
     const { searchParams } = new URL(request.url)
@@ -35,7 +44,6 @@ export async function GET(request, { params }) {
     const filter = { projectId: params.id }
     if (status) filter.status = status
 
-    const { role } = session.user
     if (role === 'EMPLOYEE') {
       const employee = await Employee.findOne({ userId: session.user.id }).lean()
       if (employee) filter.assignedEmployeeId = employee._id
@@ -45,13 +53,20 @@ export async function GET(request, { params }) {
       if (freelancer) filter.assignedFreelancerId = freelancer._id
       else filter._id = null
     } else if (role === 'CLIENT') {
+      // Clients may only see client-visible tasks of their own companies' projects.
+      const [project, myCompanyIds] = await Promise.all([
+        Project.findById(params.id).select('clientId').lean(),
+        getMyCompanyIds(session.user.id),
+      ])
+      const allowed = project?.clientId && myCompanyIds.some(id => String(id) === String(project.clientId))
+      if (!allowed) return NextResponse.json({ error: 'Not found' }, { status: 404 })
       filter.isClientVisible = true
     }
 
     const tasks = await Task.find(filter)
       .sort({ status: 1, position: 1, createdAt: 1 })
-      .populate({ path: 'assignedEmployeeId',   populate: { path: 'userId', select: 'id name avatar' } })
-      .populate({ path: 'assignedFreelancerId', populate: { path: 'userId', select: 'id name avatar' } })
+      .populate({ path: 'assignedEmployeeId',   select: TASK_ASSIGNEE_SELECT, populate: { path: 'userId', select: 'id name avatar' } })
+      .populate({ path: 'assignedFreelancerId', select: TASK_ASSIGNEE_SELECT, populate: { path: 'userId', select: 'id name avatar' } })
 
     const taskIds = tasks.map(t => t._id)
     const [commentCounts, attachmentCounts, timesheetCounts] = await Promise.all([
@@ -86,6 +101,7 @@ export async function POST(request, { params }) {
     if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
     if (!canAccess(session, 'tasks', 'create'))
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
     await connectDB()
 
@@ -94,6 +110,17 @@ export async function POST(request, { params }) {
     if (!parsed.success) {
       return NextResponse.json({ error: 'Validation failed', details: parsed.error.flatten() }, { status: 422 })
     }
+
+    // Assigning a task to someone needs the separate 'Assign Tasks' permission.
+    if (parsed.data.assignedEmployeeId) {
+      if (!canDo(session, 'tasks.assign'))
+        return NextResponse.json({ error: 'You do not have permission to assign tasks' }, { status: 403 })
+      if (!isValidObjectId(parsed.data.assignedEmployeeId))
+        return NextResponse.json({ error: 'Invalid assignee' }, { status: 400 })
+    }
+
+    if (!(await Project.exists({ _id: params.id })))
+      return NextResponse.json({ error: 'Project not found' }, { status: 404 })
 
     const data = { ...parsed.data, projectId: params.id }
     if (data.dueDate) data.dueDate = new Date(data.dueDate)
@@ -107,8 +134,8 @@ export async function POST(request, { params }) {
 
     const task = await new Task(data).save()
     await task.populate([
-      { path: 'assignedEmployeeId',   populate: { path: 'userId', select: 'id name avatar' } },
-      { path: 'assignedFreelancerId', populate: { path: 'userId', select: 'id name avatar' } },
+      { path: 'assignedEmployeeId',   select: TASK_ASSIGNEE_SELECT, populate: { path: 'userId', select: 'id name avatar' } },
+      { path: 'assignedFreelancerId', select: TASK_ASSIGNEE_SELECT, populate: { path: 'userId', select: 'id name avatar' } },
     ])
 
     // Notify the assigned employee so the task actually surfaces for them to accept.

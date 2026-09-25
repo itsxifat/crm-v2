@@ -1,4 +1,5 @@
 import mongoose from 'mongoose'
+import { nextSequence } from '../lib/sequence'
 const SocialLinkSchema = new mongoose.Schema({
   platform: { type: String },
   url:       { type: String },
@@ -40,6 +41,10 @@ const ClientSchema = new mongoose.Schema(
 
     parentClientId: { type: mongoose.Schema.Types.ObjectId, ref: 'Client', default: null },
 
+    // Company-level portal access switch. false → no member can use this
+    // company's portal (checked in lib/clientAccess.js). Independent of User.isActive.
+    isActive: { type: Boolean, default: true },
+
     kyc: {
       status:         { type: String, enum: ['NOT_SUBMITTED', 'PENDING', 'VERIFIED', 'REJECTED'], default: 'NOT_SUBMITTED' },
       documentType:   { type: String, enum: ['NID', 'PASSPORT', 'TRADE_LICENSE', 'OTHERS', null], default: null },
@@ -72,12 +77,20 @@ ClientSchema.pre('save', async function () {
   const mm     = String(now.getMonth() + 1).padStart(2, '0')
   const prefix = `ENCL-${yy}${mm}`
   // Global running serial — counts ALL clients ever coded, NOT just this month's,
-  // so the number never resets to 001 when the month changes.
-  const count  = await mongoose.model('Client').countDocuments({ clientCode: { $regex: '^ENCL-' } })
-  const seq    = count + 1
-  const letter = String.fromCharCode(65 + Math.floor((seq - 1) / 999))
-  const num    = ((seq - 1) % 999) + 1
-  this.clientCode = `${prefix}${letter}${String(num).padStart(3, '0')}`
+  // so the number never resets to 001 when the month changes. Skip any serial
+  // whose code is already taken (e.g. legacy gaps).
+  // nextSequence is atomic, so concurrent creates never get the same serial;
+  // the legacy count is only a floor for counters created after existing data.
+  const floor = await mongoose.model('Client').countDocuments({ clientCode: { $regex: '^ENCL-' } })
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const seq    = await nextSequence('clientCode', floor)
+    const letter = String.fromCharCode(65 + Math.floor((seq - 1) / 999))
+    const num    = ((seq - 1) % 999) + 1
+    const code   = `${prefix}${letter}${String(num).padStart(3, '0')}`
+    const taken  = await mongoose.model('Client').exists({ clientCode: code })
+    if (!taken) { this.clientCode = code; return }
+  }
+  throw new Error('Could not allocate a unique client code')
 })
 
 if (mongoose.models.Client) delete mongoose.models.Client

@@ -14,6 +14,7 @@ import DatePicker from '@/components/ui/DatePicker'
 import Select from '@/components/ui/Select'
 import { Can, usePermission } from '@/components/auth/Can'
 import { useConfig } from '@/lib/useConfig'
+import { dhakaDayStart } from '@/lib/dhakaTime'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -389,7 +390,10 @@ export default function InvoicesPage() {
         {/* Status tabs */}
         <div className="flex gap-5 border-t border-gray-100 pt-2 overflow-x-auto scrollbar-none">
           {STATUS_TABS.map(([v, l]) => {
-            const count = v ? stats?.byStatus?.[v]?.count : stats?.invoiceCount
+            // statusCounts ignore the active tab, so every tab keeps its own count
+            const count = v
+              ? (stats?.statusCounts?.[v] ?? stats?.byStatus?.[v]?.count)
+              : (stats?.allCount ?? stats?.invoiceCount)
             return (
               <button key={v} onClick={() => { setStatus(v); setPage(1) }}
                 className={`pb-1.5 text-sm transition-colors whitespace-nowrap ${
@@ -420,7 +424,7 @@ export default function InvoicesPage() {
           ) : (
             <div className="divide-y divide-gray-50">
               {groups.map(g => {
-                const key    = g.projectId ?? '__none__'
+                const key    = g.projectId ?? `__none__:${g.client?.id ?? ''}`
                 const isOpen = expanded === key
                 return (
                   <div key={key}>
@@ -515,7 +519,8 @@ export default function InvoicesPage() {
                   {invoices.map(inv => {
                     const s = STATUS_META[inv.status] ?? STATUS_META.DRAFT
                     const project = inv.projectId ?? inv.projectIds?.[0]
-                    const overdue = inv.dueDate && new Date(inv.dueDate) < new Date() && !['PAID', 'CANCELLED'].includes(inv.status)
+                    // Due date is a calendar day: overdue only from the next Dhaka day
+                    const overdue = inv.dueDate && new Date(inv.dueDate) < dhakaDayStart() && !['PAID', 'CANCELLED'].includes(inv.status)
 
                     return (
                       <tr key={inv.id} onClick={() => router.push(`/admin/invoices/${inv.id}`)}
@@ -586,13 +591,18 @@ function ProjectInvoiceRows({ group, onOpen }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!group.projectId) { setRows([]); setLoading(false); return }
-    fetch(`/api/invoices?projectId=${group.projectId}&limit=100&sort=issueDate&dir=asc`)
+    // Standalone group (no project) → that client's invoices without a project
+    const clientKey = group.client?.id
+    if (!group.projectId && !clientKey) { setRows([]); setLoading(false); return }
+    const qs = group.projectId
+      ? `projectId=${group.projectId}`
+      : `projectId=none&clientId=${clientKey}`
+    fetch(`/api/invoices?${qs}&limit=100&sort=issueDate&dir=asc`)
       .then(r => r.json())
       .then(j => setRows(j.data ?? []))
       .catch(() => setRows([]))
       .finally(() => setLoading(false))
-  }, [group.projectId])
+  }, [group.projectId, group.client?.id])
 
   if (loading) return (
     <div className="px-14 py-6 flex justify-center">

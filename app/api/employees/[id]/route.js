@@ -3,7 +3,8 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { requirePerm, canDo, ALL_PERMISSIONS } from '@/lib/rbac'
-import { maskDoc, EMPLOYEE_PII } from '@/lib/pii'
+import { maskDoc, EMPLOYEE_PII, restoreMaskedValues, stripMaskedValues } from '@/lib/pii'
+import { isValidObjectId } from '@/lib/objectId'
 import connectDB from '@/lib/mongodb'
 import { User, Employee, Task, Leave, Attendance } from '@/models'
 import { generateEmployeeId } from '@/models/Employee'
@@ -42,6 +43,15 @@ const updateEmployeeSchema = z.object({
   password:             z.string().min(6).optional().or(z.literal('')).transform(v => v === '' ? undefined : v),
   resign:               z.boolean().optional(),
 })
+
+// PII categories (see EMPLOYEE_PII) → writable fields. A caller who only ever
+// sees a category masked may not overwrite it.
+const PII_WRITE_FIELDS = {
+  'pii.contact.view':   ['email', 'phone', 'emergencyContacts'],
+  'pii.address.view':   ['address'],
+  'pii.identity.view':  ['nidNumber'],
+  'pii.financial.view': ['salary'],
+}
 
 // GET /api/employees/[id]
 export async function GET(request, { params }) {
@@ -85,20 +95,69 @@ export async function PUT(request, { params }) {
     const denied  = requirePerm(session, 'hr.employees.update')
     if (denied) return denied
 
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
+
     await connectDB()
 
-    const body   = await request.json()
+    const current = await Employee.findById(params.id).lean()
+    if (!current) return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
+
+    // Edit forms are pre-filled from masked GET responses — put the real stored
+    // value back for any masked placeholder (unmatched ones, e.g. email, are dropped).
+    const body   = restoreMaskedValues(await request.json(), current)
     const parsed = updateEmployeeSchema.safeParse(body)
     if (!parsed.success) {
       return NextResponse.json({ error: 'Validation failed', details: parsed.error.flatten() }, { status: 422 })
     }
 
+    for (const [perm, keys] of Object.entries(PII_WRITE_FIELDS)) {
+      if (!canDo(session, perm)) for (const k of keys) delete parsed.data[k]
+    }
+
     const { name, email, phone, isActive, role, password, hireDate, resign, ...empData } = parsed.data
+
+    const isSuperAdmin = session.user.role === 'SUPER_ADMIN'
+    const targetUser   = await User.findById(current.userId).select('role email').lean()
+    const isSelf       = String(current.userId) === String(session.user.id)
+    const roleChanged  = role !== undefined && role !== targetUser?.role
 
     // Only a Super Admin may promote to MANAGER/SUPER_ADMIN — prevents a custom
     // role granted employee-edit from escalating privileges.
-    if (role !== undefined && role !== 'EMPLOYEE' && session.user.role !== 'SUPER_ADMIN') {
+    if (roleChanged && role !== 'EMPLOYEE' && !isSuperAdmin) {
       return NextResponse.json({ error: 'Only a Super Admin can assign Manager or Super Admin roles' }, { status: 403 })
+    }
+
+    // Account-level changes (login, credentials, role, active status) on a
+    // Manager / Super Admin are reserved for a Super Admin — otherwise any
+    // employee-editor could take over or lock out a higher-privileged account.
+    const emailChanged   = email !== undefined && email.trim().toLowerCase() !== String(targetUser?.email ?? '').toLowerCase()
+    const touchesAccount = emailChanged || password || isActive !== undefined || roleChanged || resign
+    if (!isSuperAdmin && ['MANAGER', 'SUPER_ADMIN'].includes(targetUser?.role) && touchesAccount) {
+      return NextResponse.json({ error: 'Only a Super Admin can change login, role or status of a Manager or Super Admin' }, { status: 403 })
+    }
+
+    // Nobody changes their own role, active status or resignation from here.
+    if (isSelf && (roleChanged || (isActive !== undefined && isActive !== true) || resign)) {
+      return NextResponse.json({ error: 'You cannot change your own role or account status' }, { status: 403 })
+    }
+
+    // Assigning a custom role replaces the person's whole permission set — that
+    // is role management, and nobody may pick their own custom role.
+    if (empData.customRoleId !== undefined) {
+      const nextRoleId = empData.customRoleId || null
+      const curRoleId  = current.customRoleId ? String(current.customRoleId) : null
+      if (nextRoleId !== curRoleId) {
+        if (nextRoleId && !isValidObjectId(nextRoleId)) {
+          return NextResponse.json({ error: 'Invalid custom role' }, { status: 400 })
+        }
+        if (!canDo(session, 'hr.roles.manage')) {
+          return NextResponse.json({ error: 'You do not have permission to assign custom roles' }, { status: 403 })
+        }
+        if (isSelf && !isSuperAdmin) {
+          return NextResponse.json({ error: 'You cannot change your own custom role' }, { status: 403 })
+        }
+      }
+      empData.customRoleId = nextRoleId
     }
 
     // Granting/revoking individual permissions is role management — gate it behind
@@ -108,15 +167,15 @@ export async function PUT(request, { params }) {
       if (!canDo(session, 'hr.roles.manage')) {
         return NextResponse.json({ error: 'You do not have permission to customise individual permissions' }, { status: 403 })
       }
+      if (isSelf && !isSuperAdmin) {
+        return NextResponse.json({ error: 'You cannot change your own permissions' }, { status: 403 })
+      }
       const clean = (arr) => [...new Set((arr ?? []).filter(p => ALL_PERMISSIONS.includes(p)))]
       const added   = clean(empData.permissionOverrides.added)
       const removed  = clean(empData.permissionOverrides.removed)
       // A permission can't be both added and removed — an explicit add wins.
       empData.permissionOverrides = { added, removed: removed.filter(p => !added.includes(p)) }
     }
-
-    const current = await Employee.findById(params.id).lean()
-    if (!current) return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
 
     const userUpdate = {}
 
@@ -129,10 +188,10 @@ export async function PUT(request, { params }) {
     }
 
     if (name     !== undefined) userUpdate.name     = name
-    if (email    !== undefined) userUpdate.email    = email
+    if (emailChanged)           userUpdate.email    = email
     if (phone    !== undefined) { userUpdate.phone  = phone; empData.phone = phone }
     if (isActive !== undefined) userUpdate.isActive = isActive
-    if (role     !== undefined) userUpdate.role     = role
+    if (roleChanged)            userUpdate.role     = role
     if (password) {
       const bcrypt = (await import('bcryptjs')).default
       userUpdate.password = await bcrypt.hash(password, 10)
@@ -171,7 +230,7 @@ export async function PUT(request, { params }) {
       request,
     })
 
-    return NextResponse.json({ data: updated })
+    return NextResponse.json({ data: updated ? maskDoc(session, updated.toJSON(), EMPLOYEE_PII) : null })
   } catch (err) {
     console.error('[PUT /api/employees/[id]]', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -187,7 +246,10 @@ export async function PATCH(request, { params }) {
 
     await connectDB()
 
-    const body = await request.json()
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
+
+    // Drop masked placeholders (e.g. companyPhone) echoed back from a masked GET.
+    const body = stripMaskedValues(await request.json()) ?? {}
     const allowed = ['documents', 'photo', 'appointmentLetterUrl', 'agreementUrl',
                      'companyPhone', 'companyWebmail', 'companyItems']
     const update = {}
@@ -203,7 +265,7 @@ export async function PATCH(request, { params }) {
 
     if (!updated) return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
 
-    return NextResponse.json({ data: updated })
+    return NextResponse.json({ data: maskDoc(session, updated.toJSON(), EMPLOYEE_PII) })
   } catch (err) {
     console.error('[PATCH /api/employees/[id]]', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -219,8 +281,20 @@ export async function DELETE(request, { params }) {
 
     await connectDB()
 
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
+
     const employee = await Employee.findById(params.id).lean()
     if (!employee) return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
+
+    if (String(employee.userId) === String(session.user.id)) {
+      return NextResponse.json({ error: 'You cannot deactivate your own account' }, { status: 403 })
+    }
+    if (session.user.role !== 'SUPER_ADMIN') {
+      const target = await User.findById(employee.userId).select('role').lean()
+      if (['MANAGER', 'SUPER_ADMIN'].includes(target?.role)) {
+        return NextResponse.json({ error: 'Only a Super Admin can deactivate a Manager or Super Admin' }, { status: 403 })
+      }
+    }
 
     await User.findByIdAndUpdate(employee.userId, { isActive: false })
 

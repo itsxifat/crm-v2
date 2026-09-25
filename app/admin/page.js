@@ -23,7 +23,7 @@ const fmtDate  = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-di
 const daysLeft = (d) => d ? Math.ceil((new Date(d) - new Date()) / 86400000) : null
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-const getMonthLabel = (offset = 0) => { const d = new Date(); d.setMonth(d.getMonth() - offset); return `${MONTHS[d.getMonth()]} ${d.getFullYear()}` }
+const getMonthLabel = (offset = 0) => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - offset); return `${MONTHS[d.getMonth()]} ${d.getFullYear()}` }
 const getDrillKey   = (offset = 0) => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - offset); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}` }
 
 function greeting() {
@@ -99,11 +99,14 @@ function CalendarDrillDown({ drillKey, onClose }) {
   const daysInMonth           = new Date(yr, mo, 0).getDate()
 
   useEffect(() => {
+    // Ignore responses for a month that's no longer selected (out-of-order replies)
+    const ctrl = new AbortController()
     setLoading(true)
-    fetch(`/api/dashboard/stats?drillMonth=${drillKey}`)
+    fetch(`/api/dashboard/stats?drillMonth=${drillKey}`, { signal: ctrl.signal })
       .then(r => r.json())
-      .then(j => { setData(j.data?.dailyData ?? []); setLoading(false) })
-      .catch(() => setLoading(false))
+      .then(j => { if (!ctrl.signal.aborted) { setData(j.data?.dailyData ?? []); setLoading(false) } })
+      .catch(() => { if (!ctrl.signal.aborted) setLoading(false) })
+    return () => ctrl.abort()
   }, [drillKey])
 
   const income  = data?.reduce((s, r) => s + r.income,  0) ?? 0
@@ -254,7 +257,9 @@ function RevenueChart({ data, onDrill }) {
   return (
     <div>
       <ResponsiveContainer width="100%" height={200}>
-        <ComposedChart data={data} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+        <ComposedChart data={data} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}
+          onClick={s => { const key = s?.activePayload?.[0]?.payload?.key; if (key) onDrill?.(key) }}
+          className="cursor-pointer">
           <defs>
             <linearGradient id="gRev" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%"   stopColor="#3b82f6" stopOpacity={0.12} />
@@ -270,8 +275,7 @@ function RevenueChart({ data, onDrill }) {
           <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={v => Number(v).toLocaleString('en-BD')} width={64} />
           <Tooltip content={<ChartTooltip />} />
           <Area dataKey="revenue" name="Revenue" type="monotone" stroke="#3b82f6" strokeWidth={1.5}
-            fill="url(#gRev)" dot={false} activeDot={{ r: 3, fill: '#3b82f6' }}
-            onClick={d => onDrill?.(d.key)} className="cursor-pointer" />
+            fill="url(#gRev)" dot={false} activeDot={{ r: 3, fill: '#3b82f6' }} />
           <Area dataKey="expense" name="Expense" type="monotone" stroke="#ef4444" strokeWidth={1.5}
             fill="url(#gExp)" dot={false} activeDot={{ r: 3, fill: '#ef4444' }} />
           <Line dataKey="profit" name="Net Profit" type="monotone" stroke="#10b981" strokeWidth={1.5}
@@ -439,15 +443,16 @@ function FinanceSummary({ financials, invoices, pendingWithdrawals }) {
         <div className="space-y-2">
           {[
             { label: 'Paid',    key: 'PAID',    dot: 'bg-emerald-500' },
-            { label: 'Sent',    key: 'SENT',    dot: 'bg-blue-500' },
-            { label: 'Overdue', key: 'OVERDUE', dot: 'bg-red-500' },
+            { label: 'Sent',    key: 'SENT',    dot: 'bg-blue-500',   due: true },
+            { label: 'Partially Paid', key: 'PARTIALLY_PAID', dot: 'bg-amber-500', due: true },
+            { label: 'Overdue', key: 'OVERDUE', dot: 'bg-red-500',    due: true },
             { label: 'Draft',   key: 'DRAFT',   dot: 'bg-gray-400' },
           ].map(r => (
             <div key={r.key} className="flex items-center gap-2">
               <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${r.dot}`} />
               <span className="text-xs text-gray-500 flex-1">{r.label}</span>
               <span className="text-xs font-medium text-gray-700">{inv[r.key]?.count ?? 0}</span>
-              <span className="text-xs text-gray-400 w-16 text-right">{fmtK(inv[r.key]?.total ?? 0)}</span>
+              <span className="text-xs text-gray-400 w-16 text-right" title={r.due ? 'Outstanding' : undefined}>{fmtK((r.due ? inv[r.key]?.due : inv[r.key]?.total) ?? 0)}</span>
             </div>
           ))}
         </div>
@@ -563,7 +568,7 @@ function PendingInvoices({ invoices }) {
               <p className="text-xs text-gray-400 truncate">{clientName}</p>
             </div>
             <div className="text-right shrink-0">
-              <p className="text-sm font-semibold text-gray-800">{fmtK(inv.total)}</p>
+              <p className="text-sm font-semibold text-gray-800">{fmtK(inv.due ?? inv.total)}</p>
               <p className={`text-xs ${isOverdue ? 'text-red-500 font-medium' : 'text-gray-400'}`}>
                 {dl == null ? '—' : dl < 0 ? `${Math.abs(dl)}d overdue` : dl === 0 ? 'Due today' : `Due ${fmtDate(inv.dueDate)}`}
               </p>
@@ -582,14 +587,19 @@ export default function DashboardPage() {
   const [stats,    setStats]    = useState(null)
   const [loading,  setLoading]  = useState(true)
   const [drillKey, setDrillKey] = useState(null)
+  const [error,    setError]    = useState(null)
 
   const monthOptions = Array.from({ length: 6 }, (_, i) => ({ key: getDrillKey(i), label: getMonthLabel(i) }))
 
   useEffect(() => {
     fetch('/api/dashboard/stats')
-      .then(r => r.json())
-      .then(j => { setStats(j.data); setLoading(false) })
-      .catch(() => setLoading(false))
+      .then(async r => {
+        const j = await r.json().catch(() => ({}))
+        if (!r.ok) throw new Error(r.status === 403 ? 'You do not have access to the dashboard.' : (j.error || 'Could not load dashboard'))
+        setStats(j.data ?? null)
+      })
+      .catch(e => setError(e.message || 'Could not load dashboard'))
+      .finally(() => setLoading(false))
   }, [])
 
   if (loading) return (
@@ -597,6 +607,24 @@ export default function DashboardPage() {
       <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
     </div>
   )
+
+  if (error) return (
+    <div className="flex flex-col items-center justify-center min-h-[400px] text-center">
+      <AlertTriangle className="w-6 h-6 text-red-400 mb-2" />
+      <p className="text-sm text-gray-600">{error}</p>
+    </div>
+  )
+
+  // Blocks the viewer lacks permission for come back as null — hide them.
+  const show = {
+    finance:  !!stats?.financials,
+    invoices: !!stats?.invoices,
+    invoiceList: Array.isArray(stats?.recentInvoices),
+    projects: !!stats?.projects,
+    tasks:    !!stats?.tasks,
+    leads:    !!stats?.leads,
+    hr:       !!stats?.hr,
+  }
 
   const f       = stats?.financials ?? {}
   const inv     = stats?.invoices   ?? {}
@@ -609,54 +637,55 @@ export default function DashboardPage() {
   // Smart alerts
   const alerts = []
   const overdueCount = inv.OVERDUE?.count ?? 0
-  const overdueTotal = inv.OVERDUE?.total ?? 0
+  const overdueTotal = inv.OVERDUE?.due ?? 0
   if (overdueCount > 0)
     alerts.push({ type: 'error',   message: `${overdueCount} overdue invoice${overdueCount !== 1 ? 's' : ''} — ${fmtK(overdueTotal)} outstanding`, link: '/admin/invoices?status=OVERDUE' })
   if (tasks.overdue > 0)
     alerts.push({ type: 'warning', message: `${tasks.overdue} task${tasks.overdue !== 1 ? 's' : ''} past deadline`, link: '/admin/tasks' })
   if ((stats?.pendingWithdrawals ?? 0) > 0)
     alerts.push({ type: 'info',    message: `${stats.pendingWithdrawals} freelancer payment${stats.pendingWithdrawals !== 1 ? 's' : ''} awaiting approval`, link: '/admin/accounts' })
-  const critProj = (stats?.recentProjects ?? []).filter(p => { const d = daysLeft(p.deadline ?? p.currentPeriodEnd); return d != null && d >= 0 && d <= 3 })
-  if (critProj.length > 0)
-    alerts.push({ type: 'warning', message: `${critProj.length} project${critProj.length !== 1 ? 's' : ''} deadline within 3 days`, link: '/admin/projects' })
+  const critProj = proj.dueSoon ?? 0
+  if (critProj > 0)
+    alerts.push({ type: 'warning', message: `${critProj} project${critProj !== 1 ? 's' : ''} deadline within 3 days`, link: '/admin/projects' })
 
   // KPI data
   const paidInvCount = inv.PAID?.count ?? 0
   const paidInvTotal = inv.PAID?.total ?? 0
-  const sentCount    = (inv.SENT?.count ?? 0) + (inv.OVERDUE?.count ?? 0)
-  const sentTotal    = (inv.SENT?.total ?? 0) + (inv.OVERDUE?.total ?? 0)
+  const OPEN_STATUSES = ['SENT', 'PARTIALLY_PAID', 'OVERDUE']
+  const sentCount    = OPEN_STATUSES.reduce((n, k) => n + (inv[k]?.count ?? 0), 0)
+  const sentTotal    = OPEN_STATUSES.reduce((n, k) => n + (inv[k]?.due   ?? 0), 0)
 
   const kpis = [
     {
       title: 'Monthly Revenue', value: fmtK(f.income?.value),
       sub: `vs ${fmtK(f.income?.prevValue)} last mo`, change: f.income?.change,
       icon: TrendingUp, iconBg: 'bg-blue-50', iconColor: 'text-blue-600',
-      href: '/admin/accounts?tab=income',
+      href: '/admin/accounts?tab=income', show: show.finance,
     },
     {
       title: 'Net Profit', value: fmtK(f.profit?.value),
       sub: `Margin ${f.grossMargin?.value ?? 0}%`, change: f.profit?.change,
       icon: Wallet, iconBg: 'bg-green-50', iconColor: 'text-green-600',
-      href: '/admin/accounts',
+      href: '/admin/accounts', show: show.finance,
     },
     {
       title: 'Paid Invoices', value: paidInvCount,
       sub: `${fmtK(paidInvTotal)} collected`,
       icon: CheckCircle2, iconBg: 'bg-emerald-50', iconColor: 'text-emerald-600',
-      href: '/admin/invoices?status=PAID',
+      href: '/admin/invoices?status=PAID', show: show.invoices,
     },
     {
       title: 'Pending / Overdue', value: sentCount,
       sub: `${fmtK(sentTotal)} outstanding`,
       icon: AlertTriangle, iconBg: overdueCount > 0 ? 'bg-red-50' : 'bg-amber-50',
       iconColor: overdueCount > 0 ? 'text-red-500' : 'text-amber-500',
-      href: '/admin/invoices',
+      href: '/admin/invoices', show: show.invoices,
     },
     {
       title: 'Active Projects', value: proj.active ?? 0,
       sub: `${proj.total ?? 0} total`,
       icon: Briefcase, iconBg: 'bg-blue-50', iconColor: 'text-blue-600',
-      href: '/admin/projects',
+      href: '/admin/projects', show: show.projects,
     },
     {
       title: 'Open Tasks', value: tasks.open ?? 0,
@@ -664,9 +693,9 @@ export default function DashboardPage() {
       icon: tasks.overdue > 0 ? Flag : Activity,
       iconBg: tasks.overdue > 0 ? 'bg-red-50' : 'bg-violet-50',
       iconColor: tasks.overdue > 0 ? 'text-red-500' : 'text-violet-600',
-      href: '/admin/tasks',
+      href: '/admin/tasks', show: show.tasks,
     },
-  ]
+  ].filter(k => k.show)
 
   // Chart data
   const chartData = (stats?.revenueVsProfit ?? []).map((r, i) => ({
@@ -712,7 +741,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Period chips ── */}
-      <div className="flex items-center gap-1.5 flex-wrap">
+      {show.finance && <div className="flex items-center gap-1.5 flex-wrap">
         <span className="text-xs text-gray-400 mr-1">Daily breakdown:</span>
         {monthOptions.map(m => (
           <button key={m.key} onClick={() => setDrillKey(prev => prev === m.key ? null : m.key)}
@@ -724,10 +753,10 @@ export default function DashboardPage() {
             {m.label}
           </button>
         ))}
-      </div>
+      </div>}
 
       {/* ── Drill-down ── */}
-      {drillKey && <CalendarDrillDown drillKey={drillKey} onClose={() => setDrillKey(null)} />}
+      {show.finance && drillKey && <CalendarDrillDown drillKey={drillKey} onClose={() => setDrillKey(null)} />}
 
       {/* ── Main grid ── */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
@@ -736,7 +765,7 @@ export default function DashboardPage() {
         <div className="xl:col-span-2 space-y-5">
 
           {/* Revenue chart */}
-          <div className="bg-white border border-gray-100 rounded-xl p-5">
+          {show.finance && <div className="bg-white border border-gray-100 rounded-xl p-5">
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="text-sm font-semibold text-gray-800">Revenue & Profit</h3>
@@ -747,23 +776,23 @@ export default function DashboardPage() {
               </Link>
             </div>
             <RevenueChart data={chartData} onDrill={key => setDrillKey(prev => prev === key ? null : key)} />
-          </div>
+          </div>}
 
           {/* Active projects */}
-          <div className="bg-white border border-gray-100 rounded-xl p-5">
+          {show.projects && <div className="bg-white border border-gray-100 rounded-xl p-5">
             <SectionHeader title="Active Projects" meta={`${proj.active ?? 0} in progress`} href="/admin/projects" />
             <ProjectsList projects={stats?.recentProjects ?? []} />
-          </div>
+          </div>}
 
           {/* Tasks */}
-          <div className="bg-white border border-gray-100 rounded-xl p-5">
+          {show.tasks && <div className="bg-white border border-gray-100 rounded-xl p-5">
             <SectionHeader
               title="Upcoming Tasks"
               meta={tasks.overdue > 0 ? `${tasks.overdue} overdue` : undefined}
               href="/admin/tasks"
             />
             <TasksList tasks={stats?.upcomingTasks ?? []} />
-          </div>
+          </div>}
 
         </div>
 
@@ -771,7 +800,7 @@ export default function DashboardPage() {
         <div className="space-y-5">
 
           {/* Lead pipeline */}
-          <div className="bg-white border border-gray-100 rounded-xl p-5">
+          {show.leads && <div className="bg-white border border-gray-100 rounded-xl p-5">
             <SectionHeader title="Lead Pipeline" meta={`${leads.total ?? 0} total`} href="/admin/leads" />
             <LeadPipeline pipeline={leads.pipeline ?? {}} />
             {(leads.newThisMonth ?? 0) > 0 && (
@@ -779,19 +808,19 @@ export default function DashboardPage() {
                 +{leads.newThisMonth} new this month
               </p>
             )}
-          </div>
+          </div>}
 
           {/* Finance summary */}
-          <div className="bg-white border border-gray-100 rounded-xl p-5">
+          {show.finance && <div className="bg-white border border-gray-100 rounded-xl p-5">
             <SectionHeader title="Finance" href="/admin/accounts" />
             <FinanceSummary financials={f} invoices={inv} pendingWithdrawals={stats?.pendingWithdrawals} />
-          </div>
+          </div>}
 
           {/* Team */}
-          <div className="bg-white border border-gray-100 rounded-xl p-5">
+          {show.hr && <div className="bg-white border border-gray-100 rounded-xl p-5">
             <SectionHeader title="Team" href="/admin/employees" />
             <TeamSummary hr={hr} />
-          </div>
+          </div>}
 
           {/* Ventures */}
           {proj.byVenture && Object.keys(proj.byVenture).length > 0 && (
@@ -807,15 +836,15 @@ export default function DashboardPage() {
       {/* ── Bottom row ── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
 
-        <div className="bg-white border border-gray-100 rounded-xl p-5">
+        {show.leads && <div className="bg-white border border-gray-100 rounded-xl p-5">
           <SectionHeader title="Recent Leads" meta={leads.newThisMonth > 0 ? `${leads.newThisMonth} this month` : undefined} href="/admin/leads" />
           <RecentLeads leads={stats?.recentLeads ?? []} />
-        </div>
+        </div>}
 
-        <div className="bg-white border border-gray-100 rounded-xl p-5">
-          <SectionHeader title="Pending Invoices" meta="Sent & overdue" href="/admin/invoices" />
+        {show.invoiceList && <div className="bg-white border border-gray-100 rounded-xl p-5">
+          <SectionHeader title="Pending Invoices" meta="Sent, partially paid & overdue" href="/admin/invoices" />
           <PendingInvoices invoices={stats?.recentInvoices ?? []} />
-        </div>
+        </div>}
 
       </div>
     </div>

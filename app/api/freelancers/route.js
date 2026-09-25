@@ -7,7 +7,7 @@ import { User, Freelancer, FreelancerAssignment, SalaryPayout } from '@/models'
 import bcrypt from 'bcryptjs'
 import crypto from 'crypto'
 import { ciEquals, ciContains } from '@/lib/searchMatch'
-import { requireStaff, requirePerm } from '@/lib/rbac'
+import { requireStaff, requirePerm, canDo } from '@/lib/rbac'
 import { maskList, FREELANCER_PII } from '@/lib/pii'
 import { sendFreelancerInviteEmail, sendEmployeeLoginEmail } from '@/lib/mailer'
 import { sendFreelancerInviteWhatsApp } from '@/lib/whatsapp'
@@ -27,6 +27,7 @@ export async function GET(request) {
     const search = searchParams.get('search') ?? ''
     const type   = searchParams.get('type') ?? null
     const verification = searchParams.get('verification') ?? null  // pending | verified | unverified
+    const activity = searchParams.get('activity') ?? null  // active | inactive (last engagement update within 30 days)
     const page   = parseInt(searchParams.get('page')  ?? '1',  10)
     const limit  = parseInt(searchParams.get('limit') ?? '20', 10)
     const skip   = (page - 1) * limit
@@ -42,9 +43,21 @@ export async function GET(request) {
     if (verification === 'verified')   filter.profileStatus = 'APPROVED'
     if (verification === 'unverified') filter.profileStatus = { $ne: 'APPROVED' }
 
+    // Activity filter — applied before pagination so page counts stay correct.
+    // "Recently active" = an engagement updated in the last 30 days (matches the
+    // list's lastWorkedAt, which is the latest assignment updatedAt).
+    if (activity === 'active' || activity === 'inactive') {
+      const cutoff = new Date(Date.now() - 31 * 86_400_000)
+      const activeIds = await FreelancerAssignment.distinct('freelancerId', { updatedAt: { $gt: cutoff } })
+      filter._id = activity === 'active' ? { $in: activeIds } : { $nin: activeIds }
+    }
+
     if (search) {
+      // Email/phone are only searchable for callers who may see them unmasked.
       const matchingUsers = await User.find({
-        $or: [{ name: ciContains(search) }, { email: ciContains(search) }, { phone: ciContains(search) }],
+        $or: canDo(session, 'pii.contact.view')
+          ? [{ name: ciContains(search) }, { email: ciContains(search) }, { phone: ciContains(search) }]
+          : [{ name: ciContains(search) }],
       }).select('_id').lean()
       const userIds = matchingUsers.map(u => u._id)
       filter.$or = [
@@ -64,21 +77,36 @@ export async function GET(request) {
 
     // Per-freelancer money rollups for this page (owed/paid in BDT-equivalent) +
     // last activity, computed with aggregation. amountBDT falls back to the
-    // original amount for legacy/BDT rows.
+    // original amount only for BDT (or legacy currency-less) rows; a foreign
+    // amount with no BDT-equivalent (e.g. a cron-created USD salary payout) is
+    // never added to the BDT total — it is reported per currency in owedOther.
+    const bdtValue = (amountField) => ({
+      $cond: [
+        { $ne: [{ $ifNull: ['$amountBDT', null] }, null] }, '$amountBDT',
+        { $cond: [{ $in: [{ $ifNull: ['$currency', 'BDT'] }, ['BDT']] }, { $ifNull: [amountField, 0] }, 0] },
+      ],
+    })
+    const isUnconverted = { $and: [
+      { $eq: [{ $ifNull: ['$amountBDT', null] }, null] },
+      { $not: [{ $in: [{ $ifNull: ['$currency', 'BDT'] }, ['BDT']] }] },
+    ] }
+    const asgOwedCond = { $and: [
+      { $ne: ['$paymentStatus', 'NOT_REQUIRED'] },
+      { $or: [
+        { $and: [{ $eq: ['$status', 'COMPLETED'] }, { $ne: ['$paymentStatus', 'PAID'] }] },
+        { $eq: ['$paymentStatus', 'PAYMENT_REQUESTED'] },
+      ] },
+    ] }
     const ids = freelancers.map(f => f._id)
-    const [asgRollup, salRollup] = await Promise.all([
+    const [asgRollup, salRollup, unconvertedOwed] = await Promise.all([
+      // No NOT_REQUIRED exclusion in $match: salary-based engagements must
+      // still count towards lastWorkedAt. The owed/paid conditions skip them.
       FreelancerAssignment.aggregate([
-        { $match: { freelancerId: { $in: ids }, paymentStatus: { $ne: 'NOT_REQUIRED' } } },
+        { $match: { freelancerId: { $in: ids } } },
         { $group: {
           _id: '$freelancerId',
-          owed: { $sum: { $cond: [
-            { $or: [
-              { $and: [{ $eq: ['$status', 'COMPLETED'] }, { $ne: ['$paymentStatus', 'PAID'] }] },
-              { $eq: ['$paymentStatus', 'PAYMENT_REQUESTED'] },
-            ] },
-            { $ifNull: ['$amountBDT', '$paymentAmount'] }, 0,
-          ] } },
-          paid: { $sum: { $cond: [{ $eq: ['$paymentStatus', 'PAID'] }, { $ifNull: ['$amountBDT', '$paymentAmount'] }, 0] } },
+          owed: { $sum: { $cond: [asgOwedCond, bdtValue('$paymentAmount'), 0] } },
+          paid: { $sum: { $cond: [{ $eq: ['$paymentStatus', 'PAID'] }, bdtValue('$paymentAmount'), 0] } },
           lastWorkedAt: { $max: '$updatedAt' },
         } },
       ]),
@@ -86,24 +114,46 @@ export async function GET(request) {
         { $match: { freelancerId: { $in: ids } } },
         { $group: {
           _id: '$freelancerId',
-          owed: { $sum: { $cond: [{ $eq: ['$status', 'PENDING'] }, { $ifNull: ['$amountBDT', '$amount'] }, 0] } },
-          paid: { $sum: { $cond: [{ $eq: ['$status', 'PAID'] }, { $ifNull: ['$amountBDT', '$amount'] }, 0] } },
+          owed: { $sum: { $cond: [{ $eq: ['$status', 'PENDING'] }, bdtValue('$amount'), 0] } },
+          paid: { $sum: { $cond: [{ $eq: ['$status', 'PAID'] }, bdtValue('$amount'), 0] } },
         } },
       ]),
+      // Owed amounts in a foreign currency with no BDT-equivalent yet.
+      Promise.all([
+        FreelancerAssignment.aggregate([
+          { $match: { freelancerId: { $in: ids } } },
+          { $match: { $expr: { $and: [asgOwedCond, isUnconverted] } } },
+          { $group: { _id: { f: '$freelancerId', currency: '$currency' }, total: { $sum: '$paymentAmount' } } },
+        ]),
+        SalaryPayout.aggregate([
+          { $match: { freelancerId: { $in: ids }, status: 'PENDING' } },
+          { $match: { $expr: isUnconverted } },
+          { $group: { _id: { f: '$freelancerId', currency: '$currency' }, total: { $sum: '$amount' } } },
+        ]),
+      ]).then(([a, b]) => [...a, ...b]),
     ])
     const financeMap = new Map()
-    for (const r of asgRollup) financeMap.set(String(r._id), { owedBDT: r.owed || 0, paidBDT: r.paid || 0, lastWorkedAt: r.lastWorkedAt ?? null })
+    const blank = () => ({ owedBDT: 0, paidBDT: 0, owedOther: [], lastWorkedAt: null })
+    for (const r of asgRollup) financeMap.set(String(r._id), { ...blank(), owedBDT: r.owed || 0, paidBDT: r.paid || 0, lastWorkedAt: r.lastWorkedAt ?? null })
     for (const r of salRollup) {
-      const cur = financeMap.get(String(r._id)) ?? { owedBDT: 0, paidBDT: 0, lastWorkedAt: null }
+      const cur = financeMap.get(String(r._id)) ?? blank()
       cur.owedBDT += r.owed || 0
       cur.paidBDT += r.paid || 0
       financeMap.set(String(r._id), cur)
     }
+    for (const r of unconvertedOwed) {
+      if (!r.total) continue
+      const cur = financeMap.get(String(r._id.f)) ?? blank()
+      const row = cur.owedOther.find(o => o.currency === r._id.currency)
+      if (row) row.total += r.total
+      else cur.owedOther.push({ currency: r._id.currency, total: r.total })
+      financeMap.set(String(r._id.f), cur)
+    }
 
     const data = maskList(session, freelancers.map(f => f.toJSON()), FREELANCER_PII)
       .map(f => {
-        const fin = financeMap.get(String(f.id)) ?? { owedBDT: 0, paidBDT: 0, lastWorkedAt: null }
-        return { ...f, finance: { ...fin, hasUnpaid: fin.owedBDT > 0 } }
+        const fin = financeMap.get(String(f.id)) ?? { owedBDT: 0, paidBDT: 0, owedOther: [], lastWorkedAt: null }
+        return { ...f, finance: { ...fin, hasUnpaid: fin.owedBDT > 0 || fin.owedOther.length > 0 } }
       })
 
     return NextResponse.json({
@@ -120,12 +170,15 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const session = await getServerSession(authOptions)
-    const denied = requirePerm(session, 'hr.freelancers.manage')
+    const notStaff = requireStaff(session)
+    if (notStaff) return notStaff
+
+    const body = await request.json()
+    // Agencies are managed under hr.agencies.manage, freelancers under hr.freelancers.manage.
+    const denied = requirePerm(session, body?.type === 'AGENCY' ? 'hr.agencies.manage' : 'hr.freelancers.manage')
     if (denied) return denied
 
     await connectDB()
-
-    const body = await request.json()
     const {
       type = 'FREELANCER',
       name,
@@ -261,6 +314,7 @@ export async function POST(request) {
       if (phone) {
         sendFreelancerInviteWhatsApp({
           to:       phone,
+          email:    email.toLowerCase(),
           name:     displayName,
           link:     inviteLink,
           type,

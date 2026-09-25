@@ -9,6 +9,7 @@ import {
   User, MapPin, Camera, Eye, EyeOff, Plus,
 } from 'lucide-react'
 import toast, { Toaster } from 'react-hot-toast'
+import { dhakaDayKey } from '@/lib/dhakaTime'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -303,7 +304,11 @@ function UploadBtn({ token, onUploaded, accept = 'image/*,application/pdf', chil
         : <Upload className="w-4 h-4 group-hover:scale-110 transition-transform" />}
       <span>{busy ? 'Uploading…' : children}</span>
       <input ref={ref} type="file" accept={accept} className="hidden"
-        onChange={e => handleFile(e.target.files?.[0])} />
+        onChange={e => {
+          const file = e.target.files?.[0]
+          e.target.value = '' // allow picking the same file again later
+          handleFile(file)
+        }} />
     </button>
   )
 }
@@ -520,7 +525,9 @@ export default function OnboardingPage() {
                 onChange={e => set('name', e.target.value)} />
             </Field>
             <Field label="Email Address" required>
+              {/* The invited address is fixed — the account is created for that email only. */}
               <input className={inputCls} type="email" placeholder="your@email.com" value={form.email}
+                readOnly={!!prefill?.email}
                 onChange={e => set('email', e.target.value)} />
             </Field>
             <div className="grid grid-cols-2 gap-3">
@@ -558,7 +565,7 @@ export default function OnboardingPage() {
                   value={form.dateOfBirth}
                   onChange={v => set('dateOfBirth', v)}
                   placeholder="Select date"
-                  maxDate={new Date().toISOString().slice(0, 10)}
+                  maxDate={dhakaDayKey()}
                 />
               </Field>
               <Field label="Blood Group">

@@ -3,25 +3,17 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
-import { Invoice, Payment, Transaction, Project } from '@/models'
-import { requireStaff } from '@/lib/rbac'
-import { logActivity } from '@/lib/logActivity'
-import { z } from 'zod'
+import { Payment } from '@/models'
+import { requirePerm } from '@/lib/rbac'
+import { isValidObjectId } from '@/lib/objectId'
 
-const paymentSchema = z.object({
-  amount:    z.number().positive(),
-  method:    z.string().min(1),
-  reference: z.string().optional().nullable(),
-  paidAt:    z.string().optional().nullable(),
-  notes:     z.string().optional().nullable(),
-})
-
-// GET /api/invoices/[id]/payments
+// GET /api/invoices/[id]/payments — legacy Payment rows for this invoice
 export async function GET(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    const denied  = requireStaff(session)
+    const denied  = requirePerm(session, 'sales.invoices.view')
     if (denied) return denied
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
     await connectDB()
 
@@ -33,91 +25,16 @@ export async function GET(request, { params }) {
   }
 }
 
-// POST /api/invoices/[id]/payments
-export async function POST(request, { params }) {
-  try {
-    const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-
-    const allowedRoles = ['SUPER_ADMIN', 'MANAGER']
-    if (!allowedRoles.includes(session.user.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
-
-    await connectDB()
-
-    const body   = await request.json()
-    const parsed = paymentSchema.safeParse(body)
-    if (!parsed.success) {
-      return NextResponse.json({ error: 'Validation failed', details: parsed.error.flatten() }, { status: 422 })
-    }
-
-    const invoice = await Invoice.findById(params.id)
-    if (!invoice) return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
-
-    const { amount, method, reference, paidAt, notes } = parsed.data
-
-    const payment = await new Payment({
-      invoiceId: params.id,
-      amount,
-      method,
-      reference,
-      status:  'COMPLETED',
-      paidAt:  paidAt ? new Date(paidAt) : new Date(),
-      notes,
-    }).save()
-
-    // Update invoice paid amount and status
-    const newPaid = Math.min((invoice.paidAmount || 0) + amount, invoice.total)
-    const balance = invoice.total - newPaid
-    let newStatus = invoice.status
-    if (balance <= 0.01) {
-      newStatus = 'PAID'
-    } else if (newPaid > 0) {
-      newStatus = 'PARTIALLY_PAID'
-    }
-    await Invoice.findByIdAndUpdate(params.id, { paidAmount: newPaid, status: newStatus })
-
-    // Record income in the Transaction ledger so it appears on dashboard & accounts
-    const projectId = invoice.projectId ?? null
-    await new Transaction({
-      type:          'INCOME',
-      category:      'Invoice Payment',
-      amount,
-      currency:      invoice.currency ?? 'BDT',
-      description:   `Payment received for invoice ${invoice.invoiceNumber}`,
-      date:          paidAt ? new Date(paidAt) : new Date(),
-      reference:     reference || invoice.invoiceNumber || null,
-      projectId,
-      invoiceId:     params.id,
-      clientId:      invoice.clientId?.toString() ?? null,
-      paymentMethod: method,
-      createdBy:     session.user.id,
-      accountManager: session.user.id,
-    }).save()
-
-    // Sync project received amount so project financials stay accurate
-    if (projectId) {
-      const proj = await Project.findById(projectId)
-      if (proj) {
-        proj.paidAmount = (proj.paidAmount ?? 0) + amount
-        await proj.save()
-      }
-    }
-
-    logActivity({
-      userId:   session.user.id,
-      userRole: session.user.role,
-      action:   'PAYMENT',
-      entity:   'INVOICE',
-      entityId: params.id,
-      changes:  JSON.stringify({ invoiceNumber: invoice.invoiceNumber, amount, method, status: newStatus }),
-      request,
-    })
-
-    return NextResponse.json({ data: payment, invoiceStatus: newStatus, paidAmount: newPaid }, { status: 201 })
-  } catch (err) {
-    console.error('[POST /api/invoices/[id]/payments]', err)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
-  }
+// POST /api/invoices/[id]/payments — RETIRED.
+// This used to mark the invoice paid and book INCOME + project credit directly,
+// bypassing Payment Confirmations (double-counting income when both paths were
+// used, reviving cancelled invoices and over-crediting on overpayment). All
+// invoice payments now go through the single ProjectPayment flow:
+//   POST /api/invoices/:id/payment-request  → confirmed in Payment Confirmations.
+export async function POST() {
+  const session = await getServerSession(authOptions)
+  if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+  return NextResponse.json({
+    error: 'Direct invoice payments are no longer supported. Record the payment with POST /api/invoices/:id/payment-request; it is applied once confirmed in Payment Confirmations.',
+  }, { status: 410 })
 }

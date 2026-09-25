@@ -12,11 +12,8 @@ build/
 prisma/migrations/
 
 # Environment
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env*
+!.env.example
 
 # Debug
 npm-debug.log*
@@ -38,3 +35,11 @@ Thumbs.db
 
 # Uploads
 public/uploads/
+storage/uploads/
+# Database dumps — never commit
+backup-*/
+dump/
+*.bson
+
+# Claude Code machine-local settings — never commit
+.claude/settings.local.json

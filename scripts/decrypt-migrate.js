@@ -132,6 +132,9 @@ const FIELD_MAP = {
     { path: 'userRole' }, { path: 'action' }, { path: 'entity' }, { path: 'entityId' },
     { path: 'changes' }, { path: 'ipAddress' }, { path: 'userAgent' },
   ],
+  leadactivities: [
+    { path: 'type' }, { path: 'note' }, { path: 'createdByName' },
+  ],
 }
 
 // Blind-index fields to drop once the source field is plaintext.
@@ -140,6 +143,21 @@ const BLIND_INDEX_FIELDS = { users: ['emailIdx', 'phoneIdx'] }
 const PREFIX = 'enc:v1:'
 const isEnc = (v) => typeof v === 'string' && v.startsWith(PREFIX)
 const getPath = (obj, path) => path.split('.').reduce((cur, k) => (cur == null ? cur : cur[k]), obj)
+
+// Coerce a decrypted date plaintext to a Date. Dates were JSON-serialised
+// before encryption, so the plaintext is usually a quoted ISO string.
+// Returns null when the value is not a valid date.
+function toDate(value) {
+  if (value instanceof Date) return isNaN(value.getTime()) ? null : value
+  if (typeof value !== 'string') return null
+  let s = value.trim()
+  if (s.startsWith('"')) {
+    try { s = JSON.parse(s) } catch { return null }
+    if (typeof s !== 'string') return null
+  }
+  const d = new Date(s)
+  return isNaN(d.getTime()) ? null : d
+}
 
 async function migrateCollection(db, name, fields) {
   const coll = db.collection(name)
@@ -154,11 +172,23 @@ async function migrateCollection(db, name, fields) {
 
     for (const { path, type = 'string' } of fields) {
       const raw = getPath(doc, path)
+      // Repair dates a previous run wrote as a JSON-quoted string
+      // ('"1990-05-01T00:00:00.000Z"') instead of a real Date.
+      if (type === 'date' && typeof raw === 'string' && !isEnc(raw)) {
+        const fixed = toDate(raw)
+        if (fixed) { $set[path] = fixed; fieldHits++ }
+        continue
+      }
       if (!isEnc(raw)) continue
       try {
-        const plain = decrypt(raw, name, path, type)
+        let plain = decrypt(raw, name, path, type)
         // decrypt() returns the original string on failure — guard against that
         if (isEnc(plain)) { errors++; continue }
+        // Never persist a 'date' field unless it is a real Date.
+        if (type === 'date' && !(plain instanceof Date)) {
+          plain = toDate(plain)
+          if (!plain) { errors++; continue }
+        }
         $set[path] = plain
         fieldHits++
       } catch {
@@ -221,6 +251,7 @@ async function main() {
   console.log(`\nTotal: ${APPLY ? 'updated' : 'would update'} ${totals.changed} docs, ${totals.fieldHits} fields` +
     (totals.errors ? `, ${totals.errors} decrypt-failures (left untouched)` : '') + '\n')
   if (!APPLY) console.log('Dry run only. Re-run with --apply to write changes.\n')
+  if (totals.errors) console.log('⚠ Some values could not be decrypted. Do NOT remove the ENCRYPTION_* env vars until this reports 0 failures.\n')
 
   await mongoose.disconnect()
   process.exit(0)

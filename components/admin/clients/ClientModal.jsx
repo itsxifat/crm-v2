@@ -146,12 +146,15 @@ export default function ClientModal({ open, onOpenChange, client, onSaved }) {
   const [saving, setSaving] = useState(false)
   const [tab, setTab]       = useState('basic')
   const [form, setForm]     = useState(EMPTY)
+  // Snapshot of the form as loaded for edit — only fields that differ are sent,
+  // so masked display values (e.g. 'j•••@g••.com') are never written back.
+  const initialRef = useRef(null)
 
   useEffect(() => {
     if (!open) return
     setTab('basic')
     if (isEdit) {
-      setForm({
+      const initial = {
         clientType:    client.clientType    ?? 'COMPANY',
         // Company info
         company:       client.company       ?? '',
@@ -177,12 +180,17 @@ export default function ClientModal({ open, onOpenChange, client, onSaved }) {
         country:       client.country       ?? 'Bangladesh',
         socialLinks:    client.socialLinks   ?? [],
         notes:          client.notes         ?? '',
-        parentClientId: client.parentClientId?._id ?? client.parentClientId ?? null,
+        parentClientId: typeof client.parentClientId === 'object'
+          ? (client.parentClientId?.id ?? client.parentClientId?._id ?? null)
+          : (client.parentClientId ?? null),
         _parentLabel:   client.parentClientId
           ? `${client.parentClientId.company || client.parentClientId.userId?.name || ''} · ${client.parentClientId.clientCode || ''}`
           : '',
-      })
+      }
+      initialRef.current = initial
+      setForm(initial)
     } else {
+      initialRef.current = null
       setForm(EMPTY)
     }
   }, [open, client, isEdit])
@@ -206,10 +214,10 @@ export default function ClientModal({ open, onOpenChange, client, onSaved }) {
   async function handleSubmit(e) {
     e.preventDefault()
     if (!form.name.trim())  { toast.error('Name is required');  return }
-    if (!form.email.trim()) { toast.error('Email is required'); return }
+    if (!isEdit && !form.parentClientId && !form.email.trim()) { toast.error('Email is required'); return }
     setSaving(true)
     try {
-      const body = {
+      let body = {
         // Concerned person (used for login + notifications)
         name:           form.name.trim(),
         email:          form.email.trim(),
@@ -239,12 +247,37 @@ export default function ClientModal({ open, onOpenChange, client, onSaved }) {
         parentClientId: form.parentClientId || null,
       }
 
+      if (isEdit) {
+        // Login email and parent link are not editable here; send only changed fields.
+        delete body.email
+        delete body.parentClientId
+        const init = initialRef.current ?? {}
+        const initBody = {
+          name: (init.name ?? '').trim(), phone: init.phone || null, designation: init.designation || null,
+          clientType: init.clientType, company: init.company || null, companyPhone: init.companyPhone || null,
+          companyEmail: init.companyEmail || null, contactPerson: init.contactPerson || null,
+          businessType: init.businessType || null, industry: init.industry || null,
+          vatNumber: init.vatNumber || null, website: init.website || null, logo: init.logo || null,
+          priority: init.priority, altPhone: init.altPhone || null, timezone: init.timezone || null,
+          address: init.address || null, city: init.city || null, country: init.country || 'Bangladesh',
+          socialLinks: (init.socialLinks ?? []).filter(s => s.url?.trim()), notes: init.notes || null,
+        }
+        body = Object.fromEntries(
+          Object.entries(body).filter(([k, v]) => JSON.stringify(v) !== JSON.stringify(initBody[k]))
+        )
+      } else if (form.parentClientId) {
+        // Linked to an existing contact — the server uses the parent's account;
+        // never send the (possibly masked) contact details back.
+        delete body.email
+        delete body.phone
+      }
+
       const url    = isEdit ? `/api/clients/${client.id}` : '/api/clients'
       const method = isEdit ? 'PUT' : 'POST'
       const res    = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       const json   = await res.json()
       if (!res.ok) throw new Error(json.error ?? 'Failed')
-      onSaved(json.data, null, json.emailSent)
+      onSaved(json.data, null, json.emailSent, json.linkedToExisting)
       onOpenChange(false)
     } catch (err) {
       toast.error(err.message)
@@ -402,7 +435,7 @@ export default function ClientModal({ open, onOpenChange, client, onSaved }) {
                     </div>
                     <div className="col-span-2">
                       <label className={lc}>Logo</label>
-                      <FileUpload value={form.logo} onChange={url => set('logo', url)} accept="image/*" label="Upload logo" />
+                      <FileUpload value={form.logo} onUploaded={url => set('logo', url)} accept="image/*" label="Upload logo" />
                     </div>
                   </div>
                 </div>

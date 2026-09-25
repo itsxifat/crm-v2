@@ -1,11 +1,12 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus, Search, X, Loader2, Copy, Trash2, Eye, FileText } from 'lucide-react'
 import toast from 'react-hot-toast'
 import Link from 'next/link'
 import { Can, usePermission } from '@/components/auth/Can'
+import { CURRENCIES } from '@/lib/currencies'
 
 const STATUS_STYLES = {
   DRAFT:    { badge: 'bg-gray-100 text-gray-600',    label: 'Draft' },
@@ -14,13 +15,15 @@ const STATUS_STYLES = {
   REJECTED: { badge: 'bg-red-100 text-red-600',      label: 'Rejected' },
 }
 
-const fmt     = (n) => `৳ ${(n ?? 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })}`
+const curSymbol = (code) => CURRENCIES.find(c => c.code === (code || 'BDT'))?.symbol ?? code
+const fmt     = (n, cur) => `${curSymbol(cur)} ${(Number(n) || 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })}`
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 
 export default function QuotationsPage() {
   const router = useRouter()
   const [quotations, setQuotations] = useState([])
   const [loading,    setLoading]    = useState(true)
+  const [searchInput, setSearchInput] = useState('')
   const [search,     setSearch]     = useState('')
   const [status,     setStatus]     = useState('')
   const [page,       setPage]       = useState(1)
@@ -29,7 +32,10 @@ export default function QuotationsPage() {
   const { can } = usePermission()
   const limit = 20
 
+  const reqId = useRef(0)
+
   const load = useCallback(async () => {
+    const id = ++reqId.current
     setLoading(true)
     try {
       const p = new URLSearchParams({ page, limit })
@@ -37,14 +43,22 @@ export default function QuotationsPage() {
       if (status) p.set('status', status)
       const res  = await fetch(`/api/quotations?${p}`)
       const json = await res.json()
+      if (id !== reqId.current) return // a newer request superseded this one
       setQuotations(json.data ?? [])
       setTotal(json.meta?.total ?? 0)
-    } catch { toast.error('Failed to load') }
-    finally { setLoading(false) }
+    } catch { if (id === reqId.current) toast.error('Failed to load') }
+    finally { if (id === reqId.current) setLoading(false) }
   }, [page, search, status])
 
   useEffect(() => { load() }, [load])
-  useEffect(() => { setPage(1) }, [search, status])
+
+  // Debounce the search box; reset to page 1 in the same update as the filter
+  useEffect(() => {
+    const t = setTimeout(() => {
+      if (searchInput !== search) { setSearch(searchInput); setPage(1) }
+    }, 300)
+    return () => clearTimeout(t)
+  }, [searchInput, search])
 
   async function duplicate(id) {
     try {
@@ -57,17 +71,21 @@ export default function QuotationsPage() {
   }
 
   async function del(id) {
+    if (!confirm('Delete this quotation? This cannot be undone.')) return
     setDeleting(id)
     try {
       const res = await fetch(`/api/quotations/${id}`, { method: 'DELETE' })
       if (!res.ok) throw new Error((await res.json()).error)
       toast.success('Deleted')
-      load()
+      // Deleting the last row on a later page: step back instead of showing an empty page
+      if (quotations.length === 1 && page > 1) setPage(p => p - 1)
+      else load()
     } catch (err) { toast.error(err.message) }
     finally { setDeleting(null) }
   }
 
   const pages = Math.ceil(total / limit)
+  const filtered = !!(search || status)
 
   return (
     <div className="space-y-6">
@@ -88,12 +106,12 @@ export default function QuotationsPage() {
       <div className="flex gap-3 flex-wrap">
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input value={search} onChange={e => setSearch(e.target.value)}
+          <input value={searchInput} onChange={e => setSearchInput(e.target.value)}
             placeholder="Search by number, name, company…"
             className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-gray-900" />
-          {search && <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2"><X className="w-4 h-4 text-gray-400" /></button>}
+          {searchInput && <button onClick={() => { setSearchInput(''); setSearch(''); setPage(1) }} className="absolute right-3 top-1/2 -translate-y-1/2"><X className="w-4 h-4 text-gray-400" /></button>}
         </div>
-        <select value={status} onChange={e => setStatus(e.target.value)}
+        <select value={status} onChange={e => { setStatus(e.target.value); setPage(1) }}
           className="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 bg-white">
           <option value="">All Status</option>
           {Object.entries(STATUS_STYLES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
@@ -107,8 +125,13 @@ export default function QuotationsPage() {
         ) : quotations.length === 0 ? (
           <div className="text-center py-16 text-gray-400">
             <FileText className="w-10 h-10 mx-auto mb-3 opacity-30" />
-            <p className="text-sm">No quotations yet</p>
-            <Link href="/admin/quotations/new" className="mt-3 inline-block text-sm text-blue-600 hover:underline">Create your first quotation</Link>
+            <p className="text-sm">{filtered ? 'No quotations match your filters' : total > 0 ? 'No quotations on this page' : 'No quotations yet'}</p>
+            {!filtered && total === 0 && can('sales.quotations.create') && (
+              <Link href="/admin/quotations/new" className="mt-3 inline-block text-sm text-blue-600 hover:underline">Create your first quotation</Link>
+            )}
+            {page > 1 && (
+              <button onClick={() => setPage(1)} className="mt-3 block mx-auto text-sm text-blue-600 hover:underline">Back to first page</button>
+            )}
           </div>
         ) : (
           <>
@@ -140,7 +163,7 @@ export default function QuotationsPage() {
                             {q.sourceType === 'LEAD' ? 'Lead' : 'Client'}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-sm font-semibold text-gray-800">{fmt(q.total)}</td>
+                        <td className="px-4 py-3 text-sm font-semibold text-gray-800">{fmt(q.total, q.currency)}</td>
                         <td className="px-4 py-3 text-xs text-gray-500">{fmtDate(q.issueDate)}</td>
                         <td className="px-4 py-3 text-xs text-gray-500">{fmtDate(q.validUntil)}</td>
                         <td className="px-4 py-3">

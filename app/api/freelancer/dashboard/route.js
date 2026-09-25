@@ -30,6 +30,7 @@ export async function GET() {
 
     const freelancer = await Freelancer.findOne({ userId: session.user.id })
       .populate({ path: 'userId', select: 'name email avatar role' })
+      .select('-pricing -inviteToken -inviteTokenExpiry') // pricing is staff-only
       .lean()
 
     if (!freelancer) {

@@ -11,6 +11,7 @@ const EditRequestSchema = new mongoose.Schema(
     otp:         { type: String, default: null },
     otpExpiry:   { type: Date,   default: null },
     otpUsed:     { type: Boolean, default: false },
+    otpAttempts: { type: Number,  default: 0 },
 
     reviewedBy:  { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     reviewedAt:  { type: Date,   default: null },
@@ -24,6 +25,9 @@ const EditRequestSchema = new mongoose.Schema(
         ret.id = ret._id.toString()
         delete ret._id
         delete ret.__v
+        // The OTP goes to the owner only (in the approve response) — never to the requester.
+        delete ret.otp
+        delete ret.otpAttempts
         return ret
       },
     },

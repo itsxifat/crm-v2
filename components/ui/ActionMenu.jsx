@@ -35,13 +35,16 @@ export default function ActionMenu({ items = [], align = 'right' }) {
       setOpen(false)
     }
     const onKey = (e) => e.key === 'Escape' && setOpen(false)
+    const onScrollOrResize = () => setOpen(false)
     window.addEventListener('mousedown', close)
     window.addEventListener('keydown', onKey)
-    window.addEventListener('scroll', () => setOpen(false), true)
-    window.addEventListener('resize', () => setOpen(false))
+    window.addEventListener('scroll', onScrollOrResize, true)
+    window.addEventListener('resize', onScrollOrResize)
     return () => {
       window.removeEventListener('mousedown', close)
       window.removeEventListener('keydown', onKey)
+      window.removeEventListener('scroll', onScrollOrResize, true)
+      window.removeEventListener('resize', onScrollOrResize)
     }
   }, [open, place])
 

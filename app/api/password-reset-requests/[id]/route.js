@@ -8,6 +8,7 @@ import connectDB from '@/lib/mongodb'
 import { User, PasswordResetRequest } from '@/models'
 import { sendPasswordResetEmail } from '@/lib/mailer'
 import { logActivity } from '@/lib/logActivity'
+import { isValidObjectId } from '@/lib/objectId'
 
 // PATCH /api/password-reset-requests/[id]  { action: 'approve' | 'reject', note? }
 export async function PATCH(request, { params }) {
@@ -22,18 +23,31 @@ export async function PATCH(request, { params }) {
     if (!['approve', 'reject'].includes(action))
       return NextResponse.json({ error: 'action must be approve or reject' }, { status: 422 })
 
-    const reqDoc = await PasswordResetRequest.findById(params.id)
-    if (!reqDoc) return NextResponse.json({ error: 'Request not found' }, { status: 404 })
-    if (reqDoc.status !== 'PENDING')
-      return NextResponse.json({ error: `Request already ${reqDoc.status.toLowerCase()}` }, { status: 409 })
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Request not found' }, { status: 404 })
+    const existing = await PasswordResetRequest.findById(params.id).select('status userId').lean()
+    if (!existing) return NextResponse.json({ error: 'Request not found' }, { status: 404 })
+    if (existing.status !== 'PENDING')
+      return NextResponse.json({ error: `Request already ${existing.status.toLowerCase()}` }, { status: 409 })
 
-    reqDoc.reviewedBy = session.user.id
-    reqDoc.reviewedAt = new Date()
-    reqDoc.note       = note || null
+    // Resolve the user before claiming so a missing account doesn't leave the
+    // request stuck in APPROVED without a token.
+    const user = action === 'approve' ? await User.findById(existing.userId) : null
+    if (action === 'approve' && !user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
+
+    // Atomically claim the request — only one concurrent reviewer can move it out of PENDING.
+    const reqDoc = await PasswordResetRequest.findOneAndUpdate(
+      { _id: params.id, status: 'PENDING' },
+      { $set: {
+        status:     action === 'reject' ? 'REJECTED' : 'APPROVED',
+        reviewedBy: session.user.id,
+        reviewedAt: new Date(),
+        note:       note || null,
+      } },
+      { new: true }
+    )
+    if (!reqDoc) return NextResponse.json({ error: 'Request already reviewed' }, { status: 409 })
 
     if (action === 'reject') {
-      reqDoc.status = 'REJECTED'
-      await reqDoc.save()
       logActivity({
         userId: session.user.id, userRole: session.user.role,
         action: 'PASSWORD_RESET_REJECT', entity: 'CLIENT', entityId: reqDoc.clientId?.toString() ?? reqDoc.userId.toString(),
@@ -43,16 +57,10 @@ export async function PATCH(request, { params }) {
     }
 
     // approve → issue a single-use 24h reset token + email the client a link
-    const user = await User.findById(reqDoc.userId)
-    if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
-
     const resetToken = crypto.randomBytes(32).toString('hex')
     user.passwordResetToken  = resetToken
     user.passwordResetExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000)
     await user.save()
-
-    reqDoc.status = 'APPROVED'
-    await reqDoc.save()
 
     let emailSent = false
     try {

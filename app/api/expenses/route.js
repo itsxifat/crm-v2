@@ -5,7 +5,6 @@ import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { ProjectExpense, Employee } from '@/models'
 import { requirePerm, canDo } from '@/lib/rbac'
-import { canAccess } from '@/lib/permissions'
 
 // GET /api/expenses?status=PENDING&origin=&venture=&mine=&page=&limit=
 export async function GET(request) {
@@ -71,7 +70,7 @@ export async function GET(request) {
 //   • REIMBURSEMENT (default): an employee's out-of-pocket spend, submitted from
 //     "My Expenses". Gated on finance.expenses.submit; linked to their Employee.
 //   • Company / project expense (origin PROJECT | VENDOR | OTHER): logged by an
-//     accounts user from Add Transaction. Gated on accounts.addTransaction.
+//     accounts user from Add Transaction. Gated on finance.transactions.create.
 export async function POST(request) {
   try {
     const session = await getServerSession(authOptions)
@@ -84,8 +83,9 @@ export async function POST(request) {
     if (isReimbursement) {
       const denied = requirePerm(session, 'finance.expenses.submit')
       if (denied) return denied
-    } else if (!canAccess(session, 'accounts', 'addTransaction')) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    } else {
+      const denied = requirePerm(session, 'finance.transactions.create')
+      if (denied) return denied
     }
 
     const amount = Number(body.amount)

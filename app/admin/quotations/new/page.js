@@ -6,11 +6,15 @@ import { Plus, Trash2, ChevronDown, Loader2, ArrowLeft, Save } from 'lucide-reac
 import toast from 'react-hot-toast'
 import Link from 'next/link'
 import { useConfig } from '@/lib/useConfig'
+import { CURRENCIES } from '@/lib/currencies'
 
-const toDateInput = (d) => d ? new Date(d).toISOString().split('T')[0] : ''
-const today = () => new Date().toISOString().split('T')[0]
+// YYYY-MM-DD in the business timezone (toISOString() would give the UTC date)
+const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dhaka' }).format(new Date())
+const curSymbol = (code) => CURRENCIES.find(c => c.code === (code || 'BDT'))?.symbol ?? code
+// Masked PII placeholders (from /api/leads, /api/clients) must never be copied into the snapshot
+const unmasked = (v) => (typeof v === 'string' && v.includes('••') ? '' : (v || ''))
 
-function ItemCard({ item, idx, onChange, onRemove, ventures, ventureCategories }) {
+function ItemCard({ item, idx, onChange, onRemove, ventures, ventureCategories, currency }) {
   const venture    = item.venture || ''
   const categories = venture ? Object.keys(ventureCategories[venture] || {}) : []
   const services   = (venture && item.service_category)
@@ -84,14 +88,14 @@ function ItemCard({ item, idx, onChange, onRemove, ventures, ventureCategories }
             className={inputCls + ' text-right'} />
         </div>
         <div>
-          <label className={labelCls}>Rate (৳)</label>
+          <label className={labelCls}>Rate ({curSymbol(currency)})</label>
           <input type="number" min="0" value={item.rate} onChange={e => upd('rate', e.target.value)}
             placeholder="0" className={inputCls + ' text-right'} />
         </div>
         <div>
           <label className={labelCls}>Amount</label>
           <div className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white text-right font-semibold text-gray-800">
-            ৳ {(item.amount || 0).toLocaleString()}
+            {curSymbol(currency)} {(item.amount || 0).toLocaleString()}
           </div>
         </div>
       </div>
@@ -143,22 +147,38 @@ function NewQuotationForm() {
   const taxAmount = subtotal * (Number(taxRate) / 100)
   const total     = subtotal + taxAmount - Number(discount)
 
-  // Load leads/clients
+  // Load leads/clients. A record preselected via the URL may be outside the
+  // first 200 — fetch it by id and add it to the options.
   useEffect(() => {
-    fetch('/api/leads?limit=200').then(r => r.json()).then(j => setLeads(j.data ?? []))
-    fetch('/api/clients?limit=200').then(r => r.json()).then(j => setClients(j.data ?? []))
-  }, [])
+    const urlLeadId   = searchParams.get('leadId')
+    const urlClientId = searchParams.get('clientId')
+    const withRecord = async (list, url) => {
+      if (!url || list.some(x => (x.id || x._id) === url.split('/').pop())) return list
+      try {
+        const r = await fetch(url)
+        if (!r.ok) return list
+        const j = await r.json()
+        return j.data ? [j.data, ...list] : list
+      } catch { return list }
+    }
+    fetch('/api/leads?limit=200').then(r => r.json())
+      .then(j => withRecord(j.data ?? [], urlLeadId ? `/api/leads/${urlLeadId}` : null))
+      .then(setLeads).catch(() => {})
+    fetch('/api/clients?limit=200').then(r => r.json())
+      .then(j => withRecord(j.data ?? [], urlClientId ? `/api/clients/${urlClientId}` : null))
+      .then(setClients).catch(() => {})
+  }, [searchParams])
 
   // Auto-fill recipient when lead/client selected
   useEffect(() => {
     if (sourceType === 'LEAD' && leadId) {
       const l = leads.find(x => x.id === leadId || x._id === leadId)
       if (l) {
-        setRecipientName(l.name || '')
-        setRecipientCompany(l.company || '')
-        setRecipientEmail(l.email || '')
-        setRecipientPhone(l.phone || '')
-        setRecipientAddress(l.location || '')
+        setRecipientName(unmasked(l.name))
+        setRecipientCompany(unmasked(l.company))
+        setRecipientEmail(unmasked(l.email))
+        setRecipientPhone(unmasked(l.phone))
+        setRecipientAddress(unmasked(l.location))
       }
     }
   }, [leadId, leads, sourceType])
@@ -167,11 +187,11 @@ function NewQuotationForm() {
     if (sourceType === 'CLIENT' && clientId) {
       const c = clients.find(x => x.id === clientId || x._id === clientId)
       if (c) {
-        setRecipientName(c.contactPerson || c.userId?.name || '')
-        setRecipientCompany(c.company || '')
-        setRecipientEmail(c.userId?.email || '')
-        setRecipientPhone(c.userId?.phone || '')
-        setRecipientAddress([c.address, c.city, c.country].filter(Boolean).join(', '))
+        setRecipientName(unmasked(c.contactPerson || c.userId?.name))
+        setRecipientCompany(unmasked(c.company))
+        setRecipientEmail(unmasked(c.userId?.email))
+        setRecipientPhone(unmasked(c.userId?.phone))
+        setRecipientAddress([c.address, c.city, c.country].map(unmasked).filter(Boolean).join(', '))
       }
     }
   }, [clientId, clients, sourceType])
@@ -189,6 +209,11 @@ function NewQuotationForm() {
   async function save(e) {
     e.preventDefault()
     if (!items.length) return toast.error('Add at least one item')
+    if (items.some(i => !(Number(i.quantity) > 0))) return toast.error('Each item needs a quantity greater than 0')
+    if (items.some(i => Number(i.rate) < 0)) return toast.error('Rates cannot be negative')
+    if (Number(discount) < 0) return toast.error('Discount cannot be negative')
+    if (Number(discount) > subtotal + taxAmount) return toast.error('Discount cannot exceed the total')
+    if (Number(taxRate) < 0 || Number(taxRate) > 100) return toast.error('Tax must be between 0 and 100%')
     if (sourceType === 'LEAD' && !leadId)     return toast.error('Select a lead')
     if (sourceType === 'CLIENT' && !clientId) return toast.error('Select a client')
 
@@ -198,8 +223,9 @@ function NewQuotationForm() {
         sourceType,
         leadId:   sourceType === 'LEAD'   ? leadId   : null,
         clientId: sourceType === 'CLIENT' ? clientId : null,
+        // Blank recipient fields are snapshotted server-side from the lead/client
         recipientName, recipientCompany, recipientEmail, recipientPhone, recipientAddress,
-        items: items.map(({ service_category, ...rest }) => ({ ...rest, quantity: Number(rest.quantity) || 1, rate: Number(rest.rate) || 0 })),
+        items: items.map(it => ({ ...it, quantity: Number(it.quantity), rate: Number(it.rate) || 0 })),
         issueDate, validUntil: validUntil || null,
         taxRate: Number(taxRate), discount: Number(discount),
         currency, notes: notes || null, terms: terms || null,
@@ -217,7 +243,7 @@ function NewQuotationForm() {
     }
   }
 
-  const fmt = (n) => `৳ ${(n ?? 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })}`
+  const fmt = (n) => `${curSymbol(currency)} ${(n ?? 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })}`
 
   return (
     <form onSubmit={save} className="space-y-6 max-w-6xl" data-component="new-quotation-form">
@@ -276,7 +302,7 @@ function NewQuotationForm() {
 
           {/* Recipient info */}
           <div className="bg-white border border-gray-100 rounded-xl p-5 space-y-4">
-            <h2 className="text-sm font-semibold text-gray-700">Recipient Details <span className="font-normal text-gray-400">(snapshot — edit freely)</span></h2>
+            <h2 className="text-sm font-semibold text-gray-700">Recipient Details <span className="font-normal text-gray-400">(snapshot — edit freely; blank fields are filled from the {sourceType === 'LEAD' ? 'lead' : 'client'} on save)</span></h2>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Name</label>
@@ -310,7 +336,7 @@ function NewQuotationForm() {
           <div className="bg-white border border-gray-100 rounded-xl p-5 space-y-3">
             <h2 className="text-sm font-semibold text-gray-700">Items</h2>
             {items.map((item, idx) => (
-              <ItemCard key={idx} item={item} idx={idx} onChange={updateItem} onRemove={removeItem} ventures={ventures} ventureCategories={ventureCategories} />
+              <ItemCard key={idx} item={item} idx={idx} onChange={updateItem} onRemove={removeItem} ventures={ventures} ventureCategories={ventureCategories} currency={currency} />
             ))}
             <button type="button" onClick={addItem}
               className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800 font-medium pt-1">
@@ -380,7 +406,7 @@ function NewQuotationForm() {
               </div>
             )}
             <div className="flex items-center justify-between gap-2">
-              <label className="text-sm text-gray-600 whitespace-nowrap">Discount (৳)</label>
+              <label className="text-sm text-gray-600 whitespace-nowrap">Discount ({curSymbol(currency)})</label>
               <input type="number" min="0" value={discount}
                 onChange={e => setDiscount(e.target.value)}
                 className="w-24 border border-gray-200 rounded-lg px-2 py-1 text-sm text-right focus:outline-none focus:ring-1 focus:ring-gray-400" />

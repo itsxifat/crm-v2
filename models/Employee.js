@@ -91,10 +91,12 @@ export function normalizeDeptCode(dept) {
   for (const [code, label] of Object.entries(DEPT_CODES)) {
     if (label.toUpperCase() === upper) return code
   }
+  // An exact 2-6 letter code (e.g. HRM, DEVOPS) is its own code — check it
+  // before the prefix heuristic so it isn't collapsed into HR / DEV.
+  if (/^[A-Z]{2,6}$/.test(upper)) return upper
   for (const code of Object.keys(DEPT_CODES)) {
     if (upper.startsWith(code)) return code
   }
-  if (/^[A-Z]{2,6}$/.test(upper)) return upper
   return null
 }
 

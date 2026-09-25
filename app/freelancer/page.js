@@ -42,6 +42,15 @@ function Pill({ children, className = '' }) {
   )
 }
 
+// Merge several per-currency totals arrays, summing entries in the same currency.
+function mergeTotals(...lists) {
+  const map = new Map()
+  for (const list of lists) {
+    for (const t of list ?? []) map.set(t.currency, (map.get(t.currency) ?? 0) + (Number(t.total) || 0))
+  }
+  return [...map.entries()].map(([currency, total]) => ({ currency, total }))
+}
+
 function SummaryCard({ label, hint, totals, icon: Icon, accent }) {
   return (
     <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm flex flex-col gap-3">
@@ -132,14 +141,14 @@ export default function FreelancerDashboard() {
         <SummaryCard
           label="Awaiting payment"
           hint="Delivered, not paid yet"
-          totals={[...summary.awaitingPayment.totals, ...(isSalary ? summary.salaryPending.totals : [])]}
+          totals={mergeTotals(summary.awaitingPayment.totals, summary.salaryPending?.totals)}
           icon={Clock}
           accent={{ bg: 'bg-amber-50', text: 'text-amber-600' }}
         />
         <SummaryCard
           label="Total paid"
           hint="Settled to date"
-          totals={[...summary.paid.totals, ...(isSalary ? summary.salaryPaid.totals : [])]}
+          totals={mergeTotals(summary.paid.totals, summary.salaryPaid?.totals)}
           icon={CheckCircle2}
           accent={{ bg: 'bg-emerald-50', text: 'text-emerald-600' }}
         />
@@ -252,6 +261,16 @@ export default function FreelancerDashboard() {
                       >
                         {acting === id + 'accept' && <Loader2 className="w-3 h-3 animate-spin" />}
                         Accept
+                      </button>
+                    )}
+                    {a.status === 'ACCEPTED' && (
+                      <button
+                        onClick={() => actOn(id, 'start', 'Marked in progress')}
+                        disabled={acting === id + 'start'}
+                        className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-white border border-gray-200 text-gray-700 text-xs font-medium rounded-lg disabled:opacity-50"
+                      >
+                        {acting === id + 'start' && <Loader2 className="w-3 h-3 animate-spin" />}
+                        Start
                       </button>
                     )}
                   </div>

@@ -11,6 +11,8 @@ import TkAmt from '@/components/ui/TkAmt'
 import Select from '@/components/ui/Select'
 import DatePicker from '@/components/ui/DatePicker'
 import { Can, usePermission } from '@/components/auth/Can'
+import { allowedStatusTransitions, canRenewProject } from '@/lib/projectStatus'
+import { dhakaDayKey } from '@/lib/dhakaTime'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -53,14 +55,6 @@ const STATUS_OVERVIEW = [
 
 // ─── Status Dropdown ─────────────────────────────────────────────────────────
 
-const BASE_STATUSES = [
-  { key: 'PENDING',     label: 'Pending'     },
-  { key: 'IN_PROGRESS', label: 'In Progress' },
-  { key: 'IN_REVIEW',   label: 'In Review'   },
-  { key: 'REVISION',    label: 'Revision'    },
-  { key: 'DELIVERED',   label: 'Delivered'   },
-]
-
 function StatusDropdown({ project, onUpdated }) {
   const router = useRouter()
   const [open,   setOpen]   = useState(false)
@@ -68,10 +62,14 @@ function StatusDropdown({ project, onUpdated }) {
   const [pos,    setPos]    = useState({ top: 0, left: 0 })
   const btnRef = useRef(null)
 
-  const isMonthly = project.projectType === 'MONTHLY'
-  const statuses  = isMonthly
-    ? [...BASE_STATUSES, { key: 'RENEWED', label: 'Renewed', special: true }]
-    : BASE_STATUSES
+  const { can } = usePermission()
+  // Same transitions the status API enforces, for this project's lifecycle.
+  // Renewal (monthly) goes through the renew endpoint and creates a new project.
+  const statuses = [
+    ...allowedStatusTransitions(project).map(key => ({ key, label: STATUS_META[key]?.label ?? key })),
+    ...(canRenewProject(project) ? [{ key: 'RENEWED', label: 'Renewed', special: true }] : []),
+  ]
+  const canChange = can('projects.update') && statuses.length > 0
 
   useEffect(() => {
     function h(e) { if (btnRef.current && !btnRef.current.contains(e.target)) setOpen(false) }
@@ -81,6 +79,7 @@ function StatusDropdown({ project, onUpdated }) {
 
   function handleOpen(e) {
     e.stopPropagation()
+    if (!canChange) return
     const rect = btnRef.current.getBoundingClientRect()
     setPos({ top: rect.bottom + window.scrollY + 4, left: rect.left + window.scrollX })
     setOpen(o => !o)
@@ -102,10 +101,15 @@ function StatusDropdown({ project, onUpdated }) {
         toast.success(`Renewed! New project created: ${json.newProject.projectCode}`, { duration: 6000 })
         router.push(`/admin/projects/${json.newProject.id}`)
       } else {
-        const res  = await fetch(`/api/projects/${project.id}`, {
-          method:  'PUT',
+        let note
+        if (status === 'CANCELLED') {
+          note = prompt('Cancellation reason (optional):')
+          if (note === null) return
+        }
+        const res  = await fetch(`/api/projects/${project.id}/status`, {
+          method:  'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({ status }),
+          body:    JSON.stringify({ status, note: note || undefined }),
         })
         const json = await res.json()
         if (!res.ok) throw new Error(json.error ?? 'Failed')
@@ -131,12 +135,14 @@ function StatusDropdown({ project, onUpdated }) {
           : <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_DOT[project.status] ?? 'bg-gray-400'}`} />
         }
         {STATUS_META[project.status]?.label ?? project.status}
-        <svg className="w-3 h-3 text-gray-400 group-hover:text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
+        {canChange && (
+          <svg className="w-3 h-3 text-gray-400 group-hover:text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        )}
       </button>
 
-      {open && (
+      {open && canChange && (
         <div
           onClick={e => e.stopPropagation()}
           style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 9999 }}
@@ -166,7 +172,9 @@ function StatusDropdown({ project, onUpdated }) {
 
 function RowMenu({ project, onDeleted }) {
   const router = useRouter()
-  const { can } = usePermission()
+  const { can, role } = usePermission()
+  // DELETE /api/projects/:id is SUPER_ADMIN-only.
+  const canDelete = role === 'SUPER_ADMIN' && can('projects.delete')
   const [open, setOpen] = useState(false)
   const [pos,  setPos]  = useState({ top: 0, right: 0 })
   const btnRef = useRef(null)
@@ -216,7 +224,7 @@ function RowMenu({ project, onDeleted }) {
               <Pencil className="w-3.5 h-3.5 text-gray-400" /> Edit Project
             </button>
           )}
-          {can('projects.delete') && (<>
+          {canDelete && (<>
             <div className="border-t border-gray-100 my-1" />
             <button onClick={handleDelete}
               className="w-full flex items-center gap-2.5 px-4 py-2 text-red-600 hover:bg-red-50">
@@ -245,16 +253,26 @@ export default function ProjectsPage() {
   const [page,      setPage]      = useState(1)
   const [startDate, setStartDate] = useState('')
   const [endDate,   setEndDate]   = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const requestSeq = useRef(0)
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 300)
+    return () => clearTimeout(t)
+  }, [search])
 
   useEffect(() => {
     fetch('/api/projects/stats').then(r => r.json()).then(j => { if (j.data) setStats(j.data) })
   }, [])
 
   const loadProjects = useCallback(async () => {
+    // Only the latest request may update the list (search responses can
+    // resolve out of order).
+    const seq = ++requestSeq.current
     setLoading(true)
     try {
       const p = new URLSearchParams({ page, limit: 25 })
-      if (search)    p.set('search',      search)
+      if (debouncedSearch) p.set('search',  debouncedSearch)
       if (venture)   p.set('venture',     venture)
       if (type)      p.set('projectType', type)
       if (status)    p.set('status',      status)
@@ -262,15 +280,16 @@ export default function ProjectsPage() {
       if (endDate)   p.set('endDate',     endDate)
       const res  = await fetch(`/api/projects?${p}`)
       const json = await res.json()
+      if (seq !== requestSeq.current) return
       if (!res.ok) throw new Error(json.error)
       setProjects(json.data ?? [])
       setMeta(json.meta ?? { page: 1, pages: 1, total: 0 })
     } catch (err) {
-      toast.error(err.message ?? 'Failed to load')
+      if (seq === requestSeq.current) toast.error(err.message ?? 'Failed to load')
     } finally {
-      setLoading(false)
+      if (seq === requestSeq.current) setLoading(false)
     }
-  }, [page, search, venture, type, status, startDate, endDate])
+  }, [page, debouncedSearch, venture, type, status, startDate, endDate])
 
   useEffect(() => { loadProjects() }, [loadProjects])
 
@@ -290,17 +309,13 @@ export default function ProjectsPage() {
 
   const hasFilters = search || venture || type || status || startDate || endDate
 
-  // Build status count map from stats
+  // Build status count map from stats — exact per-status counts so each chip's
+  // number matches the list its (exact status) filter produces
   const statusCountMap = {}
   if (stats) {
     statusCountMap[''] = stats.total ?? 0
-    statusCountMap['PENDING']     = stats.notStarted     ?? 0
-    statusCountMap['IN_PROGRESS'] = stats.active         ?? 0
-    statusCountMap['ON_HOLD']     = stats.onHold         ?? 0
-    statusCountMap['FEEDBACK']    = stats.feedback        ?? 0
-    statusCountMap['SUBMITTED']   = stats.submitted       ?? 0
-    statusCountMap['DELIVERED']   = stats.delivered       ?? 0
-    statusCountMap['CANCELLED']   = stats.cancelled       ?? 0
+    for (const k of ['PENDING', 'IN_PROGRESS', 'ON_HOLD', 'FEEDBACK', 'SUBMITTED', 'DELIVERED', 'CANCELLED'])
+      statusCountMap[k] = stats.byStatus?.[k] ?? 0
   }
 
   return (
@@ -432,7 +447,8 @@ export default function ProjectsPage() {
                 {projects.map(p => {
                   const vm      = ventures.find(v => v.id === p.venture) ?? {}
                   const due     = p.projectType === 'FIXED' ? p.deadline : p.currentPeriodEnd
-                  const isOverd = due && new Date(due) < new Date() && !['DELIVERED','CANCELLED','APPROVED'].includes(p.status)
+                  // Overdue once the due day (Asia/Dhaka) has passed; renewed retainers are never overdue.
+                  const isOverd = due && dhakaDayKey(due) < dhakaDayKey() && !['DELIVERED','CANCELLED','APPROVED','RENEWED'].includes(p.status)
 
                   // Financials — profit is cash basis: what client paid minus what was spent
                   const netBudget = Number(p.budget       ?? 0)   // budget IS the project value

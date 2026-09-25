@@ -3,8 +3,10 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
-import { Department } from '@/models'
+import { Department, Employee, EmployeeOnboarding } from '@/models'
 import { generateShortCode } from '@/models/Department'
+
+const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 export async function PUT(request, { params }) {
   try {
@@ -19,18 +21,31 @@ export async function PUT(request, { params }) {
 
     const { name, shortCode, description } = await request.json()
 
+    const oldName = dept.name
+    const oldCode = dept.shortCode
+
     if (name?.trim()) dept.name = name.trim()
 
     // If shortCode explicitly provided, use it; if name changed and no shortCode, auto-regenerate
     if (shortCode?.trim()) {
       dept.shortCode = shortCode.trim().toUpperCase()
-    } else if (name?.trim() && name.trim() !== dept.name) {
+    } else if (name?.trim() && name.trim() !== oldName) {
       dept.shortCode = generateShortCode(name.trim())
     }
 
     if (description !== undefined) dept.description = description?.trim() || null
 
     await dept.save()
+
+    // Employees (and pending onboardings) store the department short code, so
+    // carry them over to the new code instead of orphaning them.
+    if (oldCode && dept.shortCode !== oldCode) {
+      const match = { $regex: `^${escapeRegex(oldCode)}$`, $options: 'i' }
+      await Promise.all([
+        Employee.updateMany({ department: match }, { $set: { department: dept.shortCode } }),
+        EmployeeOnboarding.updateMany({ 'hrData.department': match }, { $set: { 'hrData.department': dept.shortCode } }),
+      ])
+    }
     return NextResponse.json({ data: dept.toJSON() })
   } catch (err) {
     if (err.code === 11000) return NextResponse.json({ error: 'Department name or short code already exists' }, { status: 409 })

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import { User, Lock, Eye, EyeOff, Loader2, CheckCircle, AlertCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -19,6 +19,19 @@ function Field({ label, children }) {
 export default function ClientProfilePage() {
   const { data: session, update } = useSession()
   const user = session?.user
+
+  // Phone is not carried in the session token — load it from the account API.
+  const [phone, setPhone] = useState(null)
+  const userId = user?.id
+  useEffect(() => {
+    if (!userId) return
+    let cancelled = false
+    fetch('/api/account')
+      .then(r => (r.ok ? r.json() : null))
+      .then(json => { if (!cancelled) setPhone(json?.data?.phone || null) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [userId])
 
   const [saving, setSaving]     = useState(false)
   const [showOld, setShowOld]   = useState(false)
@@ -96,7 +109,7 @@ export default function ClientProfilePage() {
           </div>
           <div>
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Phone</p>
-            <p className="text-sm text-gray-800">{user.phone ?? '—'}</p>
+            <p className="text-sm text-gray-800">{phone ?? '—'}</p>
           </div>
           <div>
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Account Type</p>

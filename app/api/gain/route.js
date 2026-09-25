@@ -4,8 +4,8 @@ export const dynamic = 'force-dynamic'
  * GET /api/gain
  *
  * One-time bootstrap: visit this URL to create the super admin account.
- * Once the super admin changes their password from the account page,
- * this endpoint is permanently sealed and returns a message.
+ * Only works while no SUPER_ADMIN exists; it never modifies existing users and
+ * seals itself permanently right after the account is created.
  */
 
 import { NextResponse } from 'next/server'
@@ -36,31 +36,47 @@ export async function GET() {
     )
   }
 
+  const seal = () => Setting.findOneAndUpdate(
+    { key: 'gain_disabled' },
+    { key: 'gain_disabled', value: 'true', group: 'security' },
+    { upsert: true }
+  )
+
+  // Bootstrap only: once any super admin exists, never touch existing accounts
+  // (no password resets, promotions or re-activations) — seal and stop.
+  if (await User.exists({ role: 'SUPER_ADMIN' })) {
+    await seal()
+    return NextResponse.json(
+      { message: 'This endpoint has been permanently disabled. The admin account is secured.' },
+      { status: 410 }
+    )
+  }
+
+  // Never modify (or promote) an existing user that happens to hold ADMIN_EMAIL.
+  if (await User.exists({ email: ciEquals(ADMIN_EMAIL) })) {
+    return NextResponse.json(
+      { error: 'A user with the configured admin email already exists. Bootstrap refused.' },
+      { status: 409 }
+    )
+  }
+
   const bcrypt = (await import('bcryptjs')).default
 
-  // Create or reset the super admin account
-  const existing = await User.findOne({ email: ciEquals(ADMIN_EMAIL) })
+  await new User({
+    name:     ADMIN_NAME,
+    email:    ADMIN_EMAIL,
+    password: await bcrypt.hash(ADMIN_PASSWORD, 12),
+    role:     'SUPER_ADMIN',
+    isActive: true,
+  }).save()
 
-  if (existing) {
-    // Reset password back to default (idempotent re-visit)
-    existing.password = await bcrypt.hash(ADMIN_PASSWORD, 12)
-    existing.role     = 'SUPER_ADMIN'
-    existing.isActive = true
-    await existing.save()
-  } else {
-    await new User({
-      name:     ADMIN_NAME,
-      email:    ADMIN_EMAIL,
-      password: await bcrypt.hash(ADMIN_PASSWORD, 12),
-      role:     'SUPER_ADMIN',
-      isActive: true,
-    }).save()
-  }
+  // Seal immediately after the one-time creation.
+  await seal()
 
   return NextResponse.json({
     success: true,
     message: 'Super admin account is ready. Log in and change your password immediately.',
     email:   ADMIN_EMAIL,
-    warning: 'Change your password from the Account page — this endpoint will then be permanently disabled.',
+    warning: 'Change your password from the Account page. This endpoint is now permanently disabled.',
   })
 }

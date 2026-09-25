@@ -3,11 +3,13 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
-import { Lead, Employee } from '@/models'
-import { requirePerm } from '@/lib/rbac'
-import { maskList, LEAD_PII } from '@/lib/pii'
+import { Lead } from '@/models'
+import { requirePerm, canDo } from '@/lib/rbac'
+import { maskList, maskDoc, LEAD_PII } from '@/lib/pii'
 import { searchEncrypted } from '@/lib/searchMatch'
 import { logActivity } from '@/lib/logActivity'
+import { LEAD_ASSIGNEE_POPULATE, getOwnEmployeeId, leadLinkSchema } from '@/lib/leadAccess'
+import { isValidObjectId } from '@/lib/objectId'
 import { z } from 'zod'
 
 const createLeadSchema = z.object({
@@ -21,16 +23,17 @@ const createLeadSchema = z.object({
   status:           z.enum(['NEW','CONTACTED','PROPOSAL_SENT','NEGOTIATION','WON','LOST']).default('NEW'),
   priority:         z.enum(['LOW','NORMAL','HIGH','URGENT']).default('NORMAL'),
   category:         z.string().optional().nullable(),
+  subcategory:      z.string().optional().nullable(),
   service:          z.string().optional().nullable(),
   source:           z.string().optional().nullable(),
   platform:         z.string().optional().nullable(),
   reference:        z.string().optional().nullable(),
   referenceType:    z.enum(['CLIENT', 'EMPLOYEE', 'LEAD']).optional().nullable(),
   referenceId:      z.string().optional().nullable(),
-  links:            z.array(z.string().url()).optional().default([]),
+  links:            z.array(leadLinkSchema).optional().default([]),
   sendingDate:      z.string().optional().nullable(),
   followUpDate:     z.string().optional().nullable(),
-  value:            z.number().positive().optional().nullable(),
+  value:            z.number().nonnegative().optional().nullable(),
   notes:            z.string().optional().nullable(),
   assignedToId:     z.string().optional().nullable(),
   businessCategory: z.string().optional().nullable(),
@@ -63,27 +66,36 @@ export async function GET(request) {
     if (status)   filter.status   = status
     if (priority) filter.priority = priority
 
-    if (dateFrom || dateTo) {
+    // Dates are 'yyyy-MM-dd' calendar days in the business timezone (Asia/Dhaka, UTC+6)
+    const isDay = (d) => /^\d{4}-\d{2}-\d{2}$/.test(d)
+    if ((dateFrom && isDay(dateFrom)) || (dateTo && isDay(dateTo))) {
       filter.createdAt = {}
-      if (dateFrom) filter.createdAt.$gte = new Date(dateFrom)
-      if (dateTo)   filter.createdAt.$lte = new Date(dateTo + 'T23:59:59.999Z')
+      if (dateFrom && isDay(dateFrom)) filter.createdAt.$gte = new Date(`${dateFrom}T00:00:00.000+06:00`)
+      if (dateTo && isDay(dateTo))     filter.createdAt.$lte = new Date(`${dateTo}T23:59:59.999+06:00`)
     }
 
-    // Employees only see leads assigned to them
+    // Employees only see leads assigned to them (none if they have no Employee profile)
     if (session.user.role === 'EMPLOYEE') {
-      const employee = await Employee.findOne({ userId: session.user.id }).lean()
-      filter.assignedToId = employee?._id ?? null
+      const employeeId = await getOwnEmployeeId(session)
+      if (!employeeId) {
+        return NextResponse.json({ data: [], meta: { page, limit, total: 0, pages: 0 } })
+      }
+      filter.assignedToId = employeeId
     }
 
-    const populate = { path: 'assignedToId', populate: { path: 'userId', select: 'name avatar' } }
+    const populate = LEAD_ASSIGNEE_POPULATE
 
     let leads, total
     if (search || platform || source) {
-      // name/email/company/phone/reference/location + platform/source are encrypted
+      // Only search PII fields the caller may see — otherwise search results
+      // would let them rebuild masked values one character at a time.
+      const searchFields = ['name', 'company', 'reference']
+      if (canDo(session, 'pii.contact.view')) searchFields.push('email', 'phone')
+      if (canDo(session, 'pii.address.view')) searchFields.push('location')
       ;({ docs: leads, total } = await searchEncrypted(Lead, {
         baseFilter: filter,
         search,
-        fields: ['name', 'email', 'company', 'phone', 'reference', 'location'],
+        fields: searchFields,
         equals: [{ field: 'platform', value: platform }, { field: 'source', value: source }],
         page, limit, sort: { createdAt: -1 }, populate,
       }))
@@ -125,6 +137,23 @@ export async function POST(request) {
     if (data.followUpDate) data.followUpDate = new Date(data.followUpDate)
     if (data.sendingDate)  data.sendingDate  = new Date(data.sendingDate)
 
+    // Assigning a lead to someone requires sales.leads.assign; otherwise the
+    // lead is assigned to its creator (so an EMPLOYEE can still see it).
+    const ownEmployeeId = await getOwnEmployeeId(session)
+    if (data.assignedToId) {
+      if (!isValidObjectId(data.assignedToId)) {
+        return NextResponse.json({ error: 'Invalid assignee' }, { status: 400 })
+      }
+      const isSelf = ownEmployeeId && ownEmployeeId.toString() === data.assignedToId
+      if (!isSelf && !canDo(session, 'sales.leads.assign')) {
+        return NextResponse.json({ error: 'You do not have permission to assign leads' }, { status: 403 })
+      }
+    } else if (session.user.role === 'EMPLOYEE' || !canDo(session, 'sales.leads.assign')) {
+      data.assignedToId = ownEmployeeId ?? null
+    } else {
+      data.assignedToId = null
+    }
+
     const lead = await new Lead(data).save()
 
     logActivity({
@@ -137,7 +166,7 @@ export async function POST(request) {
       request,
     })
 
-    return NextResponse.json({ data: lead }, { status: 201 })
+    return NextResponse.json({ data: maskDoc(session, lead.toJSON(), LEAD_PII) }, { status: 201 })
   } catch (err) {
     console.error('[POST /api/leads]', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

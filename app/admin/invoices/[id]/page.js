@@ -15,10 +15,11 @@ import Select from '@/components/ui/Select'
 import DatePicker from '@/components/ui/DatePicker'
 import InvoicePrintView, { openInvoicePrint } from '@/components/shared/InvoicePrintView'
 import { useConfig } from '@/lib/useConfig'
+import { dhakaDayKey } from '@/lib/dhakaTime'
 
 const fmt     = (n) => `৳ ${(n ?? 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })}`
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
-const fmtDateInput = (d) => d ? new Date(d).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10)
+const fmtDateInput = (d) => d ? new Date(d).toISOString().slice(0, 10) : dhakaDayKey()
 
 const STATUS_STYLES = {
   DRAFT:          { badge: 'bg-gray-100 text-gray-600',     label: 'Draft' },
@@ -62,7 +63,6 @@ const TRANSITION_ACTIONS = {
 
 function StatusChangeModal({ invoice, onClose, onDone }) {
   const [action,     setAction]     = useState('')
-  const [paidAmount, setPaidAmount] = useState('')
   const [saving,     setSaving]     = useState(false)
   const actions = TRANSITION_ACTIONS[invoice.status] ?? []
 
@@ -71,7 +71,6 @@ function StatusChangeModal({ invoice, onClose, onDone }) {
     setSaving(true)
     try {
       const body = { status: action }
-      if (action === 'PARTIALLY_PAID' && paidAmount) body.paidAmount = Number(paidAmount)
       const res  = await fetch(`/api/invoices/${invoice.id}/status`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
       })
@@ -109,10 +108,9 @@ function StatusChangeModal({ invoice, onClose, onDone }) {
         </div>
         {action === 'PARTIALLY_PAID' && (
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Amount Paid (BDT)</label>
-            <input type="number" step="0.01" min="0" value={paidAmount} onChange={e => setPaidAmount(e.target.value)} onKeyDown={e => { if (e.key === '-' || e.key === 'e') e.preventDefault() }}
-              placeholder="0.00"
-              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <p className="text-xs text-gray-500">
+              The paid amount comes from confirmed payments only. Use Record Payment to add a new payment.
+            </p>
           </div>
         )}
         <div className="flex gap-2 justify-end">
@@ -133,7 +131,7 @@ function RecordPaymentModal({ invoice, onClose, onSaved }) {
   const { paymentMethods } = useConfig()
   const [form, setForm] = useState({
     amount: '', paymentMethod: 'BANK_TRANSFER',
-    paymentDate: new Date().toISOString().slice(0, 10),
+    paymentDate: dhakaDayKey(),
     description: '', notes: '', receiptUrl: '',
   })
   const [saving, setSaving] = useState(false)
@@ -356,7 +354,7 @@ export default function InvoiceDetailPage() {
 
   const s       = STATUS_STYLES[invoice.status] ?? STATUS_STYLES.DRAFT
   const actions = TRANSITION_ACTIONS[invoice.status] ?? []
-  const canRecordPayment = !['PAID', 'CANCELLED'].includes(invoice.status)
+  const canRecordPayment = !['DRAFT', 'PAID', 'CANCELLED'].includes(invoice.status)
   const balance = invoice.total - (invoice.paidAmount ?? 0)
 
   if (printMode) {

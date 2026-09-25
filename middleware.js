@@ -1,5 +1,6 @@
 import { getToken } from 'next-auth/jwt'
 import { NextResponse } from 'next/server'
+import { clientIpFromHeaders } from '@/lib/clientIp'
 
 // ── Security headers applied to EVERY response ────────────────────────────────
 const SECURITY_HEADERS = {
@@ -57,9 +58,10 @@ const _rateStore = new Map()
 const API_RATE_LIMIT   = 600  // requests per window (10/sec)
 const API_RATE_WINDOW  = 60 * 1000  // 1-minute window
 // Brute-force budget. Applies ONLY to real sign-in attempts (credential POSTs),
-// NOT to NextAuth's frequent session/csrf/providers reads. This is the count of
-// failed-or-not login attempts from one IP we treat as suspicious.
-const LOGIN_RATE_LIMIT  = 10   // sign-in attempts per window before throttling
+// NOT to NextAuth's frequent session/csrf/providers reads. Middleware cannot tell
+// success from failure, so this per-IP ceiling is kept well above a shared office
+// NAT's daily logins; per-account lockout (10 failures) lives in lib/auth.js.
+const LOGIN_RATE_LIMIT  = 100  // sign-in attempts per IP per window before throttling
 const LOGIN_RATE_WINDOW = 15 * 60 * 1000  // 15 minutes
 
 function checkRate(key, limit, window) {
@@ -84,11 +86,8 @@ setInterval(() => {
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 function getIP(req) {
-  return (
-    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-    req.headers.get('x-real-ip') ||
-    '0.0.0.0'
-  )
+  // Trusted-proxy hop (right-most X-Forwarded-For entry), not the client-supplied first one.
+  return clientIpFromHeaders(h => req.headers.get(h), req.ip || '0.0.0.0')
 }
 
 function addSecurityHeaders(response) {
@@ -126,7 +125,12 @@ const ROLE_DASHBOARDS = {
   VENDOR:      '/vendor',
 }
 
+// Pages open to EVERY signed-in role: /notifications is the shared
+// "view all notifications" page linked from the client/freelancer bell.
+const SHARED_ROUTES = ['/notifications']
+
 function hasAccess(role, pathname) {
+  if (SHARED_ROUTES.some(r => pathname.startsWith(r))) return true
   return (ROLE_ROUTES[role] || []).some(r => pathname.startsWith(r))
 }
 
@@ -137,8 +141,13 @@ export default async function middleware(req) {
     const ip           = getIP(req)
     const ua           = req.headers.get('user-agent') || ''
 
+    // Scheduler calls to /api/cron/* carry x-cron-secret and no session; the
+    // route handler verifies the secret itself (constant-time), so skip the
+    // bot-UA block and the session requirement for them.
+    const isCronCall = pathname.startsWith('/api/cron/') && !!req.headers.get('x-cron-secret')
+
     // ── 1. Block bots and headless browsers on ALL routes ──────────────────
-    if (isBotUserAgent(ua)) {
+    if (!isCronCall && isBotUserAgent(ua)) {
       return blockedResponse('Automated access is not permitted.', 403)
     }
 
@@ -183,8 +192,19 @@ export default async function middleware(req) {
     }
 
     // ── 3a. Public API routes (no auth, no redirect) ─────────────────────────
-    const publicApiRoutes = ['/api/gain', '/api/auth/', '/api/account-recovery']
-    if (publicApiRoutes.some(r => pathname.startsWith(r))) {
+    const publicApiRoutes = ['/api/gain', '/api/auth/', '/api/account-recovery', '/api/freelancers/invite/']
+    // New-hire onboarding: GET/PATCH /api/onboarding/<token> and the upload
+    // endpoint validate the onboarding token themselves. The HR-only list/create
+    // (/api/onboarding) and /api/onboarding/<token>/approve are NOT public.
+    const isPublicOnboardingApi =
+      pathname === '/api/onboarding/upload' || /^\/api\/onboarding\/[^/]+\/?$/.test(pathname)
+    if (isCronCall || isPublicOnboardingApi || publicApiRoutes.some(r => pathname.startsWith(r))) {
+      return addSecurityHeaders(NextResponse.next())
+    }
+
+    // ── 3a'. Public onboarding page — opened by a new hire with no account.
+    // Token-validated by its API; never redirect, even for signed-in users.
+    if (pathname.startsWith('/onboarding/')) {
       return addSecurityHeaders(NextResponse.next())
     }
 
@@ -194,6 +214,14 @@ export default async function middleware(req) {
       if (token) {
         const dashboard = ROLE_DASHBOARDS[token.role] || '/admin'
         return addSecurityHeaders(NextResponse.redirect(new URL(dashboard, req.url)))
+      }
+      // The freelancer invite page lives under app/freelancer/layout.js, which
+      // otherwise redirects session-less visitors to /login. Flag the request
+      // (overwriting any client-sent value) so that layout renders it bare.
+      if (pathname.startsWith('/freelancer/invite')) {
+        const headers = new Headers(req.headers)
+        headers.set('x-freelancer-invite', '1')
+        return addSecurityHeaders(NextResponse.next({ request: { headers } }))
       }
       return addSecurityHeaders(NextResponse.next())
     }
@@ -206,6 +234,19 @@ export default async function middleware(req) {
     }
 
     const role = token.role
+
+    // Uploaded files (e.g. PDFs — images skip middleware via the matcher) are
+    // served by an auth-checking route handler; don't bounce them through the
+    // onboarding / KYC / company gates below, which only make sense for pages.
+    if (pathname.startsWith('/uploads/')) {
+      // Allow same-origin embedding so the in-app PDF viewer (<embed>) can show
+      // uploaded files; cross-origin framing stays blocked.
+      const res = addSecurityHeaders(NextResponse.next())
+      res.headers.set('X-Frame-Options', 'SAMEORIGIN')
+      res.headers.set('Content-Security-Policy',
+        SECURITY_HEADERS['Content-Security-Policy'].replace("frame-ancestors 'none'", "frame-ancestors 'self'"))
+      return res
+    }
 
     // ── 5. Employee onboarding gate ──────────────────────────────────────────
     // Only applies when employee onboarding (profile + KYC) is REQUIRED by config

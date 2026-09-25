@@ -8,6 +8,7 @@ import Pagination from '@/components/ui/Pagination'
 import Avatar from '@/components/ui/Avatar'
 import ActionMenu from '@/components/ui/ActionMenu'
 import FreelancerModal from '@/components/admin/freelancers/FreelancerModal'
+import InviteCredentialsModal from '@/components/admin/freelancers/InviteCredentialsModal'
 import { formatCurrency } from '@/lib/utils'
 
 function SkillTags({ skills }) {
@@ -82,6 +83,7 @@ export default function FreelancersPage() {
   const [verify,      setVerify]      = useState('all') // all | pending | verified | unverified
   const [modalOpen,   setModalOpen]   = useState(false)
   const [editing,     setEditing]     = useState(null)
+  const [unsent,      setUnsent]      = useState(null)  // create result whose invite email failed
 
   const fetchFreelancers = useCallback(async () => {
     setLoading(true)
@@ -89,6 +91,7 @@ export default function FreelancersPage() {
       const params = new URLSearchParams({ page, limit: 20, type: 'FREELANCER' })
       if (search) params.set('search', search)
       if (verify !== 'all') params.set('verification', verify)
+      if (activity !== 'all') params.set('activity', activity)
       const res  = await fetch(`/api/freelancers?${params}`)
       const json = await res.json()
       if (!res.ok) throw new Error(json.error)
@@ -99,7 +102,7 @@ export default function FreelancersPage() {
     } finally {
       setLoading(false)
     }
-  }, [page, search, verify])
+  }, [page, search, verify, activity])
 
   useEffect(() => { fetchFreelancers() }, [fetchFreelancers])
 
@@ -113,16 +116,9 @@ export default function FreelancersPage() {
     // Be honest about email delivery: the API returns 201 even when the invite
     // email fails to send (SMTP not configured, etc.). Don't claim "sent" then.
     if (result?.emailSent === false) {
-      if (result.link && typeof navigator !== 'undefined' && navigator.clipboard) {
-        navigator.clipboard.writeText(result.link).catch(() => {})
-      }
-      const detail = result.link
-        ? 'Invite link copied to clipboard — share it manually.'
-        : 'Check the email settings and try again.'
-      toast.error(`Freelancer created, but the invitation email could not be sent. ${detail}`, { duration: 8000 })
-      if (result.link || result.tempPassword) {
-        console.warn('[freelancer invite] email failed — share manually:', result.link ?? `temp password: ${result.tempPassword}`)
-      }
+      // Show the link / temp password (returned only once) so it can be shared manually.
+      if (result.link || result.tempPassword) setUnsent(result)
+      else toast.error('Freelancer created, but the invitation email could not be sent.', { duration: 8000 })
       return
     }
 
@@ -158,11 +154,8 @@ export default function FreelancersPage() {
     }
   }
 
-  const visible = freelancers.filter(f => {
-    if (activity === 'active')   return (daysSince(f.finance?.lastWorkedAt) ?? 999) <= 30
-    if (activity === 'inactive') return (daysSince(f.finance?.lastWorkedAt) ?? 999) > 30
-    return true
-  })
+  // The activity filter is applied server-side (before pagination).
+  const visible = freelancers
 
   return (
     <div className="space-y-6 mx-auto w-full max-w-7xl">
@@ -204,7 +197,7 @@ export default function FreelancersPage() {
             {[['all', 'All'], ['active', 'Recently active'], ['inactive', 'Inactive 30d+']].map(([k, label]) => (
               <button
                 key={k}
-                onClick={() => setActivity(k)}
+                onClick={() => { setActivity(k); setPage(1) }}
                 className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
                   activity === k ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-100'
                 }`}
@@ -258,6 +251,7 @@ export default function FreelancersPage() {
                       </td>
                       <td className="px-6 py-4 text-sm font-medium text-gray-900 whitespace-nowrap">
                         {f.finance?.owedBDT ? formatCurrency(f.finance.owedBDT) : <span className="text-gray-300">—</span>}
+                        {f.finance?.owedOther?.map(o => <div key={o.currency} className="text-xs text-gray-500">{o.currency} {Number(o.total).toLocaleString()}</div>)}
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-600 whitespace-nowrap">
                         {f.finance?.paidBDT ? formatCurrency(f.finance.paidBDT) : <span className="text-gray-300">—</span>}
@@ -300,6 +294,8 @@ export default function FreelancersPage() {
         onSaved={handleSaved}
         defaultType="FREELANCER"
       />
+
+      <InviteCredentialsModal result={unsent} onClose={() => setUnsent(null)} label="Freelancer" />
     </div>
   )
 }

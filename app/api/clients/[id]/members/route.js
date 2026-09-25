@@ -8,19 +8,21 @@ import { findOrCreateClientUser, ensureMembership } from '@/lib/clientAccess'
 import { sendClientActivationEmail } from '@/lib/mailer'
 import { createNotification } from '@/lib/createNotification'
 import { logActivity } from '@/lib/logActivity'
-
-const ALLOWED = ['SUPER_ADMIN', 'MANAGER']
+import { requirePerm, canDo } from '@/lib/rbac'
+import { maskEmail, maskPhone, isMaskedValue } from '@/lib/pii'
+import { isValidObjectId } from '@/lib/objectId'
 
 // GET /api/clients/[id]/members — people who can access this company
 export async function GET(_, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-    if (!ALLOWED.includes(session.user.role))
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const denied  = requirePerm(session, 'sales.customers.view')
+    if (denied) return denied
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Company not found' }, { status: 404 })
 
     await connectDB()
 
+    const showContact = canDo(session, 'pii.contact.view')
     const memberships = await CompanyMembership.find({ clientId: params.id, status: 'ACTIVE' })
       .populate({ path: 'userId', select: 'name email phone avatar isActive' })
       .sort({ role: 1, createdAt: 1 })
@@ -33,8 +35,8 @@ export async function GET(_, { params }) {
           membershipId: m._id.toString(),
           userId:       m.userId._id.toString(),
           name:         m.userId.name,
-          email:        m.userId.email,
-          phone:        m.userId.phone ?? null,
+          email:        showContact ? m.userId.email : maskEmail(m.userId.email),
+          phone:        showContact ? (m.userId.phone ?? null) : (maskPhone(m.userId.phone) ?? null),
           avatar:       m.userId.avatar ?? null,
           isActive:     m.userId.isActive,
           role:         m.role,
@@ -53,22 +55,29 @@ export async function GET(_, { params }) {
 export async function POST(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-    if (!ALLOWED.includes(session.user.role))
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const denied  = requirePerm(session, 'sales.customers.update')
+    if (denied) return denied
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Company not found' }, { status: 404 })
 
     await connectDB()
 
     const { email, name, phone, role } = await request.json()
     if (!email?.trim()) return NextResponse.json({ error: 'Email is required' }, { status: 422 })
+    if (isMaskedValue(email)) return NextResponse.json({ error: 'Enter the full email address' }, { status: 422 })
 
     const client = await Client.findById(params.id).lean()
     if (!client) return NextResponse.json({ error: 'Company not found' }, { status: 404 })
 
     // Already an active member?
-    const { user, isNew, activationToken } = await findOrCreateClientUser({
-      email, name, phone, addedBy: session.user.id,
-    })
+    // Non-CLIENT accounts (staff etc.) are rejected with a 422.
+    let found
+    try {
+      found = await findOrCreateClientUser({ email, name, phone: isMaskedValue(phone) ? null : phone })
+    } catch (e) {
+      if (e?.status === 422) return NextResponse.json({ error: e.message }, { status: 422 })
+      throw e
+    }
+    const { user, isNew, activationToken } = found
 
     const existingMembership = await CompanyMembership.findOne({
       userId: user._id, clientId: client._id, status: 'ACTIVE',
@@ -83,9 +92,9 @@ export async function POST(request, { params }) {
       addedBy: session.user.id,
     })
 
-    // Credential delivery — new person gets a magic activation link (no password).
+    // Credential delivery — new (or never-activated) person gets a magic activation link (no password).
     let emailSent = false
-    if (isNew && activationToken) {
+    if (activationToken) {
       try {
         await sendClientActivationEmail({
           to:   user.email,

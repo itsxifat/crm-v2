@@ -4,12 +4,24 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Setting } from '@/models'
+import { canDo } from '@/lib/rbac'
+
+// Credential blobs are only served (masked) by /api/settings/email and /api/settings/whatsapp.
+const SECRET_KEYS = ['email_accounts', 'whatsapp_accounts']
+// Keys owned by dedicated endpoints / the system — never writable here.
+const RESERVED_KEYS = [...SECRET_KEYS, 'gain_disabled', 'crm_config']
 
 // GET /api/settings/[key]
 export async function GET(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
     if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    if (session.user.role !== 'SUPER_ADMIN') {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+    if (SECRET_KEYS.includes(params.key)) {
+      return NextResponse.json({ error: 'Setting not found' }, { status: 404 })
+    }
 
     await connectDB()
 
@@ -29,8 +41,11 @@ export async function PUT(request, { params }) {
     const session = await getServerSession(authOptions)
     if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
 
-    if (session.user.role !== 'SUPER_ADMIN') {
+    if (!canDo(session, 'system.config.update')) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+    if (RESERVED_KEYS.includes(params.key)) {
+      return NextResponse.json({ error: 'This setting cannot be written here' }, { status: 403 })
     }
 
     await connectDB()

@@ -7,6 +7,8 @@ import { Quotation, Lead, LeadActivity } from '@/models'
 import { createNotification } from '@/lib/createNotification'
 import { logActivity } from '@/lib/logActivity'
 import { requirePerm } from '@/lib/rbac'
+import { isValidObjectId } from '@/lib/objectId'
+import { QUOTATION_POPULATE, quotationJSON } from '@/lib/quotation'
 
 const TRANSITIONS = {
   DRAFT:    ['SENT'],
@@ -22,22 +24,38 @@ export async function PATCH(request, { params }) {
     const denied = requirePerm(session, 'sales.quotations.update')
     if (denied) return denied
 
+    const { status } = await request.json()
+
+    // Accepting / rejecting a quotation is an approval decision
+    if (status === 'ACCEPTED' || status === 'REJECTED') {
+      const notApprover = requirePerm(session, 'sales.quotations.approve')
+      if (notApprover) return notApprover
+    }
+
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     await connectDB()
 
-    const { status } = await request.json()
-    const q = await Quotation.findById(params.id)
-    if (!q) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    const current = await Quotation.findById(params.id).lean()
+    if (!current) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-    const allowed = TRANSITIONS[q.status] ?? []
+    const allowed = TRANSITIONS[current.status] ?? []
     if (!allowed.includes(status))
-      return NextResponse.json({ error: `Cannot transition from ${q.status} to ${status}` }, { status: 409 })
+      return NextResponse.json({ error: `Cannot transition from ${current.status} to ${status}` }, { status: 409 })
 
-    q.status = status
-    if (status === 'SENT'     && !q.sentAt)     q.sentAt     = new Date()
-    if (status === 'ACCEPTED' && !q.acceptedAt) q.acceptedAt = new Date()
-    if (status === 'REJECTED' && !q.rejectedAt) q.rejectedAt = new Date()
-    if (status === 'DRAFT')                     { q.sentAt = null; q.acceptedAt = null; q.rejectedAt = null }
-    await q.save()
+    const update = { status }
+    if (status === 'SENT'     && !current.sentAt)     update.sentAt     = new Date()
+    if (status === 'ACCEPTED' && !current.acceptedAt) update.acceptedAt = new Date()
+    if (status === 'REJECTED' && !current.rejectedAt) update.rejectedAt = new Date()
+    if (status === 'DRAFT')                           { update.sentAt = null; update.acceptedAt = null; update.rejectedAt = null }
+
+    // Conditional on the status we validated against, so a repeated or
+    // concurrent request can't apply the same transition twice.
+    const q = await Quotation.findOneAndUpdate(
+      { _id: current._id, status: current.status },
+      { $set: update },
+      { new: true },
+    )
+    if (!q) return NextResponse.json({ error: 'Quotation status has changed; reload and try again' }, { status: 409 })
 
     // When a lead-sourced quotation is sent, advance the lead to PROPOSAL_SENT.
     // Only advance from earlier stages so we never regress a lead already in
@@ -86,7 +104,8 @@ export async function PATCH(request, { params }) {
       })
     }
 
-    return NextResponse.json({ data: q.toJSON() })
+    await q.populate(QUOTATION_POPULATE)
+    return NextResponse.json({ data: quotationJSON(session, q) })
   } catch (err) {
     console.error('[PATCH /api/quotations/[id]/status]', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

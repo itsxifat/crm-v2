@@ -1,4 +1,5 @@
 import mongoose from 'mongoose'
+import { nextSequence } from '../lib/sequence'
 const TransactionSchema = new mongoose.Schema(
   {
     txnId:    { type: String, unique: true, sparse: true, default: null },
@@ -42,11 +43,19 @@ const TransactionSchema = new mongoose.Schema(
 
 TransactionSchema.pre('save', async function () {
   if (this.txnId) return
-  const today    = new Date()
-  const datePart = today.toISOString().slice(0, 10).replace(/-/g, '')
+  // Calendar day in the business timezone (Asia/Dhaka, UTC+6, no DST).
+  const dhakaNow = new Date(Date.now() + 6 * 60 * 60 * 1000)
+  const datePart = dhakaNow.toISOString().slice(0, 10).replace(/-/g, '')
   const prefix   = `TXN-${datePart}-`
-  const count    = await mongoose.model('Transaction').countDocuments({ txnId: { $regex: `^${prefix}` } })
-  this.txnId = `${prefix}${String(count + 1).padStart(4, '0')}`
+  // Highest sequence already issued today (NOT a count — a count reissues an
+  // existing id once any of today's ids is renamed/removed and collides on the
+  // unique index). The atomic counter keeps concurrent saves from colliding.
+  const existing = await mongoose.model('Transaction')
+    .find({ txnId: { $regex: `^${prefix}[0-9]+$` } })
+    .select('txnId').lean()
+  const maxUsed = existing.reduce((m, d) => Math.max(m, parseInt(d.txnId.slice(prefix.length), 10) || 0), 0)
+  const seq = await nextSequence(`txn:${prefix}`, maxUsed)
+  this.txnId = `${prefix}${String(seq).padStart(4, '0')}`
 })
 
 if (mongoose.models.Transaction) delete mongoose.models.Transaction

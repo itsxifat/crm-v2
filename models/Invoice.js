@@ -1,4 +1,5 @@
 import mongoose from 'mongoose'
+import { nextSequence } from '../lib/sequence'
 const InvoiceSchema = new mongoose.Schema(
   {
     invoiceNumber: { type: String, unique: true, sparse: true },
@@ -46,11 +47,19 @@ const InvoiceSchema = new mongoose.Schema(
 
 InvoiceSchema.pre('validate', async function () {
   if (this.invoiceNumber) return
-  const now    = new Date()
-  const yymm   = `${String(now.getFullYear()).slice(-2)}${String(now.getMonth() + 1).padStart(2, '0')}`
+  // Month boundaries follow the business timezone (Asia/Dhaka), not the server's.
+  const parts  = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Dhaka', year: '2-digit', month: '2-digit' })
+    .formatToParts(new Date()).map(p => [p.type, p.value]))
+  const yymm   = `${parts.year}${parts.month}`
   const prefix = `ENV-${yymm}A`
-  const count  = await mongoose.model('Invoice').countDocuments({ invoiceNumber: { $regex: `^${prefix}` } })
-  this.invoiceNumber = `${prefix}${String(count + 1).padStart(3, '0')}`
+  // Highest number already issued for this prefix (NOT a count — a count reissues
+  // an existing number after any delete and collides on the unique index).
+  const existing = await mongoose.model('Invoice')
+    .find({ invoiceNumber: { $regex: `^${prefix}[0-9]+$` } })
+    .select('invoiceNumber').lean()
+  const maxUsed = existing.reduce((m, d) => Math.max(m, parseInt(d.invoiceNumber.slice(prefix.length), 10) || 0), 0)
+  const seq = await nextSequence(`invoice:${prefix}`, maxUsed)
+  this.invoiceNumber = `${prefix}${String(seq).padStart(3, '0')}`
 })
 
 // A project may carry MANY invoices (phases, retainers, change requests). They

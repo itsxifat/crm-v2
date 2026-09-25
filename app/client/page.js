@@ -10,6 +10,8 @@ import {
   ArrowRight, Clock, Building2,
 } from 'lucide-react'
 import ProjectStatusBadge from '@/components/portals/ProjectStatusBadge'
+import { sumInvoiceMoneyBDT, INVOICE_MONEY_FIELDS } from '@/lib/clientStats'
+import { formatMoney } from '@/lib/currencies'
 
 // Non-terminal statuses — what a client thinks of as "active / ongoing" work.
 // Everything except DELIVERED / CANCELLED / RENEWED.
@@ -58,24 +60,25 @@ export default async function ClientDashboard() {
 
   let activeProjects = [], invoices = [],
       activeCount = 0, pendingInvoicesCount = 0,
-      paidInvoices = [], dueInvoices = []
+      billableInvoices = []
 
   if (hasCompany) {
-    ;[activeProjects, invoices, activeCount, pendingInvoicesCount, paidInvoices, dueInvoices] = await Promise.all([
+    ;[activeProjects, invoices, activeCount, pendingInvoicesCount, billableInvoices] = await Promise.all([
       Project.find({ clientId, status: { $in: ACTIVE_STATUSES } })
         .select('name description status projectType deadline currentPeriodEnd updatedAt')
         .sort({ updatedAt: -1 })
         .limit(4)
         .lean(),
       Invoice.find({ clientId, status: { $nin: ['CANCELLED', 'DRAFT'] } })
-        .select('invoiceNumber issueDate dueDate total paidAmount status')
+        .select('invoiceNumber issueDate dueDate total paidAmount status currency')
         .sort({ createdAt: -1 })
         .limit(5)
         .lean(),
       Project.countDocuments({ clientId, status: { $in: ACTIVE_STATUSES } }),
       Invoice.countDocuments({ clientId, status: { $in: OUTSTANDING } }),
-      Invoice.find({ clientId, status: 'PAID' }).select('total').lean(),
-      Invoice.find({ clientId, status: { $in: OUTSTANDING } }).select('total paidAmount').lean(),
+      // Every issued, non-cancelled invoice — money received on partially paid /
+      // overdue invoices counts towards Total Paid too.
+      Invoice.find({ clientId, status: { $nin: ['CANCELLED', 'DRAFT'] } }).select(INVOICE_MONEY_FIELDS).lean(),
     ])
   }
 
@@ -94,8 +97,9 @@ export default async function ClientDashboard() {
     nextMilestone: milestones.find(m => m.projectId.toString() === p._id.toString()) ?? null,
   }))
 
-  const paidTotal = paidInvoices.reduce((s, i) => s + (Number(i.total) || 0), 0)
-  const dueTotal  = dueInvoices.reduce((s, i) => s + ((Number(i.total) || 0) - (Number(i.paidAmount) || 0)), 0)
+  // Invoices can be in different currencies: roll up in BDT (base currency)
+  // using each invoice's own BDT equivalent, same as the admin client figures.
+  const { totalRevenue: paidTotal, outstandingBalance: dueTotal } = sumInvoiceMoneyBDT(billableInvoices)
 
   const stats = [
     { label: 'Active Projects',  value: activeCount,               icon: FolderOpen,  color: 'blue'   },
@@ -241,7 +245,7 @@ export default async function ClientDashboard() {
                         <p className="text-xs text-gray-400">{fmtDate(invoice.issueDate)}</p>
                       </td>
                       <td className="px-5 py-3.5 text-sm text-gray-600">{fmtDate(invoice.dueDate)}</td>
-                      <td className="px-5 py-3.5 text-right text-sm font-semibold text-gray-900">{fmtTk(invoice.total)}</td>
+                      <td className="px-5 py-3.5 text-right text-sm font-semibold text-gray-900">{formatMoney(invoice.total, invoice.currency)}</td>
                       <td className="px-5 py-3.5"><InvoiceStatusBadge status={invoice.status} /></td>
                       <td className="px-5 py-3.5 text-right">
                         <Link href={`/client/invoices/${id}`}

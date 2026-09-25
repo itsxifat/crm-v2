@@ -3,9 +3,12 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
-import { Invoice, Payment } from '@/models'
+import crypto from 'crypto'
+import { Invoice, Payment, ProjectPayment } from '@/models'
 import { getConfig } from '@/lib/getConfig'
 import { getMyCompanyIds } from '@/lib/clientAccess'
+import { escapeHtml } from '@/lib/html'
+import { isValidObjectId } from '@/lib/objectId'
 
 function formatCurrency(amount, currency = 'BDT') {
   const n = amount ?? 0
@@ -26,6 +29,7 @@ export async function GET(_, { params }) {
     const session = await getServerSession(authOptions)
     if (!session || session.user.role !== 'CLIENT')
       return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
     await connectDB()
 
@@ -33,15 +37,24 @@ export async function GET(_, { params }) {
     if (!clientIds.length) return NextResponse.json({ error: 'Client not found' }, { status: 404 })
 
     const invoice = await Invoice.findOne({ _id: params.id, clientId: { $in: clientIds }, status: { $ne: 'DRAFT' } })
-      .populate({ path: 'clientId', populate: { path: 'userId', select: 'name email phone' } })
+      .populate({ path: 'clientId', select: 'company address userId', populate: { path: 'userId', select: 'name email' } })
       .populate({ path: 'projectId', select: 'name' })
 
     if (!invoice) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-    const [config, payments] = await Promise.all([
+    // Payment history: confirmed ProjectPayments (the main flow) plus any
+    // legacy Payment rows, newest first.
+    const [config, projectPayments, legacyPayments] = await Promise.all([
       getConfig(),
-      Payment.find({ invoiceId: params.id }).sort({ createdAt: -1 }),
+      ProjectPayment.find({ invoiceId: params.id, status: 'CONFIRMED' }).sort({ paymentDate: -1 }).lean(),
+      Payment.find({ invoiceId: params.id }).sort({ createdAt: -1 }).lean(),
     ])
+    const payments = [
+      ...projectPayments.map(p => ({ date: p.paymentDate ?? p.confirmedAt ?? p.createdAt, method: p.paymentMethod, reference: null, amount: p.amount })),
+      ...legacyPayments.map(p => ({ date: p.paidAt ?? p.createdAt, method: p.method, reference: p.reference, amount: p.amount })),
+    ].sort((a, b) => new Date(b.date) - new Date(a.date))
+    const e     = escapeHtml
+    const nonce = crypto.randomBytes(16).toString('base64')
 
     const inv = invoice.toJSON()
     const items = Array.isArray(inv.items) ? inv.items : []
@@ -55,7 +68,7 @@ export async function GET(_, { params }) {
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>Invoice ${inv.invoiceNumber}</title>
+<title>Invoice ${e(inv.invoiceNumber)}</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: 'Segoe UI', Arial, sans-serif; color: #1a1a2e; background: #fff; font-size: 14px; line-height: 1.5; }
@@ -117,32 +130,32 @@ export async function GET(_, { params }) {
 <div class="page">
   <div class="header">
     <div>
-      <div class="company-name">${companyName}</div>
+      <div class="company-name">${e(companyName)}</div>
       ${companyAddress || companyEmail || companyPhone
-        ? `<div class="company-info">${[companyAddress, companyEmail, companyPhone].filter(Boolean).join(' | ')}</div>`
+        ? `<div class="company-info">${e([companyAddress, companyEmail, companyPhone].filter(Boolean).join(' | '))}</div>`
         : ''}
     </div>
     <div class="invoice-meta">
       <div class="invoice-title">INVOICE</div>
-      <div class="invoice-number">#${inv.invoiceNumber}</div>
-      <span class="status-badge status-${inv.status}">${inv.status.replace('_', ' ')}</span>
+      <div class="invoice-number">#${e(inv.invoiceNumber)}</div>
+      <span class="status-badge status-${e(inv.status)}">${e(String(inv.status ?? '').replace('_', ' '))}</span>
     </div>
   </div>
 
   <div class="billing-section">
     <div class="billing-block">
       <h3>Bill To</h3>
-      <div class="name">${inv.clientId?.userId?.name ?? 'Client'}</div>
-      ${inv.clientId?.company ? `<div class="info">${inv.clientId.company}</div>` : ''}
-      ${inv.clientId?.userId?.email ? `<div class="info">${inv.clientId.userId.email}</div>` : ''}
-      ${inv.clientId?.address ? `<div class="info">${inv.clientId.address}</div>` : ''}
+      <div class="name">${e(inv.clientId?.userId?.name ?? 'Client')}</div>
+      ${inv.clientId?.company ? `<div class="info">${e(inv.clientId.company)}</div>` : ''}
+      ${inv.clientId?.userId?.email ? `<div class="info">${e(inv.clientId.userId.email)}</div>` : ''}
+      ${inv.clientId?.address ? `<div class="info">${e(inv.clientId.address)}</div>` : ''}
     </div>
     <div class="billing-block dates-block">
       <h3>Invoice Details</h3>
       <div class="date-row"><span class="label">Issue Date</span><span class="value">${formatDate(inv.issueDate)}</span></div>
       <div class="date-row"><span class="label">Due Date</span><span class="value">${formatDate(inv.dueDate)}</span></div>
-      ${inv.projectId ? `<div class="date-row"><span class="label">Project</span><span class="value">${inv.projectId.name}</span></div>` : ''}
-      <div class="date-row"><span class="label">Currency</span><span class="value">${inv.currency}</span></div>
+      ${inv.projectId ? `<div class="date-row"><span class="label">Project</span><span class="value">${e(inv.projectId.name)}</span></div>` : ''}
+      <div class="date-row"><span class="label">Currency</span><span class="value">${e(inv.currency)}</span></div>
     </div>
   </div>
 
@@ -158,8 +171,8 @@ export async function GET(_, { params }) {
     <tbody>
       ${items.map(item => `
       <tr>
-        <td>${item.description}</td>
-        <td>${item.quantity}</td>
+        <td>${e(item.description)}</td>
+        <td>${e(item.quantity)}</td>
         <td>${formatCurrency(item.rate, inv.currency)}</td>
         <td>${formatCurrency(item.amount, inv.currency)}</td>
       </tr>`).join('')}
@@ -169,7 +182,7 @@ export async function GET(_, { params }) {
   <div class="totals-section">
     <div class="totals-table">
       <div class="totals-row"><span class="label">Subtotal</span><span class="amount">${formatCurrency(inv.subtotal, inv.currency)}</span></div>
-      ${inv.taxRate > 0 ? `<div class="totals-row"><span class="label">Tax (${inv.taxRate}%)</span><span class="amount">${formatCurrency(inv.taxAmount, inv.currency)}</span></div>` : ''}
+      ${inv.taxRate > 0 ? `<div class="totals-row"><span class="label">Tax (${e(inv.taxRate)}%)</span><span class="amount">${formatCurrency(inv.taxAmount, inv.currency)}</span></div>` : ''}
       ${inv.discount > 0 ? `<div class="totals-row"><span class="label">Discount</span><span class="amount">-${formatCurrency(inv.discount, inv.currency)}</span></div>` : ''}
       <div class="totals-row final"><span class="label">Total</span><span class="amount">${formatCurrency(inv.total, inv.currency)}</span></div>
       ${inv.paidAmount > 0 ? `<div class="totals-row"><span class="label">Amount Paid</span><span class="amount">${formatCurrency(inv.paidAmount, inv.currency)}</span></div>` : ''}
@@ -187,7 +200,7 @@ export async function GET(_, { params }) {
     <h3>Payment History</h3>
     ${payments.map(p => `
     <div class="payment-row">
-      <span>${formatDate(p.paidAt)} — ${p.method}${p.reference ? ` (Ref: ${p.reference})` : ''}</span>
+      <span>${formatDate(p.date)} — ${e(String(p.method ?? '—').replace(/_/g, ' '))}${p.reference ? ` (Ref: ${e(p.reference)})` : ''}</span>
       <span style="font-weight:600;color:#065f46">${formatCurrency(p.amount, inv.currency)}</span>
     </div>`).join('')}
   </div>` : ''}
@@ -195,22 +208,24 @@ export async function GET(_, { params }) {
   ${inv.notes ? `
   <div class="notes-section">
     <h3>Notes</h3>
-    <p>${inv.notes}</p>
+    <p>${e(inv.notes)}</p>
   </div>` : ''}
 
   <div class="footer">
-    ${companyEmail ? `<p>Questions? Contact us at ${companyEmail}</p>` : ''}
-    <p style="margin-top:8px">Generated on ${formatDate(new Date())}${companyName ? ` | ${companyName}` : ''}</p>
+    ${companyEmail ? `<p>Questions? Contact us at ${e(companyEmail)}</p>` : ''}
+    <p style="margin-top:8px">Generated on ${formatDate(new Date())}${companyName ? ` | ${e(companyName)}` : ''}</p>
   </div>
 </div>
-<script>window.onload = () => window.print()</script>
+<script nonce="${nonce}">window.onload = () => window.print()</script>
 </body>
 </html>`
 
     return new Response(html, {
       headers: {
         'Content-Type': 'text/html; charset=utf-8',
-        'Content-Disposition': `inline; filename="invoice-${inv.invoiceNumber}.html"`,
+        'Content-Disposition': `inline; filename="invoice-${String(inv.invoiceNumber ?? '').replace(/[^A-Za-z0-9_-]/g, '')}.html"`,
+        // Only our own nonce'd print script may run in this document.
+        'Content-Security-Policy': `default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; script-src 'nonce-${nonce}'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'`,
       },
     })
   } catch (err) {

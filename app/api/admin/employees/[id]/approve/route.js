@@ -6,23 +6,25 @@ import connectDB from '@/lib/mongodb'
 import { User, Employee } from '@/models'
 import { sendEmployeeApprovedEmail } from '@/lib/mailer'
 import { sendEmployeeApprovedWhatsApp } from '@/lib/whatsapp'
+import { requirePerm } from '@/lib/rbac'
+import { maskDoc, EMPLOYEE_PII } from '@/lib/pii'
+import { isValidObjectId } from '@/lib/objectId'
 
 // POST /api/admin/employees/[id]/approve
 // body: { action: 'approve' | 'reject', notes?: string }
 export async function POST(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-
-    const hrRoles = ['SUPER_ADMIN', 'MANAGER']
-    if (!hrRoles.includes(session.user.role)) {
-      return NextResponse.json({ error: 'Forbidden — HR access only' }, { status: 403 })
-    }
+    const denied  = requirePerm(session, 'hr.employees.update')
+    if (denied) return denied
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
 
     await connectDB()
 
     const emp = await Employee.findById(params.id)
     if (!emp) return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
+    if (String(emp.userId) === String(session.user.id) && session.user.role !== 'SUPER_ADMIN')
+      return NextResponse.json({ error: 'You cannot review your own profile' }, { status: 403 })
 
     const { action, notes } = await request.json()
 
@@ -60,7 +62,7 @@ export async function POST(request, { params }) {
     }
 
     return NextResponse.json({
-      data: emp,
+      data: maskDoc(session, emp.toJSON(), EMPLOYEE_PII),
       message: action === 'approve' ? 'Employee approved and access granted' : 'Profile returned to employee for revision',
     })
   } catch (err) {

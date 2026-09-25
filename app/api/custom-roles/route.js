@@ -4,7 +4,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { CustomRole } from '@/models'
-import { canDo } from '@/lib/rbac'
+import { canDo, ALL_PERMISSIONS } from '@/lib/rbac'
 
 export async function GET() {
   try {
@@ -33,6 +33,13 @@ export async function POST(request) {
     if (!department?.trim() || !title?.trim())
       return NextResponse.json({ error: 'Department and title are required' }, { status: 422 })
 
+    // Only known permission strings, and a delegated role manager may not
+    // create a role carrying permissions they do not hold themselves.
+    const validPerms = Array.isArray(permissions) ? permissions.filter(p => ALL_PERMISSIONS.includes(p)) : []
+    const notHeld = validPerms.filter(p => !canDo(session, p))
+    if (notHeld.length)
+      return NextResponse.json({ error: `You cannot grant permissions you do not hold: ${notHeld.join(', ')}` }, { status: 403 })
+
     const role = await new CustomRole({
       department:  department.trim(),
       title:       title.trim(),
@@ -40,7 +47,7 @@ export async function POST(request) {
       venture:     venture || null,
       color:       color || '#6366f1',
       createdBy:   session.user.id,
-      permissions: Array.isArray(permissions) ? permissions : [],
+      permissions: validPerms,
     }).save()
 
     return NextResponse.json({ data: role.toJSON() }, { status: 201 })

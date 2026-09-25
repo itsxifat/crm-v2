@@ -10,11 +10,21 @@ export default function EditProjectPage() {
   const router    = useRouter()
   const [project, setProject] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [error,   setError]   = useState(null)
 
   useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    setError(null)
     fetch(`/api/projects/${id}`)
-      .then(r => r.json())
-      .then(j => { setProject(j.data); setLoading(false) })
+      .then(async r => {
+        const j = await r.json().catch(() => ({}))
+        if (!r.ok) throw new Error(r.status === 404 ? 'Project not found.' : (j.error ?? `Failed to load project (${r.status})`))
+        if (!cancelled) setProject(j.data ?? null)
+      })
+      .catch(err => { if (!cancelled) setError(err.message || 'Failed to load project') })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
   }, [id])
 
   return (
@@ -37,6 +47,8 @@ export default function EditProjectPage() {
           <div className="flex items-center justify-center py-24">
             <Loader2 className="w-8 h-8 text-gray-300 animate-spin" />
           </div>
+        ) : error ? (
+          <div className="text-center py-24 text-gray-400">{error}</div>
         ) : project ? (
           <CreateProjectForm project={project} />
         ) : (

@@ -20,14 +20,22 @@ export async function GET(request) {
     const status = searchParams.get('status')
     const filter = status ? { status } : {}
 
+    const query = f => PasswordResetRequest.find(f)
+      .sort({ createdAt: -1 })
+      .limit(100)
+      .populate({ path: 'userId',     select: 'name email isActive' })
+      .populate({ path: 'clientId',   select: 'clientCode company' })
+      .populate({ path: 'reviewedBy', select: 'name' })
+      .lean()
+
+    // Without a status filter, PENDING requests are fetched separately and listed
+    // first — sorting by the status string would put APPROVED/COMPLETED ahead of
+    // them and push new requests off the 100-row page.
     const [requests, pendingCount] = await Promise.all([
-      PasswordResetRequest.find(filter)
-        .sort({ status: 1, createdAt: -1 })
-        .limit(100)
-        .populate({ path: 'userId',     select: 'name email isActive' })
-        .populate({ path: 'clientId',   select: 'clientCode company' })
-        .populate({ path: 'reviewedBy', select: 'name' })
-        .lean(),
+      status
+        ? query(filter)
+        : Promise.all([query({ status: 'PENDING' }), query({ status: { $ne: 'PENDING' } })])
+            .then(([pending, rest]) => [...pending, ...rest]),
       PasswordResetRequest.countDocuments({ status: 'PENDING' }),
     ])
 

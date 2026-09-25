@@ -33,20 +33,23 @@ export default function PeoplePicker({
   const [results, setResults] = useState([])
   const [loading, setLoading] = useState(false)
   const boxRef = useRef(null)
+  const reqId  = useRef(0)
 
   const effectiveTypes = activeType ? [activeType] : types
 
   const search = useCallback(async (term, searchTypes) => {
+    const id = ++reqId.current // ignore out-of-order responses for older terms
     setLoading(true)
     try {
       const params = new URLSearchParams({ q: term, types: searchTypes.join(','), limit: '25' })
       const res  = await fetch(`/api/people/search?${params}`)
       const json = await res.json()
+      if (id !== reqId.current) return
       setResults(res.ok ? (json.data ?? []) : [])
     } catch {
-      setResults([])
+      if (id === reqId.current) setResults([])
     } finally {
-      setLoading(false)
+      if (id === reqId.current) setLoading(false)
     }
   }, [])
 

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import toast, { Toaster } from 'react-hot-toast'
+import { validateStrongPassword } from '@/lib/passwordPolicy'
 
 export default function FreelancerInvitePage() {
   const { token }   = useParams()
@@ -33,8 +34,9 @@ export default function FreelancerInvitePage() {
   async function handleSubmit(e) {
     e.preventDefault()
 
-    if (password.length < 6) {
-      toast.error('Password must be at least 6 characters')
+    const pwError = validateStrongPassword(password)
+    if (pwError) {
+      toast.error(pwError)
       return
     }
     if (password !== confirm) {
@@ -161,9 +163,9 @@ export default function FreelancerInvitePage() {
                 type="password"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                placeholder="Minimum 6 characters"
+                placeholder="Min 8 chars: upper, lower, number, symbol"
                 required
-                minLength={6}
+                minLength={8}
                 className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
               />
             </div>

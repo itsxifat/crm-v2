@@ -3,7 +3,9 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
-import { Purchase } from '@/models'
+import { Purchase, Vendor } from '@/models'
+import { requirePerm } from '@/lib/rbac'
+import { isValidObjectId } from '@/lib/objectId'
 import { z } from 'zod'
 
 const schema = z.object({
@@ -24,9 +26,8 @@ const schema = z.object({
 export async function GET(request) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-    if (!['SUPER_ADMIN', 'MANAGER'].includes(session.user.role))
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const denied = requirePerm(session, 'hr.vendors.manage')
+    if (denied) return denied
 
     await connectDB()
 
@@ -36,6 +37,7 @@ export async function GET(request) {
     const limit    = parseInt(searchParams.get('limit') ?? '50', 10)
     const skip     = (page - 1) * limit
 
+    if (vendorId && !isValidObjectId(vendorId)) return NextResponse.json({ error: 'Invalid vendor id' }, { status: 400 })
     const filter = vendorId ? { vendorId } : {}
 
     const [purchases, total] = await Promise.all([
@@ -57,9 +59,8 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-    if (!['SUPER_ADMIN', 'MANAGER'].includes(session.user.role))
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const denied = requirePerm(session, 'hr.vendors.manage')
+    if (denied) return denied
 
     await connectDB()
 
@@ -67,6 +68,9 @@ export async function POST(request) {
     const parsed = schema.safeParse(body)
     if (!parsed.success)
       return NextResponse.json({ error: 'Validation failed', details: parsed.error.flatten() }, { status: 422 })
+
+    if (!isValidObjectId(parsed.data.vendorId) || !(await Vendor.exists({ _id: parsed.data.vendorId })))
+      return NextResponse.json({ error: 'Vendor not found' }, { status: 422 })
 
     const purchase = await new Purchase({ ...parsed.data, date: new Date(parsed.data.date) }).save()
     return NextResponse.json({ data: purchase }, { status: 201 })

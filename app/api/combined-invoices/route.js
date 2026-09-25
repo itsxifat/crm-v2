@@ -6,6 +6,15 @@ import connectDB from '@/lib/mongodb'
 import { CombinedInvoice } from '@/models'
 import { requirePerm } from '@/lib/rbac'
 import { buildCombined, ensureCombinedInvoice, toObjectId } from '@/lib/combinedInvoice'
+import { maskDoc, maskList, INVOICE_PII } from '@/lib/pii'
+import { isValidObjectId } from '@/lib/objectId'
+
+// A list only needs to identify the client — never its KYC, VAT or contact PII.
+const LIST_CLIENT_POPULATE = {
+  path: 'clientId',
+  select: 'clientCode company userId',
+  populate: { path: 'userId', select: 'name avatar' },
+}
 
 // GET /api/combined-invoices?clientId=&projectId=&page=&limit=
 // Lists combined invoices with live rollups (totals/paid/due are never stored).
@@ -32,7 +41,7 @@ export async function GET(request) {
         .skip((page - 1) * limit)
         .limit(limit)
         .populate('projectId', 'name projectCode venture category')
-        .populate({ path: 'clientId', populate: { path: 'userId', select: 'name email avatar' } }),
+        .populate(LIST_CLIENT_POPULATE),
       CombinedInvoice.countDocuments(filter),
     ])
 
@@ -45,7 +54,7 @@ export async function GET(request) {
     )
 
     return NextResponse.json({
-      data,
+      data: maskList(session, data, INVOICE_PII),
       meta: { page, limit, total, pages: Math.ceil(total / limit) },
     })
   } catch (err) {
@@ -65,6 +74,7 @@ export async function POST(request) {
 
     const { projectId, force = true } = await request.json()
     if (!projectId) return NextResponse.json({ error: 'projectId required' }, { status: 422 })
+    if (!isValidObjectId(projectId)) return NextResponse.json({ error: 'Invalid projectId' }, { status: 400 })
 
     const doc = await ensureCombinedInvoice(projectId, { createdBy: session.user.id, force })
     if (!doc) {
@@ -79,7 +89,7 @@ export async function POST(request) {
       { path: 'clientId',  populate: { path: 'userId', select: 'name email avatar' } },
     ])
 
-    return NextResponse.json({ data: await buildCombined(doc) }, { status: 201 })
+    return NextResponse.json({ data: maskDoc(session, await buildCombined(doc), INVOICE_PII) }, { status: 201 })
   } catch (err) {
     console.error('[POST /api/combined-invoices]', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

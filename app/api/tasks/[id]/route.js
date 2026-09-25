@@ -4,7 +4,10 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Task, Timesheet, Comment, Attachment, Employee, Freelancer } from '@/models'
-import { canAccess } from '@/lib/permissions'
+import { canDo, requirePerm, requireStaff } from '@/lib/rbac'
+import { getMyCompanyIds } from '@/lib/clientAccess'
+import { isValidObjectId } from '@/lib/objectId'
+import { TASK_ASSIGNEE_SELECT, isStaff } from '@/lib/taskAccess'
 import { logActivity } from '@/lib/logActivity'
 import { createNotification } from '@/lib/createNotification'
 import { z } from 'zod'
@@ -24,18 +27,26 @@ const updateTaskSchema = z.object({
   tags:                 z.string().optional().nullable(),
 })
 
+const ASSIGNEE_POPULATE = [
+  { path: 'assignedEmployeeId',   select: TASK_ASSIGNEE_SELECT, populate: { path: 'userId', select: 'id name avatar' } },
+  { path: 'assignedFreelancerId', select: TASK_ASSIGNEE_SELECT, populate: { path: 'userId', select: 'id name avatar' } },
+]
+
 // GET /api/tasks/[id]
 export async function GET(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
     if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    if (!['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE', 'FREELANCER', 'CLIENT'].includes(session.user.role))
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Task not found' }, { status: 404 })
 
     await connectDB()
 
     const task = await Task.findById(params.id)
-      .populate({ path: 'projectId', select: 'id name currency' })
-      .populate({ path: 'assignedEmployeeId',   populate: { path: 'userId', select: 'id name avatar email' } })
-      .populate({ path: 'assignedFreelancerId', populate: { path: 'userId', select: 'id name avatar email' } })
+      .populate({ path: 'projectId', select: 'id name currency clientId' })
+      .populate(ASSIGNEE_POPULATE[0])
+      .populate(ASSIGNEE_POPULATE[1])
 
     if (!task) return NextResponse.json({ error: 'Task not found' }, { status: 404 })
 
@@ -54,28 +65,42 @@ export async function GET(request, { params }) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
       }
     } else if (role === 'CLIENT') {
-      if (!task.isClientVisible) {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      // Must be client-visible AND belong to one of the caller's companies.
+      const myCompanyIds = await getMyCompanyIds(session.user.id)
+      const projectClientId = task.projectId?.clientId
+      const ownsProject = projectClientId && myCompanyIds.some(id => String(id) === String(projectClientId))
+      if (!task.isClientVisible || !ownsProject) {
+        return NextResponse.json({ error: 'Task not found' }, { status: 404 })
       }
     }
 
+    // Internal comments and timesheets are for staff only.
+    const staff = isStaff(session)
+    const commentFilter = { taskId: params.id }
+    if (!staff) commentFilter.isInternal = { $ne: true }
+
     const [timesheets, comments, attachments, commentCount, attachmentCount, timesheetCount] = await Promise.all([
-      Timesheet.find({ taskId: params.id })
-        .sort({ date: -1 })
-        .populate({ path: 'employeeId',   populate: { path: 'userId', select: 'name avatar' } })
-        .populate({ path: 'freelancerId', populate: { path: 'userId', select: 'name avatar' } }),
-      Comment.find({ taskId: params.id })
+      staff
+        ? Timesheet.find({ taskId: params.id })
+          .sort({ date: -1 })
+          .populate({ path: 'employeeId',   select: TASK_ASSIGNEE_SELECT, populate: { path: 'userId', select: 'name avatar' } })
+          .populate({ path: 'freelancerId', select: TASK_ASSIGNEE_SELECT, populate: { path: 'userId', select: 'name avatar' } })
+        : [],
+      Comment.find(commentFilter)
         .sort({ createdAt: 1 })
         .populate({ path: 'authorId', select: 'id name avatar role' }),
       Attachment.find({ taskId: params.id }).sort({ createdAt: -1 }),
-      Comment.countDocuments({ taskId: params.id }),
+      Comment.countDocuments(commentFilter),
       Attachment.countDocuments({ taskId: params.id }),
-      Timesheet.countDocuments({ taskId: params.id }),
+      staff ? Timesheet.countDocuments({ taskId: params.id }) : 0,
     ])
+
+    const taskJson = task.toJSON()
+    if (taskJson.projectId && typeof taskJson.projectId === 'object') delete taskJson.projectId.clientId
 
     return NextResponse.json({
       data: {
-        ...task.toJSON(),
+        ...taskJson,
         timesheets,
         comments,
         attachments,
@@ -92,9 +117,11 @@ export async function GET(request, { params }) {
 export async function PUT(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-    if (!canAccess(session, 'tasks', 'update'))
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const notStaff = requireStaff(session)
+    if (notStaff) return notStaff
+    const denied = requirePerm(session, 'tasks.update')
+    if (denied) return denied
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Task not found' }, { status: 404 })
 
     await connectDB()
 
@@ -106,20 +133,43 @@ export async function PUT(request, { params }) {
 
     const data = { ...parsed.data }
     if (data.dueDate) data.dueDate = new Date(data.dueDate)
+    // Freelancer assignment on tasks is deprecated — never settable here.
+    delete data.assignedFreelancerId
+    if (data.assignedEmployeeId && !isValidObjectId(data.assignedEmployeeId))
+      return NextResponse.json({ error: 'Invalid assignee' }, { status: 400 })
 
-    // (Re)assigning to an employee resets the acceptance flow.
-    if (data.assignedEmployeeId !== undefined) {
+    // Employees may only edit tasks assigned to them.
+    const filter = { _id: params.id }
+    if (session.user.role === 'EMPLOYEE') {
+      const employee = await Employee.findOne({ userId: session.user.id }).select('_id').lean()
+      if (!employee) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      filter.assignedEmployeeId = employee._id
+    }
+
+    const current = await Task.findOne(filter).select('assignedEmployeeId').lean()
+    if (!current) return NextResponse.json({ error: 'Task not found' }, { status: 404 })
+
+    // Only an actual change of assignee counts as (re)assignment.
+    const assigneeChanged = data.assignedEmployeeId !== undefined &&
+      String(current.assignedEmployeeId ?? '') !== String(data.assignedEmployeeId ?? '')
+    if (!assigneeChanged) {
+      delete data.assignedEmployeeId
+    } else {
+      if (!canDo(session, 'tasks.assign'))
+        return NextResponse.json({ error: 'You do not have permission to assign tasks' }, { status: 403 })
+      // (Re)assigning to an employee resets the acceptance flow.
       data.assignmentStatus = 'ASSIGNED'
       data.acceptedAt = null
       data.declinedAt = null
     }
 
-    const task = await Task.findByIdAndUpdate(params.id, data, { new: true })
-      .populate({ path: 'assignedEmployeeId',   populate: { path: 'userId', select: 'id name avatar' } })
-      .populate({ path: 'assignedFreelancerId', populate: { path: 'userId', select: 'id name avatar' } })
+    const task = await Task.findOneAndUpdate(filter, data, { new: true })
+      .populate(ASSIGNEE_POPULATE[0])
+      .populate(ASSIGNEE_POPULATE[1])
+    if (!task) return NextResponse.json({ error: 'Task not found' }, { status: 404 })
 
     // Notify the (new) assignee so the task surfaces for them to accept.
-    if (data.assignedEmployeeId && task?.assignedEmployeeId?.userId) {
+    if (assigneeChanged && data.assignedEmployeeId && task.assignedEmployeeId?.userId) {
       const uid = task.assignedEmployeeId.userId._id ?? task.assignedEmployeeId.userId.id
       if (uid) {
         createNotification({
@@ -202,13 +252,20 @@ export async function DELETE(request, { params }) {
     const session = await getServerSession(authOptions)
     if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
 
-    const allowedRoles = ['SUPER_ADMIN', 'MANAGER']
-    if (!allowedRoles.includes(session.user.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const denied = requirePerm(session, 'tasks.delete')
+    if (denied) return denied
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Task not found' }, { status: 404 })
 
     await connectDB()
     const deleted = await Task.findByIdAndDelete(params.id)
+    if (!deleted) return NextResponse.json({ error: 'Task not found' }, { status: 404 })
+
+    // Cascade: nothing should keep pointing at a deleted task.
+    await Promise.all([
+      Comment.deleteMany({ taskId: deleted._id }),
+      Timesheet.deleteMany({ taskId: deleted._id }),
+      Attachment.deleteMany({ taskId: deleted._id }),
+    ])
 
     logActivity({
       userId:   session.user.id,
@@ -216,7 +273,7 @@ export async function DELETE(request, { params }) {
       action:   'DELETE',
       entity:   'TASK',
       entityId: params.id,
-      changes:  deleted ? JSON.stringify({ title: deleted.title }) : null,
+      changes:  JSON.stringify({ title: deleted.title }),
       request,
     })
 

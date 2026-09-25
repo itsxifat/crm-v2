@@ -8,10 +8,11 @@ import { requirePerm } from '@/lib/rbac'
 import { logActivity } from '@/lib/logActivity'
 import { buildCombined } from '@/lib/combinedInvoice'
 import { maskDoc, INVOICE_PII } from '@/lib/pii'
+import { isValidObjectId } from '@/lib/objectId'
 
 async function loadPopulated(id) {
   return CombinedInvoice.findById(id)
-    .populate('projectId', 'name projectCode venture category budget')
+    .populate('projectId', 'name projectCode venture category')
     .populate({ path: 'clientId', populate: { path: 'userId', select: 'name email avatar phone' } })
     .populate('createdBy', 'name')
 }
@@ -24,6 +25,7 @@ export async function GET(_, { params }) {
     const session = await getServerSession(authOptions)
     const denied  = requirePerm(session, 'sales.invoices.view')
     if (denied) return denied
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     await connectDB()
 
     const doc = await loadPopulated(params.id)
@@ -44,6 +46,7 @@ export async function PATCH(request, { params }) {
     const session = await getServerSession(authOptions)
     const denied  = requirePerm(session, 'sales.invoices.update')
     if (denied) return denied
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     await connectDB()
 
     const { notes, terms } = await request.json()
@@ -65,7 +68,7 @@ export async function PATCH(request, { params }) {
     })
 
     const populated = await loadPopulated(params.id)
-    return NextResponse.json({ data: await buildCombined(populated) })
+    return NextResponse.json({ data: maskDoc(session, await buildCombined(populated), INVOICE_PII) })
   } catch (err) {
     console.error('[PATCH /api/combined-invoices/:id]', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -79,6 +82,7 @@ export async function DELETE(request, { params }) {
     const session = await getServerSession(authOptions)
     const denied  = requirePerm(session, 'sales.invoices.delete')
     if (denied) return denied
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     await connectDB()
 
     const doc = await CombinedInvoice.findByIdAndDelete(params.id)

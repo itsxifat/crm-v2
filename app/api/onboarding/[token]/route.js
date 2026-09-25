@@ -46,13 +46,40 @@ export async function PATCH(request, { params }) {
       bloodGroup, photo, documents, password,
     } = body
 
-    if (!password || password.length < 8) {
+    if (!password || typeof password !== 'string' || password.length < 8) {
       return NextResponse.json({ error: 'Password must be at least 8 characters' }, { status: 422 })
     }
 
+    // The account is created for the invited address only. Never bind the
+    // record to a pre-existing account (that would drop the chosen password and
+    // let HR's approve step overwrite someone else's employment details).
+    const invited   = record.email ? String(record.email).trim() : null
+    const submitted = typeof email === 'string' ? email.trim() : ''
+    if (invited && submitted && submitted.toLowerCase() !== invited.toLowerCase()) {
+      return NextResponse.json({ error: 'Please use the email address this invitation was sent to' }, { status: 422 })
+    }
+    const userEmail = invited || submitted
+    if (!userEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(userEmail)) {
+      return NextResponse.json({ error: 'A valid email address is required' }, { status: 422 })
+    }
+    if (await User.exists({ email: ciEquals(userEmail) })) {
+      return NextResponse.json({ error: 'An account with this email already exists. Please contact HR.' }, { status: 409 })
+    }
+
+    // Keep only well-formed document entries ({ url, type, name }) from our uploads.
+    const DOC_TYPES = ['NID', 'BIRTH_CERTIFICATE', 'CV', 'PASSPORT', 'ACADEMIC', 'OTHER']
+    const cleanDocs = (Array.isArray(documents) ? documents : [])
+      .filter(d => d && typeof d.url === 'string' && d.url.startsWith('/') && !d.url.startsWith('//') && d.url.length <= 2048)
+      .slice(0, 50)
+      .map(d => ({
+        url:  d.url,
+        type: DOC_TYPES.includes(d.type) ? d.type : 'OTHER',
+        name: typeof d.name === 'string' ? d.name.slice(0, 200) || null : null,
+      }))
+
     record.selfData = {
       name:             name             || null,
-      email:            email            || null,
+      email:            userEmail,
       phone:            phone            || null,
       secondaryPhone:   secondaryPhone   || null,
       homePhone:        homePhone        || null,
@@ -62,28 +89,24 @@ export async function PATCH(request, { params }) {
       emergencyContacts: Array.isArray(emergencyContacts) ? emergencyContacts : [],
       bloodGroup:        bloodGroup       || null,
       photo:             photo            || null,
-      documents:         Array.isArray(documents) ? documents : [],
+      documents:         cleanDocs,
     }
 
     // ── Auto-create User + Employee account immediately ──────────────────────
     const bcrypt = (await import('bcryptjs')).default
-    const userEmail = email || record.email
 
-    let user = await User.findOne({ email: ciEquals(userEmail) })
-    if (!user) {
-      user = await new User({
-        name:     name  || 'Employee',
-        email:    userEmail,
-        phone:    phone || null,
-        password: await bcrypt.hash(password, 10),
-        role:     'EMPLOYEE',
-        avatar:   photo || null,
-        isActive: true,
-      }).save()
-    }
+    const user = await new User({
+      name:     name  || 'Employee',
+      email:    userEmail,
+      phone:    phone || null,
+      password: await bcrypt.hash(password, 10),
+      role:     'EMPLOYEE',
+      avatar:   photo || null,
+      isActive: true,
+    }).save()
 
-    let employee = await Employee.findOne({ userId: user._id })
-    if (!employee) {
+    let employee
+    try {
       employee = await new Employee({
         userId:           user._id,
         phone:            phone            || null,
@@ -95,8 +118,12 @@ export async function PATCH(request, { params }) {
         address:          address          || null,
         nidNumber:        nidNumber        || null,
         photo:            photo            || null,
+        documents:        cleanDocs,
         panelAccessGranted: true,
       }).save()
+    } catch (e) {
+      await User.deleteOne({ _id: user._id }).catch(() => {})
+      throw e
     }
 
     // Mark as approved immediately — HR still fills employment details later

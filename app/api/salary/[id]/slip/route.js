@@ -1,4 +1,5 @@
 export const dynamic = 'force-dynamic'
+import { randomBytes } from 'crypto'
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
@@ -7,14 +8,16 @@ import { SalarySlip, Setting } from '@/models'
 import { requirePerm } from '@/lib/rbac'
 import { getConfig } from '@/lib/getConfig'
 import { amountToWords } from '@/lib/numberToWords'
+import { escapeHtml } from '@/lib/html'
+import { isValidObjectId } from '@/lib/objectId'
 
 const fmtDate = (d) =>
-  d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
+  d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Dhaka' }) : '—'
 
 function fmtPeriod(period) {
   const [y, m] = String(period ?? '').split('-')
   if (!y || !m) return period ?? '—'
-  return new Date(+y, +m - 1).toLocaleString('en-US', { month: 'long', year: 'numeric' })
+  return new Date(Date.UTC(+y, +m - 1, 1)).toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' })
 }
 
 function money(amount, currency = 'BDT') {
@@ -22,7 +25,7 @@ function money(amount, currency = 'BDT') {
   if (!currency || currency === 'BDT') {
     return `<span style="font-family:Georgia,serif;font-weight:400;font-size:1.05em;letter-spacing:-0.5px">৳</span>&nbsp;${n}`
   }
-  return `${currency}&nbsp;${n}`
+  return `${escapeHtml(currency)}&nbsp;${n}`
 }
 
 const STATUS_LABEL  = { PAID: 'Paid', AUTHORIZED: 'Authorized', REJECTED: 'Rejected', PENDING: 'Awaiting Payment' }
@@ -39,11 +42,16 @@ export async function GET(request, { params }) {
     const session = await getServerSession(authOptions)
     const denied  = requirePerm(session, 'finance.salary.view')
     if (denied) return denied
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     await connectDB()
 
     const [slip, settingsDocs, appCfg] = await Promise.all([
       SalarySlip.findById(params.id)
-        .populate({ path: 'employeeId', populate: { path: 'userId', select: 'name email' } })
+        .populate({
+          path: 'employeeId',
+          select: 'employeeId designation position department venture hireDate userId',
+          populate: { path: 'userId', select: 'name' },
+        })
         .populate('expenseId'),
       Setting.find({ group: 'company' }).lean(),
       getConfig(),
@@ -72,6 +80,8 @@ export async function GET(request, { params }) {
     const accent       = STATUS_ACCENT[status] ?? '#d97706'
     const statusBg     = STATUS_BG[status]     ?? '#fffbeb'
     const isPaid       = status === 'PAID' || status === 'AUTHORIZED'
+    // BDT actually paid (set by Accounts on payment) beats the generation-time estimate.
+    const bdtAmount    = isPaid && exp?.amountBDT != null ? exp.amountBDT : s.amountBDT
     const methodLabel  = appCfg.paymentMethods?.find(m => m.value === exp?.paymentMethod)?.label ?? exp?.paymentMethod ?? null
 
     const earningsRows = [
@@ -82,25 +92,27 @@ export async function GET(request, { params }) {
 
     const earningsHtml = earningsRows.map(i => `
       <tr>
-        <td style="${TD}padding-left:0;">${i.label}</td>
+        <td style="${TD}padding-left:0;">${escapeHtml(i.label)}</td>
         <td style="${TD}text-align:right;padding-right:0;font-weight:500;">${money(i.amount, cur)}</td>
       </tr>`).join('')
 
     const deductionsHtml = deductionRows.length ? deductionRows.map(i => `
       <tr>
-        <td style="${TD}padding-left:0;">${i.label}</td>
+        <td style="${TD}padding-left:0;">${escapeHtml(i.label)}</td>
         <td style="${TD}text-align:right;padding-right:0;font-weight:500;">${money(i.amount, cur)}</td>
       </tr>`).join('') : `
       <tr><td style="${TD}padding-left:0;color:#94a3b8;font-style:italic;" colspan="2">No deductions</td></tr>`
 
-    const netWords = amountToWords(s.amountBDT ?? s.netPay, isForeign ? cur : 'BDT')
+    // Words must describe the Net Payable figure printed above it, in its currency.
+    const netWords = escapeHtml(amountToWords(s.netPay, cur))
 
+    const cspNonce = randomBytes(16).toString('base64')
     const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
 <base href="${new URL(request.url).origin}/" />
-<title>Salary Slip ${s.slipNo ?? ''}</title>
+<title>Salary Slip ${escapeHtml(s.slipNo ?? '')}</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -118,17 +130,17 @@ export async function GET(request, { params }) {
   <!-- HEADER -->
   <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:22px;">
     <div>
-      <img src="/en-logo.png" alt="${company.name}" width="120" height="38" style="object-fit:contain;display:block;margin-bottom:7px;" />
-      ${company.name    ? `<p style="margin:0 0 2px;font-size:13px;font-weight:700;color:#0f172a;">${company.name}</p>` : ''}
-      ${company.address ? `<p style="margin:0 0 2px;font-size:11px;color:#64748b;">${company.address}</p>` : ''}
-      ${contactLine     ? `<p style="margin:0 0 2px;font-size:11px;color:#64748b;">${contactLine}</p>` : ''}
-      ${company.website ? `<p style="margin:0;font-size:11px;color:#64748b;">${company.website}</p>` : ''}
+      <img src="/en-logo.png" alt="${escapeHtml(company.name)}" width="120" height="38" style="object-fit:contain;display:block;margin-bottom:7px;" />
+      ${company.name    ? `<p style="margin:0 0 2px;font-size:13px;font-weight:700;color:#0f172a;">${escapeHtml(company.name)}</p>` : ''}
+      ${company.address ? `<p style="margin:0 0 2px;font-size:11px;color:#64748b;">${escapeHtml(company.address)}</p>` : ''}
+      ${contactLine     ? `<p style="margin:0 0 2px;font-size:11px;color:#64748b;">${escapeHtml(contactLine)}</p>` : ''}
+      ${company.website ? `<p style="margin:0;font-size:11px;color:#64748b;">${escapeHtml(company.website)}</p>` : ''}
     </div>
     <div style="text-align:right;">
       <p style="margin:0;font-size:26px;font-weight:700;color:#0f172a;letter-spacing:-0.5px;">Salary Slip</p>
-      <p style="margin:4px 0 0;font-size:13px;font-weight:700;color:#94a3b8;">Slip No: <strong style="color:#0f172a;font-weight:700;">${s.slipNo ?? '—'}</strong></p>
-      <p style="margin:2px 0 0;font-size:13px;font-weight:700;color:#94a3b8;">Period: <strong style="color:#0f172a;font-weight:700;">${fmtPeriod(s.period)}</strong></p>
-      <span style="display:inline-block;margin-top:10px;padding:4px 12px;border-radius:999px;background:${statusBg};color:${accent};font-size:11px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;">${statusLabel}</span>
+      <p style="margin:4px 0 0;font-size:13px;font-weight:700;color:#94a3b8;">Slip No: <strong style="color:#0f172a;font-weight:700;">${escapeHtml(s.slipNo ?? '—')}</strong></p>
+      <p style="margin:2px 0 0;font-size:13px;font-weight:700;color:#94a3b8;">Period: <strong style="color:#0f172a;font-weight:700;">${escapeHtml(fmtPeriod(s.period))}</strong></p>
+      <span style="display:inline-block;margin-top:10px;padding:4px 12px;border-radius:999px;background:${statusBg};color:${accent};font-size:11px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;">${escapeHtml(statusLabel)}</span>
     </div>
   </div>
 
@@ -141,23 +153,23 @@ export async function GET(request, { params }) {
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px 20px;">
       <div>
         <p style="margin:0 0 2px;font-size:10px;color:#94a3b8;">Name</p>
-        <p style="margin:0;font-size:13px;font-weight:700;color:#0f172a;">${emp.userId?.name ?? '—'}</p>
+        <p style="margin:0;font-size:13px;font-weight:700;color:#0f172a;">${escapeHtml(emp.userId?.name ?? '—')}</p>
       </div>
       <div>
         <p style="margin:0 0 2px;font-size:10px;color:#94a3b8;">Employee ID</p>
-        <p style="margin:0;font-size:13px;font-weight:600;color:#334155;">${emp.employeeId ?? '—'}</p>
+        <p style="margin:0;font-size:13px;font-weight:600;color:#334155;">${escapeHtml(emp.employeeId ?? '—')}</p>
       </div>
       <div>
         <p style="margin:0 0 2px;font-size:10px;color:#94a3b8;">Designation</p>
-        <p style="margin:0;font-size:13px;font-weight:600;color:#334155;">${emp.designation ?? emp.position ?? '—'}</p>
+        <p style="margin:0;font-size:13px;font-weight:600;color:#334155;">${escapeHtml(emp.designation ?? emp.position ?? '—')}</p>
       </div>
       <div>
         <p style="margin:0 0 2px;font-size:10px;color:#94a3b8;">Department</p>
-        <p style="margin:0;font-size:13px;font-weight:600;color:#334155;">${emp.department ?? '—'}</p>
+        <p style="margin:0;font-size:13px;font-weight:600;color:#334155;">${escapeHtml(emp.department ?? '—')}</p>
       </div>
       <div>
         <p style="margin:0 0 2px;font-size:10px;color:#94a3b8;">Venture</p>
-        <p style="margin:0;font-size:13px;font-weight:600;color:#334155;">${emp.venture ?? '—'}</p>
+        <p style="margin:0;font-size:13px;font-weight:600;color:#334155;">${escapeHtml(emp.venture ?? '—')}</p>
       </div>
       <div>
         <p style="margin:0 0 2px;font-size:10px;color:#94a3b8;">Date of Joining</p>
@@ -213,7 +225,7 @@ export async function GET(request, { params }) {
     </div>
     ${isForeign ? `
     <div style="display:flex;justify-content:flex-end;margin-top:2px;">
-      <span style="font-size:11px;color:#15803d;">Equivalent in BDT: ${money(s.amountBDT ?? 0, 'BDT')}</span>
+      <span style="font-size:11px;color:#15803d;">Equivalent in BDT: ${money(bdtAmount ?? 0, 'BDT')}</span>
     </div>` : ''}
     <p style="margin:10px 0 0;font-size:11px;color:#15803d;font-style:italic;border-top:1px solid #dcfce7;padding-top:8px;">
       In Words: ${netWords}
@@ -235,8 +247,8 @@ export async function GET(request, { params }) {
       <tbody>
         <tr>
           <td style="${TD}padding-left:0;">${fmtDate(exp?.paidAt)}</td>
-          <td style="${TD}">${methodLabel ?? '—'}</td>
-          <td style="${TD}text-align:right;padding-right:0;font-family:monospace;font-size:11px;">${exp?.paymentTxnId ?? exp?.expenseInvoiceNo ?? '—'}</td>
+          <td style="${TD}">${escapeHtml(methodLabel ?? '—')}</td>
+          <td style="${TD}text-align:right;padding-right:0;font-family:monospace;font-size:11px;">${escapeHtml(exp?.paymentTxnId ?? exp?.expenseInvoiceNo ?? '—')}</td>
         </tr>
       </tbody>
     </table>
@@ -245,7 +257,7 @@ export async function GET(request, { params }) {
   ${s.note ? `
   <div style="margin-bottom:16px;">
     <p style="margin:0 0 4px;font-size:10px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:#94a3b8;">Note</p>
-    <p style="margin:0;font-size:12px;color:#475569;white-space:pre-wrap;">${s.note}</p>
+    <p style="margin:0;font-size:12px;color:#475569;white-space:pre-wrap;">${escapeHtml(s.note)}</p>
   </div>` : ''}
 
   <!-- SYSTEM NOTE -->
@@ -255,18 +267,20 @@ export async function GET(request, { params }) {
 
   <!-- FOOTER -->
   <div style="border-top:1px solid #e2e8f0;padding-top:12px;text-align:center;">
-    <p style="margin:0 0 3px;font-size:11px;color:#94a3b8;">Generated on ${fmtDate(new Date())}${company.name ? ` – ${company.name}` : ''}</p>
+    <p style="margin:0 0 3px;font-size:11px;color:#94a3b8;">Generated on ${fmtDate(new Date())}${company.name ? ` – ${escapeHtml(company.name)}` : ''}</p>
   </div>
 
 </div>
-<script>window.onload = () => window.print()</script>
+<script nonce="${cspNonce}">window.onload = () => window.print()</script>
 </body>
 </html>`
 
     return new Response(html, {
       headers: {
         'Content-Type': 'text/html; charset=utf-8',
-        'Content-Disposition': `inline; filename="salary-slip-${s.slipNo ?? s.id}.html"`,
+        // Only our own nonce'd print script may run in this document.
+        'Content-Security-Policy': `default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; script-src 'nonce-${cspNonce}'; base-uri 'self'; form-action 'none'; frame-ancestors 'self'`,
+        'Content-Disposition': `inline; filename="salary-slip-${String(s.slipNo ?? s.id).replace(/[^\w.-]/g, '_')}.html"`,
       },
     })
   } catch (err) {

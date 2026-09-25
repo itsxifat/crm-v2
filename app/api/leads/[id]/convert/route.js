@@ -8,24 +8,37 @@ import { LeadActivity } from '@/models/Lead'
 import bcrypt from 'bcryptjs'
 import { ciEquals } from '@/lib/searchMatch'
 import { logActivity } from '@/lib/logActivity'
+import { restoreMaskedValues } from '@/lib/pii'
+import { requirePerm } from '@/lib/rbac'
+import { canAccessLead } from '@/lib/leadAccess'
+import { isValidObjectId } from '@/lib/objectId'
+import { ensureMembership } from '@/lib/clientAccess'
+import { validateStrongPassword } from '@/lib/passwordPolicy'
+import { getConfig } from '@/lib/getConfig'
+import CompanyMembership from '@/models/CompanyMembership'
 
 // POST /api/leads/[id]/convert
 export async function POST(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    // Conversion creates a client account + profile and updates the lead
+    const denied = requirePerm(session, 'sales.customers.create') ?? requirePerm(session, 'sales.leads.update')
+    if (denied) return denied
 
-    const allowedRoles = ['SUPER_ADMIN', 'MANAGER']
-    if (!allowedRoles.includes(session.user.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
 
     await connectDB()
 
-    const body = await request.json().catch(() => ({}))
+    const rawBody = await request.json().catch(() => ({}))
 
     const lead = await Lead.findById(params.id).lean()
-    if (!lead) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
+    if (!lead || !(await canAccessLead(session, lead))) {
+      return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
+    }
+
+    // The convert form is pre-filled from the masked lead — swap any masked
+    // placeholder for the real lead value (unmatched ones are dropped).
+    const body = restoreMaskedValues(rawBody ?? {}, lead) ?? {}
 
     if (lead.convertedAt) {
       return NextResponse.json({ error: 'Lead has already been converted' }, { status: 400 })
@@ -47,39 +60,75 @@ export async function POST(request, { params }) {
     }
 
     // Use the admin-supplied password, otherwise auto-generate a temp one
-    const providedPassword = (body.password ?? '').trim()
+    const providedPassword = (typeof body.password === 'string' ? body.password : '').trim()
+    if (providedPassword) {
+      const pwError = validateStrongPassword(providedPassword)
+      if (pwError) return NextResponse.json({ error: pwError }, { status: 422 })
+    }
     const tempPassword     = providedPassword || (Math.random().toString(36).slice(-8) + 'A1!')
     const hashedPw         = await bcrypt.hash(tempPassword, 12)
     // Auto-generated passwords must always be changed; respect the flag otherwise
     const mustChangePassword = providedPassword ? !!body.requirePasswordChange : true
 
-    const user = await new User({
-      email,
-      password: hashedPw,
-      name:     (body.name || lead.name || '').trim() || lead.name,
-      role:     'CLIENT',
-      phone:    (body.phone ?? lead.phone) || null,
-      isActive: true,
-      mustChangePassword,
-    }).save()
+    const cfg = await getConfig()
+    const requireKyc = cfg.verification?.clientKyc !== false
 
-    // Create the Client profile from the supplied details (falling back to lead data)
-    const client = await new Client({
-      userId:       user._id,
-      clientType:   body.clientType === 'INDIVIDUAL' ? 'INDIVIDUAL' : 'COMPANY',
-      company:      (body.company ?? lead.company) || null,
-      designation:  (body.designation ?? lead.designation) || null,
-      companyEmail: body.companyEmail || null,
-      companyPhone: body.companyPhone || null,
-      industry:     body.industry || null,
-      website:      body.website || null,
-      address:      body.address || null,
-      city:         (body.city ?? lead.location) || null,
-      country:      body.country || null,
-    }).save()
+    // Claim the lead atomically so concurrent/double submits can't convert it twice
+    const claimed = await Lead.findOneAndUpdate(
+      { _id: params.id, convertedAt: null },
+      { $set: { convertedAt: new Date() } },
+    )
+    if (!claimed) {
+      return NextResponse.json({ error: 'Lead has already been converted' }, { status: 400 })
+    }
 
-    // Mark lead as converted
-    await Lead.findByIdAndUpdate(params.id, { convertedAt: new Date(), status: 'WON' })
+    let user = null
+    let client = null
+    try {
+      user = await new User({
+        email,
+        password: hashedPw,
+        name:     (body.name || lead.name || '').trim() || lead.name,
+        role:     'CLIENT',
+        phone:    (body.phone ?? lead.phone) || null,
+        isActive: true,
+        mustChangePassword,
+      }).save()
+
+      // Create the Client profile from the supplied details (falling back to lead data)
+      client = await new Client({
+        userId:       user._id,
+        clientType:   body.clientType === 'INDIVIDUAL' ? 'INDIVIDUAL' : 'COMPANY',
+        company:      (body.company ?? lead.company) || null,
+        designation:  (body.designation ?? lead.designation) || null,
+        companyEmail: body.companyEmail || null,
+        companyPhone: body.companyPhone || null,
+        industry:     body.industry || null,
+        website:      body.website || null,
+        address:      body.address || null,
+        city:         (body.city ?? lead.location) || null,
+        country:      body.country || null,
+        // When KYC verification is disabled, auto-verify new clients on creation (same as POST /api/clients)
+        ...(requireKyc ? {} : {
+          kyc: { status: 'VERIFIED', submittedAt: new Date(), reviewedAt: new Date() },
+        }),
+      }).save()
+
+      // Client-portal access is governed by an ACTIVE membership
+      await ensureMembership({ userId: user._id, clientId: client._id, role: 'OWNER', addedBy: session.user.id })
+    } catch (err) {
+      // Roll back so the lead can be converted again (no orphan login blocking the email)
+      await Promise.allSettled([
+        client ? Client.deleteOne({ _id: client._id }) : null,
+        user ? CompanyMembership.deleteMany({ userId: user._id }) : null,
+        user ? User.deleteOne({ _id: user._id }) : null,
+        Lead.updateOne({ _id: params.id }, { $set: { convertedAt: null } }),
+      ])
+      throw err
+    }
+
+    // Mark lead as won
+    await Lead.updateOne({ _id: params.id }, { $set: { status: 'WON' } })
 
     // Transfer all lead quotations to the new client so they appear in their proposals
     await Quotation.updateMany({ leadId: params.id }, { $set: { clientId: client._id } })

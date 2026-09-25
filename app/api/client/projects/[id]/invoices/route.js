@@ -24,22 +24,31 @@ export async function GET(_, { params }) {
     if (!clientIds.length) return NextResponse.json({ data: [], summary: null, combined: null })
 
     const project = await Project.findOne({ _id: params.id, clientId: { $in: clientIds } })
-      .select('_id name projectCode currency')
+      .select('_id name projectCode currency clientId')
       .lean()
     if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
 
     // billableOnly drops DRAFT + CANCELLED — clients never see unissued invoices.
-    const invoices = await findProjectInvoices(project._id, { billableOnly: true })
+    // Only invoices billed to the project's current client company: if the
+    // project was re-homed, invoices billed to the previous company stay hidden.
+    const invoices = await findProjectInvoices(project._id, { billableOnly: true, clientId: project.clientId })
     const children = invoices.map(serialiseChild)
     const totals   = rollUp(children)
+    const currencies = [...new Set(children.map(c => c.currency ?? 'BDT'))]
 
-    const combined = await CombinedInvoice.findOne({ projectId: toObjectId(project._id) })
+    const combined = await CombinedInvoice.findOne({ projectId: toObjectId(project._id), clientId: project.clientId })
       .select('combinedNumber')
       .lean()
 
     return NextResponse.json({
       data: children.map(({ items, ...rest }) => rest),
-      summary: { ...totals, status: deriveStatus(children, totals), currency: project.currency ?? 'BDT' },
+      summary: {
+        ...totals,
+        status: deriveStatus(children, totals),
+        // The invoices' own currency when they agree; flag when they don't.
+        currency: currencies.length === 1 ? currencies[0] : (project.currency ?? 'BDT'),
+        mixedCurrency: currencies.length > 1,
+      },
       combined: combined && children.length > 1
         ? { id: combined._id.toString(), combinedNumber: combined.combinedNumber }
         : null,

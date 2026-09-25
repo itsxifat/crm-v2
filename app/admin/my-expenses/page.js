@@ -6,6 +6,7 @@ import { Plus, X, Loader2, Printer, Receipt, FileText } from 'lucide-react'
 import FileUpload from '@/components/ui/FileUpload'
 import { CURRENCIES } from '@/lib/currencies'
 import { useConfig, subcategoriesFor } from '@/lib/useConfig'
+import { dhakaDayKey } from '@/lib/dhakaTime'
 
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 const fmt     = (n, c = 'BDT') => `${(n ?? 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })} ${c}`
@@ -30,7 +31,7 @@ const ic = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:out
 function ExpenseModal({ onClose, onSaved }) {
   const [form, setForm] = useState({
     title: '', amount: '', currency: 'BDT',
-    date: new Date().toISOString().slice(0, 10),
+    date: dhakaDayKey(),
     projectId: '', category: '', subcategory: '', invoiceUrl: '', notes: '',
   })
   const [projects, setProjects] = useState([])
@@ -176,21 +177,26 @@ export default function MyExpensesPage() {
   const [rows,     setRows]     = useState([])
   const [loading,  setLoading]  = useState(true)
   const [addModal, setAddModal] = useState(false)
+  const [page,     setPage]     = useState(1)
+  const [pages,    setPages]    = useState(1)
+  const [total,    setTotal]    = useState(0)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
       // Only the user's own reimbursement submissions — not company expenses they logged.
-      const res  = await fetch('/api/expenses?mine=true&origin=REIMBURSEMENT&limit=50')
+      const res  = await fetch(`/api/expenses?mine=true&origin=REIMBURSEMENT&limit=50&page=${page}`)
       const json = await res.json()
       if (!res.ok) throw new Error(json.error)
       setRows(json.data ?? [])
+      setPages(Math.max(1, json.meta?.pages ?? 1))
+      setTotal(json.meta?.total ?? (json.data ?? []).length)
     } catch (err) {
       toast.error(err.message ?? 'Failed to load your expenses')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [page])
 
   useEffect(() => { load() }, [load])
 
@@ -271,9 +277,24 @@ export default function MyExpensesPage() {
             </table>
           </div>
         )}
+        {pages > 1 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
+            <p className="text-xs text-gray-400">Page {page} of {pages} · {total} submissions</p>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1 || loading}
+                className="px-3 py-1.5 text-xs font-medium border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 disabled:opacity-40">
+                Previous
+              </button>
+              <button onClick={() => setPage(p => Math.min(pages, p + 1))} disabled={page >= pages || loading}
+                className="px-3 py-1.5 text-xs font-medium border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 disabled:opacity-40">
+                Next
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
-      {addModal && <ExpenseModal onClose={() => setAddModal(false)} onSaved={load} />}
+      {addModal && <ExpenseModal onClose={() => setAddModal(false)} onSaved={() => (page === 1 ? load() : setPage(1))} />}
     </div>
   )
 }

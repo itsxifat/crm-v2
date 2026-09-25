@@ -44,8 +44,9 @@ export default function ForgotPasswordPage() {
               <CheckCircle className="w-10 h-10 text-green-500 mx-auto mb-3" />
               <p className="font-semibold text-gray-800">Request submitted</p>
               <p className="text-sm text-gray-500 mt-1">
-                If an account exists for that email, your password reset request has been sent to our team for review.
-                You'll receive a reset link by email once it's approved.
+                If a client account exists for that email, your password reset request has been sent to our team for review.
+                You&apos;ll receive a reset link by email once it&apos;s approved. Staff, freelancer and vendor accounts should
+                contact their administrator.
               </p>
               <Link href="/login" className="inline-flex items-center gap-1.5 mt-5 text-sm font-medium text-blue-600 hover:text-blue-700">
                 <ArrowLeft className="w-4 h-4" /> Back to sign in
@@ -55,7 +56,10 @@ export default function ForgotPasswordPage() {
             <>
               <h1 className="text-lg font-semibold text-gray-900">Forgot your password?</h1>
               <p className="text-sm text-gray-500 mt-1 mb-5">
-                Enter your account email. For security, a reset link is sent only after our team approves your request.
+                Enter your client account email. For security, a reset link is sent only after our team approves your request.
+              </p>
+              <p className="text-xs text-gray-500 -mt-3 mb-5">
+                Staff, freelancer and vendor accounts can&apos;t self-request a reset. Please contact your administrator instead.
               </p>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="relative">

@@ -3,8 +3,8 @@
 import { useState, useEffect } from 'react'
 import { toast } from 'react-hot-toast'
 import { Loader2 } from 'lucide-react'
+import { formatCurrency } from '@/lib/utils'
 
-const fmt = (n) => `৳${(n ?? 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })}`
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 
 const ASSIGNMENT_STATUS_COLORS = {
@@ -15,11 +15,12 @@ const ASSIGNMENT_STATUS_COLORS = {
   CANCELLED:   'bg-red-100 text-red-600',
 }
 
-const PAYMENT_STATUS_COLORS = {
-  PENDING:               'bg-yellow-100 text-yellow-700',
-  IN_WALLET:             'bg-green-100 text-green-700',
-  WITHDRAWAL_REQUESTED:  'bg-blue-100 text-blue-700',
-  PAID:                  'bg-gray-100 text-gray-600',
+// Keys match FreelancerAssignment.paymentStatus
+const PAYMENT_STATUS_LABEL = {
+  PENDING:            { label: 'Not requested',    cls: 'bg-gray-100 text-gray-600' },
+  PAYMENT_REQUESTED:  { label: 'Awaiting payment', cls: 'bg-yellow-100 text-yellow-700' },
+  PAID:               { label: 'Paid',             cls: 'bg-green-100 text-green-700' },
+  NOT_REQUIRED:       { label: 'Salary',           cls: 'bg-indigo-100 text-indigo-700' },
 }
 
 const VENTURE_COLORS = {
@@ -110,7 +111,7 @@ export default function FreelancerProjectsPage() {
                       ) : '—'}
                     </td>
                     <td className="px-4 py-3.5 text-sm font-medium text-gray-900">
-                      {fmt(a.paymentAmount)}
+                      {a.paymentAmount ? formatCurrency(a.paymentAmount, a.currency) : '—'}
                     </td>
                     <td className="px-4 py-3.5">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${ASSIGNMENT_STATUS_COLORS[a.status] ?? 'bg-gray-100 text-gray-600'}`}>
@@ -118,9 +119,14 @@ export default function FreelancerProjectsPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3.5">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${PAYMENT_STATUS_COLORS[a.paymentStatus] ?? 'bg-gray-100 text-gray-600'}`}>
-                        {a.paymentStatus?.replace('_', ' ') ?? 'PENDING'}
-                      </span>
+                      {(() => {
+                        const pay = PAYMENT_STATUS_LABEL[a.paymentStatus] ?? PAYMENT_STATUS_LABEL.PENDING
+                        return (
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${pay.cls}`}>
+                            {pay.label}
+                          </span>
+                        )
+                      })()}
                     </td>
                     <td className="px-4 py-3.5 text-sm text-gray-500">
                       {fmtDate(a.createdAt)}

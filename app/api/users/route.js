@@ -7,6 +7,8 @@ import { User } from '@/models'
 import bcrypt from 'bcryptjs'
 import { z } from 'zod'
 import { ciEquals, ciContains } from '@/lib/searchMatch'
+import { canDo } from '@/lib/rbac'
+import { maskList, USER_PII } from '@/lib/pii'
 
 const createUserSchema = z.object({
   email:    z.string().email(),
@@ -23,7 +25,11 @@ export async function GET(request) {
     if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
 
     const adminRoles = ['SUPER_ADMIN', 'MANAGER']
-    if (!adminRoles.includes(session.user.role)) {
+    const isAdmin    = adminRoles.includes(session.user.role)
+    // Assignee lookup for staff who can create/assign tasks (e.g. the project
+    // TaskModal): id + name only, limited to assignable roles.
+    const isLookup   = !isAdmin && (canDo(session, 'tasks.assign') || canDo(session, 'tasks.create'))
+    if (!isAdmin && !isLookup) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
@@ -33,19 +39,25 @@ export async function GET(request) {
     const role   = searchParams.get('role')
     const roles  = searchParams.get('roles')
     const search = searchParams.get('search')
-    const page   = parseInt(searchParams.get('page')  ?? '1',  10)
-    const limit  = parseInt(searchParams.get('limit') ?? '20', 10)
+    const page   = Math.max(1, parseInt(searchParams.get('page') ?? '1', 10) || 1)
+    const limit  = Math.min(200, Math.max(1, parseInt(searchParams.get('limit') ?? '20', 10) || 20))
     const skip   = (page - 1) * limit
 
+    const canSeeContact = canDo(session, 'pii.contact.view')
+
     const filter = {}
-    if (roles) filter.role = { $in: roles.split(',').map(r => r.trim()) }
-    else if (role) filter.role = role
+    let roleList = roles ? roles.split(',').map(r => r.trim()).filter(Boolean) : (role ? [role] : null)
+    if (isLookup) {
+      const assignable = ['EMPLOYEE', 'FREELANCER']
+      roleList = roleList ? roleList.filter(r => assignable.includes(r)) : assignable
+      filter.isActive = true
+    }
+    if (roleList) filter.role = { $in: roleList }
     if (search) {
-      filter.$or = [
-        { name:  ciContains(search) },
-        { email: ciContains(search) },
-        { phone: ciContains(search) },
-      ]
+      // Searching hidden contact fields would let callers rebuild masked values.
+      filter.$or = canSeeContact && isAdmin
+        ? [{ name: ciContains(search) }, { email: ciContains(search) }, { phone: ciContains(search) }]
+        : [{ name: ciContains(search) }]
     }
 
     const [users, total] = await Promise.all([
@@ -53,12 +65,16 @@ export async function GET(request) {
         .skip(skip)
         .limit(limit)
         .sort({ createdAt: -1 })
-        .select('-password'),
+        .select(isLookup
+          ? 'name avatar role'
+          : '-password -loginOtp -loginOtpExpiry -activationToken -activationTokenExpiry -passwordResetToken -passwordResetExpiry'),
       User.countDocuments(filter),
     ])
 
+    const data = maskList(session, users.map(u => u.toJSON()), USER_PII)
+
     return NextResponse.json({
-      data: users,
+      data,
       meta: { page, limit, total, pages: Math.ceil(total / limit) },
     })
   } catch (err) {

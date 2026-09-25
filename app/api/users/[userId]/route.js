@@ -4,6 +4,8 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { User } from '@/models'
+import { maskDoc, USER_PII } from '@/lib/pii'
+import { isValidObjectId } from '@/lib/objectId'
 
 // GET /api/users/:userId
 export async function GET(request, { params }) {
@@ -19,11 +21,12 @@ export async function GET(request, { params }) {
     await connectDB()
 
     const { userId } = await params
+    if (!isValidObjectId(userId)) return NextResponse.json({ error: 'User not found' }, { status: 404 })
     const user = await User.findById(userId).select('-password').lean()
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
     return NextResponse.json({
-      data: {
+      data: maskDoc(session, {
         id:        user._id.toString(),
         name:      user.name,
         email:     user.email,
@@ -33,7 +36,7 @@ export async function GET(request, { params }) {
         isActive:  user.isActive,
         lastLogin: user.lastLogin ?? null,
         createdAt: user.createdAt,
-      },
+      }, USER_PII),
     })
   } catch (err) {
     console.error('[GET /api/users/:userId]', err)

@@ -1,10 +1,8 @@
 export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
-import { writeFile, mkdir } from 'fs/promises'
-import path from 'path'
-import { randomUUID } from 'crypto'
 import connectDB from '@/lib/mongodb'
 import { EmployeeOnboarding } from '@/models'
+import { saveUpload } from '@/lib/uploads'
 
 // POST /api/onboarding/upload?token=...
 // Public endpoint — validates via onboarding token (no session required)
@@ -20,6 +18,8 @@ export async function POST(request) {
     await connectDB()
     const record = await EmployeeOnboarding.findOne({ token }).lean()
     if (!record) return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    if (record.expiresAt && new Date(record.expiresAt) < new Date())
+      return NextResponse.json({ error: 'Link has expired' }, { status: 410 })
     if (record.status !== 'PENDING_SUBMISSION')
       return NextResponse.json({ error: 'Onboarding link already used' }, { status: 409 })
 
@@ -30,27 +30,12 @@ export async function POST(request) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 })
     }
 
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf']
-    if (!allowedTypes.includes(file.type)) {
-      return NextResponse.json({ error: 'Only JPG, PNG, WebP or PDF allowed' }, { status: 422 })
-    }
+    // Type is decided from the file's magic bytes (never the client-declared
+    // MIME type or file name), and the file is stored outside public/.
+    const saved = await saveUpload(file, { bucket: 'onboarding', maxSize: 10 * 1024 * 1024 })
+    if (saved.error) return NextResponse.json({ error: saved.error }, { status: saved.status })
 
-    const maxSize = 10 * 1024 * 1024 // 10 MB
-    if (file.size > maxSize) {
-      return NextResponse.json({ error: 'File too large (max 10 MB)' }, { status: 422 })
-    }
-
-    const ext      = file.name.split('.').pop().toLowerCase()
-    const filename = `${randomUUID()}.${ext}`
-    const dir      = path.join(process.cwd(), 'public', 'uploads', 'onboarding')
-
-    await mkdir(dir, { recursive: true })
-
-    const bytes  = await file.arrayBuffer()
-    const buffer = Buffer.from(bytes)
-    await writeFile(path.join(dir, filename), buffer)
-
-    return NextResponse.json({ url: `/uploads/onboarding/${filename}` }, { status: 201 })
+    return NextResponse.json({ url: saved.url }, { status: 201 })
   } catch (err) {
     console.error('[POST /api/onboarding/upload]', err)
     return NextResponse.json({ error: 'Upload failed' }, { status: 500 })

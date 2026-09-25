@@ -6,10 +6,10 @@ import connectDB from '@/lib/mongodb'
 import { Invoice, Project, Client, User, CombinedInvoice } from '@/models'
 import { resolveActiveClient } from '@/lib/clientAccess'
 import { logActivity } from '@/lib/logActivity'
-import { canAccess } from '@/lib/permissions'
-import { requirePerm } from '@/lib/rbac'
+import { requirePerm, canDo } from '@/lib/rbac'
 import { ciContains } from '@/lib/searchMatch'
-import { ensureCombinedInvoice, toObjectId } from '@/lib/combinedInvoice'
+import { ensureCombinedInvoice, toObjectId, NON_BILLABLE_STATUSES } from '@/lib/combinedInvoice'
+import { computeInvoiceTotals } from '@/lib/invoiceTotals'
 
 // Mixed-typed money fields can hold legacy non-numeric values; coerce defensively
 // so $sort / $group never blow up on one bad document.
@@ -60,8 +60,10 @@ export async function GET(request) {
   try {
     const session = await getServerSession(authOptions)
     if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-    // Block FREELANCER/VENDOR (invoices: none); CLIENT (ro) is scoped to own below.
-    if (!canAccess(session, 'invoices', 'read'))
+    // Staff need sales.invoices.view; CLIENT is scoped to own company below;
+    // FREELANCER / VENDOR have no access to invoices.
+    const isClient = session.user.role === 'CLIENT'
+    if (!isClient && !canDo(session, 'sales.invoices.view'))
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     await connectDB()
 
@@ -82,11 +84,13 @@ export async function GET(request) {
     const skip      = (page - 1) * limit
 
     const and = []
-    if (status)   and.push({ status })
     if (clientId) and.push({ clientId: toObjectId(clientId) })
 
-    // Match both new (projectId) and legacy (projectIds array) styles
-    if (projectId) {
+    // Match both new (projectId) and legacy (projectIds array) styles.
+    // projectId=none → standalone invoices (no project at all).
+    if (projectId === 'none') {
+      and.push({ projectId: null, $or: [{ projectIds: { $exists: false } }, { projectIds: { $size: 0 } }] })
+    } else if (projectId) {
       const oid = toObjectId(projectId)
       and.push({ $or: [{ projectId: oid }, { projectIds: oid }] })
     }
@@ -112,13 +116,21 @@ export async function GET(request) {
     if (search) and.push(await buildSearchClause(search))
 
     // CLIENT role: only the active company's issued invoices
-    if (session.user.role === 'CLIENT') {
+    if (isClient) {
       const { clientId: activeId } = await resolveActiveClient(session)
       and.push({ clientId: activeId ?? null })
       and.push({ status: { $ne: 'DRAFT' } })
     }
 
+    // Everything except the status tab — used for the per-status tab counts, so
+    // choosing a tab doesn't hide the other tabs' counts.
+    const matchAnyStatus = and.length ? { $and: [...and] } : {}
+    if (status) and.push({ status })
     const match = and.length ? { $and: and } : {}
+
+    // DRAFT / CANCELLED invoices are not billed: they never count towards
+    // billed / paid / due money figures (matches lib/combinedInvoice).
+    const billableOnly = (expr) => ({ $cond: [{ $in: ['$status', NON_BILLABLE_STATUSES] }, 0, expr] })
 
     // Derived money fields, shared by the list, the grouping and the stats.
     const withMoney = {
@@ -138,20 +150,26 @@ export async function GET(request) {
         withMoney, withDue,
         {
           $group: {
-            _id: { $ifNull: ['$projectId', { $arrayElemAt: ['$projectIds', 0] }] },
+            // Project invoices group by project; standalone ones (no project)
+            // group per client, so a row never mixes several clients.
+            _id: {
+              p: { $ifNull: ['$projectId', { $ifNull: [{ $arrayElemAt: ['$projectIds', 0] }, null] }] },
+              c: { $cond: [{ $ifNull: ['$projectId', { $arrayElemAt: ['$projectIds', 0] }] }, null, '$clientId'] },
+            },
             clientId: { $first: '$clientId' },
             count:    { $sum: 1 },
-            total:    { $sum: '$_total' },
-            paid:     { $sum: '$_paid' },
-            due:      { $sum: '$_due' },
+            total:    { $sum: billableOnly('$_total') },
+            paid:     { $sum: billableOnly('$_paid') },
+            due:      { $sum: billableOnly('$_due') },
+            cancelledCount: { $sum: { $cond: [{ $eq: ['$status', 'CANCELLED'] }, 1, 0] } },
             draftCount:   { $sum: { $cond: [{ $eq: ['$status', 'DRAFT'] }, 1, 0] } },
             overdueCount: { $sum: { $cond: [{ $eq: ['$status', 'OVERDUE'] }, 1, 0] } },
             paidCount:    { $sum: { $cond: [{ $eq: ['$status', 'PAID'] }, 1, 0] } },
             lastIssued:   { $max: '$issueDate' },
-            nextDue:      { $min: { $cond: [{ $gt: ['$_due', 0] }, '$dueDate', null] } },
+            nextDue:      { $min: { $cond: [{ $and: [{ $gt: ['$_due', 0] }, { $not: [{ $in: ['$status', NON_BILLABLE_STATUSES] }] }] }, '$dueDate', null] } },
           },
         },
-        { $sort: { due: -1, total: -1 } },
+        { $sort: { due: -1, total: -1, _id: 1 } },   // _id keeps paging stable on ties
         {
           $facet: {
             rows:  [{ $skip: skip }, { $limit: limit }],
@@ -163,7 +181,7 @@ export async function GET(request) {
       const rows  = grouped[0]?.rows ?? []
       const total = grouped[0]?.count?.[0]?.n ?? 0
 
-      const projectIds = rows.map(r => r._id).filter(Boolean)
+      const projectIds = rows.map(r => r._id?.p).filter(Boolean)
       const [projects, combined] = await Promise.all([
         Project.find({ _id: { $in: projectIds } }).select('name projectCode venture category budget').lean(),
         CombinedInvoice.find({ projectId: { $in: projectIds } }).select('combinedNumber projectId').lean(),
@@ -179,7 +197,7 @@ export async function GET(request) {
 
       return NextResponse.json({
         data: rows.map(r => {
-          const key = r._id?.toString()
+          const key = r._id?.p?.toString()
           const p   = key ? projectById.get(key) : null
           const c   = r.clientId ? clientById.get(r.clientId.toString()) : null
           const cmb = key ? combinedById.get(key) : null
@@ -194,6 +212,7 @@ export async function GET(request) {
             combined: cmb ? { id: cmb._id.toString(), combinedNumber: cmb.combinedNumber } : null,
             invoiceCount: r.count,
             draftCount:   r.draftCount,
+            cancelledCount: r.cancelledCount,
             overdueCount: r.overdueCount,
             paidCount:    r.paidCount,
             total: Math.round(r.total * 100) / 100,
@@ -210,7 +229,7 @@ export async function GET(request) {
     // ── Flat list ────────────────────────────────────────────────────────────
     const sortSpec = { [SORT_FIELDS[sortKey]]: sortDir, _id: sortDir }   // _id keeps paging stable
 
-    const [rows, countRes, statsRes] = await Promise.all([
+    const [rows, countRes, statsRes, tabRes] = await Promise.all([
       Invoice.aggregate([
         { $match: match },
         withMoney, withDue,
@@ -233,10 +252,16 @@ export async function GET(request) {
           },
         },
       ]),
+      // Tab counts ignore the status filter (see matchAnyStatus).
+      status
+        ? Invoice.aggregate([{ $match: matchAnyStatus }, { $group: { _id: '$status', count: { $sum: 1 } } }])
+        : null,
     ])
 
+    // Only the fields the list shows — the full Client doc carries staff-only
+    // notes / KYC and contact PII that must not leak through this endpoint.
     await Invoice.populate(rows, [
-      { path: 'clientId', populate: { path: 'userId', select: 'name email avatar' } },
+      { path: 'clientId', select: 'company clientCode userId', populate: { path: 'userId', select: 'name avatar' } },
       { path: 'projectId',  select: 'name projectCode venture' },
       { path: 'projectIds', select: 'name projectCode venture' },
       { path: 'createdBy', select: 'name' },
@@ -263,12 +288,17 @@ export async function GET(request) {
         paid:  Math.round(s.paid  * 100) / 100,
         due:   Math.round(s.due   * 100) / 100,
       }
-      if (s._id === 'CANCELLED') continue
+      if (NON_BILLABLE_STATUSES.includes(s._id)) continue
       billed    += s.total
       collected += s.paid
-      if (s._id !== 'DRAFT') outstanding += s.due
+      outstanding += s.due
       if (s._id === 'OVERDUE') overdueAmount += s.due
     }
+
+    // Per-status tab counts over the filter set WITHOUT the status tab applied.
+    const statusCounts = {}
+    let allCount = 0
+    for (const s of (tabRes ?? statsRes)) { statusCounts[s._id] = s.count; allCount += s.count }
 
     return NextResponse.json({
       data: rows.map(r => {
@@ -291,6 +321,8 @@ export async function GET(request) {
         overdue:     Math.round(overdueAmount * 100) / 100,
         collectedPct: billed > 0 ? Math.round((collected / billed) * 100) : 0,
         byStatus,
+        statusCounts,
+        allCount,
       },
     })
   } catch (err) {
@@ -310,18 +342,12 @@ export async function POST(request) {
     const { clientId, projectId, items, issueDate, dueDate, taxRate, discount, notes, terms, currency } = body
 
     if (!clientId) return NextResponse.json({ error: 'Client required' }, { status: 422 })
-    if (!items || items.length === 0) return NextResponse.json({ error: 'At least one item required' }, { status: 422 })
 
-    // Recalculate totals server-side
-    const processedItems = items.map(item => ({
-      description: item.description,
-      quantity:    Number(item.quantity) || 1,
-      rate:        Number(item.rate)     || 0,
-      amount:      (Number(item.quantity) || 1) * (Number(item.rate) || 0),
-    }))
-    const subtotal  = Math.round(processedItems.reduce((s, i) => s + i.amount, 0) * 100) / 100
-    const taxAmt    = Math.round(subtotal * ((Number(taxRate) || 0) / 100) * 100) / 100
-    const total     = Math.round((subtotal + taxAmt - (Number(discount) || 0)) * 100) / 100
+    // Recalculate + validate totals server-side (quantity > 0, rate >= 0,
+    // 0 <= discount <= subtotal + tax, so a total can never go negative)
+    const calc = computeInvoiceTotals({ items, taxRate, discount })
+    if (calc.error) return NextResponse.json({ error: calc.error }, { status: 422 })
+    const { items: processedItems, subtotal, taxAmount: taxAmt, total } = calc
 
     const invoice = await new Invoice({
       clientId,
@@ -330,9 +356,9 @@ export async function POST(request) {
       issueDate:   issueDate ? new Date(issueDate) : new Date(),
       dueDate:     dueDate   ? new Date(dueDate)   : null,
       subtotal,
-      taxRate:     Number(taxRate)   || 0,
+      taxRate:     calc.taxRate,
       taxAmount:   taxAmt,
-      discount:    Number(discount)  || 0,
+      discount:    calc.discount,
       total,
       currency:    currency ?? 'BDT',
       notes:       notes || null,

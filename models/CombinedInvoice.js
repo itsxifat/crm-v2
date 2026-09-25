@@ -1,4 +1,5 @@
 import mongoose from 'mongoose'
+import { nextSequence } from '../lib/sequence'
 
 /**
  * CombinedInvoice — a consolidated invoice for a project that has more than one
@@ -42,11 +43,19 @@ const CombinedInvoiceSchema = new mongoose.Schema(
 // invoice is recognisable at a glance: ENV-2609C001.
 CombinedInvoiceSchema.pre('validate', async function () {
   if (this.combinedNumber) return
-  const now    = new Date()
-  const yymm   = `${String(now.getFullYear()).slice(-2)}${String(now.getMonth() + 1).padStart(2, '0')}`
+  // Month boundaries follow the business timezone (Asia/Dhaka), not the server's.
+  const parts  = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Dhaka', year: '2-digit', month: '2-digit' })
+    .formatToParts(new Date()).map(p => [p.type, p.value]))
+  const yymm   = `${parts.year}${parts.month}`
   const prefix = `ENV-${yymm}C`
-  const count  = await mongoose.model('CombinedInvoice').countDocuments({ combinedNumber: { $regex: `^${prefix}` } })
-  this.combinedNumber = `${prefix}${String(count + 1).padStart(3, '0')}`
+  // Highest number already issued for this prefix (NOT a count — a count reissues
+  // an existing number after any delete and collides on the unique index).
+  const existing = await mongoose.model('CombinedInvoice')
+    .find({ combinedNumber: { $regex: `^${prefix}[0-9]+$` } })
+    .select('combinedNumber').lean()
+  const maxUsed = existing.reduce((m, d) => Math.max(m, parseInt(d.combinedNumber.slice(prefix.length), 10) || 0), 0)
+  const seq = await nextSequence(`combinedInvoice:${prefix}`, maxUsed)
+  this.combinedNumber = `${prefix}${String(seq).padStart(3, '0')}`
 })
 
 if (mongoose.models.CombinedInvoice) delete mongoose.models.CombinedInvoice

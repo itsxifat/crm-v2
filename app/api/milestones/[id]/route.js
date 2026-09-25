@@ -2,7 +2,8 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { requireStaff } from '@/lib/rbac'
+import { requirePerm } from '@/lib/rbac'
+import { isValidObjectId } from '@/lib/objectId'
 import connectDB from '@/lib/mongodb'
 import { Milestone } from '@/models'
 import { z } from 'zod'
@@ -18,8 +19,10 @@ const updateSchema = z.object({
 export async function PUT(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    const denied = requireStaff(session)
+    // Milestones are shown to clients — editing them is a project edit, same as create/delete.
+    const denied = requirePerm(session, 'projects.update')
     if (denied) return denied
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
     await connectDB()
 
@@ -29,9 +32,15 @@ export async function PUT(request, { params }) {
       return NextResponse.json({ error: 'Validation failed', details: parsed.error.flatten() }, { status: 422 })
     }
 
+    const existing = await Milestone.findById(params.id).select('completed completedAt').lean()
+    if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
     const data = { ...parsed.data }
     if (data.dueDate) data.dueDate = new Date(data.dueDate)
-    if (data.completed) data.completedAt = new Date()
+    // Keep the original completion date on re-sends; clear it when reopened.
+    if (data.completed !== undefined) {
+      data.completedAt = data.completed ? (existing.completedAt ?? new Date()) : null
+    }
 
     const milestone = await Milestone.findByIdAndUpdate(params.id, data, { new: true })
     return NextResponse.json({ data: milestone })
@@ -45,12 +54,9 @@ export async function PUT(request, { params }) {
 export async function DELETE(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-
-    const allowedRoles = ['SUPER_ADMIN', 'MANAGER']
-    if (!allowedRoles.includes(session.user.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const denied = requirePerm(session, 'projects.update')
+    if (denied) return denied
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
     await connectDB()
     await Milestone.findByIdAndDelete(params.id)
@@ -65,8 +71,9 @@ export async function DELETE(request, { params }) {
 export async function PATCH(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    const denied = requireStaff(session)
+    const denied = requirePerm(session, 'projects.update')
     if (denied) return denied
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
     await connectDB()
 

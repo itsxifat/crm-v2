@@ -1006,7 +1006,7 @@ export default function EmployeeProfilePage() {
               <tbody className="divide-y divide-gray-50">
                 {leaves.map(l => (
                   <tr key={l._id} className="hover:bg-gray-50/60">
-                    <td className="px-4 py-3 text-sm text-gray-800">{l.leaveType ?? '—'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-800">{l.type ?? l.leaveType ?? '—'}</td>
                     <td className="px-4 py-3 text-sm text-gray-600">{fmtDate(l.startDate)}</td>
                     <td className="px-4 py-3 text-sm text-gray-600">{fmtDate(l.endDate)}</td>
                     <td className="px-4 py-3 text-sm text-gray-500 max-w-xs truncate">{l.reason ?? '—'}</td>

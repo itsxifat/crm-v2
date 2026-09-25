@@ -3,10 +3,20 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { requirePerm } from '@/lib/rbac'
-import { maskDoc, CLIENT_PII } from '@/lib/pii'
+import { maskDoc, CLIENT_PII, restoreMaskedValues } from '@/lib/pii'
 import connectDB from '@/lib/mongodb'
 import { User, Client, Project, Invoice, Agreement, Document } from '@/models'
 import { logActivity } from '@/lib/logActivity'
+import { isValidObjectId } from '@/lib/objectId'
+import { ACTIVE_PROJECT_STATUSES, sumInvoiceMoneyBDT } from '@/lib/clientStats'
+
+// Client fields editable through PUT. Everything else (userId, clientCode,
+// parentClientId, kyc.*, isActive) has its own dedicated flow.
+const EDITABLE_FIELDS = [
+  'clientType', 'company', 'companyPhone', 'companyEmail', 'contactPerson', 'designation',
+  'businessType', 'industry', 'priority', 'altPhone', 'timezone', 'address', 'city',
+  'country', 'vatNumber', 'website', 'socialLinks', 'logo', 'notes',
+]
 
 // GET /api/clients/[id]
 export async function GET(request, { params }) {
@@ -14,6 +24,7 @@ export async function GET(request, { params }) {
     const session = await getServerSession(authOptions)
     const denied = requirePerm(session, 'sales.customers.view')
     if (denied) return denied
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Client not found' }, { status: 404 })
     await connectDB()
 
     const client = await Client.findById(params.id)
@@ -36,9 +47,9 @@ export async function GET(request, { params }) {
       Agreement.find({ clientId: params.id }).sort({ createdAt: -1 }),
     ])
 
-    const totalRevenue       = invoices.filter(i => i.status === 'PAID').reduce((s, i) => s + i.total, 0)
-    const outstandingBalance = invoices.filter(i => ['SENT','PARTIALLY_PAID','OVERDUE'].includes(i.status)).reduce((s, i) => s + i.total, 0)
-    const activeProjectCount = projects.filter(p => ['IN_PROGRESS','ACTIVE'].includes(p.status)).length
+    // BDT-equivalent, net of partial payments
+    const { totalRevenue, outstandingBalance } = sumInvoiceMoneyBDT(invoices)
+    const activeProjectCount = projects.filter(p => ACTIVE_PROJECT_STATUSES.includes(p.status)).length
 
     return NextResponse.json({
       data: maskDoc(session, {
@@ -65,32 +76,44 @@ export async function PUT(request, { params }) {
     const session = await getServerSession(authOptions)
     const denied = requirePerm(session, 'sales.customers.update')
     if (denied) return denied
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Client not found' }, { status: 404 })
     await connectDB()
-
-    const body = await request.json()
-    const { name, email, phone, isActive, ...clientData } = body
 
     const current = await Client.findById(params.id)
     if (!current) return NextResponse.json({ error: 'Client not found' }, { status: 404 })
 
+    // Never write masked PII (e.g. 'j•••@g••.com') back over real data.
+    const body = restoreMaskedValues(await request.json(), current.toObject()) ?? {}
+    // isActive is intentionally ignored here — use PATCH /api/clients/[id]/status.
+    // The login email is not editable here either (it is the account identifier).
+    const { name, phone } = body
+
+    // Whitelist client fields — never spread the body (userId, clientCode, kyc, $ops…).
+    const clientSet = {}
+    for (const k of EDITABLE_FIELDS) {
+      if (body[k] !== undefined) clientSet[k] = body[k]
+    }
+    if (clientSet.socialLinks !== undefined && !Array.isArray(clientSet.socialLinks)) delete clientSet.socialLinks
+
     const userUpdate = {}
-    if (name     !== undefined) userUpdate.name     = name
-    if (email    !== undefined) userUpdate.email    = email
-    if (phone    !== undefined) userUpdate.phone    = phone
-    if (isActive !== undefined) userUpdate.isActive = isActive
+    if (typeof name === 'string' && name.trim()) userUpdate.name = name.trim()
+    if (phone !== undefined) userUpdate.phone = phone || null
 
-    // Remove KYC status fields from general PUT — use the dedicated KYC endpoint
-    delete clientData['kyc.status']
-    delete clientData['kyc.remarks']
-    delete clientData['kyc.reviewedBy']
-    delete clientData['kyc.reviewedAt']
+    // Only ever touch the linked account if it is a CLIENT (never staff).
+    if (Object.keys(userUpdate).length > 0) {
+      const linkedUser = await User.findById(current.userId).select('role').lean()
+      if (!linkedUser || linkedUser.role !== 'CLIENT') {
+        return NextResponse.json({ error: 'The linked account is not a client account and cannot be edited here' }, { status: 409 })
+      }
+    }
 
-    await Promise.all([
-      Object.keys(userUpdate).length > 0
-        ? User.findByIdAndUpdate(current.userId, userUpdate)
-        : Promise.resolve(),
-      Client.findByIdAndUpdate(params.id, clientData, { runValidators: false }),
-    ])
+    // Validate the client update first so a failure does not leave a half-applied user update.
+    if (Object.keys(clientSet).length > 0) {
+      await Client.findByIdAndUpdate(params.id, { $set: clientSet }, { runValidators: true })
+    }
+    if (Object.keys(userUpdate).length > 0) {
+      await User.findOneAndUpdate({ _id: current.userId, role: 'CLIENT' }, { $set: userUpdate })
+    }
 
     const updated = await Client.findById(params.id)
       .populate({ path: 'userId', select: 'id name email avatar phone isActive' })
@@ -106,8 +129,11 @@ export async function PUT(request, { params }) {
       request,
     })
 
-    return NextResponse.json({ data: updated.toJSON() })
+    return NextResponse.json({ data: maskDoc(session, updated.toJSON(), CLIENT_PII) })
   } catch (err) {
+    if (err?.name === 'ValidationError' || err?.name === 'CastError') {
+      return NextResponse.json({ error: err.message }, { status: 422 })
+    }
     console.error('[PUT /api/clients/[id]]', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
@@ -119,12 +145,15 @@ export async function DELETE(request, { params }) {
     const session = await getServerSession(authOptions)
     const denied = requirePerm(session, 'sales.customers.delete')
     if (denied) return denied
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Client not found' }, { status: 404 })
     await connectDB()
 
     const client = await Client.findById(params.id).lean()
     if (!client) return NextResponse.json({ error: 'Client not found' }, { status: 404 })
 
-    await User.findByIdAndUpdate(client.userId, { isActive: false })
+    // Company-level deactivation: every member loses access to THIS company;
+    // the people's own accounts (and their other companies) are untouched.
+    await Client.findByIdAndUpdate(params.id, { $set: { isActive: false } })
 
     logActivity({
       userId:   session.user.id,

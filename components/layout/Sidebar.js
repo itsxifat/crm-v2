@@ -9,7 +9,7 @@ import {
   LayoutDashboard, Users, UserCheck, Briefcase, ClipboardList,
   FileText, TrendingUp, Settings2,
   Calendar, Clock, FileSignature,
-  BarChart3, UserCog, Building2, ChevronLeft, ChevronRight,
+  UserCog, Building2, ChevronLeft, ChevronRight,
   ArrowRightLeft, ArrowDownLeft, ArrowUpRight as ArrowUpRightIcon,
   CheckCircle, Inbox, ChevronDown, ShieldCheck, Activity, Bell, UserCircle,
   PieChart, Wallet, Landmark, Globe, Receipt, CreditCard, Percent, Banknote,
@@ -97,13 +97,7 @@ const NAV_SECTIONS = [
       { href: '/admin/roles',       label: 'Roles & Permissions', icon: ShieldCheck, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'hr.roles.manage' },
     ],
   },
-  {
-    label: 'Analytics',
-    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
-    items: [
-      { href: '/admin/reports', label: 'Reports', icon: BarChart3, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'analytics.reports.view' },
-    ],
-  },
+  // Analytics → Reports removed: there is no /admin/reports page yet.
   {
     label: 'System',
     roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
@@ -274,7 +268,7 @@ function SidebarContent({ mobileOpen, onMobileClose }) {
 
   // Restore + persist the collapsed preference across reloads.
   useEffect(() => {
-    if (localStorage.getItem('sidebar:collapsed') === '1') setCollapsed(true)
+    try { if (localStorage.getItem('sidebar:collapsed') === '1') setCollapsed(true) } catch {}
   }, [])
   const setCollapsedPersist = (val) => {
     setCollapsed(val)

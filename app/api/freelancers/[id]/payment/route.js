@@ -4,15 +4,21 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Freelancer } from '@/models'
+import { canDo } from '@/lib/rbac'
+import { maskDoc, restoreMaskedValues, FREELANCER_PII } from '@/lib/pii'
+import { isValidObjectId } from '@/lib/objectId'
 
 const STAFF_ROLES = ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE']
 
 async function resolveFreelancer(id, session) {
+  if (!isValidObjectId(id)) return { error: 'Freelancer not found', status: 404 }
   const freelancer = await Freelancer.findById(id).populate({ path: 'userId', select: 'id name email' })
   if (!freelancer) return { error: 'Freelancer not found', status: 404 }
 
-  const isStaff      = STAFF_ROLES.includes(session.user.role)
-  const isOwnProfile = freelancer.userId?._id.toString() === session.user.id
+  const isOwnProfile = freelancer.userId?._id?.toString() === session.user.id
+  // Staff need freelancer-management permission to see or change payout
+  // details; the freelancer themself always can.
+  const isStaff = !isOwnProfile && STAFF_ROLES.includes(session.user.role) && canDo(session, 'hr.freelancers.manage')
 
   if (!isStaff && !isOwnProfile) {
     return { error: 'Forbidden', status: 403 }
@@ -33,8 +39,11 @@ export async function GET(request, { params }) {
     const result = await resolveFreelancer(id, session)
     if (result.error) return NextResponse.json({ error: result.error }, { status: result.status })
 
-    const { freelancer } = result
-    return NextResponse.json({ data: freelancer.paymentMethod })
+    const { freelancer, isStaff } = result
+    const data = freelancer.toObject().paymentMethod ?? null
+    if (!isStaff) return NextResponse.json({ data })
+    // Staff viewing someone else's payout details: apply financial PII masking.
+    return NextResponse.json({ data: maskDoc(session, { paymentMethod: data }, FREELANCER_PII).paymentMethod })
   } catch (err) {
     console.error('[GET /api/freelancers/[id]/payment]', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -53,8 +62,10 @@ export async function PATCH(request, { params }) {
     const result = await resolveFreelancer(id, session)
     if (result.error) return NextResponse.json({ error: result.error }, { status: result.status })
 
-    const { freelancer } = result
-    const body = await request.json()
+    const { freelancer, isStaff } = result
+    // Forms may be pre-filled from masked GET responses: put the stored value
+    // back for any masked placeholder instead of writing the mask.
+    const body = restoreMaskedValues(await request.json(), freelancer.toObject().paymentMethod ?? {}) ?? {}
     const { method, bank, bkash } = body
 
     if (!method || !['BANK', 'BKASH'].includes(method)) {
@@ -95,7 +106,9 @@ export async function PATCH(request, { params }) {
     }
 
     await freelancer.save()
-    return NextResponse.json({ data: freelancer.paymentMethod })
+    const saved = freelancer.toObject().paymentMethod ?? null
+    if (!isStaff) return NextResponse.json({ data: saved })
+    return NextResponse.json({ data: maskDoc(session, { paymentMethod: saved }, FREELANCER_PII).paymentMethod })
   } catch (err) {
     console.error('[PATCH /api/freelancers/[id]/payment]', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

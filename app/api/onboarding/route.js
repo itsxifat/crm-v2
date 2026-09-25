@@ -6,26 +6,54 @@ import connectDB from '@/lib/mongodb'
 import { EmployeeOnboarding } from '@/models'
 import { sendOnboardingEmail } from '@/lib/mailer'
 import { sendOnboardingWhatsApp } from '@/lib/whatsapp'
+import { requirePerm, canDo } from '@/lib/rbac'
+import { maskList, maskPhone } from '@/lib/pii'
+
+// Same categories as EMPLOYEE_PII, for the onboarding record's nested shape.
+const ONBOARDING_PII = {
+  'pii.contact.view': [
+    ['selfData.email', 'email'], ['selfData.phone', 'phone'],
+    ['selfData.secondaryPhone', 'phone'], ['selfData.homePhone', 'phone'],
+    ['hrData.companyPhone', 'phone'], ['hrData.companyWebmail', 'email'],
+  ],
+  'pii.address.view': [
+    ['selfData.address', 'address'],
+  ],
+  'pii.identity.view': [
+    ['selfData.nidNumber', 'identity'], ['selfData.dateOfBirth', 'text'],
+  ],
+  'pii.financial.view': [
+    ['hrData.salary', 'money'],
+  ],
+}
 
 // GET /api/onboarding — list all (HR only)
 export async function GET(request) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-    if (!['SUPER_ADMIN', 'MANAGER'].includes(session.user.role))
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const denied  = requirePerm(session, 'hr.employees.view')
+    if (denied) return denied
 
     await connectDB()
     const { searchParams } = new URL(request.url)
     const status = searchParams.get('status')
-    const filter = status ? { status } : {}
+    const filter = status ? { status: String(status) } : {}
 
     const items = await EmployeeOnboarding.find(filter)
+      .select('-hrData.password')
       .sort({ createdAt: -1 })
       .populate('createdBy', 'name')
       .populate('hrData.customRoleId', 'id title department color')
 
-    return NextResponse.json({ data: items.map(i => i.toJSON()) })
+    const data = maskList(session, items.map(i => i.toJSON()), ONBOARDING_PII)
+    if (!canDo(session, 'pii.contact.view')) {
+      for (const d of data) {
+        if (Array.isArray(d.selfData?.emergencyContacts)) {
+          d.selfData.emergencyContacts = d.selfData.emergencyContacts.map(c => ({ ...c, phone: maskPhone(c?.phone) }))
+        }
+      }
+    }
+    return NextResponse.json({ data })
   } catch (err) {
     console.error('[GET /api/onboarding]', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -36,9 +64,8 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-    if (!['SUPER_ADMIN', 'MANAGER'].includes(session.user.role))
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const denied  = requirePerm(session, 'hr.employees.create')
+    if (denied) return denied
 
     await connectDB()
     const { email, name, phone } = await request.json().catch(() => ({}))

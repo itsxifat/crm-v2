@@ -2,7 +2,11 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
+import connectDB from '@/lib/mongodb'
+import { Setting } from '@/models'
 import { sendWhatsAppTextWithKey } from '@/lib/whatsapp'
+
+const MASK = '••••••••'
 
 // POST /api/settings/whatsapp/test
 // Body: { account: {...}, sendTo: "+1234567890" }
@@ -13,7 +17,20 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    const { account, sendTo } = await request.json()
+    const body = await request.json()
+    let account = body?.account
+    const sendTo = body?.sendTo
+
+    // Editing a saved account seeds the form with the masked API key — swap it
+    // for the stored secret (as PUT /api/settings/whatsapp does) before testing.
+    if (account?.apiKey === MASK && account?.id) {
+      await connectDB()
+      const setting = await Setting.findOne({ key: 'whatsapp_accounts' }).lean()
+      const stored = setting ? JSON.parse(setting.value) : []
+      const prev = stored.find(e => e.id === account.id)
+      account = { ...account, apiKey: prev?.apiKey ?? '' }
+    }
+
     if (!account?.apiKey) {
       return NextResponse.json({ error: 'API key is required' }, { status: 400 })
     }

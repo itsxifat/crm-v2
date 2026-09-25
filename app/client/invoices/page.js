@@ -6,6 +6,7 @@ import {
   FileText, Search, Clock, CheckCircle, AlertCircle, ChevronLeft, ChevronRight,
   Layers, List, FolderTree, ExternalLink,
 } from 'lucide-react'
+import { formatMoney } from '@/lib/currencies'
 
 const STATUS_OPTIONS = [
   { value: 'ALL',            label: 'All' },
@@ -23,7 +24,16 @@ const STATUS_MAP = {
   CANCELLED:      { label: 'Cancelled',         bg: 'bg-gray-100',   text: 'text-gray-500' },
 }
 
-const fmtAmt  = (n) => `৳ ${(Number(n) || 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })}`
+// Every amount is shown in its own currency — never a hard-coded ৳.
+const fmtAmt  = (n, cur) => formatMoney(n, cur)
+// Summary figures: one currency → a single amount; several → one per currency
+// (amounts in different currencies are never added together).
+const fmtSummary = (summary, key) => {
+  if (!summary) return fmtAmt(0)
+  if (summary.mixedCurrency && Array.isArray(summary.byCurrency))
+    return summary.byCurrency.map(c => fmtAmt(c[key], c.currency)).join(' + ')
+  return fmtAmt(summary[key], summary.currency)
+}
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 
 const isPayable = (status) => ['SENT', 'OVERDUE', 'PARTIALLY_PAID'].includes(status)
@@ -46,6 +56,7 @@ export default function ClientInvoicesPage() {
   const [error,    setError]    = useState(null)
   const [status,   setStatus]   = useState('ALL')
   const [search,   setSearch]   = useState('')
+  const [debounced, setDebounced] = useState('')
   const [page,     setPage]     = useState(1)
   const [total,    setTotal]    = useState(0)
   const [pages,    setPages]    = useState(1)
@@ -70,6 +81,8 @@ export default function ClientInvoicesPage() {
       } else {
         const p = new URLSearchParams({ page: String(page), limit: String(limit) })
         if (status !== 'ALL') p.set('status', status)
+        // The list is paginated, so search runs on the server across all pages.
+        if (debounced) p.set('search', debounced)
         const res  = await fetch(`/api/client/invoices?${p}`)
         const json = await res.json()
         if (!res.ok) throw new Error(json.error ?? 'Failed to load')
@@ -83,16 +96,20 @@ export default function ClientInvoicesPage() {
     } finally {
       setLoading(false)
     }
-  }, [view, status, page])
+  }, [view, status, page, debounced])
 
   useEffect(() => { load() }, [load])
 
+  // Debounce the search box and restart from page 1 when the term changes.
+  useEffect(() => {
+    const next = search.trim()
+    if (next === debounced) return
+    const t = setTimeout(() => { setDebounced(next); setPage(1) }, 300)
+    return () => clearTimeout(t)
+  }, [search, debounced])
+
   const q = search.trim().toLowerCase()
-  const filtered = q
-    ? invoices.filter(i =>
-        i.invoiceNumber?.toLowerCase().includes(q) ||
-        (i.projectId?.name ?? '').toLowerCase().includes(q))
-    : invoices
+  const filtered = invoices
   const filteredGroups = q
     ? groups.filter(g =>
         (g.project?.name ?? '').toLowerCase().includes(q) ||
@@ -127,10 +144,10 @@ export default function ClientInvoicesPage() {
       {/* Summary cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {[
-          { label: 'Total Billed', value: fmtAmt(summary?.billed),      icon: FileText,    bg: 'bg-gray-50',  color: 'text-gray-500' },
-          { label: 'Total Paid',   value: fmtAmt(summary?.collected),   icon: CheckCircle, bg: 'bg-green-50', color: 'text-green-600' },
-          { label: 'Outstanding',  value: fmtAmt(summary?.outstanding), icon: Clock,       bg: 'bg-blue-50',  color: 'text-blue-600' },
-          { label: 'Overdue',      value: fmtAmt(summary?.overdueAmount), icon: AlertCircle, bg: 'bg-red-50', color: 'text-red-500',
+          { label: 'Total Billed', value: fmtSummary(summary, 'billed'),      icon: FileText,    bg: 'bg-gray-50',  color: 'text-gray-500' },
+          { label: 'Total Paid',   value: fmtSummary(summary, 'collected'),   icon: CheckCircle, bg: 'bg-green-50', color: 'text-green-600' },
+          { label: 'Outstanding',  value: fmtSummary(summary, 'outstanding'), icon: Clock,       bg: 'bg-blue-50',  color: 'text-blue-600' },
+          { label: 'Overdue',      value: fmtSummary(summary, 'overdueAmount'), icon: AlertCircle, bg: 'bg-red-50', color: 'text-red-500',
             sub: `${summary?.overdueCount ?? 0} invoice${summary?.overdueCount === 1 ? '' : 's'}` },
         ].map(c => {
           const Icon = c.icon
@@ -218,20 +235,21 @@ export default function ClientInvoicesPage() {
                         <p className="text-xs text-gray-400 mt-0.5">
                           {g.invoiceCount} invoice{g.invoiceCount === 1 ? '' : 's'}
                           {g.combined && ` · Combined ${g.combined.combinedNumber}`}
+                          {g.mixedCurrency && ' · Mixed currencies (totals not converted)'}
                         </p>
                       </div>
                       <div className="hidden sm:grid grid-cols-3 gap-6 shrink-0 text-right">
                         <div>
                           <p className="text-xs text-gray-400">Billed</p>
-                          <p className="text-sm font-semibold text-gray-900">{fmtAmt(g.total)}</p>
+                          <p className="text-sm font-semibold text-gray-900">{fmtAmt(g.total, g.currency)}</p>
                         </div>
                         <div>
                           <p className="text-xs text-gray-400">Paid</p>
-                          <p className="text-sm font-semibold text-green-600">{fmtAmt(g.paidAmount)}</p>
+                          <p className="text-sm font-semibold text-green-600">{fmtAmt(g.paidAmount, g.currency)}</p>
                         </div>
                         <div>
                           <p className="text-xs text-gray-400">Due</p>
-                          <p className={`text-sm font-semibold ${g.due > 0.01 ? 'text-red-600' : 'text-green-600'}`}>{fmtAmt(g.due)}</p>
+                          <p className={`text-sm font-semibold ${g.due > 0.01 ? 'text-red-600' : 'text-green-600'}`}>{fmtAmt(g.due, g.currency)}</p>
                         </div>
                       </div>
                     </button>
@@ -246,7 +264,7 @@ export default function ClientInvoicesPage() {
                               <div className="min-w-0">
                                 <p className="text-sm font-semibold text-blue-800">Combined invoice {g.combined.combinedNumber}</p>
                                 <p className="text-xs text-blue-600/80">
-                                  All {g.invoiceCount} invoices in one document · {fmtAmt(g.due)} still due
+                                  All {g.invoiceCount} invoices in one document · {fmtAmt(g.due, g.currency)} still due
                                 </p>
                               </div>
                             </div>
@@ -265,9 +283,9 @@ export default function ClientInvoicesPage() {
                               </div>
                               <div className="flex items-center gap-4 shrink-0">
                                 <div className="text-right">
-                                  <p className="text-sm font-bold text-gray-900">{fmtAmt(inv.total)}</p>
+                                  <p className="text-sm font-bold text-gray-900">{fmtAmt(inv.total, inv.currency)}</p>
                                   <p className={`text-xs mt-0.5 ${inv.due > 0.01 ? 'text-red-500' : 'text-green-600'}`}>
-                                    {inv.due > 0.01 ? `${fmtAmt(inv.due)} due` : 'Paid in full'}
+                                    {inv.due > 0.01 ? `${fmtAmt(inv.due, inv.currency)} due` : 'Paid in full'}
                                   </p>
                                 </div>
                                 <StatusBadge status={inv.status} />
@@ -346,10 +364,10 @@ export default function ClientInvoicesPage() {
                       <td className="px-5 py-3.5 hidden md:table-cell">
                         <p className="text-sm text-gray-600">{fmtDate(inv.dueDate)}</p>
                       </td>
-                      <td className="px-5 py-3.5 text-right text-sm font-bold text-gray-900 whitespace-nowrap">{fmtAmt(inv.total)}</td>
-                      <td className="px-5 py-3.5 text-right text-sm text-green-600 whitespace-nowrap">{fmtAmt(inv.paidAmount)}</td>
+                      <td className="px-5 py-3.5 text-right text-sm font-bold text-gray-900 whitespace-nowrap">{fmtAmt(inv.total, inv.currency)}</td>
+                      <td className="px-5 py-3.5 text-right text-sm text-green-600 whitespace-nowrap">{fmtAmt(inv.paidAmount, inv.currency)}</td>
                       <td className={`px-5 py-3.5 text-right text-sm font-semibold whitespace-nowrap ${inv.due > 0.01 ? 'text-red-600' : 'text-green-600'}`}>
-                        {fmtAmt(inv.due)}
+                        {fmtAmt(inv.due, inv.currency)}
                       </td>
                       <td className="px-5 py-3.5"><StatusBadge status={inv.status} /></td>
                       <td className="px-5 py-3.5 text-right">

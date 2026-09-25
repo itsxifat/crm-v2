@@ -1,4 +1,5 @@
 import mongoose from 'mongoose'
+import { nextSequence } from '../lib/sequence'
 
 const ProjectExpenseSchema = new mongoose.Schema(
   {
@@ -80,14 +81,25 @@ const ProjectExpenseSchema = new mongoose.Schema(
   }
 )
 
+// Next number in a monthly series (`${code}-YYMM-####`, month in Asia/Dhaka) for
+// `field` (expenseId / expenseInvoiceNo). Backed by an atomic counter, so a
+// delete or two concurrent requests can never reissue an existing number.
+ProjectExpenseSchema.statics.nextNumber = async function (field, code) {
+  const dhaka  = new Date(Date.now() + 6 * 60 * 60 * 1000)
+  const yymm   = `${String(dhaka.getUTCFullYear()).slice(-2)}${String(dhaka.getUTCMonth() + 1).padStart(2, '0')}`
+  const prefix = `${code}-${yymm}-`
+  const existing = await this
+    .find({ [field]: { $regex: `^${prefix}[0-9]+$` } })
+    .select(field).lean()
+  const maxUsed = existing.reduce((m, d) => Math.max(m, parseInt(String(d[field]).slice(prefix.length), 10) || 0), 0)
+  const seq = await nextSequence(`projectExpense:${field}:${prefix}`, maxUsed)
+  return `${prefix}${String(seq).padStart(4, '0')}`
+}
+
 // Assign a human-readable expense id on creation (EXP-YYMM-####).
 ProjectExpenseSchema.pre('validate', async function () {
   if (this.expenseId) return
-  const now    = new Date()
-  const yymm   = `${String(now.getFullYear()).slice(-2)}${String(now.getMonth() + 1).padStart(2, '0')}`
-  const prefix = `EXP-${yymm}-`
-  const count  = await mongoose.model('ProjectExpense').countDocuments({ expenseId: { $regex: `^${prefix}` } })
-  this.expenseId = `${prefix}${String(count + 1).padStart(4, '0')}`
+  this.expenseId = await this.constructor.nextNumber('expenseId', 'EXP')
 })
 
 if (mongoose.models.ProjectExpense) delete mongoose.models.ProjectExpense

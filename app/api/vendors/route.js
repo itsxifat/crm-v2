@@ -3,10 +3,11 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
-import { Vendor, VendorPayment, Purchase } from '@/models'
+import { Vendor, VendorPayment, Purchase, ProjectExpense } from '@/models'
 import { searchEncrypted } from '@/lib/searchMatch'
 import { logActivity } from '@/lib/logActivity'
-import { maskList, VENDOR_PII } from '@/lib/pii'
+import { maskList, maskDoc, VENDOR_PII } from '@/lib/pii'
+import { requirePerm, canDo } from '@/lib/rbac'
 import { z } from 'zod'
 
 const createVendorSchema = z.object({
@@ -24,12 +25,8 @@ const createVendorSchema = z.object({
 export async function GET(request) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-
-    const allowedRoles = ['SUPER_ADMIN', 'MANAGER']
-    if (!allowedRoles.includes(session.user.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const denied = requirePerm(session, 'hr.vendors.manage')
+    if (denied) return denied
 
     await connectDB()
 
@@ -39,11 +36,12 @@ export async function GET(request) {
     const limit  = parseInt(searchParams.get('limit') ?? '20', 10)
     const skip   = (page - 1) * limit
 
-    // company/contactName/email are encrypted → DB regex can't match; filter in JS
     let vendors, total
     if (search) {
+      // contactName/email are masked without pii.contact.view — don't let search reveal them.
       ;({ docs: vendors, total } = await searchEncrypted(Vendor, {
-        baseFilter: {}, search, fields: ['company', 'contactName', 'email'],
+        baseFilter: {}, search,
+        fields: canDo(session, 'pii.contact.view') ? ['company', 'contactName', 'email'] : ['company'],
         page, limit, sort: { createdAt: -1 },
       }))
     } else {
@@ -54,17 +52,30 @@ export async function GET(request) {
     }
 
     const vendorIds = vendors.map(v => v._id)
-    const [purchaseCounts, purchaseTotals, payments] = await Promise.all([
+    const [purchaseCounts, purchaseTotals, payments, expensePayments] = await Promise.all([
+      // Count every purchase, but only non-cancelled ones towards the total
+      // (matches the vendor detail's totalPurchased).
       Purchase.aggregate([
         { $match: { vendorId: { $in: vendorIds } } },
-        { $group: { _id: '$vendorId', count: { $sum: 1 }, total: { $sum: '$totalAmount' } } },
+        { $group: {
+          _id:   '$vendorId',
+          count: { $sum: 1 },
+          total: { $sum: { $cond: [{ $eq: ['$status', 'cancelled'] }, 0, '$totalAmount'] } },
+        } },
       ]),
       Purchase.aggregate([
         { $match: { vendorId: { $in: vendorIds }, status: 'received' } },
         { $group: { _id: '$vendorId', total: { $sum: '$totalAmount' } } },
       ]),
       VendorPayment.find({ vendorId: { $in: vendorIds } }).select('vendorId amount status').lean(),
+      // Vendors are actually paid through the expense pipeline.
+      ProjectExpense.find({ vendorId: { $in: vendorIds }, status: { $in: ['PAID', 'AUTHORIZED'] } })
+        .select('vendorId amount amountBDT').lean(),
     ])
+    const allPayments = [
+      ...payments,
+      ...expensePayments.map(e => ({ _id: e._id, vendorId: e.vendorId, amount: e.amountBDT ?? e.amount ?? 0, status: 'paid' })),
+    ]
 
     const purchaseCountMap = Object.fromEntries(purchaseCounts.map(p => [p._id.toString(), p]))
     const purchaseTotalMap = Object.fromEntries(purchaseTotals.map(p => [p._id.toString(), p.total]))
@@ -76,7 +87,7 @@ export async function GET(request) {
         purchaseCount:       pInfo?.count ?? 0,
         totalPurchaseAmount: pInfo?.total ?? 0,
         receivedAmount:      purchaseTotalMap[v._id.toString()] ?? 0,
-        payments: payments.filter(p => p.vendorId.toString() === v._id.toString()),
+        payments: allPayments.filter(p => p.vendorId.toString() === v._id.toString()),
       }
     })
 
@@ -94,12 +105,8 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-
-    const allowedRoles = ['SUPER_ADMIN', 'MANAGER']
-    if (!allowedRoles.includes(session.user.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const denied = requirePerm(session, 'hr.vendors.manage')
+    if (denied) return denied
 
     await connectDB()
 
@@ -117,11 +124,11 @@ export async function POST(request) {
       action:   'CREATE',
       entity:   'VENDOR',
       entityId: vendor._id.toString(),
-      changes:  JSON.stringify({ name: vendor.name ?? vendor.companyName ?? null }),
+      changes:  JSON.stringify({ name: vendor.company ?? null }),
       request,
     })
 
-    return NextResponse.json({ data: vendor }, { status: 201 })
+    return NextResponse.json({ data: maskDoc(session, vendor.toJSON(), VENDOR_PII) }, { status: 201 })
   } catch (err) {
     console.error('[POST /api/vendors]', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
