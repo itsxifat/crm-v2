@@ -9,7 +9,15 @@ import connectDB from '@/lib/mongodb'
 import { User, Employee, Task, Leave, Attendance } from '@/models'
 import { generateEmployeeId } from '@/models/Employee'
 import { logActivity } from '@/lib/logActivity'
+import { TIN_REGEX } from '@/lib/tax/catalog'
 import { z } from 'zod'
+
+// Employee e-TIN (12 digits) — needed for salary TDS (s.86) certificates.
+// Spaces/hyphens are ignored; blank ⇒ null.
+const tinField = z.preprocess(
+  v => (typeof v === 'string' ? (v.replace(/[\s-]+/g, '') || null) : v),
+  z.string().regex(TIN_REGEX, 'TIN must be the 12-digit e-TIN').nullable().optional(),
+)
 
 const updateEmployeeSchema = z.object({
   name:                 z.string().min(1).optional(),
@@ -32,6 +40,7 @@ const updateEmployeeSchema = z.object({
   })).optional(),
   address:              z.string().optional().nullable(),
   nidNumber:            z.string().optional().nullable(),
+  tin:                  tinField,
   appointmentLetterUrl: z.string().optional().nullable(),
   agreementUrl:         z.string().optional().nullable(),
   panelAccessGranted:   z.boolean().optional(),
@@ -49,7 +58,7 @@ const updateEmployeeSchema = z.object({
 const PII_WRITE_FIELDS = {
   'pii.contact.view':   ['email', 'phone', 'emergencyContacts'],
   'pii.address.view':   ['address'],
-  'pii.identity.view':  ['nidNumber'],
+  'pii.identity.view':  ['nidNumber', 'tin'],
   'pii.financial.view': ['salary'],
 }
 
@@ -59,6 +68,7 @@ export async function GET(request, { params }) {
     const session = await getServerSession(authOptions)
     const denied = requirePerm(session, 'hr.employees.view')
     if (denied) return denied
+    if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
 
     await connectDB()
 
@@ -226,7 +236,12 @@ export async function PUT(request, { params }) {
       action:   'UPDATE',
       entity:   'EMPLOYEE',
       entityId: params.id,
-      changes:  JSON.stringify({ name: updated?.userId?.name ?? null }),
+      changes:  JSON.stringify({
+        name: updated?.userId?.name ?? null,
+        // The e-TIN itself never goes to the audit log.
+        ...(empData.tin !== undefined && String(empData.tin ?? '') !== String(current.tin ?? '')
+          ? { tin: empData.tin ? 'updated' : 'cleared' } : {}),
+      }),
       request,
     })
 
@@ -251,10 +266,30 @@ export async function PATCH(request, { params }) {
     // Drop masked placeholders (e.g. companyPhone) echoed back from a masked GET.
     const body = stripMaskedValues(await request.json()) ?? {}
     const allowed = ['documents', 'photo', 'appointmentLetterUrl', 'agreementUrl',
-                     'companyPhone', 'companyWebmail', 'companyItems']
+                     'companyPhone', 'companyWebmail', 'companyItems', 'tin']
     const update = {}
     for (const key of allowed) {
       if (key in body) update[key] = body[key]
+    }
+
+    // e-TIN: identity PII — only writable by callers who may see it unmasked,
+    // and must be a 12-digit e-TIN (blank clears it).
+    let tinChange = null
+    if ('tin' in update) {
+      if (!canDo(session, 'pii.identity.view')) {
+        // Masked placeholders were stripped above, so a TIN here is a new value.
+        return NextResponse.json({ error: 'You do not have permission to edit the TIN' }, { status: 403 })
+      } else {
+        const tinParsed = tinField.safeParse(update.tin)
+        if (!tinParsed.success) {
+          return NextResponse.json({
+            error: 'Validation failed',
+            details: { formErrors: [], fieldErrors: { tin: tinParsed.error.issues.map(i => i.message) } },
+          }, { status: 422 })
+        }
+        update.tin = tinParsed.data ?? null
+        tinChange = update.tin ? 'updated' : 'cleared'
+      }
     }
 
     if (Object.keys(update).length === 0)
@@ -264,6 +299,18 @@ export async function PATCH(request, { params }) {
       .populate({ path: 'userId', select: 'id name email avatar phone isActive role lastLogin' })
 
     if (!updated) return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
+
+    if (tinChange) {
+      logActivity({
+        userId:   session.user.id,
+        userRole: session.user.role,
+        action:   'UPDATE',
+        entity:   'EMPLOYEE',
+        entityId: params.id,
+        changes:  JSON.stringify({ tin: tinChange }),
+        request,
+      })
+    }
 
     return NextResponse.json({ data: maskDoc(session, updated.toJSON(), EMPLOYEE_PII) })
   } catch (err) {

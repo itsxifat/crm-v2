@@ -1,6 +1,9 @@
 'use client'
 
 import Image from 'next/image'
+import { isVatInvoice, taxableValueOf, invoiceVatLabel } from '@/lib/invoiceTotals'
+import { buyerBinOf } from '@/components/shared/InvoicePrintView'
+import { paymentSettlement, paymentMethodLabel, settlementParts } from '@/lib/paymentSettlement'
 
 // Shared, print-ready COMBINED invoice layout, used by both the admin and the
 // client portal so the two always render identically.
@@ -65,6 +68,15 @@ export default function CombinedInvoicePrintView({ combined, company = {} }) {
   const isBDT    = cur === 'BDT'
 
   const statusLabel = STATUS_LABELS[combined.status] ?? combined.status
+
+  // VAT details — shown only when at least one child is a VAT invoice.
+  const anyVat    = children.some(isVatInvoice)
+  const anySd     = children.some(c => (Number(c.sdAmount) || 0) > 0)
+  // VAT base of the VAT invoices only (a non-VAT child has no taxable value to report).
+  const vatTaxable = Math.round(children.filter(isVatInvoice).reduce((s, c) => s + taxableValueOf(c), 0) * 100) / 100
+  const sellerBin = company.bin || children.find(c => c.seller?.bin)?.seller?.bin || null
+  const sellerTin = company.tin || null
+  const buyerBin  = buyerBinOf({ clientId: client, buyer: children.find(c => c.buyer?.bin)?.buyer ?? null })
   const accent = {
     PAID: '#16a34a', PARTIALLY_PAID: '#d97706', OVERDUE: '#dc2626',
     SENT: '#2563eb', EMPTY: '#94a3b8',
@@ -106,6 +118,11 @@ export default function CombinedInvoicePrintView({ combined, company = {} }) {
             </p>
           )}
           {company.website && <p style={{ margin: 0, fontSize: 11, color: '#64748b' }}>{company.website}</p>}
+          {(sellerBin || sellerTin) && (
+            <p style={{ margin: '3px 0 0', fontSize: 11, color: '#475569', fontWeight: 600 }}>
+              {[sellerBin && `BIN: ${sellerBin}`, sellerTin && `TIN: ${sellerTin}`].filter(Boolean).join('  ·  ')}
+            </p>
+          )}
         </div>
         <div style={{ textAlign: 'right' }}>
           <p style={{ margin: 0, fontSize: 26, fontWeight: 700, color: '#0f172a', letterSpacing: '-0.5px' }}>Combined Invoice</p>
@@ -154,6 +171,7 @@ export default function CombinedInvoicePrintView({ combined, company = {} }) {
             </p>
           )}
           {user?.phone && <p style={{ margin: 0, fontSize: 11, color: '#64748b' }}>Phone: {user.phone}</p>}
+          {buyerBin && <p style={{ margin: '2px 0 0', fontSize: 11, color: '#475569', fontWeight: 600 }}>BIN: {buyerBin}</p>}
         </div>
         <div>
           <p style={{ margin: '0 0 10px', fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#94a3b8' }}>Project</p>
@@ -174,6 +192,7 @@ export default function CombinedInvoicePrintView({ combined, company = {} }) {
             <th style={TH({ textAlign: 'left',  borderTop: '2px solid #0f172a' })}>Issued</th>
             <th style={TH({ textAlign: 'left',  borderTop: '2px solid #0f172a' })}>Due</th>
             <th style={TH({ textAlign: 'left',  borderTop: '2px solid #0f172a' })}>Status</th>
+            {anyVat && <th style={TH({ textAlign: 'right', borderTop: '2px solid #0f172a', whiteSpace: 'nowrap' })}>VAT</th>}
             <th style={TH({ textAlign: 'right', borderTop: '2px solid #0f172a', whiteSpace: 'nowrap' })}>Amount</th>
             <th style={TH({ textAlign: 'right', borderTop: '2px solid #0f172a', whiteSpace: 'nowrap' })}>Paid</th>
             <th style={TH({ textAlign: 'right', borderTop: '2px solid #0f172a', paddingRight: 0, whiteSpace: 'nowrap' })}>Due</th>
@@ -190,6 +209,11 @@ export default function CombinedInvoicePrintView({ combined, company = {} }) {
                   {c.status.replace(/_/g, ' ')}
                 </span>
               </td>
+              {anyVat && (
+                <td style={TD({ textAlign: 'right', color: '#64748b', whiteSpace: 'nowrap' })}>
+                  {isVatInvoice(c) ? <><Sym />&nbsp;{money(c.vatAmount)}</> : '—'}
+                </td>
+              )}
               <td style={TD({ textAlign: 'right', fontWeight: 600, color: '#0f172a', whiteSpace: 'nowrap' })}><Sym />&nbsp;{money(c.total)}</td>
               <td style={TD({ textAlign: 'right', color: '#16a34a', whiteSpace: 'nowrap' })}><Sym />&nbsp;{money(c.paidAmount)}</td>
               <td style={TD({ textAlign: 'right', paddingRight: 0, fontWeight: 700, color: c.due > 0.01 ? '#dc2626' : '#16a34a', whiteSpace: 'nowrap' })}>
@@ -199,7 +223,7 @@ export default function CombinedInvoicePrintView({ combined, company = {} }) {
           ))}
           {children.length === 0 && (
             <tr>
-              <td colSpan={7} style={TD({ textAlign: 'center', color: '#94a3b8', padding: '20px 12px' })}>
+              <td colSpan={anyVat ? 8 : 7} style={TD({ textAlign: 'center', color: '#94a3b8', padding: '20px 12px' })}>
                 No issued invoices for this project yet.
               </td>
             </tr>
@@ -211,6 +235,9 @@ export default function CombinedInvoicePrintView({ combined, company = {} }) {
               <td colSpan={4} style={{ padding: '8px 12px 8px 0', fontSize: 12, fontWeight: 700, color: '#0f172a', borderTop: '2px solid #0f172a' }}>
                 Total ({children.length} invoice{children.length === 1 ? '' : 's'})
               </td>
+              {anyVat && (
+                <td style={{ padding: '8px 12px', fontSize: 12, fontWeight: 700, textAlign: 'right', color: '#334155', borderTop: '2px solid #0f172a', whiteSpace: 'nowrap' }}><Sym />&nbsp;{money(t.vatAmount)}</td>
+              )}
               <td style={{ padding: '8px 12px', fontSize: 12, fontWeight: 700, textAlign: 'right', color: '#0f172a', borderTop: '2px solid #0f172a', whiteSpace: 'nowrap' }}><Sym />&nbsp;{money(t.total)}</td>
               <td style={{ padding: '8px 12px', fontSize: 12, fontWeight: 700, textAlign: 'right', color: '#16a34a', borderTop: '2px solid #0f172a', whiteSpace: 'nowrap' }}><Sym />&nbsp;{money(t.paidAmount)}</td>
               <td style={{ padding: '8px 0 8px 12px', fontSize: 12, fontWeight: 700, textAlign: 'right', color: t.due > 0.01 ? '#dc2626' : '#16a34a', borderTop: '2px solid #0f172a', whiteSpace: 'nowrap' }}><Sym />&nbsp;{money(t.due)}</td>
@@ -225,87 +252,110 @@ export default function CombinedInvoicePrintView({ combined, company = {} }) {
           <p style={{ margin: '0 0 10px', fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#94a3b8' }}>
             Itemised Breakdown
           </p>
-          {children.map(c => (
-            <div key={c.id} style={{ marginBottom: 18, border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden' }}>
-              <div style={{
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                padding: '8px 14px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0',
-              }}>
-                <div>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: '#0f172a' }}>{c.invoiceNumber}</span>
-                  <span style={{ fontSize: 10, color: '#94a3b8', marginLeft: 8 }}>
-                    Issued {fmtDate(c.issueDate)}{c.dueDate ? ` · Due ${fmtDate(c.dueDate)}` : ''}
+          {children.map(c => {
+            const cVat = isVatInvoice(c)
+            const cSd  = cVat && (Number(c.sdAmount) || 0) > 0
+            return (
+              <div key={c.id} style={{ marginBottom: 18, border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden' }}>
+                <div style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  padding: '8px 14px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0',
+                }}>
+                  <div>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: '#0f172a' }}>{c.invoiceNumber}</span>
+                    <span style={{ fontSize: 10, color: '#94a3b8', marginLeft: 8 }}>
+                      Issued {fmtDate(c.issueDate)}{c.dueDate ? ` · Due ${fmtDate(c.dueDate)}` : ''}
+                    </span>
+                  </div>
+                  <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: CHILD_STATUS_COLORS[c.status] ?? '#64748b' }}>
+                    {c.status.replace(/_/g, ' ')}
                   </span>
                 </div>
-                <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: CHILD_STATUS_COLORS[c.status] ?? '#64748b' }}>
-                  {c.status.replace(/_/g, ' ')}
-                </span>
-              </div>
 
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr>
-                    <th style={TH({ textAlign: 'left' })}>Description</th>
-                    <th style={TH({ textAlign: 'center', width: 60 })}>Qty</th>
-                    <th style={TH({ textAlign: 'right', width: 110, whiteSpace: 'nowrap' })}>Unit Price</th>
-                    <th style={TH({ textAlign: 'right', width: 120, whiteSpace: 'nowrap' })}>Amount</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(c.items ?? []).map((item, i) => {
-                    // Descriptions may carry a "[PROJECT-CODE] " prefix and an
-                    // optional " — detail" tail; split them for readability.
-                    const codeMatch = item.description?.match(/^\[([^\]]+)\]/)
-                    const rawDesc   = codeMatch ? item.description.slice(codeMatch[0].length).trim() : (item.description ?? '')
-                    const split     = rawDesc.match(/^([^—\n]+?)(?:\s*—\s*|\n)([\s\S]*)$/)
-                    const title     = split ? split[1].trim() : rawDesc
-                    const detail    = split ? split[2].trim() : ''
-                    return (
-                      <tr key={i}>
-                        <td style={TD()}>
-                          <p style={{ margin: 0, fontSize: 12.5, fontWeight: 600, color: '#0f172a', lineHeight: 1.4 }}>{title || '—'}</p>
-                          {detail && <p style={{ margin: '3px 0 0', fontSize: 10, color: '#64748b', lineHeight: 1.6 }}>{detail}</p>}
-                        </td>
-                        <td style={TD({ textAlign: 'center', color: '#64748b' })}>{item.quantity}</td>
-                        <td style={TD({ textAlign: 'right', color: '#64748b', whiteSpace: 'nowrap' })}><Sym />&nbsp;{money(item.rate)}</td>
-                        <td style={TD({ textAlign: 'right', fontWeight: 600, color: '#0f172a', whiteSpace: 'nowrap' })}>
-                          <Sym />&nbsp;{money((Number(item.quantity) || 0) * (Number(item.rate) || 0))}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      <th style={TH({ textAlign: 'left' })}>Description</th>
+                      <th style={TH({ textAlign: 'center', width: 60 })}>Qty</th>
+                      <th style={TH({ textAlign: 'right', width: 110, whiteSpace: 'nowrap' })}>Unit Price</th>
+                      <th style={TH({ textAlign: 'right', width: 120, whiteSpace: 'nowrap' })}>Amount</th>
+                      {cSd  && <th style={TH({ textAlign: 'right', width: 90, whiteSpace: 'nowrap' })}>SD</th>}
+                      {cVat && <th style={TH({ textAlign: 'center', width: 60, whiteSpace: 'nowrap' })}>VAT %</th>}
+                      {cVat && <th style={TH({ textAlign: 'right', width: 100, whiteSpace: 'nowrap' })}>VAT</th>}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(c.items ?? []).map((item, i) => {
+                      // Descriptions may carry a "[PROJECT-CODE] " prefix and an
+                      // optional " — detail" tail; split them for readability.
+                      const codeMatch = item.description?.match(/^\[([^\]]+)\]/)
+                      const rawDesc   = codeMatch ? item.description.slice(codeMatch[0].length).trim() : (item.description ?? '')
+                      const split     = rawDesc.match(/^([^—\n]+?)(?:\s*—\s*|\n)([\s\S]*)$/)
+                      const title     = split ? split[1].trim() : rawDesc
+                      const detail    = split ? split[2].trim() : ''
+                      return (
+                        <tr key={i}>
+                          <td style={TD()}>
+                            <p style={{ margin: 0, fontSize: 12.5, fontWeight: 600, color: '#0f172a', lineHeight: 1.4 }}>{title || '—'}</p>
+                            {detail && <p style={{ margin: '3px 0 0', fontSize: 10, color: '#64748b', lineHeight: 1.6 }}>{detail}</p>}
+                          </td>
+                          <td style={TD({ textAlign: 'center', color: '#64748b', whiteSpace: 'nowrap' })}>
+                            {item.quantity}{item.unit ? <span style={{ fontSize: 10, color: '#94a3b8' }}>&nbsp;{item.unit}</span> : null}
+                          </td>
+                          <td style={TD({ textAlign: 'right', color: '#64748b', whiteSpace: 'nowrap' })}><Sym />&nbsp;{money(item.rate)}</td>
+                          <td style={TD({ textAlign: 'right', fontWeight: 600, color: '#0f172a', whiteSpace: 'nowrap' })}>
+                            <Sym />&nbsp;{money((Number(item.quantity) || 0) * (Number(item.rate) || 0))}
+                          </td>
+                          {cSd && (
+                            <td style={TD({ textAlign: 'right', color: '#64748b', whiteSpace: 'nowrap' })}>
+                              {(Number(item.sdAmount) || 0) > 0 ? <><Sym />&nbsp;{money(item.sdAmount)}</> : '—'}
+                            </td>
+                          )}
+                          {cVat && <td style={TD({ textAlign: 'center', color: '#64748b', whiteSpace: 'nowrap' })}>{Number(item.vatRate) || 0}%</td>}
+                          {cVat && (
+                            <td style={TD({ textAlign: 'right', color: '#334155', whiteSpace: 'nowrap' })}><Sym />&nbsp;{money(item.vatAmount)}</td>
+                          )}
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
 
-              {/* Per-invoice totals */}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '8px 14px', background: '#fbfdff' }}>
-                <div style={{ width: 260 }}>
-                  {[
-                    { label: 'Sub Total', v: c.subtotal, show: true,             color: '#334155', prefix: '' },
-                    { label: 'Discount',  v: c.discount, show: c.discount > 0,   color: '#ef4444', prefix: '−' },
-                    { label: `MFS Charge (${c.taxRate ?? 0}%)`, v: c.taxAmount, show: c.taxAmount > 0, color: '#334155', prefix: '' },
-                  ].filter(r => r.show).map((r, i) => (
-                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
-                      <span style={{ fontSize: 11, color: '#64748b' }}>{r.label}</span>
-                      <span style={{ fontSize: 11, color: r.color, fontWeight: 500 }}>{r.prefix}<Sym />&nbsp;{money(r.v)}</span>
+                {/* Per-invoice totals */}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '8px 14px', background: '#fbfdff' }}>
+                  <div style={{ width: 260 }}>
+                    {[
+                      { label: 'Sub Total', v: c.subtotal, show: true,             color: '#334155', prefix: '' },
+                      { label: 'Discount',  v: c.discount, show: c.discount > 0,   color: '#ef4444', prefix: '−' },
+                      { label: 'Taxable value', v: taxableValueOf(c), show: cVat,  color: '#334155', prefix: '' },
+                      { label: 'SD',        v: c.sdAmount, show: cSd,              color: '#334155', prefix: '' },
+                      { label: invoiceVatLabel(c), v: c.vatAmount, show: cVat,     color: '#334155', prefix: '' },
+                      { label: `MFS Charge (${c.taxRate ?? 0}%)`, v: c.taxAmount, show: c.taxAmount > 0, color: '#334155', prefix: '' },
+                      // Debit notes raise the total by their gross amount; subtotal / VAT stay as invoiced.
+                      { label: cVat ? 'Debit notes (Mushak-6.8, incl. VAT)' : 'Debit notes', v: c.debitedAmount, show: (Number(c.debitedAmount) || 0) > 0, color: '#334155', prefix: '+' },
+                    ].filter(r => r.show).map((r, i) => (
+                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
+                        <span style={{ fontSize: 11, color: '#64748b' }}>{r.label}</span>
+                        <span style={{ fontSize: 11, color: r.color, fontWeight: 500 }}>{r.prefix}<Sym />&nbsp;{money(r.v)}</span>
+                      </div>
+                    ))}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderTop: '1px solid #e2e8f0' }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: '#0f172a' }}>Invoice Total</span>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: '#0f172a' }}><Sym />&nbsp;{money(c.total)}</span>
                     </div>
-                  ))}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderTop: '1px solid #e2e8f0' }}>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: '#0f172a' }}>Invoice Total</span>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: '#0f172a' }}><Sym />&nbsp;{money(c.total)}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
-                    <span style={{ fontSize: 11, color: '#16a34a', fontWeight: 500 }}>Paid</span>
-                    <span style={{ fontSize: 11, color: '#16a34a', fontWeight: 500 }}>−<Sym />&nbsp;{money(c.paidAmount)}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', borderTop: '1px solid #f1f5f9' }}>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: c.due > 0.01 ? '#dc2626' : '#16a34a' }}>Due</span>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: c.due > 0.01 ? '#dc2626' : '#16a34a' }}><Sym />&nbsp;{money(c.due)}</span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
+                      <span style={{ fontSize: 11, color: '#16a34a', fontWeight: 500 }}>Paid</span>
+                      <span style={{ fontSize: 11, color: '#16a34a', fontWeight: 500 }}>−<Sym />&nbsp;{money(c.paidAmount)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', borderTop: '1px solid #f1f5f9' }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: c.due > 0.01 ? '#dc2626' : '#16a34a' }}>Due</span>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: c.due > 0.01 ? '#dc2626' : '#16a34a' }}><Sym />&nbsp;{money(c.due)}</span>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </>
       )}
 
@@ -316,7 +366,11 @@ export default function CombinedInvoicePrintView({ combined, company = {} }) {
           {[
             { label: 'Combined Sub Total', v: t.subtotal,  show: true,             color: '#334155', prefix: '' },
             { label: 'Total Discount',     v: t.discount,  show: t.discount > 0,   color: '#ef4444', prefix: '−' },
+            { label: 'Total Taxable Value', v: vatTaxable, show: anyVat,           color: '#334155', prefix: '' },
+            { label: 'Total SD',           v: t.sdAmount,  show: anyVat && anySd,  color: '#334155', prefix: '' },
+            { label: 'Total VAT',          v: t.vatAmount, show: anyVat,           color: '#334155', prefix: '' },
             { label: 'Total MFS Charge',   v: t.taxAmount, show: t.taxAmount > 0,  color: '#334155', prefix: '' },
+            { label: anyVat ? 'Total Debit Notes (incl. VAT)' : 'Total Debit Notes', v: t.debitedAmount, show: (Number(t.debitedAmount) || 0) > 0, color: '#334155', prefix: '+' },
           ].filter(r => r.show).map((r, i) => (
             <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid #f1f5f9' }}>
               <span style={{ fontSize: 12, color: '#64748b' }}>{r.label}</span>
@@ -354,18 +408,30 @@ export default function CombinedInvoicePrintView({ combined, company = {} }) {
                 <th style={TH({ textAlign: 'left',   paddingLeft: 0, borderTop: '2px solid #0f172a' })}>Date</th>
                 <th style={TH({ textAlign: 'left',   borderTop: '2px solid #0f172a' })}>Gateway / Method</th>
                 <th style={TH({ textAlign: 'center', borderTop: '2px solid #0f172a' })}>Reference</th>
-                <th style={TH({ textAlign: 'right',  paddingRight: 0, borderTop: '2px solid #0f172a' })}>Paid Amount</th>
+                <th style={TH({ textAlign: 'right',  paddingRight: 0, borderTop: '2px solid #0f172a' })}>Amount Settled</th>
               </tr>
             </thead>
             <tbody>
-              {combined.payments.map(p => (
-                <tr key={p.id}>
-                  <td style={TD({ paddingLeft: 0 })}>{fmtDate(p.paymentDate ?? p.createdAt)}</td>
-                  <td style={TD()}>{(p.paymentMethod ?? '—').replace(/_/g, ' ')}</td>
-                  <td style={TD({ textAlign: 'center', fontFamily: 'monospace', fontSize: 11 })}>{p.txnId ?? p.reference ?? '—'}</td>
-                  <td style={TD({ textAlign: 'right', paddingRight: 0, color: '#16a34a', fontWeight: 600 })}><Sym />&nbsp;{money(p.amount)}</td>
-                </tr>
-              ))}
+              {combined.payments.map(p => {
+                // What the payment settled (cash + VDS + TDS withheld at source);
+                // a withholding-only settlement has no cash.
+                const s = paymentSettlement(p)
+                return (
+                  <tr key={p.id}>
+                    <td style={TD({ paddingLeft: 0 })}>{fmtDate(p.paymentDate ?? p.createdAt)}</td>
+                    <td style={TD()}>
+                      {paymentMethodLabel(p.paymentMethod)}
+                      {s.hasWithholding && (
+                        <span style={{ display: 'block', marginTop: 2, fontSize: 10.5, color: '#64748b' }}>
+                          {settlementParts(s).map(([k, v]) => `${k} ${isBDT ? '৳' : cur} ${money(v)}`).join(' · ')}
+                        </span>
+                      )}
+                    </td>
+                    <td style={TD({ textAlign: 'center', fontFamily: 'monospace', fontSize: 11 })}>{p.txnId ?? p.reference ?? '—'}</td>
+                    <td style={TD({ textAlign: 'right', paddingRight: 0, color: '#16a34a', fontWeight: 600 })}><Sym />&nbsp;{money(s.settled)}</td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>

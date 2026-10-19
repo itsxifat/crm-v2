@@ -8,7 +8,9 @@ import { createNotification } from '@/lib/createNotification'
 import { logActivity } from '@/lib/logActivity'
 import { requirePerm } from '@/lib/rbac'
 import { isValidObjectId } from '@/lib/objectId'
-import { QUOTATION_POPULATE, quotationJSON } from '@/lib/quotation'
+import { QUOTATION_POPULATE, quotationJSON } from '../../_lib/server'
+
+const STATUSES = ['DRAFT', 'SENT', 'ACCEPTED', 'REJECTED']
 
 const TRANSITIONS = {
   DRAFT:    ['SENT'],
@@ -24,7 +26,11 @@ export async function PATCH(request, { params }) {
     const denied = requirePerm(session, 'sales.quotations.update')
     if (denied) return denied
 
-    const { status } = await request.json()
+    let body
+    try { body = await request.json() } catch { return NextResponse.json({ error: 'Invalid request body' }, { status: 400 }) }
+    const status = body?.status
+    if (!STATUSES.includes(status))
+      return NextResponse.json({ error: 'Validation failed', details: { formErrors: [], fieldErrors: { status: [`Status must be one of ${STATUSES.join(', ')}`] } } }, { status: 422 })
 
     // Accepting / rejecting a quotation is an approval decision
     if (status === 'ACCEPTED' || status === 'REJECTED') {
@@ -56,6 +62,16 @@ export async function PATCH(request, { params }) {
       { new: true },
     )
     if (!q) return NextResponse.json({ error: 'Quotation status has changed; reload and try again' }, { status: 409 })
+
+    logActivity({
+      userId:   session.user.id,
+      userRole: session.user.role,
+      action:   'STATUS_CHANGE',
+      entity:   'QUOTATION',
+      entityId: q._id.toString(),
+      changes:  JSON.stringify({ quotationNumber: q.quotationNumber, from: current.status, to: status }),
+      request,
+    })
 
     // When a lead-sourced quotation is sent, advance the lead to PROPOSAL_SENT.
     // Only advance from earlier stages so we never regress a lead already in

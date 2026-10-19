@@ -14,6 +14,8 @@ import {
   CheckCircle, Inbox, ChevronDown, ShieldCheck, Activity, Bell, UserCircle,
   PieChart, Wallet, Landmark, Globe, Receipt, CreditCard, Percent, Banknote,
   BellRing, Mail, KeyRound, LineChart, Store, X, MessageCircle, ShieldAlert,
+  Scale, Calculator, FileSpreadsheet, BookOpen, FileCheck, FileMinus, ListChecks,
+  Package, PackageCheck, Laptop, ShoppingCart, Boxes, ClipboardCheck, BarChart3, SlidersHorizontal,
 } from 'lucide-react'
 import Image from 'next/image'
 import { useState, useEffect, Suspense } from 'react'
@@ -40,7 +42,8 @@ const ROLE_LABELS = {
 // `tab` on children = query param appended as ?tab=value
 // `basePath` on items with tabs = the path portion for active detection.
 
-// `permission` — flat RBAC permission string (e.g. 'sales.leads.view').
+// `permission` — flat RBAC permission string (e.g. 'sales.leads.view'), or an
+// array meaning ANY of them (keep it equal to the page's ROUTE_PERMISSIONS entry).
 // When set, item visibility is gated by canDo(session, permission) for all
 // non-SUPER_ADMIN roles. SUPER_ADMIN always sees everything.
 
@@ -76,12 +79,42 @@ const NAV_SECTIONS = [
     roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
     items: [
       { href: '/admin/accounts',                   label: 'Overview',              icon: PieChart,       roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'finance.overview.view', exact: true },
+      { href: '/admin/finance/accounts',           label: 'Money Accounts',        icon: Landmark,       roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: ['finance.accounts.view', 'finance.accounts.manage', 'finance.accounts.reconcile'] },
       { href: '/admin/accounts?tab=transactions',  label: 'Transactions',          icon: ArrowRightLeft, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'finance.transactions.view', basePath: '/admin/accounts', tab: 'transactions' },
       { href: '/admin/accounts?tab=confirmations', label: 'Payment Confirmations', icon: CheckCircle,    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'finance.payments.confirm',  basePath: '/admin/accounts', tab: 'confirmations' },
       { href: '/admin/accounts?tab=requests',      label: 'Payment Requests',      icon: Inbox,          roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'finance.payments.request',  basePath: '/admin/accounts', tab: 'requests' },
       { href: '/admin/my-expenses',                label: 'My Expenses',           icon: Receipt,        roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'finance.expenses.submit' },
       { href: '/admin/salary',                     label: 'Salary',                icon: Banknote,       roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'finance.salary.view' },
       { href: '/admin/accounts?tab=pl',            label: 'P&L Report',            icon: LineChart,      roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'finance.reports.view',      basePath: '/admin/accounts', tab: 'pl' },
+      { href: '/admin/finance/opening-balances',   label: 'Opening Balances',      icon: Scale,          roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: ['finance.opening.manage', 'finance.periods.lock'] },
+    ],
+  },
+  {
+    label: 'Tax & VAT',
+    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
+    items: [
+      { href: '/admin/tax',              label: 'Tax Dashboard',       icon: Calculator,      roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: ['tax.view', 'tax.manage'], exact: true },
+      { href: '/admin/tax/vat-return',   label: 'VAT Return 9.1',      icon: FileSpreadsheet, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: ['tax.view', 'tax.manage'] },
+      { href: '/admin/tax/registers',    label: 'Registers',           icon: BookOpen,        roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: ['tax.view', 'tax.manage'] },
+      { href: '/admin/tax/withholding',  label: 'Withholding',         icon: Percent,         roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: ['tax.view', 'tax.manage'] },
+      { href: '/admin/tax/certificates', label: 'Certificates',        icon: FileCheck,       roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: ['tax.view', 'tax.manage'] },
+      { href: '/admin/tax/notes',        label: 'Credit/Debit Notes',  icon: FileMinus,       roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: ['tax.view', 'tax.manage', 'tax.notes.manage'] },
+      { href: '/admin/tax/entries',      label: 'Tax Ledger',          icon: ListChecks,      roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: ['tax.view', 'tax.manage'] },
+      { href: '/admin/tax/settings',     label: 'Tax Settings',        icon: Settings2,       roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'tax.manage' },
+    ],
+  },
+  {
+    label: 'Inventory',
+    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
+    items: [
+      // Same any-of sets as lib/rbac ROUTE_PERMISSIONS (and the APIs behind each page).
+      { href: '/admin/inventory',           label: 'Overview',       icon: Package,           roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: ['inventory.view', 'inventory.manage'], exact: true },
+      { href: '/admin/inventory/assets',    label: 'Assets',         icon: Laptop,            roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: ['inventory.view', 'inventory.manage'] },
+      { href: '/admin/inventory/purchases', label: 'Purchases',      icon: ShoppingCart,      roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: ['inventory.view', 'inventory.purchase'] },
+      { href: '/admin/inventory/stock',     label: 'Consumables',    icon: Boxes,             roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: ['inventory.view', 'inventory.manage'] },
+      { href: '/admin/inventory/audits',    label: 'Physical Audit', icon: ClipboardCheck,    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: ['inventory.audit', 'inventory.manage'] },
+      { href: '/admin/inventory/reports',   label: 'Reports',        icon: BarChart3,         roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: ['inventory.view', 'inventory.manage'] },
+      { href: '/admin/inventory/settings',  label: 'Settings',       icon: SlidersHorizontal, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'inventory.manage' },
     ],
   },
   {
@@ -129,6 +162,8 @@ const NAV_SECTIONS = [
       // No `permission` — always reachable so employees can complete their profile/KYC
       // (required when onboarding is ON, optional when OFF), even on a fresh custom role.
       { href: '/admin/profile',       label: 'My Profile',    icon: UserCircle, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'] },
+      // Self-service: equipment assigned to me (acknowledge / report a problem). No permission.
+      { href: '/admin/my-assets',     label: 'My Assets',     icon: PackageCheck, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'] },
       { href: '/admin/account',       label: 'My Account',    icon: UserCog, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'account.profile.view' },
       { href: '/admin/notifications', label: 'Notifications', icon: Bell,    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'account.notifications.view' },
     ],
@@ -288,6 +323,7 @@ function SidebarContent({ mobileOpen, onMobileClose }) {
   function itemVisible(item) {
     if (!item.roles.includes(role)) return false
     if (role === 'SUPER_ADMIN') return true
+    if (Array.isArray(item.permission)) return item.permission.some(p => canDo(session, p))
     if (item.permission) return canDo(session, item.permission)
     return true
   }

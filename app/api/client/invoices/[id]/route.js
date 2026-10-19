@@ -30,9 +30,11 @@ export async function GET(_, { params }) {
       status: { $ne: 'DRAFT' },
     })
       // Client-safe fields only: never internal notes, KYC, priority, etc.
-      .populate({ path: 'clientId', select: 'company clientCode designation address city country userId', populate: { path: 'userId', select: 'name email phone' } })
-      .populate('projectId',  'name projectCode venture category')
-      .populate('projectIds', 'name projectCode venture category')
+      .populate({ path: 'clientId', select: 'company clientCode designation address city country userId bin vatNumber', populate: { path: 'userId', select: 'name email phone' } })
+      // Only projects of the caller's own companies — an old invoice raised
+      // against another client's project must never reveal that project.
+      .populate({ path: 'projectId',  select: 'name projectCode venture category', match: { clientId: { $in: clientIds } } })
+      .populate({ path: 'projectIds', select: 'name projectCode venture category', match: { clientId: { $in: clientIds } } })
 
     if (!invoice) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 

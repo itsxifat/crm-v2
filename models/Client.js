@@ -32,8 +32,17 @@ const ClientSchema = new mongoose.Schema(
     address:       { type: String, default: null },
     city:          { type: String, default: null },
     country:       { type: String, default: null },
-    vatNumber:     { type: String, default: null },
+    vatNumber:     { type: String, default: null },   // legacy free-text VAT number (kept; prefer `bin`)
     website:       { type: String, default: null },
+
+    // ── Tax identity (Bangladesh) ──
+    bin:                 { type: String, default: null },   // VAT Business Identification Number (9 or 13 digits)
+    tin:                 { type: String, default: null },   // e-TIN (12 digits)
+    vatRegistrationType: { type: String, enum: ['REGISTERED', 'TURNOVER', 'UNREGISTERED', 'FOREIGN', null], default: null },
+    isVdsEntity:         { type: Boolean, default: false }, // withholds VAT at source from our invoices
+    isTdsEntity:         { type: Boolean, default: false }, // deducts income tax at source from our invoices
+    defaultTdsSection:   { type: String, default: null },
+    taxNotes:            { type: String, default: null },
     // Mixed — JSON arrays
     socialLinks:   { type: mongoose.Schema.Types.Mixed, default: [] },
     logo:          { type: String, default: null },

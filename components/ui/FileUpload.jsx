@@ -12,8 +12,9 @@ import toast from 'react-hot-toast'
  *   onUploaded  — callback(url) when upload succeeds
  *   label       — optional label text
  *   accept      — input accept string (default: images + PDF)
+ *   bucket      — optional storage bucket: 'receipts' (default) | 'assets' | 'tax'
  */
-export default function FileUpload({ value, onUploaded, label = 'Receipt / Invoice', accept = 'image/*,application/pdf' }) {
+export default function FileUpload({ value, onUploaded, label = 'Receipt / Invoice', accept = 'image/*,application/pdf', bucket }) {
   const [uploading, setUploading] = useState(false)
   const inputRef = useRef(null)
 
@@ -23,6 +24,7 @@ export default function FileUpload({ value, onUploaded, label = 'Receipt / Invoi
     try {
       const fd = new FormData()
       fd.append('file', file)
+      if (bucket) fd.append('bucket', bucket)
       const res  = await fetch('/api/upload', { method: 'POST', body: fd })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error ?? 'Upload failed')

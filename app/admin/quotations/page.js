@@ -7,6 +7,7 @@ import toast from 'react-hot-toast'
 import Link from 'next/link'
 import { Can, usePermission } from '@/components/auth/Can'
 import { CURRENCIES } from '@/lib/currencies'
+import { isVatQuotation } from '@/lib/quotation'
 
 const STATUS_STYLES = {
   DRAFT:    { badge: 'bg-gray-100 text-gray-600',    label: 'Draft' },
@@ -42,11 +43,12 @@ export default function QuotationsPage() {
       if (search) p.set('search', search)
       if (status) p.set('status', status)
       const res  = await fetch(`/api/quotations?${p}`)
-      const json = await res.json()
+      const json = await res.json().catch(() => ({}))
       if (id !== reqId.current) return // a newer request superseded this one
+      if (!res.ok) throw new Error(json.error || 'Failed to load quotations')
       setQuotations(json.data ?? [])
       setTotal(json.meta?.total ?? 0)
-    } catch { if (id === reqId.current) toast.error('Failed to load') }
+    } catch (err) { if (id === reqId.current) toast.error(err.message || 'Failed to load quotations') }
     finally { if (id === reqId.current) setLoading(false) }
   }, [page, search, status])
 
@@ -163,7 +165,16 @@ export default function QuotationsPage() {
                             {q.sourceType === 'LEAD' ? 'Lead' : 'Client'}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-sm font-semibold text-gray-800">{fmt(q.total, q.currency)}</td>
+                        <td className="px-4 py-3">
+                          <p className="text-sm font-semibold text-gray-800 whitespace-nowrap">{fmt(q.total, q.currency)}</p>
+                          {isVatQuotation(q) && (
+                            <p className="text-[11px] text-gray-400 whitespace-nowrap">
+                              {Number(q.vatAmount) > 0
+                                ? `incl. VAT ${fmt(q.vatAmount, q.currency)}`
+                                : q.vatTreatment === 'ZERO_RATED' ? 'Zero-rated' : q.vatTreatment === 'EXEMPT' ? 'VAT exempt' : 'No VAT charged'}
+                            </p>
+                          )}
+                        </td>
                         <td className="px-4 py-3 text-xs text-gray-500">{fmtDate(q.issueDate)}</td>
                         <td className="px-4 py-3 text-xs text-gray-500">{fmtDate(q.validUntil)}</td>
                         <td className="px-4 py-3">

@@ -6,7 +6,7 @@ import Link from 'next/link'
 import toast from 'react-hot-toast'
 import {
   ArrowLeft, Mail, Phone, Clock, Pencil, Ban, RotateCcw, Loader2,
-  CheckCircle2, Send, CalendarClock, ShieldCheck, BadgeCheck, FileText, XCircle,
+  CheckCircle2, Send, CalendarClock, ShieldCheck, BadgeCheck, FileText, XCircle, Receipt,
 } from 'lucide-react'
 import Avatar from '@/components/ui/Avatar'
 import Badge from '@/components/ui/Badge'
@@ -50,6 +50,58 @@ function fmtMoney(v, currency) {
 
 function fmtDate(d) {
   return d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
+}
+
+const PAYEE_LABELS = {
+  INDIVIDUAL:   'Individual (resident)',
+  COMPANY:      'Company / firm',
+  NON_RESIDENT: 'Non-resident (abroad)',
+}
+
+// Read-only tax identity (TDS / VDS payee side). The e-TIN may arrive masked
+// ('••••••••9012') for viewers without pii.identity.view — shown as-is.
+function TaxIdentity({ data, onEdit }) {
+  const isAgency = data.type === 'AGENCY'
+  const payee    = data.payeeType ?? (isAgency ? 'COMPANY' : 'INDIVIDUAL')
+  const rows = [
+    { label: 'TIN (e-TIN)', value: data.tin, mono: true },
+    { label: 'BIN',         value: data.bin, mono: true },
+    { label: 'Payee type',  value: PAYEE_LABELS[payee] ?? payee },
+  ]
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide flex items-center gap-2">
+          <Receipt className="w-4 h-4 text-gray-400" /> Tax identity
+        </h3>
+        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${data.hasPsr ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}`}>
+          {data.hasPsr ? 'PSR on file' : 'No PSR — TDS +50%'}
+        </span>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {rows.map(r => (
+          <div key={r.label} className="min-w-0">
+            <p className="text-xs text-gray-400">{r.label}</p>
+            <p className={`text-sm font-medium break-words ${r.value ? 'text-gray-900' : 'text-gray-300'} ${r.mono && r.value ? 'font-mono' : ''}`}>
+              {r.value || '—'}
+            </p>
+          </div>
+        ))}
+      </div>
+      {isAgency && payee === 'INDIVIDUAL' && (
+        <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
+          This agency is set up as an individual payee. Firms and companies are usually “Company / firm” for TDS.{' '}
+          <button type="button" onClick={onEdit} className="font-medium underline">Edit</button>
+        </p>
+      )}
+      {!data.tin && !data.bin && (
+        <p className="text-xs text-gray-400">
+          No TIN or BIN on file. Add them so TDS certificates show the payee&apos;s e-TIN.{' '}
+          <button type="button" onClick={onEdit} className="font-medium text-blue-600 hover:underline">Add tax details</button>
+        </p>
+      )}
+    </div>
+  )
 }
 
 const VERIFY_META = {
@@ -420,6 +472,9 @@ export default function FreelancerDetailPage() {
                     </p>
                   </div>
                 )}
+              </div>
+              <div className="lg:col-span-2 pt-5 border-t border-gray-100">
+                <TaxIdentity data={data} onEdit={() => setEditOpen(true)} />
               </div>
             </div>
           )}

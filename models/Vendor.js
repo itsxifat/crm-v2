@@ -11,6 +11,16 @@ const VendorSchema = new mongoose.Schema(
     address:     { type: String, default: null },
     website:     { type: String, default: null },
     notes:       { type: String, default: null },
+
+    // ── Tax identity (Bangladesh) ──
+    bin:                   { type: String, default: null },   // VAT BIN (9 or 13 digits)
+    tin:                   { type: String, default: null },   // e-TIN (12 digits)
+    tradeLicense:          { type: String, default: null },
+    vatRegistrationType:   { type: String, enum: ['REGISTERED', 'TURNOVER', 'UNREGISTERED', 'FOREIGN', null], default: null },
+    payeeType:             { type: String, enum: ['COMPANY', 'INDIVIDUAL', 'NON_RESIDENT'], default: 'COMPANY' },
+    hasPsr:                { type: Boolean, default: false },  // Proof of Submission of Return (s.264) — no PSR ⇒ TDS +50%
+    defaultTdsSection:     { type: String, default: null },
+    defaultVatServiceCode: { type: String, default: null },
   },
   {
     timestamps: true,
@@ -21,4 +31,7 @@ const VendorSchema = new mongoose.Schema(
   }
 )
 
-export default mongoose.models.Vendor ?? mongoose.model('Vendor', VendorSchema)
+// Re-register on hot reload so schema additions (tax identity) take effect —
+// a cached model would silently drop the new fields under strict mode.
+if (mongoose.models.Vendor) delete mongoose.models.Vendor
+export default mongoose.model('Vendor', VendorSchema)

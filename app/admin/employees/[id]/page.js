@@ -9,14 +9,25 @@ import {
   User, Building2, CreditCard, Activity, Upload, Loader2, X, Image,
   Package, Plus, Pencil, Save, BadgeCheck, AlertCircle, ThumbsUp, ThumbsDown, LogOut,
 } from 'lucide-react'
+import {
+  Printer, Undo2, TriangleAlert, RefreshCw, Boxes, History, PackageCheck, CircleCheckBig, Flag,
+} from 'lucide-react'
 import { useSession } from 'next-auth/react'
 import toast from 'react-hot-toast'
 import Avatar from '@/components/ui/Avatar'
 import TkAmt from '@/components/ui/TkAmt'
+import Modal, { ModalFooter } from '@/components/ui/Modal'
+import DatePicker from '@/components/ui/DatePicker'
+import AssetPicker from '@/components/inventory/AssetPicker'
+import AssetStatusBadge, { AssetConditionBadge, InventoryBadge } from '@/components/inventory/AssetStatusBadge'
+import { usePermission } from '@/components/auth/Can'
+import {
+  ACK_META, RECOVERY_STATUS_META, RECOVERY_METHOD_LABELS, DAMAGE_CAUSE_LABELS, CONDITION_OPTIONS,
+} from '@/lib/inventory/constants'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const fmtDate  = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
+const fmtDate  = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Dhaka' }) : '—'
 const fmtMoney = (n) => n != null ? `৳ ${Number(n).toLocaleString('en-BD')}` : '—'
 
 const ROLE_META = {
@@ -255,7 +266,493 @@ function DocumentsTab({ emp, empId, onUpdated }) {
   )
 }
 
-function CompanyItemsTab({ emp, empId, onUpdated }) {
+// ─── Assets (inventory register) ─────────────────────────────────────────────
+
+const assetInput = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-gray-900'
+const assetLabel = 'block text-xs font-medium text-gray-600 mb-1'
+const assetBtnPrimary = 'inline-flex items-center justify-center gap-2 bg-gray-900 text-white hover:bg-gray-800 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50'
+const assetBtnGhost = 'inline-flex items-center justify-center gap-1.5 border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50'
+
+const CASE_TYPE_LABEL = (c) => {
+  if (c.type === 'LOST') return 'Lost'
+  if (c.type === 'STOLEN') return 'Stolen'
+  return c.reportType === 'NOT_WORKING' ? 'Fault' : 'Damage'
+}
+
+/** POST an asset action to the inventory API (built by the assets module). */
+async function postAssetAction(assetId, body) {
+  const res  = await fetch(`/api/inventory/assets/${assetId}/actions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const fe = json.details?.fieldErrors
+    const first = fe ? Object.values(fe).flat()[0] : null
+    throw new Error(first || json.error || 'Action failed')
+  }
+  return json.data
+}
+
+function AssignAssetModal({ open, empId, empName, onClose, onDone }) {
+  const [assetId, setAssetId]   = useState(null)
+  const [expectedReturnDate, setExpectedReturnDate] = useState(null)
+  const [condition, setCondition] = useState('')
+  const [notes, setNotes]       = useState('')
+  const [saving, setSaving]     = useState(false)
+
+  useEffect(() => {
+    if (!open) return
+    setAssetId(null); setExpectedReturnDate(null); setCondition(''); setNotes('')
+  }, [open])
+
+  async function submit(e) {
+    e?.preventDefault()
+    if (!assetId) { toast.error('Choose an asset that is in stock'); return }
+    setSaving(true)
+    try {
+      await postAssetAction(assetId, {
+        action: 'assign',
+        employeeId: empId,
+        ...(expectedReturnDate ? { expectedReturnDate } : {}),
+        ...(condition ? { condition } : {}),
+        ...(notes.trim() ? { notes: notes.trim() } : {}),
+      })
+      toast.success(`Assigned to ${empName ?? 'the employee'}`)
+      onDone()
+    } catch (err) {
+      toast.error(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal open={open} onOpenChange={(o) => { if (!o && !saving) onClose() }} size="md" title="Assign an asset"
+      description={empName ? `Issue equipment from stock to ${empName}` : undefined}>
+      <form id="assign-asset-form" onSubmit={submit} className="space-y-4">
+        <div>
+          <label className={assetLabel}>Asset in stock <span className="text-red-500">*</span></label>
+          <AssetPicker value={assetId} onChange={(id) => setAssetId(id)} statuses={['IN_STOCK']} placeholder="Search by tag, name or serial…" />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className={assetLabel}>Expected return (optional)</label>
+            <DatePicker value={expectedReturnDate} onChange={setExpectedReturnDate} placeholder="No return date" />
+          </div>
+          <div>
+            <label className={assetLabel}>Condition at handover</label>
+            <select value={condition} onChange={e => setCondition(e.target.value)} className={assetInput}>
+              <option value="">As recorded</option>
+              {CONDITION_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+        </div>
+        <div>
+          <label className={assetLabel}>Notes (optional)</label>
+          <textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} maxLength={1000} className={assetInput}
+            placeholder="e.g. With charger and laptop bag" />
+        </div>
+        <p className="text-xs text-gray-400">
+          If the category needs it, the employee is asked to acknowledge receipt in My Assets.
+        </p>
+      </form>
+      <ModalFooter className="-mx-4 sm:-mx-6 -mb-4 mt-4">
+        <button type="button" onClick={onClose} disabled={saving} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">Cancel</button>
+        <button type="submit" form="assign-asset-form" disabled={saving || !assetId} className={assetBtnPrimary}>
+          {saving && <Loader2 className="w-4 h-4 animate-spin" />} Assign
+        </button>
+      </ModalFooter>
+    </Modal>
+  )
+}
+
+function ReturnAssetModal({ asset, onClose, onDone }) {
+  const [condition, setCondition] = useState('GOOD')
+  const [notes, setNotes]         = useState('')
+  const [saving, setSaving]       = useState(false)
+
+  useEffect(() => {
+    if (!asset) return
+    setCondition(asset.condition ?? 'GOOD'); setNotes('')
+  }, [asset])
+
+  async function submit(e) {
+    e?.preventDefault()
+    setSaving(true)
+    try {
+      await postAssetAction(asset.id, { action: 'return', condition, ...(notes.trim() ? { notes: notes.trim() } : {}) })
+      toast.success(`${asset.assetTag} returned to stock`)
+      onDone()
+    } catch (err) {
+      toast.error(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal open={!!asset} onOpenChange={(o) => { if (!o && !saving) onClose() }} size="sm" title="Return to stock"
+      description={asset ? `${asset.assetTag} · ${asset.name}` : undefined}>
+      {asset && (
+        <form id="return-asset-form" onSubmit={submit} className="space-y-4">
+          <div>
+            <label className={assetLabel}>Condition on return</label>
+            <select value={condition} onChange={e => setCondition(e.target.value)} className={assetInput}>
+              {CONDITION_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+            {condition === 'BROKEN' && <p className="text-xs text-orange-600 mt-1">A broken item is recorded as damaged, awaiting a decision.</p>}
+          </div>
+          <div>
+            <label className={assetLabel}>Notes (optional)</label>
+            <textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} maxLength={1000} className={assetInput}
+              placeholder="e.g. Returned on exit, charger missing" />
+          </div>
+        </form>
+      )}
+      <ModalFooter className="-mx-4 sm:-mx-6 -mb-4 mt-4">
+        <button type="button" onClick={onClose} disabled={saving} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">Cancel</button>
+        <button type="submit" form="return-asset-form" disabled={saving} className={assetBtnPrimary}>
+          {saving && <Loader2 className="w-4 h-4 animate-spin" />} Return
+        </button>
+      </ModalFooter>
+    </Modal>
+  )
+}
+
+function AssetsTab({ empId, empName }) {
+  const { can, canAny } = usePermission()
+  const canAssign  = can('inventory.assign')
+  const canOpenAsset = canAny(['inventory.view', 'inventory.manage'])
+  const [data, setData]       = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError]     = useState('')
+  const [assignOpen, setAssignOpen]     = useState(false)
+  const [returnTarget, setReturnTarget] = useState(null)
+
+  const load = React.useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const res  = await fetch(`/api/employees/${empId}/assets`)
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Failed to load assets')
+      setData(json.data)
+    } catch (err) {
+      setError(err.message || 'Failed to load assets')
+    } finally {
+      setLoading(false)
+    }
+  }, [empId])
+
+  useEffect(() => { load() }, [load])
+
+  if (loading && !data) {
+    return <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
+  }
+  if (error && !data) {
+    return (
+      <div className="bg-white border border-gray-100 rounded-xl p-8 text-center">
+        <AlertCircle className="w-8 h-8 text-red-400 mx-auto mb-2" />
+        <p className="text-sm text-gray-700">{error}</p>
+        <button type="button" onClick={load} className={`${assetBtnPrimary} mt-4`}><RefreshCw className="w-4 h-4" /> Try again</button>
+      </div>
+    )
+  }
+  if (!data) return null
+
+  const { assets = [], damageCases = [], consumables, returned = [], summary = {}, canViewFinancials } = data
+  const pending  = assets.filter(a => a.acknowledgement?.status === 'PENDING')
+  const declined = assets.filter(a => a.acknowledgement?.status === 'DECLINED')
+  const tagCell = (a) => canOpenAsset
+    ? <Link href={`/admin/inventory/assets/${a.id}`} className="font-mono text-xs text-blue-600 hover:underline">{a.assetTag}</Link>
+    : <span className="font-mono text-xs text-gray-500">{a.assetTag}</span>
+  const th = 'px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap'
+
+  return (
+    <div className="space-y-5">
+      {/* Summary & actions */}
+      <div className="bg-white border border-gray-100 rounded-xl p-4 flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap gap-2">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-50 text-xs text-gray-700">
+            <Package className="w-3.5 h-3.5 text-gray-400" /> {summary.held ?? 0} held
+          </span>
+          {summary.pendingAcknowledgement > 0 && (
+            <span className="px-2.5 py-1 rounded-lg bg-amber-50 text-xs text-amber-700">{summary.pendingAcknowledgement} awaiting acknowledgement</span>
+          )}
+          {summary.declined > 0 && <span className="px-2.5 py-1 rounded-lg bg-red-50 text-xs text-red-700">{summary.declined} declined</span>}
+          {summary.overdueReturns > 0 && <span className="px-2.5 py-1 rounded-lg bg-red-50 text-xs text-red-700">{summary.overdueReturns} overdue return</span>}
+          {summary.openDamageCases > 0 && <span className="px-2.5 py-1 rounded-lg bg-orange-50 text-xs text-orange-700">{summary.openDamageCases} recovery pending{canViewFinancials && summary.recoveryOutstanding > 0 ? <> · <TkAmt value={summary.recoveryOutstanding} /></> : null}</span>}
+          {summary.awaitingAssessment > 0 && <span className="px-2.5 py-1 rounded-lg bg-orange-50 text-xs text-orange-700">{summary.awaitingAssessment} reported problem{summary.awaitingAssessment === 1 ? '' : 's'}</span>}
+          {canViewFinancials && summary.heldCost > 0 && (
+            <span className="px-2.5 py-1 rounded-lg bg-gray-50 text-xs text-gray-700">Book value <TkAmt value={summary.heldBookValue} /></span>
+          )}
+        </div>
+        <div className="flex flex-wrap gap-2 sm:ml-auto">
+          <button type="button" onClick={load} disabled={loading} className={assetBtnGhost} aria-label="Refresh">
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+          {assets.length > 0 && (
+            <a href={`/api/employees/${empId}/assets/handover`} target="_blank" rel="noreferrer" className={assetBtnGhost}>
+              <Printer className="w-3.5 h-3.5" /> Handover form
+            </a>
+          )}
+          {canAssign && (
+            <button type="button" onClick={() => setAssignOpen(true)}
+              className="inline-flex items-center gap-1.5 bg-gray-900 text-white hover:bg-gray-800 rounded-lg px-3 py-1.5 text-xs font-medium">
+              <Plus className="w-3.5 h-3.5" /> Assign asset
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Exit clearance */}
+      <div className={`flex items-start gap-3 rounded-xl border px-4 py-3 text-sm ${summary.clearance?.clear ? 'bg-green-50 border-green-100 text-green-800' : 'bg-amber-50 border-amber-100 text-amber-800'}`}>
+        {summary.clearance?.clear ? <CircleCheckBig className="w-4 h-4 mt-0.5 shrink-0" /> : <TriangleAlert className="w-4 h-4 mt-0.5 shrink-0" />}
+        <div>
+          <p className="font-medium">{summary.clearance?.clear ? 'Clear for exit — nothing is outstanding' : 'Not clear for exit yet'}</p>
+          {!summary.clearance?.clear && <p className="text-xs mt-0.5">{(summary.clearance?.reasons ?? []).join(' · ')}</p>}
+        </div>
+      </div>
+
+      {(pending.length > 0 || declined.length > 0) && (
+        <div className="bg-white border border-amber-200 rounded-xl p-4 space-y-2">
+          <p className="text-sm font-semibold text-gray-800 flex items-center gap-2"><PackageCheck className="w-4 h-4 text-amber-500" /> Acknowledgements</p>
+          {pending.map(a => (
+            <p key={a.id} className="text-xs text-gray-600">
+              {tagCell(a)} <span className="ml-1">{a.name}</span> — waiting since {fmtDate(a.assignedAt)}
+            </p>
+          ))}
+          {declined.map(a => (
+            <p key={a.id} className="text-xs text-red-700">
+              {tagCell(a)} <span className="ml-1">{a.name}</span> — declined {fmtDate(a.acknowledgement?.at)}{a.acknowledgement?.note ? `: “${a.acknowledgement.note}”` : ''}
+            </p>
+          ))}
+        </div>
+      )}
+
+      {/* Held assets */}
+      <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-100">
+          <h3 className="text-sm font-semibold text-gray-700">Assigned equipment</h3>
+        </div>
+        {assets.length === 0 ? (
+          <div className="text-center py-10">
+            <Package className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+            <p className="text-sm text-gray-400">No assets are assigned to {empName ?? 'this employee'}</p>
+            {canAssign && <button type="button" onClick={() => setAssignOpen(true)} className="mt-2 text-sm text-blue-600 hover:underline">Assign one from stock</button>}
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] text-sm">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50/60">
+                  <th className={th}>Asset</th>
+                  <th className={th}>Status</th>
+                  <th className={th}>Condition</th>
+                  <th className={th}>Acknowledgement</th>
+                  <th className={th}>Issued</th>
+                  {canViewFinancials && <th className={`${th} text-right`}>Book value</th>}
+                  <th className="px-4 py-2.5" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {assets.map(a => {
+                  const ack = a.acknowledgement?.status ?? 'NOT_REQUIRED'
+                  return (
+                    <tr key={a.id} className="hover:bg-gray-50/60">
+                      <td className="px-4 py-3">
+                        {tagCell(a)}
+                        <p className="text-sm text-gray-900">{a.name}</p>
+                        <p className="text-xs text-gray-400">{[a.category?.name, [a.brand, a.model].filter(Boolean).join(' '), a.serialNumber ? `S/N ${a.serialNumber}` : null].filter(Boolean).join(' · ')}</p>
+                      </td>
+                      <td className="px-4 py-3"><AssetStatusBadge status={a.status} /></td>
+                      <td className="px-4 py-3"><AssetConditionBadge condition={a.condition} /></td>
+                      <td className="px-4 py-3">
+                        {ack === 'NOT_REQUIRED'
+                          ? <span className="text-xs text-gray-400">Not required</span>
+                          : <InventoryBadge label={ACK_META[ack]?.label ?? ack} color={ACK_META[ack]?.color ?? 'gray'} />}
+                      </td>
+                      <td className="px-4 py-3 text-xs whitespace-nowrap">
+                        <p className="text-gray-700">{fmtDate(a.assignedAt)}</p>
+                        {a.expectedReturnDate && (
+                          <p className={a.overdue ? 'text-red-600 font-medium' : 'text-gray-400'}>Return by {fmtDate(a.expectedReturnDate)}</p>
+                        )}
+                      </td>
+                      {canViewFinancials && (
+                        <td className="px-4 py-3 text-right text-sm text-gray-700 whitespace-nowrap"><TkAmt value={a.bookValue} /></td>
+                      )}
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <a href={`/api/my-assets/${a.id}/handover`} target="_blank" rel="noreferrer" title="Print handover form"
+                            className="p-1.5 text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-50" aria-label={`Print handover form for ${a.assetTag}`}>
+                            <Printer className="w-4 h-4" />
+                          </a>
+                          {canAssign && a.status === 'ASSIGNED' && (
+                            <button type="button" onClick={() => setReturnTarget(a)} className={assetBtnGhost}>
+                              <Undo2 className="w-3.5 h-3.5" /> Return
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Damage / loss cases */}
+      <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-100">
+          <h3 className="text-sm font-semibold text-gray-700">Damage &amp; loss cases</h3>
+          <p className="text-xs text-gray-400">Recovery from pay is only for loss directly caused by neglect, after an enquiry (Labour Act 2006 s.125/127).</p>
+        </div>
+        {damageCases.length === 0 ? (
+          <p className="px-4 py-8 text-center text-sm text-gray-400">No damage or loss has been recorded.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] text-sm">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50/60">
+                  <th className={th}>Date</th>
+                  <th className={th}>Asset</th>
+                  <th className={th}>What happened</th>
+                  <th className={th}>Liability</th>
+                  <th className={th}>Recovery</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {damageCases.map(c => {
+                  const rec = c.recovery
+                  const recMeta = rec?.status ? RECOVERY_STATUS_META[rec.status] : null
+                  return (
+                    <tr key={c.id} className="align-top">
+                      <td className="px-4 py-3 text-xs text-gray-600 whitespace-nowrap">{fmtDate(c.date)}</td>
+                      <td className="px-4 py-3">
+                        {c.asset ? (canOpenAsset
+                          ? <Link href={`/admin/inventory/assets/${c.asset.id}`} className="font-mono text-xs text-blue-600 hover:underline">{c.asset.assetTag}</Link>
+                          : <span className="font-mono text-xs text-gray-500">{c.asset.assetTag}</span>) : '—'}
+                        <p className="text-xs text-gray-500">{c.asset?.name}</p>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-sm text-gray-800">{CASE_TYPE_LABEL(c)}</span>
+                          {c.cause && c.cause !== 'UNKNOWN' && <span className="text-xs text-gray-500">· {DAMAGE_CAUSE_LABELS[c.cause] ?? c.cause}</span>}
+                          {c.reportedByEmployee && (
+                            <span className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600"><Flag className="w-3 h-3" /> Self-reported</span>
+                          )}
+                          {c.awaitingAssessment && <span className="text-[11px] px-1.5 py-0.5 rounded bg-orange-50 text-orange-700">Awaiting assessment</span>}
+                        </div>
+                        {c.description && <p className="text-xs text-gray-500 mt-0.5 max-w-sm">{c.description}</p>}
+                        {c.gdNumber && <p className="text-xs text-gray-400 mt-0.5">GD no. {c.gdNumber}</p>}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-600 whitespace-nowrap">
+                        {c.isResponsible ? <p className="text-gray-800">Held responsible{c.liabilityPct != null ? ` (${c.liabilityPct}%)` : ''}</p> : <p className="text-gray-400">—</p>}
+                        {canViewFinancials && c.assessedLoss != null && <p>Loss <TkAmt value={c.assessedLoss} /></p>}
+                      </td>
+                      <td className="px-4 py-3 text-xs whitespace-nowrap">
+                        {rec ? (
+                          <div className="space-y-1">
+                            {recMeta && <InventoryBadge label={recMeta.label} color={recMeta.color} />}
+                            <p className="text-gray-500">
+                              {RECOVERY_METHOD_LABELS[rec.method] ?? rec.method ?? ''}
+                              {canViewFinancials && rec.amount != null ? <> · <TkAmt value={rec.amount} /></> : null}
+                            </p>
+                            {canViewFinancials && Number(rec.recoveredAmount) > 0 && rec.status !== 'RECOVERED' && (
+                              <p className="text-gray-500">
+                                Recovered <TkAmt value={rec.recoveredAmount} />
+                                {rec.status === 'PENDING' && Number(rec.outstanding) > 0 ? <> · balance <TkAmt value={rec.outstanding} /></> : null}
+                              </p>
+                            )}
+                          </div>
+                        ) : <span className="text-gray-400">—</span>}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Consumables */}
+      <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2">
+          <Boxes className="w-4 h-4 text-gray-400" />
+          <h3 className="text-sm font-semibold text-gray-700">Supplies issued</h3>
+          {canViewFinancials && consumables?.totals?.value > 0 && (
+            <span className="ml-auto text-xs text-gray-500">Value <TkAmt value={consumables.totals.value} /></span>
+          )}
+        </div>
+        {(consumables?.items ?? []).length === 0 ? (
+          <p className="px-4 py-8 text-center text-sm text-gray-400">No consumables have been issued to this employee.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[560px] text-sm">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50/60">
+                  <th className={th}>Item</th>
+                  <th className={`${th} text-right`}>Issued</th>
+                  <th className={`${th} text-right`}>Returned</th>
+                  <th className={th}>Last issued</th>
+                  {canViewFinancials && <th className={`${th} text-right`}>Value</th>}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {consumables.items.map((i, idx) => (
+                  <tr key={i.stockItem?.id ?? idx}>
+                    <td className="px-4 py-2.5">
+                      <p className="text-gray-900">{i.stockItem?.name ?? '—'}</p>
+                      {i.stockItem?.sku && <p className="text-xs text-gray-400 font-mono">{i.stockItem.sku}</p>}
+                    </td>
+                    <td className="px-4 py-2.5 text-right whitespace-nowrap">{i.issued} {i.stockItem?.unit ?? ''}</td>
+                    <td className="px-4 py-2.5 text-right whitespace-nowrap text-gray-500">{i.returned || '—'}</td>
+                    <td className="px-4 py-2.5 text-xs text-gray-500 whitespace-nowrap">{fmtDate(i.lastIssuedAt)}</td>
+                    {canViewFinancials && <td className="px-4 py-2.5 text-right whitespace-nowrap"><TkAmt value={i.value} /></td>}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Returned history */}
+      {returned.length > 0 && (
+        <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2">
+            <History className="w-4 h-4 text-gray-400" />
+            <h3 className="text-sm font-semibold text-gray-700">Previously returned</h3>
+          </div>
+          <ul className="divide-y divide-gray-50">
+            {returned.map(r => (
+              <li key={r.id} className="flex flex-wrap items-center gap-2 px-4 py-2.5 text-sm">
+                {r.asset ? (canOpenAsset
+                  ? <Link href={`/admin/inventory/assets/${r.asset.id}`} className="font-mono text-xs text-blue-600 hover:underline">{r.asset.assetTag}</Link>
+                  : <span className="font-mono text-xs text-gray-500">{r.asset.assetTag}</span>) : null}
+                <span className="text-gray-800">{r.asset?.name ?? '—'}</span>
+                {r.condition && <AssetConditionBadge condition={r.condition} />}
+                <span className="text-xs text-gray-400 sm:ml-auto">{fmtDate(r.date)}{r.by ? ` · ${r.by}` : ''}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <AssignAssetModal open={assignOpen} empId={empId} empName={empName} onClose={() => setAssignOpen(false)}
+        onDone={() => { setAssignOpen(false); load() }} />
+      <ReturnAssetModal asset={returnTarget} onClose={() => setReturnTarget(null)}
+        onDone={() => { setReturnTarget(null); load() }} />
+    </div>
+  )
+}
+
+function CompanyItemsTab({ emp, empId, onUpdated, onGoToAssets }) {
   const [items,        setItems]        = useState(() => (emp.companyItems ?? []).map((it, i) => ({ ...it, _id: i })))
   const [itemPresets,  setItemPresets]  = useState([])
   const [saving,  setSaving]  = useState(false)
@@ -314,6 +811,23 @@ function CompanyItemsTab({ emp, empId, onUpdated }) {
 
   return (
     <div className="space-y-5">
+      <div className="flex flex-wrap items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+        <AlertCircle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+        <div className="flex-1 min-w-[220px] text-sm text-amber-900">
+          <p className="font-medium">Company items is legacy — use Assets</p>
+          <p className="text-xs text-amber-800 mt-0.5">
+            Issue new equipment from the Assets tab so it gets a tag, a history and the employee&apos;s acknowledgement.
+            An administrator can convert these entries into assets with <code className="font-mono">npm run db:migrate-company-items</code>.
+          </p>
+        </div>
+        {onGoToAssets && (
+          <button type="button" onClick={onGoToAssets}
+            className="inline-flex items-center gap-1.5 bg-gray-900 text-white hover:bg-gray-800 rounded-lg px-3 py-1.5 text-xs font-medium">
+            <Package className="w-3.5 h-3.5" /> Go to Assets
+          </button>
+        )}
+      </div>
+
       <div className="bg-white border border-gray-100 rounded-xl p-5">
         <div className="flex items-center justify-between mb-4">
           <div>
@@ -696,6 +1210,7 @@ export default function EmployeeProfilePage() {
   const TABS = [
     { id: 'overview',      label: 'Overview'   },
     { id: 'documents',     label: 'Documents'  },
+    { id: 'assets',        label: 'Assets'     },
     { id: 'company-items', label: 'Company Items' },
     { id: 'tasks',         label: `Tasks (${tasks.length})`  },
     { id: 'attendance',    label: 'Attendance' },
@@ -770,15 +1285,17 @@ export default function EmployeeProfilePage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
-        {TABS.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)}
-            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              tab === t.id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-            }`}>
-            {t.label}
-          </button>
-        ))}
+      <div className="max-w-full overflow-x-auto">
+        <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
+          {TABS.map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)}
+              className={`px-4 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
+                tab === t.id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}>
+              {t.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Overview Tab */}
@@ -799,6 +1316,7 @@ export default function EmployeeProfilePage() {
                     value={c.name ? `${c.name} (${c.relation}) · ${c.phone}` : null} />
                 ))}
                 <InfoRow icon={CreditCard} label="NID Number"     value={emp.nidNumber} />
+                <InfoRow icon={CreditCard} label="e-TIN"          value={emp.tin} />
                 <InfoRow icon={MapPin}   label="Address"          value={emp.address} className="sm:col-span-2" />
               </div>
             </div>
@@ -901,9 +1419,14 @@ export default function EmployeeProfilePage() {
         <DocumentsTab emp={emp} empId={id} onUpdated={setData} />
       )}
 
-      {/* Company Items Tab */}
+      {/* Assets Tab (inventory register) */}
+      {tab === 'assets' && (
+        <AssetsTab empId={id} empName={user.name ?? null} />
+      )}
+
+      {/* Company Items Tab (legacy free-text list) */}
       {tab === 'company-items' && (
-        <CompanyItemsTab emp={emp} empId={id} onUpdated={setData} />
+        <CompanyItemsTab emp={emp} empId={id} onUpdated={setData} onGoToAssets={() => setTab('assets')} />
       )}
 
       {/* Tasks Tab */}

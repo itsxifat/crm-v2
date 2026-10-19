@@ -7,6 +7,9 @@ import { ProjectExpense } from '@/models'
 import { requirePerm } from '@/lib/rbac'
 import { authorizeExpense, allocateBatchRef, sharedBatchRef } from '@/lib/expensePayment'
 import { isValidObjectId } from '@/lib/objectId'
+import { logActivity } from '@/lib/logActivity'
+
+const MAX_IDS = 200
 
 // POST /api/expenses/batch-authorize
 // Authorizes a group of PAID expenses against ONE combined invoice: they all
@@ -19,12 +22,20 @@ export async function POST(request) {
     if (denied) return denied
     await connectDB()
 
-    const { ids, signedInvoiceUrl } = await request.json()
+    let body
+    try {
+      body = await request.json()
+    } catch {
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+    }
+    const { ids, signedInvoiceUrl } = body ?? {}
     if (!Array.isArray(ids) || ids.length === 0)
       return NextResponse.json({ error: 'Select at least one paid expense' }, { status: 422 })
+    if (ids.length > MAX_IDS)
+      return NextResponse.json({ error: `Select at most ${MAX_IDS} expenses` }, { status: 422 })
     if (!ids.every(isValidObjectId))
       return NextResponse.json({ error: 'Invalid expense id' }, { status: 400 })
-    if (!signedInvoiceUrl)
+    if (!signedInvoiceUrl || typeof signedInvoiceUrl !== 'string')
       return NextResponse.json({ error: 'Upload the scan of the authorized combined invoice first' }, { status: 422 })
 
     const expenses = await ProjectExpense.find({ _id: { $in: ids }, status: 'PAID' })
@@ -38,6 +49,20 @@ export async function POST(request) {
     for (const expense of expenses) {
       await authorizeExpense(expense, { userId: session.user.id, signedInvoiceUrl, batchInvoiceNo })
     }
+
+    logActivity({
+      userId:   session.user.id,
+      userRole: session.user.role,
+      action:   'APPROVE',
+      entity:   'EXPENSE',
+      entityId: null,
+      changes:  JSON.stringify({
+        batchInvoiceNo,
+        authorized: expenses.map(e => e.expenseId ?? e._id.toString()),
+        status: { from: 'PAID', to: 'AUTHORIZED' },
+      }),
+      request,
+    })
 
     return NextResponse.json({
       data: { authorized: expenses.length, skipped: ids.length - expenses.length, batchInvoiceNo },

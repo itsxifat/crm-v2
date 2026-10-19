@@ -63,9 +63,11 @@ export async function GET(request) {
     // One row per project: how many invoices, what they total, what is paid and
     // what is still due — plus the combined invoice when there is more than one.
     if (groupBy === 'project') {
+      // Projects are populated only when they belong to this company: an old
+      // invoice raised against another client's project lists as "no project".
       const all = await Invoice.find(filter)
-        .populate('projectId',  'name projectCode venture')
-        .populate('projectIds', 'name projectCode venture')
+        .populate({ path: 'projectId',  select: 'name projectCode venture', match: { clientId: client._id } })
+        .populate({ path: 'projectIds', select: 'name projectCode venture', match: { clientId: client._id } })
         .sort({ issueDate: 1 })
         .lean()
 
@@ -123,8 +125,8 @@ export async function GET(request) {
     // ── Flat list ────────────────────────────────────────────────────────────
     const [invoices, total, allForSummary] = await Promise.all([
       Invoice.find(filter)
-        .populate('projectId',  'name projectCode')
-        .populate('projectIds', 'name projectCode')
+        .populate({ path: 'projectId',  select: 'name projectCode', match: { clientId: client._id } })
+        .populate({ path: 'projectIds', select: 'name projectCode', match: { clientId: client._id } })
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)

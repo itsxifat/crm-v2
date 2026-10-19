@@ -12,6 +12,8 @@ const TYPE_COLORS = {
   PAYMENT:   'bg-green-100 text-green-700',
   QUOTATION: 'bg-teal-100 text-teal-700',
   LEAVE:     'bg-yellow-100 text-yellow-700',
+  ASSET:     'bg-orange-100 text-orange-700',
+  TAX:       'bg-rose-100 text-rose-700',
   GENERAL:   'bg-gray-100 text-gray-600',
 }
 

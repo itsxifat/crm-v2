@@ -41,6 +41,7 @@ const EmployeeSchema = new mongoose.Schema(
     nationality:   { type: String, default: null },
     maritalStatus: { type: String, enum: ['SINGLE', 'MARRIED', 'DIVORCED', 'WIDOWED', null], default: null },
     passportNumber:{ type: String, default: null },
+    tin:           { type: String, default: null },  // e-TIN (12 digits) — salary TDS (s.86) certificates
 
     customRoleId: { type: mongoose.Schema.Types.ObjectId, ref: 'CustomRole', default: null },
 

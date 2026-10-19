@@ -11,6 +11,27 @@ import { maskMoney } from '@/lib/pii'
 import { isValidCurrency } from '@/lib/currencies'
 import { isValidObjectId } from '@/lib/objectId'
 import { dhakaParts, dhakaDate } from '@/lib/dhakaTime'
+import { logActivity } from '@/lib/logActivity'
+import { buildExpenseTax, expenseSettlement } from '@/lib/expensePayment'
+
+// Income tax deducted from salary is TDS under ITA 2023 s.86.
+const SALARY_TDS_SECTION = '86-SALARY'
+const MAX_ITEMS = 50
+
+const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100
+
+/**
+ * Cash actually paid to the employee (BDT) and the income tax withheld (BDT)
+ * for a paid salary expense. Falls back to the slip figures for legacy rows.
+ */
+function paidFigures(slip) {
+  const exp = slip?.expense
+  if (exp && exp.amount != null) {
+    const fig = expenseSettlement(exp)
+    return { netBDT: fig.netBDT, taxBDT: fig.tdsBDT }
+  }
+  return { netBDT: exp?.amountBDT ?? slip?.amountBDT ?? slip?.netPay ?? 0, taxBDT: 0 }
+}
 
 // Current payroll period in the business timezone (Asia/Dhaka), not server UTC.
 function currentPeriod() {
@@ -82,7 +103,11 @@ export async function GET(request) {
       .lean()
 
     const slips = await SalarySlip.find({ period, employeeId: { $in: employees.map(e => e._id) } })
-      .populate({ path: 'expenseId', select: 'status amountBDT paidAt paymentMethod paymentTxnId expenseId expenseInvoiceNo signedInvoiceUrl' })
+      .populate({
+        path: 'expenseId',
+        select: 'status amount currency amountBDT tax paidAt paymentMethod paymentTxnId expenseId expenseInvoiceNo signedInvoiceUrl accountId channel',
+        populate: { path: 'accountId', select: 'name type last4 bankName mfsProvider' },
+      })
       .lean()
     const slipByEmployee = new Map(slips.map(s => [s.employeeId.toString(), s]))
 
@@ -103,14 +128,17 @@ export async function GET(request) {
         designation: e.designation ?? null,
         venture:     e.venture ?? null,
         resigned:    !!e.resigned,
+        // Whether an e-TIN is on file (needed for the s.86 salary certificate) — never the TIN itself.
+        hasTin:      !!(typeof e.tin === 'string' && e.tin.trim()),
         baseSalary:  canSeeSalary ? (e.salary ?? null) : maskMoney(e.salary ?? null),
         slip: slip ? {
-          id:        slip._id.toString(),
-          slipNo:    slip.slipNo,
-          netPay:    slip.netPay,
-          currency:  slip.currency,
-          amountBDT: slip.amountBDT,
-          expense:   slip.expenseId ?? null,
+          id:           slip._id.toString(),
+          slipNo:       slip.slipNo,
+          netPay:       slip.netPay,
+          taxDeduction: slip.taxDeduction ?? 0,
+          currency:     slip.currency,
+          amountBDT:    slip.amountBDT,
+          expense:      slip.expenseId ?? null,
         } : null,
         salaryStatus,
       }
@@ -118,16 +146,22 @@ export async function GET(request) {
 
     // Summary reflects the department/venture/search scope regardless of the
     // status filter, so the stat cards stay a stable reference while filtering.
+    // Paid = cash actually paid to employees (BDT written on payment, net of
+    // income tax withheld); the withheld tax is reported separately.
+    const paidRows = rows.filter(r => ['PAID', 'AUTHORIZED'].includes(r.salaryStatus))
+    const paidTotals = paidRows.reduce((t, r) => {
+      const f = paidFigures(r.slip)
+      t.net += Number(f.netBDT) || 0
+      t.tax += Number(f.taxBDT) || 0
+      return t
+    }, { net: 0, tax: 0 })
     const summary = {
       totalEmployees: employees.length,
       notGenerated:   rows.filter(r => r.salaryStatus === 'NOT_GENERATED').length,
       pending:        rows.filter(r => r.salaryStatus === 'PENDING').length,
-      paidCount:      rows.filter(r => ['PAID', 'AUTHORIZED'].includes(r.salaryStatus)).length,
-      paidAmountBDT:  rows
-        .filter(r => ['PAID', 'AUTHORIZED'].includes(r.salaryStatus))
-        // Prefer the BDT actually paid (written to the expense on payment) over
-        // the generation-time estimate on the slip.
-        .reduce((sum, r) => sum + (r.slip?.expense?.amountBDT ?? r.slip?.amountBDT ?? r.slip?.netPay ?? 0), 0),
+      paidCount:      paidRows.length,
+      paidAmountBDT:  round2(paidTotals.net),
+      taxDeductedBDT: round2(paidTotals.tax),
     }
 
     if (status) rows = rows.filter(r => r.salaryStatus === status)
@@ -149,6 +183,13 @@ export async function GET(request) {
 // for one employee/period. The expense is created PENDING and flows through the
 // normal Review → Paid → Authorized pipeline from Accounts, exactly like every
 // other expense (and the existing freelancer temp-salary flow).
+// Body: { employeeId, period:'YYYY-MM', items:[{ type:'EARNING'|'DEDUCTION', label, amount,
+//   isTax?: boolean (DEDUCTION only — income tax withheld, TDS s.86) }], currency?, amountBDT?
+//   (BDT equivalent of the NET pay, non-BDT only), note? }
+// With income tax: slip.taxDeduction = Σ isTax deductions; the expense amount is
+// netPay + taxDeduction with tax { tdsSection:'86-SALARY', tdsAmount, tdsBase: grossEarnings,
+// netPayable: netPay }, so paying it moves netPay in cash and records a TDS_PAYABLE
+// for the tax on the gross salary.
 export async function POST(request) {
   try {
     const session = await getServerSession(authOptions)
@@ -156,7 +197,13 @@ export async function POST(request) {
     if (denied) return denied
     await connectDB()
 
-    const body       = await request.json()
+    let body
+    try {
+      body = await request.json()
+    } catch {
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+    }
+    if (!body || typeof body !== 'object') return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
     const employeeId = body.employeeId
     const period     = String(body.period ?? '').trim()
 
@@ -171,57 +218,91 @@ export async function POST(request) {
     const existing = await SalarySlip.findOne({ employeeId, period }).lean()
     if (existing) return NextResponse.json({ error: `A salary slip for ${period} already exists for this employee` }, { status: 409 })
 
+    if (body.items !== undefined && !Array.isArray(body.items))
+      return NextResponse.json({ error: 'Items must be a list' }, { status: 422 })
     const rawItems = Array.isArray(body.items) ? body.items : []
+    if (rawItems.length > MAX_ITEMS) return NextResponse.json({ error: `At most ${MAX_ITEMS} earning/deduction lines` }, { status: 422 })
     const items = rawItems
-      .map(it => ({
-        type:   it.type === 'DEDUCTION' ? 'DEDUCTION' : 'EARNING',
-        label:  String(it.label ?? '').trim(),
-        amount: Number(it.amount),
-      }))
+      .map(it => {
+        const type = it?.type === 'DEDUCTION' ? 'DEDUCTION' : 'EARNING'
+        return {
+          type,
+          label:  String(it?.label ?? '').trim().slice(0, 120),
+          amount: round2(Number(it?.amount)),
+          // Only a deduction can be income tax withheld at source (s.86).
+          isTax:  type === 'DEDUCTION' && (it?.isTax === true || it?.isTax === 'true'),
+        }
+      })
       .filter(it => it.label && Number.isFinite(it.amount) && it.amount > 0)
 
-    const baseSalary       = Number(employee.salary) || 0
-    const earningsTotal    = items.filter(i => i.type === 'EARNING').reduce((s, i) => s + i.amount, 0)
-    const deductionsTotal  = items.filter(i => i.type === 'DEDUCTION').reduce((s, i) => s + i.amount, 0)
-    const grossEarnings    = baseSalary + earningsTotal
-    const netPay           = grossEarnings - deductionsTotal
+    const baseSalary       = round2(Number(employee.salary) || 0)
+    const earningsTotal    = round2(items.filter(i => i.type === 'EARNING').reduce((s, i) => s + i.amount, 0))
+    const deductionsTotal  = round2(items.filter(i => i.type === 'DEDUCTION').reduce((s, i) => s + i.amount, 0))
+    const taxDeduction     = round2(items.filter(i => i.isTax).reduce((s, i) => s + i.amount, 0))
+    const grossEarnings    = round2(baseSalary + earningsTotal)
+    const netPay           = round2(grossEarnings - deductionsTotal)
 
     if (netPay <= 0) return NextResponse.json({ error: 'Net pay must be greater than zero' }, { status: 422 })
 
-    const currency  = body.currency || 'BDT'
+    const currency  = String(body.currency || 'BDT').toUpperCase()
     if (!isValidCurrency(currency)) return NextResponse.json({ error: 'Invalid currency' }, { status: 422 })
     // Employee.salary is a Taka amount — it can't be summed with foreign-currency
     // items and relabelled as that currency.
     if (currency !== 'BDT' && baseSalary > 0)
       return NextResponse.json({ error: "This employee's base salary is in BDT — generate the slip in BDT" }, { status: 422 })
     const rawBDT    = Number(body.amountBDT)
-    const amountBDT = currency === 'BDT' ? netPay : (Number.isFinite(rawBDT) && rawBDT > 0 ? rawBDT : null)
+    const amountBDT = currency === 'BDT' ? netPay : (Number.isFinite(rawBDT) && rawBDT > 0 ? round2(rawBDT) : null)
     if (currency !== 'BDT' && !amountBDT)
       return NextResponse.json({ error: 'Enter the BDT-equivalent for this foreign-currency salary' }, { status: 422 })
 
-    const note = String(body.note ?? '').trim() || null
+    // Income tax withheld (s.86) stays a salary cost but is paid to the
+    // government, not the employee: the expense is the salary before tax
+    // (net pay + tax) with the tax as TDS, so the cash paid is the net pay.
+    const expenseAmount    = round2(netPay + taxDeduction)
+    const expenseAmountBDT = currency === 'BDT' ? expenseAmount : round2(amountBDT * expenseAmount / netPay)
+    let expenseTax
+    if (taxDeduction > 0) {
+      try {
+        expenseTax = buildExpenseTax({
+          tdsSection: SALARY_TDS_SECTION,
+          tdsAmount:  taxDeduction,
+          // s.86 TDS is on the salary paid (gross earnings), not on the expense
+          // amount (net pay + tax) — the certificate / WHT return show this base.
+          tdsBase:    grossEarnings,
+          payeeType:  'INDIVIDUAL',
+          taxDeductible: true,
+        }, { amount: expenseAmount })
+      } catch (err) {
+        if (err.status) return NextResponse.json({ error: err.message }, { status: err.status })
+        throw err
+      }
+    }
+
+    const note = String(body.note ?? '').trim().slice(0, 2000) || null
 
     const slip = await new SalarySlip({
       employeeId, period, baseSalary, items,
-      grossEarnings, totalDeductions: deductionsTotal, netPay,
+      grossEarnings, totalDeductions: deductionsTotal, netPay, taxDeduction,
       currency, amountBDT, note,
       generatedBy: session.user.id,
     }).save()
 
+    let expense
     try {
-      const expense = await new ProjectExpense({
+      expense = await new ProjectExpense({
         origin:      'SALARY',
         projectId:   null,
         title:       `Salary — ${period} — ${employee.userId?.name ?? 'Employee'}`,
-        amount:      netPay,
+        amount:      expenseAmount,
         currency,
-        amountBDT,
+        amountBDT:   expenseAmountBDT,
         category:    'Salary',
         subcategory: 'Employee Salary',
         date:        new Date(),
         notes:       note,
         paidToEmployeeId:     employeeId,
         employeeSalarySlipId: slip._id,
+        ...(expenseTax && { tax: expenseTax }),
         submittedBy: session.user.id,
         status:      'PENDING',
       }).save()
@@ -230,16 +311,30 @@ export async function POST(request) {
       await slip.save()
     } catch (err) {
       await SalarySlip.deleteOne({ _id: slip._id })
+      if (expense?._id) await ProjectExpense.deleteOne({ _id: expense._id, status: 'PENDING' }).catch(() => {})
       throw err
     }
 
-    await slip.populate({ path: 'expenseId', select: 'status expenseId expenseInvoiceNo' })
+    logActivity({
+      userId:   session.user.id,
+      userRole: session.user.role,
+      action:   'CREATE',
+      entity:   'SALARY_SLIP',
+      entityId: slip._id.toString(),
+      changes:  JSON.stringify({
+        slipNo: slip.slipNo, employeeId, period, grossEarnings, totalDeductions: deductionsTotal,
+        taxDeduction, netPay, currency, expenseId: expense.expenseId ?? null,
+      }),
+      request,
+    })
+
+    await slip.populate({ path: 'expenseId', select: 'status expenseId expenseInvoiceNo amount tax' })
     return NextResponse.json({ data: slip.toJSON() }, { status: 201 })
   } catch (err) {
     if (err?.code === 11000) {
       return NextResponse.json({ error: 'A salary slip for this employee and period already exists' }, { status: 409 })
     }
     console.error('[POST /api/salary]', err)
-    return NextResponse.json({ error: err.message || 'Internal server error' }, { status: 500 })
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

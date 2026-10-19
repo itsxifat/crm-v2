@@ -5,6 +5,7 @@ import {
   Plus, Pencil, Trash2, X, Loader2, ShieldCheck,
   Search, ChevronDown, ChevronRight,
   LayoutDashboard, TrendingUp, Briefcase, Wallet, Users, BarChart2, Settings2, CircleUser, EyeOff,
+  Calculator, Package,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import Select from '@/components/ui/Select'
@@ -18,6 +19,8 @@ const MODULE_META = {
   sales:     { Icon: TrendingUp,      ring: 'ring-emerald-200', bg: 'bg-emerald-50', text: 'text-emerald-600', bar: 'bg-emerald-500' },
   projects:  { Icon: Briefcase,       ring: 'ring-blue-200',    bg: 'bg-blue-50',    text: 'text-blue-600',    bar: 'bg-blue-500' },
   finance:   { Icon: Wallet,          ring: 'ring-amber-200',   bg: 'bg-amber-50',   text: 'text-amber-600',   bar: 'bg-amber-500' },
+  tax:       { Icon: Calculator,      ring: 'ring-cyan-200',    bg: 'bg-cyan-50',    text: 'text-cyan-600',    bar: 'bg-cyan-500' },
+  inventory: { Icon: Package,         ring: 'ring-orange-200',  bg: 'bg-orange-50',  text: 'text-orange-600',  bar: 'bg-orange-500' },
   hr:        { Icon: Users,           ring: 'ring-violet-200',  bg: 'bg-violet-50',  text: 'text-violet-600',  bar: 'bg-violet-500' },
   analytics: { Icon: BarChart2,       ring: 'ring-pink-200',    bg: 'bg-pink-50',    text: 'text-pink-600',    bar: 'bg-pink-500' },
   system:    { Icon: Settings2,       ring: 'ring-slate-200',   bg: 'bg-slate-50',   text: 'text-slate-600',   bar: 'bg-slate-500' },

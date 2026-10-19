@@ -9,7 +9,21 @@ import { isValidObjectId } from '@/lib/objectId'
 import { maskDoc, FREELANCER_PII, restoreMaskedValues } from '@/lib/pii'
 import { computeFreelancerFinance } from '@/lib/freelancerBalance'
 import { calcFreelancerProfileCompletion } from '@/models/Freelancer'
+import { logActivity } from '@/lib/logActivity'
+import { BIN_REGEX, TIN_REGEX, normalizeBin } from '@/lib/tax/catalog'
 import { z } from 'zod'
+
+// ── Tax identity (payee side of TDS / VDS). Blank ⇒ null. ───────────────────
+const TAX_FIELDS = ['tin', 'bin', 'payeeType', 'hasPsr']
+const binField = z.preprocess(
+  v => (typeof v === 'string' ? (v.replace(/\s+/g, '') || null) : v),
+  z.string().regex(BIN_REGEX, 'BIN must be 9 or 13 digits, e.g. 000123456-0101')
+    .transform(s => normalizeBin(s) || s).nullable().optional(),
+)
+const tinField = z.preprocess(
+  v => (typeof v === 'string' ? (v.replace(/[\s-]+/g, '') || null) : v),
+  z.string().regex(TIN_REGEX, 'TIN must be the 12-digit e-TIN').nullable().optional(),
+)
 
 const updateSchema = z.object({
   name:        z.string().min(1).optional(),
@@ -40,6 +54,15 @@ const updateSchema = z.object({
     email:       z.string().email().optional().nullable().or(z.literal('')),
     designation: z.string().optional().nullable(),
   }).optional(),
+  // Tax identity — drives the TDS rate (company vs individual vs non-resident)
+  // and the 50% uplift when no proof of return submission (PSR) is produced.
+  tin:       tinField,
+  bin:       binField,
+  payeeType: z.preprocess(
+    v => (v === null || (typeof v === 'string' && v.trim() === '') ? undefined : v),
+    z.enum(['COMPANY', 'INDIVIDUAL', 'NON_RESIDENT']).optional(),
+  ),
+  hasPsr:    z.boolean().optional(),
 })
 
 // Agencies are managed under hr.agencies.manage, individual freelancers under
@@ -155,6 +178,29 @@ export async function PUT(request, { params }) {
 
     const updated = await Freelancer.findById(params.id)
       .populate({ path: 'userId', select: 'id name email avatar phone isActive' })
+
+    // Audit tax-identity edits (the e-TIN itself never goes to the log).
+    const taxChanges = {}
+    for (const k of TAX_FIELDS) {
+      const v = parsed.data[k]
+      if (v === undefined) continue
+      const prev = freelancer[k] ?? null
+      if (String(prev ?? '') !== String(v ?? '')) {
+        taxChanges[k] = k === 'tin' ? (v ? 'updated' : 'cleared') : { from: prev, to: v }
+      }
+    }
+    logActivity({
+      userId:   session.user.id,
+      userRole: session.user.role,
+      action:   'UPDATE',
+      entity:   'FREELANCER',
+      entityId: params.id,
+      changes:  JSON.stringify({
+        fields: Object.keys(parsed.data),
+        ...(Object.keys(taxChanges).length ? { tax: taxChanges } : {}),
+      }),
+      request,
+    })
 
     return NextResponse.json({ data: maskDoc(session, updated.toJSON(), FREELANCER_PII) })
   } catch (err) {

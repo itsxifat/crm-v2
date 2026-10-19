@@ -32,12 +32,20 @@ const QuotationSchema = new mongoose.Schema(
 
     // Financial — Mixed (encrypted Number)
     subtotal:  { type: mongoose.Schema.Types.Mixed, default: 0 },
+    // taxRate/taxAmount = "MFS Charge" (mobile-payment surcharge), not VAT.
     taxRate:   { type: mongoose.Schema.Types.Mixed, default: 0 },
     taxAmount: { type: mongoose.Schema.Types.Mixed, default: 0 },
     discount:  { type: mongoose.Schema.Types.Mixed, default: 0 },
     total:     { type: mongoose.Schema.Types.Mixed, default: 0 },
     currency:  { type: String, default: 'BDT' },
     totalBDT:  { type: Number, default: null }, // BDT-equivalent of total; == total for BDT
+
+    // ── VAT (mirrors Invoice; 'NONE' keeps legacy quotations unchanged) ──
+    vatTreatment: { type: String, enum: ['STANDARD', 'REDUCED', 'ZERO_RATED', 'EXEMPT', 'NONE'], default: 'NONE' },
+    taxableValue: { type: Number, default: null },
+    vatAmount:    { type: Number, default: 0 },
+    sdAmount:     { type: Number, default: 0 },
+    serviceCode:  { type: String, default: null },
 
     notes:         { type: String,  default: null },
     terms:         { type: String,  default: null },

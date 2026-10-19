@@ -8,7 +8,7 @@ import {
   ArrowLeft, Mail, Phone, Globe, MapPin, Building2,
   FolderOpen, FileText, FileCheck, Wallet, Calendar,
   Pencil, CheckCircle, Clock, ShieldCheck, ExternalLink, Link2,
-  FileEdit, Plus, Ban, RotateCcw,
+  FileEdit, Plus, Ban, RotateCcw, Receipt, AlertTriangle,
 } from 'lucide-react'
 import Avatar from '@/components/ui/Avatar'
 import Badge from '@/components/ui/Badge'
@@ -16,6 +16,98 @@ import ClientModal from '@/components/admin/clients/ClientModal'
 import { usePermission } from '@/components/auth/Can'
 import ClientMembersPanel from '@/components/admin/clients/ClientMembersPanel'
 import CustomerCompaniesPanel from '@/components/admin/clients/CustomerCompaniesPanel'
+import { BIN_REGEX, normalizeBin } from '@/lib/tax/catalog'
+import { isVatQuotation } from '@/lib/quotation'
+
+const VAT_REG_LABELS = {
+  REGISTERED:   'VAT registered',
+  TURNOVER:     'Turnover tax enlisted',
+  UNREGISTERED: 'Not VAT registered',
+  FOREIGN:      'Foreign / overseas',
+}
+
+function TaxItem({ label, value, mono = false, hint = null }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-xs text-gray-400">{label}</p>
+      <p className={`text-sm font-medium break-all ${value ? 'text-gray-900' : 'text-gray-300'} ${mono && value ? 'font-mono' : ''}`}>
+        {value || '—'}
+      </p>
+      {hint && <p className="text-[11px] text-amber-600 mt-0.5">{hint}</p>}
+    </div>
+  )
+}
+
+// Tax identity of the client: BIN / e-TIN / VAT status and the tax the client
+// withholds from our payments (VDS / TDS).
+function TaxIdentityCard({ data, tdsLabel, onEdit }) {
+  // Legacy records kept the BIN in vatNumber — show it as the BIN.
+  const legacyDigits = data.vatNumber ? String(data.vatNumber).replace(/\s+/g, '') : ''
+  const legacyIsBin  = !!legacyDigits && BIN_REGEX.test(legacyDigits)
+  const legacyBin    = !data.bin && legacyIsBin ? (normalizeBin(legacyDigits) || legacyDigits) : null
+  const bin          = data.bin || legacyBin
+  // The old VAT number is only a separate ID when it is not this BIN (after a
+  // legacy BIN is saved as `bin`, vatNumber still holds the same number).
+  const otherTaxId = legacyBin || (legacyIsBin && normalizeBin(legacyDigits) === normalizeBin(data.bin))
+    ? null : data.vatNumber
+  const hasAny = !!(bin || data.tin || data.vatRegistrationType || data.isVdsEntity || data.isTdsEntity || otherTaxId || data.taxNotes)
+  const binMissing = !bin && ['REGISTERED', 'TURNOVER'].includes(data.vatRegistrationType)
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide flex items-center gap-2">
+          <Receipt className="w-4 h-4 text-gray-400" /> Tax &amp; VAT
+        </h3>
+        <button onClick={onEdit} className="text-xs font-medium text-blue-600 hover:underline">
+          {hasAny ? 'Edit tax details' : 'Add tax details'}
+        </button>
+      </div>
+
+      {!hasAny ? (
+        <p className="text-sm text-gray-400">
+          No BIN or TIN yet. Add the client&apos;s BIN so VAT invoices (Mushak-6.3) show it and they can claim input VAT.
+        </p>
+      ) : (
+        <div className="space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <TaxItem label="BIN" value={bin} mono hint={legacyBin ? 'From the old VAT number field' : null} />
+            <TaxItem label="TIN (e-TIN)" value={data.tin} mono />
+            <TaxItem label="VAT status" value={VAT_REG_LABELS[data.vatRegistrationType] ?? null} />
+            {otherTaxId && <TaxItem label="Foreign VAT / tax ID" value={otherTaxId} mono />}
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {data.isVdsEntity && (
+              <span className="inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">
+                Withholds VAT at source (VDS)
+              </span>
+            )}
+            {data.isTdsEntity && (
+              <span className="inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700">
+                Deducts TDS{data.defaultTdsSection ? ` · ${tdsLabel || data.defaultTdsSection}` : ''}
+              </span>
+            )}
+            {!data.isVdsEntity && !data.isTdsEntity && (
+              <span className="text-xs text-gray-400">Does not withhold VAT or income tax from our payments</span>
+            )}
+          </div>
+
+          {binMissing && (
+            <p className="flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+              Marked VAT registered but no BIN on file.
+            </p>
+          )}
+
+          {data.taxNotes && (
+            <p className="text-sm text-gray-600 bg-gray-50 rounded-lg px-3 py-2 whitespace-pre-wrap">{data.taxNotes}</p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
 
 const TABS = ['Overview', 'People', 'Companies', 'Projects', 'Invoices', 'Proposals', 'Agreements', 'Documents', 'KYC']
 
@@ -63,6 +155,8 @@ export default function ClientDetailPage() {
   const [loading,     setLoading]     = useState(true)
   const [tab,         setTab]         = useState('Overview')
   const [editOpen,    setEditOpen]    = useState(false)
+  const [editTab,     setEditTab]     = useState('basic')
+  const [tdsLabel,    setTdsLabel]    = useState(null)
   // PATCH /api/clients/[id]/status is SUPER_ADMIN-only
   const { role } = usePermission()
   const canToggleStatus = role === 'SUPER_ADMIN'
@@ -89,6 +183,27 @@ export default function ClientDetailPage() {
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load() }, [id])
+
+  // Human label for the client's default TDS section (falls back to the code).
+  const tdsCode = data?.defaultTdsSection ?? null
+  useEffect(() => {
+    if (!tdsCode) { setTdsLabel(null); return }
+    let alive = true
+    fetch('/api/tax/codes?kind=TDS_SECTION')
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => {
+        if (!alive) return
+        const hit = (Array.isArray(j?.data) ? j.data : []).find(c => c.code === tdsCode)
+        setTdsLabel(hit ? `${hit.code} — ${hit.label}` : tdsCode)
+      })
+      .catch(() => { if (alive) setTdsLabel(tdsCode) })
+    return () => { alive = false }
+  }, [tdsCode])
+
+  function openEdit(tabId = 'basic') {
+    setEditTab(tabId)
+    setEditOpen(true)
+  }
 
   function handleSaved() {
     toast.success('Client updated')
@@ -192,7 +307,7 @@ export default function ClientDetailPage() {
             <FolderOpen className="w-4 h-4" /> New Project
           </Link>
           <button
-            onClick={() => setEditOpen(true)}
+            onClick={() => openEdit('basic')}
             className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors"
           >
             <Pencil className="w-4 h-4" /> Edit
@@ -255,8 +370,10 @@ export default function ClientDetailPage() {
                   <InfoRow icon={Globe}    label="Website"  value={data.website} />
                   <InfoRow icon={Building2} label="Industry" value={data.industry} />
                   <InfoRow icon={MapPin}   label="Location" value={[data.address, data.city, data.country].filter(Boolean).join(', ')} />
-                  {data.vatNumber && <InfoRow icon={FileText} label="VAT Number" value={data.vatNumber} />}
                   {data.timezone  && <InfoRow icon={Clock}    label="Timezone"   value={data.timezone} />}
+                </div>
+                <div className="pt-5 border-t border-gray-100">
+                  <TaxIdentityCard data={data} tdsLabel={tdsLabel} onEdit={() => openEdit('tax')} />
                 </div>
               </div>
               <div className="space-y-5">
@@ -413,8 +530,17 @@ export default function ClientDetailPage() {
                         </div>
                       </div>
                       <div className="flex items-center gap-3 shrink-0">
-                        <span className="text-sm font-semibold text-gray-800">
-                          {q.currency === 'BDT' ? '৳' : q.currency} {(q.total ?? 0).toLocaleString()}
+                        <span className="text-right">
+                          <span className="block text-sm font-semibold text-gray-800">
+                            {q.currency === 'BDT' ? '৳' : q.currency} {(q.total ?? 0).toLocaleString()}
+                          </span>
+                          {isVatQuotation(q) && (
+                            <span className="block text-[11px] text-gray-400">
+                              {Number(q.vatAmount) > 0 ? 'incl. VAT'
+                                : q.vatTreatment === 'ZERO_RATED' ? 'Zero-rated'
+                                : q.vatTreatment === 'EXEMPT' ? 'VAT exempt' : 'No VAT charged'}
+                            </span>
+                          )}
                         </span>
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                           q.status === 'ACCEPTED' ? 'bg-green-100 text-green-700' :
@@ -560,6 +686,7 @@ export default function ClientDetailPage() {
         open={editOpen}
         onOpenChange={setEditOpen}
         client={data}
+        initialTab={editTab}
         onSaved={handleSaved}
       />
     </div>

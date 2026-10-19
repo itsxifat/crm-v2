@@ -6,14 +6,121 @@ import connectDB from '@/lib/mongodb'
 import { Invoice, Project, Client, User, CombinedInvoice } from '@/models'
 import { resolveActiveClient } from '@/lib/clientAccess'
 import { logActivity } from '@/lib/logActivity'
-import { requirePerm, canDo } from '@/lib/rbac'
+import { requirePerm, canDo, canDoAny } from '@/lib/rbac'
+import { maskDoc, INVOICE_PII } from '@/lib/pii'
 import { ciContains } from '@/lib/searchMatch'
 import { ensureCombinedInvoice, toObjectId, NON_BILLABLE_STATUSES } from '@/lib/combinedInvoice'
-import { computeInvoiceTotals } from '@/lib/invoiceTotals'
+import { computeInvoiceTotals, INVOICE_VAT_TREATMENTS } from '@/lib/invoiceTotals'
+import { isValidObjectId } from '@/lib/objectId'
+import { getFinanceSettings } from '@/lib/finance/settings'
+import { VAT_TREATMENTS, BIN_REGEX } from '@/lib/tax/catalog'
+import { BASE_CURRENCY, isValidCurrency } from '@/lib/currencies'
+import { parseDhakaDay } from '@/lib/dhakaTime'
 
 // Mixed-typed money fields can hold legacy non-numeric values; coerce defensively
 // so $sort / $group never blow up on one bad document.
 const num = (field) => ({ $convert: { input: `$${field}`, to: 'double', onError: 0, onNull: 0 } })
+
+// ── VAT defaults ─────────────────────────────────────────────────────────────
+
+/** settings.vat, or null when finance settings cannot be read (legacy behaviour then applies). */
+async function loadVatSettings() {
+  try {
+    const settings = await getFinanceSettings()
+    return settings?.vat ?? null
+  } catch (err) {
+    console.error('[api/invoices] finance settings unavailable', err)
+    return null
+  }
+}
+
+const isBlank = (v) => v === undefined || v === null || v === ''
+
+/** Rate a treatment implies when the body gives none (company default rate for the company default treatment). */
+function defaultRateFor(treatment, vat) {
+  if (vat && treatment === vat.defaultSalesTreatment && Number.isFinite(Number(vat.defaultSalesRate)))
+    return Number(vat.defaultSalesRate)
+  return VAT_TREATMENTS.find(t => t.value === treatment)?.defaultRate ?? 0
+}
+
+/**
+ * Default VAT setup for a NEW invoice to `client`:
+ *   - company not VAT registered (turnover / unregistered) → NONE
+ *   - foreign client → ZERO_RATED (export of services)
+ *   - otherwise finance settings vat.defaultSalesTreatment (+ rate + service code)
+ * With no readable settings the legacy behaviour (no VAT) applies.
+ */
+function vatDefaultsFor(vat, client) {
+  if (!vat || vat.registrationType !== 'REGISTERED')
+    return { vatTreatment: 'NONE', vatRate: 0, serviceCode: null }
+  if (client?.vatRegistrationType === 'FOREIGN')
+    return { vatTreatment: 'ZERO_RATED', vatRate: 0, serviceCode: vat.defaultServiceCode ?? null }
+  const treatment = INVOICE_VAT_TREATMENTS.includes(vat.defaultSalesTreatment) ? vat.defaultSalesTreatment : 'NONE'
+  return {
+    vatTreatment: treatment,
+    vatRate:      treatment === 'NONE' ? 0 : defaultRateFor(treatment, vat),
+    serviceCode:  treatment === 'NONE' ? null : (vat.defaultServiceCode ?? null),
+  }
+}
+
+const cleanText = (v, max) => {
+  if (isBlank(v)) return null
+  const s = String(v).trim()
+  return s ? s.slice(0, max) : null
+}
+
+const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100
+
+/**
+ * BDT equivalent of an invoice total. BDT invoices: the total itself. Other
+ * currencies: body `totalBDT`, else `fxRate` (BDT per unit) × total, else null
+ * (unknown — the tax ledger then records the foreign figure with a note).
+ * @returns {{ totalBDT: number|null } | { error: string }}
+ */
+function resolveTotalBDT(currency, total, { totalBDT, fxRate } = {}) {
+  if (currency === BASE_CURRENCY) return { totalBDT: round2(total) }
+  if (!isBlank(totalBDT)) {
+    const v = Number(totalBDT)
+    if (!Number.isFinite(v) || v <= 0) return { error: 'BDT equivalent of the total must be a positive amount' }
+    return { totalBDT: round2(v) }
+  }
+  if (!isBlank(fxRate)) {
+    const r = Number(fxRate)
+    if (!Number.isFinite(r) || r <= 0) return { error: 'Exchange rate must be a positive number (BDT per unit)' }
+    return { totalBDT: round2(Number(total) * r) }
+  }
+  return { totalBDT: null }
+}
+
+// GET /api/invoices?view=vat-defaults&clientId=… — what the invoice form should
+// pre-select. Lives here (not /api/finance/settings) so sales staff who can raise
+// invoices but hold no finance/tax permission still get the company's defaults.
+async function vatDefaultsResponse(session, searchParams) {
+  if (!canDoAny(session, ['sales.invoices.create', 'sales.invoices.update']))
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+
+  const clientId = searchParams.get('clientId')
+  let client = null
+  if (clientId) {
+    if (!isValidObjectId(clientId)) return NextResponse.json({ error: 'Invalid client' }, { status: 400 })
+    client = await Client.findById(clientId).select('vatRegistrationType bin vatNumber').lean()
+    if (!client) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
+
+  const vat = await loadVatSettings()
+  const defaults = vatDefaultsFor(vat, client)
+  const legacyBin = client?.vatNumber && BIN_REGEX.test(String(client.vatNumber).replace(/\s/g, ''))
+  return NextResponse.json({
+    data: {
+      ...defaults,
+      registrationType: vat?.registrationType ?? null,
+      settingsAvailable: !!vat,
+      client: client
+        ? { vatRegistrationType: client.vatRegistrationType ?? null, hasBin: !!(client.bin || legacyBin) }
+        : null,
+    },
+  })
+}
 
 // Whitelisted sort keys → the expression they sort on.
 const SORT_FIELDS = {
@@ -60,6 +167,13 @@ export async function GET(request) {
   try {
     const session = await getServerSession(authOptions)
     if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+
+    const { searchParams } = new URL(request.url)
+    if (searchParams.get('view') === 'vat-defaults') {
+      await connectDB()
+      return await vatDefaultsResponse(session, searchParams)
+    }
+
     // Staff need sales.invoices.view; CLIENT is scoped to own company below;
     // FREELANCER / VENDOR have no access to invoices.
     const isClient = session.user.role === 'CLIENT'
@@ -67,7 +181,6 @@ export async function GET(request) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     await connectDB()
 
-    const { searchParams } = new URL(request.url)
     const page      = Math.max(1, parseInt(searchParams.get('page')  ?? '1',  10) || 1)
     const limit     = Math.min(200, Math.max(1, parseInt(searchParams.get('limit') ?? '20', 10) || 20))
     const status    = searchParams.get('status')
@@ -102,13 +215,23 @@ export async function GET(request) {
       and.push(ids.length ? { $or: [{ projectId: { $in: ids } }, { projectIds: { $in: ids } }] } : { _id: null })
     }
 
+    // 'YYYY-MM-DD' filters are Asia/Dhaka calendar days (end day inclusive),
+    // independent of the server's timezone.
     if (startDate || endDate) {
       const range = {}
-      if (startDate) range.$gte = new Date(startDate)
+      if (startDate) range.$gte = parseDhakaDay(startDate)?.start ?? new Date(startDate)
       if (endDate) {
-        const end = new Date(endDate)
-        end.setHours(23, 59, 59, 999)
-        range.$lte = end
+        const day = parseDhakaDay(endDate)
+        if (day) range.$lt = day.next
+        else {
+          const end = new Date(endDate)
+          end.setHours(23, 59, 59, 999)
+          range.$lte = end
+        }
+      }
+      for (const k of ['$gte', '$lt', '$lte']) {
+        if (range[k] && Number.isNaN(range[k].getTime()))
+          return NextResponse.json({ error: 'Invalid date filter' }, { status: 400 })
       }
       and.push({ [dateField]: range })
     }
@@ -232,6 +355,8 @@ export async function GET(request) {
     const [rows, countRes, statsRes, tabRes] = await Promise.all([
       Invoice.aggregate([
         { $match: match },
+        // The rows are returned raw; the buyer's e-TIN is confidential (INVOICE_PII).
+        { $project: { 'buyer.tin': 0 } },
         withMoney, withDue,
         { $sort: sortSpec },
         { $skip: skip },
@@ -338,16 +463,58 @@ export async function POST(request) {
     if (denied) return denied
     await connectDB()
 
-    const body = await request.json()
-    const { clientId, projectId, items, issueDate, dueDate, taxRate, discount, notes, terms, currency } = body
+    const body = (await request.json()) ?? {}
+    const {
+      clientId, projectId, items, issueDate, dueDate, taxRate, discount, notes, terms, currency,
+      vatTreatment, vatRate, serviceCode, deliveryDestination, totalBDT: bodyTotalBDT, fxRate,
+    } = body
+
+    const invCurrency = isBlank(currency) ? BASE_CURRENCY : String(currency).trim().toUpperCase()
+    if (!isValidCurrency(invCurrency)) return NextResponse.json({ error: 'Unsupported currency' }, { status: 422 })
 
     if (!clientId) return NextResponse.json({ error: 'Client required' }, { status: 422 })
+    if (!isValidObjectId(clientId)) return NextResponse.json({ error: 'Invalid client' }, { status: 422 })
+    if (projectId && !isValidObjectId(projectId)) return NextResponse.json({ error: 'Invalid project' }, { status: 422 })
+
+    const client = await Client.findById(clientId).select('vatRegistrationType').lean()
+    if (!client) return NextResponse.json({ error: 'Client not found' }, { status: 422 })
+
+    // A project invoice must bill the project's own client — otherwise that
+    // client's portal would show another company's project, and the project's
+    // rollup / payments would mix two clients' money.
+    if (projectId) {
+      const project = await Project.findById(projectId).select('clientId').lean()
+      if (!project) return NextResponse.json({ error: 'Project not found', field: 'projectId' }, { status: 422 })
+      if (String(project.clientId) !== String(clientId))
+        return NextResponse.json({ error: 'This project belongs to another client', field: 'projectId' }, { status: 422 })
+    }
+
+    // VAT setup: the body wins; otherwise the company default from finance
+    // settings (foreign clients → zero-rated export of services).
+    const vat = await loadVatSettings()
+    const defaults = isBlank(vatTreatment) ? vatDefaultsFor(vat, client) : null
+    const treatment = defaults ? defaults.vatTreatment : String(vatTreatment).toUpperCase()
+    if (!INVOICE_VAT_TREATMENTS.includes(treatment))
+      return NextResponse.json({ error: 'Invalid VAT treatment' }, { status: 422 })
+    if (treatment !== 'NONE' && vat && vat.registrationType !== 'REGISTERED')
+      return NextResponse.json({
+        error: 'The company is not VAT registered (Tax & VAT → Tax Settings), so invoices cannot carry VAT. Choose "No VAT".',
+      }, { status: 422 })
+
+    const defaultVatRate = !isBlank(vatRate) ? vatRate : (defaults ? defaults.vatRate : defaultRateFor(treatment, vat))
 
     // Recalculate + validate totals server-side (quantity > 0, rate >= 0,
-    // 0 <= discount <= subtotal + tax, so a total can never go negative)
-    const calc = computeInvoiceTotals({ items, taxRate, discount })
+    // discount within bounds, VAT/SD rates in range) so a total can never go negative
+    const calc = computeInvoiceTotals({ items, taxRate, discount, vatTreatment: treatment, defaultVatRate })
     if (calc.error) return NextResponse.json({ error: calc.error }, { status: 422 })
     const { items: processedItems, subtotal, taxAmount: taxAmt, total } = calc
+
+    const bdt = resolveTotalBDT(invCurrency, total, { totalBDT: bodyTotalBDT, fxRate })
+    if (bdt.error) return NextResponse.json({ error: bdt.error, field: 'totalBDT' }, { status: 422 })
+
+    const svcCode = serviceCode !== undefined
+      ? cleanText(serviceCode, 20)
+      : (defaults ? defaults.serviceCode : null)
 
     const invoice = await new Invoice({
       clientId,
@@ -360,7 +527,14 @@ export async function POST(request) {
       taxAmount:   taxAmt,
       discount:    calc.discount,
       total,
-      currency:    currency ?? 'BDT',
+      currency:    invCurrency,
+      totalBDT:    bdt.totalBDT,
+      vatTreatment:        calc.vatTreatment,
+      taxableValue:        calc.taxableValue,
+      vatAmount:           calc.vatAmount,
+      sdAmount:            calc.sdAmount,
+      serviceCode:         treatment === 'NONE' ? null : svcCode,
+      deliveryDestination: cleanText(deliveryDestination, 300),
       notes:       notes || null,
       terms:       terms || null,
       createdBy:   session.user.id,
@@ -376,8 +550,14 @@ export async function POST(request) {
       }
     }
 
+    // Only what the form needs back — never the full Client (KYC, e-TIN, contact
+    // details, staff notes); the response is masked like GET /api/invoices/:id.
     await invoice.populate([
-      { path: 'clientId',  populate: { path: 'userId', select: 'name email avatar' } },
+      {
+        path: 'clientId',
+        select: 'company clientCode clientType contactPerson bin vatRegistrationType userId',
+        populate: { path: 'userId', select: 'name avatar' },
+      },
       { path: 'projectId', select: 'name projectCode venture' },
     ])
 
@@ -387,12 +567,15 @@ export async function POST(request) {
       action:   'CREATE',
       entity:   'INVOICE',
       entityId: invoice._id.toString(),
-      changes:  JSON.stringify({ invoiceNumber: invoice.invoiceNumber, total: invoice.total, currency: invoice.currency }),
+      changes:  JSON.stringify({
+        invoiceNumber: invoice.invoiceNumber, total: invoice.total, currency: invoice.currency,
+        vatTreatment: invoice.vatTreatment, vatAmount: invoice.vatAmount,
+      }),
       request,
     })
 
     return NextResponse.json({
-      data: invoice.toJSON(),
+      data: maskDoc(session, invoice.toJSON(), INVOICE_PII),
       combined: combined ? { id: combined._id.toString(), combinedNumber: combined.combinedNumber } : null,
     }, { status: 201 })
   } catch (err) {

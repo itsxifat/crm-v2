@@ -11,13 +11,24 @@ import {
 import { requireStaff, canDo } from '@/lib/rbac'
 import { maskList, maskMoney, LEAD_PII } from '@/lib/pii'
 import { dhakaParts, dhakaDate, dhakaMonthStart, dhakaDayStart } from '@/lib/dhakaTime'
+import { plFilter } from '@/lib/finance/ledger'
+import { plEffect, PL_SELECT } from '@/app/api/accounts/_lib/pl'
 
 const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
 // % change that also behaves for negative baselines (e.g. profit after a loss)
 const pctChange = (cur, prev) =>
   prev !== 0 ? Math.round(((cur - prev) / Math.abs(prev)) * 100) : (cur === 0 ? 0 : (cur > 0 ? 100 : -100))
-const sumAmt = (txs) => txs.reduce((s, t) => s + (Number(t.amountBDT ?? t.amount) || 0), 0)
+const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100
+// P&L total of one side ('INCOME' | 'EXPENSE') in BDT. Only P&L kinds count
+// (transfers, capital, loans, tax payments and asset purchases are cash
+// movements, not income/expense) at their P&L value (plAmountBDT ⇒ amountBDT ⇒
+// amount for BDT rows); a reversal reduces the side it reverses, and a foreign
+// row with no BDT figure is left out instead of being summed at face value.
+const sumPlSide = (txs, side) => round2(txs.reduce((s, t) => {
+  const e = plEffect(t)
+  return e && !e.unconverted && e.side === side ? s + e.amount : s
+}, 0))
 
 export async function GET(request) {
   try {
@@ -56,14 +67,15 @@ export async function GET(request) {
       const [yr, mo]    = drillMonth.split('-').map(Number)
       const monthStart  = dhakaDate(yr, mo - 1, 1)
       const monthEnd    = dhakaDate(yr, mo, 1)
-      const txInMonth   = await Transaction.find({ date: { $gte: monthStart, $lt: monthEnd } }).select('type amount amountBDT date').lean()
+      // All ledger rows of the month (txCount = activity), P&L amounts only.
+      const txInMonth   = await Transaction.find({ date: { $gte: monthStart, $lt: monthEnd } }).select(PL_SELECT).lean()
       const daysInMonth = new Date(Date.UTC(yr, mo, 0)).getUTCDate()
       const dailyData   = []
       for (let d = 1; d <= daysInMonth; d++) {
         const dayTx   = txInMonth.filter(tx => dhakaParts(tx.date).day === d)
-        const income  = sumAmt(dayTx.filter(t => t.type === 'INCOME'))
-        const expense = sumAmt(dayTx.filter(t => t.type === 'EXPENSE'))
-        dailyData.push({ day: d, income, expense, profit: income - expense, txCount: dayTx.length })
+        const income  = sumPlSide(dayTx, 'INCOME')
+        const expense = sumPlSide(dayTx, 'EXPENSE')
+        dailyData.push({ day: d, income, expense, profit: round2(income - expense), txCount: dayTx.length })
       }
       return NextResponse.json({ data: { dailyData } })
     }
@@ -146,7 +158,7 @@ export async function GET(request) {
       skip(dash && can.tasks, () => Task.countDocuments({ ...taskFilter, status: 'COMPLETED', completedAt: { $gte: thisMonthStart } })),
 
       // find().lean() triggers post-find decryption hooks; aggregate() does not
-      skip(dash && can.finance, () => Invoice.find().select('status total paidAmount totalBDT dueDate').lean()),
+      skip(dash && can.finance, () => Invoice.find().select('status total paidAmount totalBDT currency dueDate').lean()),
 
       // Freelancer payouts awaiting account-manager approval (delivered work +
       // pending salary payouts) — replaces the old wallet "withdrawals" metric.
@@ -168,7 +180,7 @@ export async function GET(request) {
 
       skip(dash && can.projects, () => Project.find({ ...projectScope, status: { $in: ['IN_PROGRESS', 'ACTIVE', 'IN_REVIEW'] } })
         .sort({ updatedAt: -1 }).limit(5)
-        .populate({ path: 'clientId', populate: { path: 'userId', select: 'name' } })
+        .populate({ path: 'clientId', select: 'company clientCode userId', populate: { path: 'userId', select: 'name' } })
         .select('name projectCode status venture deadline currentPeriodEnd projectType clientId budget paidAmount')
         .lean()),
 
@@ -177,7 +189,7 @@ export async function GET(request) {
 
       skip(dash && can.invoiceList, () => Invoice.find({ status: { $in: ['SENT', 'OVERDUE', 'PARTIALLY_PAID'] } })
         .sort({ dueDate: 1 }).limit(5)
-        .populate({ path: 'clientId', populate: { path: 'userId', select: 'name' } })
+        .populate({ path: 'clientId', select: 'company clientCode userId', populate: { path: 'userId', select: 'name' } })
         .select('invoiceNumber status total paidAmount currency dueDate clientId').lean()),
 
       skip(dash && can.tasks, () => Task.find({ ...taskFilter, status: { $in: ['TODO', 'IN_PROGRESS'] }, dueDate: { $gte: now } })
@@ -194,7 +206,8 @@ export async function GET(request) {
     // ── Invoice stats grouped by status (JS reduce — aggregate $sum bypasses decryption) ──
     // Past-due SENT / PARTIALLY_PAID invoices count as OVERDUE even if nobody has
     // opened them yet (the stored status only flips on GET /api/invoices/[id]).
-    // `total` is the gross BDT value, `due` what is still outstanding.
+    // `total` is the gross BDT value, `due` what is still outstanding. A foreign
+    // invoice without a BDT figure is counted but never summed at face value.
     let invoiceByStatus = null
     if (allInvoices) {
       invoiceByStatus = {}
@@ -203,20 +216,24 @@ export async function GET(request) {
         if (['SENT', 'PARTIALLY_PAID'].includes(s) && inv.dueDate && new Date(inv.dueDate) < now) s = 'OVERDUE'
         const total = Number(inv.total) || 0
         const paid  = Math.min(Number(inv.paidAmount) || 0, total)
-        const rate  = inv.totalBDT != null && total > 0 ? Number(inv.totalBDT) / total : 1
-        if (!invoiceByStatus[s]) invoiceByStatus[s] = { count: 0, total: 0, due: 0 }
+        const cur   = String(inv.currency || 'BDT').toUpperCase()
+        const rate  = cur === 'BDT' ? 1 : (Number(inv.totalBDT) > 0 && total > 0 ? Number(inv.totalBDT) / total : null)
+        if (!invoiceByStatus[s]) invoiceByStatus[s] = { count: 0, total: 0, due: 0, unconvertedCount: 0 }
         invoiceByStatus[s].count++
+        if (rate === null) { invoiceByStatus[s].unconvertedCount++; continue }
         invoiceByStatus[s].total += total * rate
         invoiceByStatus[s].due   += ['PAID', 'CANCELLED', 'DRAFT'].includes(s) ? 0 : Math.max(0, total - paid) * rate
       }
+      for (const v of Object.values(invoiceByStatus)) { v.total = round2(v.total); v.due = round2(v.due) }
     }
 
     // ── Finance block ────────────────────────────────────────────────────────
     let financials = null, expenseTrend = null, revenueVsProfit = null
     if (can.finance) {
-      // Fetch 6 months of transactions once — aggregate $sum on encrypted amounts returns 0
+      // Fetch 6 months of P&L rows once (amount is a Mixed legacy field, so sums
+      // are done in JS). The transaction counts below still cover every ledger row.
       const [allTx6m, txCountThisMonth, txCountLastMonth] = await Promise.all([
-        Transaction.find({ date: { $gte: sixMonthsAgo } }).select('type amount amountBDT date').lean(),
+        Transaction.find({ date: { $gte: sixMonthsAgo }, ...plFilter() }).select(PL_SELECT).lean(),
         Transaction.countDocuments({ date: { $gte: thisMonthStart, $lt: nextMonthStart } }),
         Transaction.countDocuments({ date: { $gte: lastMonthStart, $lt: thisMonthStart } }),
       ])
@@ -225,19 +242,25 @@ export async function GET(request) {
       const inThisMonth = inRange(thisMonthStart, nextMonthStart)
       const inLastMonth = inRange(lastMonthStart, thisMonthStart)
 
-      const incomeThis  = sumAmt(inThisMonth.filter(t => t.type === 'INCOME'))
-      const incomeLast  = sumAmt(inLastMonth.filter(t => t.type === 'INCOME'))
-      const expenseThis = sumAmt(inThisMonth.filter(t => t.type === 'EXPENSE'))
-      const expenseLast = sumAmt(inLastMonth.filter(t => t.type === 'EXPENSE'))
-      const profitThis  = incomeThis  - expenseThis
-      const profitLast  = incomeLast  - expenseLast
+      const incomeThis  = sumPlSide(inThisMonth, 'INCOME')
+      const incomeLast  = sumPlSide(inLastMonth, 'INCOME')
+      const expenseThis = sumPlSide(inThisMonth, 'EXPENSE')
+      const expenseLast = sumPlSide(inLastMonth, 'EXPENSE')
+      const profitThis  = round2(incomeThis  - expenseThis)
+      const profitLast  = round2(incomeLast  - expenseLast)
 
       financials = {
         income:       { value: incomeThis,  prevValue: incomeLast,  change: pctChange(incomeThis,  incomeLast)  },
         expense:      { value: expenseThis, prevValue: expenseLast, change: pctChange(expenseThis, expenseLast) },
         profit:       { value: profitThis,  prevValue: profitLast,  change: pctChange(profitThis,  profitLast)  },
-        grossMargin:  { value: incomeThis  > 0 ? Math.round((profitThis  / incomeThis)  * 100) : 0 },
-        expenseRatio: { value: incomeThis  > 0 ? Math.round((expenseThis / incomeThis)  * 100) : 0 },
+        grossMargin:  {
+          value:     incomeThis > 0 ? Math.round((profitThis  / incomeThis) * 100) : 0,
+          prevValue: incomeLast > 0 ? Math.round((profitLast  / incomeLast) * 100) : 0,
+        },
+        expenseRatio: {
+          value:     incomeThis > 0 ? Math.round((expenseThis / incomeThis) * 100) : 0,
+          prevValue: incomeLast > 0 ? Math.round((expenseLast / incomeLast) * 100) : 0,
+        },
         transactions: { value: txCountThisMonth, prevValue: txCountLastMonth, change: pctChange(txCountThisMonth, txCountLastMonth) },
       }
 
@@ -249,11 +272,11 @@ export async function GET(request) {
         const end     = dhakaMonthStart(now, -i + 1)
         const { year, month } = dhakaParts(start)
         const monthTx = inRange(start, end)
-        const rev     = sumAmt(monthTx.filter(t => t.type === 'INCOME'))
-        const exp     = sumAmt(monthTx.filter(t => t.type === 'EXPENSE'))
+        const rev     = sumPlSide(monthTx, 'INCOME')
+        const exp     = sumPlSide(monthTx, 'EXPENSE')
         const label   = { month: `${MONTH_SHORT[month]} ${String(year).slice(-2)}`, key: `${year}-${String(month + 1).padStart(2, '0')}` }
         expenseTrend.push({ ...label, expense: exp })
-        revenueVsProfit.push({ ...label, revenue: rev, profit: rev - exp })
+        revenueVsProfit.push({ ...label, revenue: rev, profit: round2(rev - exp) })
       }
     }
 

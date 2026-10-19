@@ -9,8 +9,10 @@ import { canDo } from '@/lib/rbac'
 // Credential blobs are only ever served (masked) by their dedicated endpoints.
 const SECRET_KEYS = ['email_accounts', 'whatsapp_accounts']
 // Keys owned by dedicated endpoints / the system — never writable through the
-// generic bulk upsert (credentials merge masked values; gain_disabled seals bootstrap).
-const RESERVED_KEYS = [...SECRET_KEYS, 'gain_disabled', 'crm_config']
+// generic bulk upsert (credentials merge masked values; gain_disabled seals bootstrap;
+// finance_settings is validated, permission-split and audited by /api/finance/settings,
+// and holds the books/tax period locks).
+const RESERVED_KEYS = [...SECRET_KEYS, 'gain_disabled', 'crm_config', 'finance_settings']
 // Groups any authenticated user (incl. client portal) may read — e.g. invoice letterhead.
 const PUBLIC_GROUPS = ['company']
 

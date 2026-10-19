@@ -7,13 +7,14 @@ import { ProjectExpense } from '@/models'
 import { requirePerm } from '@/lib/rbac'
 import { unwindExpenseLinks } from '@/lib/expensePayment'
 import { isValidObjectId } from '@/lib/objectId'
+import { logActivity } from '@/lib/logActivity'
 
 // Approve / mark-paid / reject now live on the unified endpoint: PATCH /api/expenses/:id
 // (it also handles project-less salary & reimbursement expenses). This route only
 // deletes an unpaid (PENDING / REJECTED) expense of THIS project — same rules as
 // DELETE /api/expenses/:id: a PAID / AUTHORIZED expense has a ledger entry and
 // must be reversed with a counter-entry instead.
-export async function DELETE(_, { params }) {
+export async function DELETE(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
     const denied  = requirePerm(session, 'finance.payments.confirm')
@@ -29,6 +30,15 @@ export async function DELETE(_, { params }) {
       return NextResponse.json({ error: 'A paid or authorized expense cannot be deleted — record a reversing entry instead' }, { status: 409 })
     }
     await unwindExpenseLinks(expense)
+    logActivity({
+      userId:   session.user.id,
+      userRole: session.user.role,
+      action:   'DELETE',
+      entity:   'EXPENSE',
+      entityId: expense._id.toString(),
+      changes:  JSON.stringify({ expenseId: expense.expenseId ?? null, projectId: params.id, title: expense.title, amount: expense.amount, currency: expense.currency, status: expense.status }),
+      request,
+    })
     return NextResponse.json({ success: true })
   } catch (err) {
     console.error('[DELETE expense]', err)

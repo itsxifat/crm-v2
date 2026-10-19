@@ -5,9 +5,10 @@ import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { ProjectPayment } from '@/models'
 import { canDoAny } from '@/lib/rbac'
+import { isValidObjectId } from '@/lib/objectId'
 import { maskList, INVOICE_PII } from '@/lib/pii'
 
-// GET /api/project-payments?status=&page=&limit=
+// GET /api/project-payments?status=&invoiceId=&projectId=&page=&limit=
 export async function GET(request) {
   try {
     const session = await getServerSession(authOptions)
@@ -25,19 +26,27 @@ export async function GET(request) {
 
     const filter = {}
     if (status) {
-      if (!['PENDING_CONFIRMATION', 'CONFIRMED', 'REJECTED'].includes(status))
+      if (!['PENDING_CONFIRMATION', 'CONFIRMED', 'REJECTED', 'REVERSED', 'REVERSING'].includes(status))
         return NextResponse.json({ error: 'Invalid status' }, { status: 400 })
       filter.status = status
+    }
+    for (const key of ['invoiceId', 'projectId']) {
+      const v = searchParams.get(key)
+      if (!v) continue
+      if (!isValidObjectId(v)) return NextResponse.json({ error: `Invalid ${key}` }, { status: 400 })
+      filter[key] = v
     }
 
     const [payments, total] = await Promise.all([
       ProjectPayment.find(filter)
         .skip(skip).limit(limit).sort({ createdAt: -1 })
         .populate({ path: 'projectId', select: 'name projectCode venture currency' })
-        .populate({ path: 'invoiceId', select: 'invoiceNumber total paidAmount status' })
+        .populate({ path: 'invoiceId', select: 'invoiceNumber total paidAmount status currency vatTreatment vatAmount sdAmount taxableValue withheldVds withheldTds creditedAmount issuedAt' })
         .populate({ path: 'clientId', select: 'clientCode company userId', populate: { path: 'userId', select: 'name email avatar' } })
         .populate('submittedBy', 'name avatar')
-        .populate('confirmedBy', 'name'),
+        .populate('confirmedBy', 'name')
+        .populate('reversedBy', 'name')
+        .populate('accountId', 'name type currency last4 bankName mfsProvider'),
       ProjectPayment.countDocuments(filter),
     ])
 

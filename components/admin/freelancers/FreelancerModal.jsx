@@ -9,8 +9,15 @@ import toast from 'react-hot-toast'
 import Modal, { ModalFooter } from '@/components/ui/Modal'
 import Select from '@/components/ui/Select'
 import { currencyOptions } from '@/lib/currencies'
+import { BIN_REGEX, TIN_REGEX, normalizeBin } from '@/lib/tax/catalog'
 
 const AGENCY_TYPES = ['Production House', 'Design Studio', 'Marketing Agency', 'IT Company', 'Other']
+
+const PAYEE_TYPES = [
+  { value: 'INDIVIDUAL',   label: 'Individual (resident)' },
+  { value: 'COMPANY',      label: 'Company / firm' },
+  { value: 'NON_RESIDENT', label: 'Non-resident (abroad)' },
+]
 
 // ── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -18,6 +25,18 @@ const AGENCY_TYPES = ['Production House', 'Design Studio', 'Marketing Agency', '
 // Accept an untouched masked value; the API restores the stored value for it.
 const masked = z.string().refine(v => v.includes('••'))
 const isMasked = v => typeof v === 'string' && v.includes('••')
+const binDigits = v => String(v ?? '').replace(/\s+/g, '')
+const tinDigits = v => String(v ?? '').replace(/[\s-]+/g, '')
+
+// Tax identity (payee side of TDS / VDS): e-TIN 12 digits, BIN 9 or 13 digits.
+const taxFields = {
+  tin: z.string().optional()
+    .refine(v => !v || isMasked(v) || !tinDigits(v) || TIN_REGEX.test(tinDigits(v)), 'TIN must be the 12-digit e-TIN'),
+  bin: z.string().optional()
+    .refine(v => !v || !binDigits(v) || BIN_REGEX.test(binDigits(v)), 'BIN must be 9 or 13 digits, e.g. 000123456-0101'),
+  payeeType: z.enum(['COMPANY', 'INDIVIDUAL', 'NON_RESIDENT']).optional(),
+  hasPsr:    z.boolean().optional(),
+}
 
 const salaryFields = {
   employmentMode:  z.enum(['PROJECT', 'SALARY']).default('PROJECT'),
@@ -36,6 +55,7 @@ const freelancerSchema = z.object({
   skills: z.string().optional(),
   bio:    z.string().optional(),
   ...salaryFields,
+  ...taxFields,
 }).superRefine((d, ctx) => {
   if (d.employmentMode === 'SALARY') {
     if (!d.salaryAmount) ctx.addIssue({ path: ['salaryAmount'], code: 'custom', message: 'Salary amount required' })
@@ -54,7 +74,20 @@ const agencySchema = z.object({
   contactEmail:       z.string().email().or(masked).optional().or(z.literal('')),
   contactDesignation: z.string().optional(),
   paymentCurrency:    z.string().default('BDT'),
+  ...taxFields,
 })
+
+/** Tax-identity part of the request body. An untouched masked TIN is omitted. */
+function taxPayload(data, initialTin) {
+  const bin = binDigits(data.bin)
+  const out = {
+    bin:       bin ? (normalizeBin(bin) || bin) : null,
+    payeeType: data.payeeType || undefined,
+    hasPsr:    !!data.hasPsr,
+  }
+  if (!(isMasked(data.tin) && data.tin === initialTin)) out.tin = tinDigits(data.tin) || null
+  return out
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -94,12 +127,26 @@ export default function FreelancerModal({ open, onOpenChange, freelancer, onSave
   })
 
   const employmentMode = watch('employmentMode')
+  const payeeTypeValue = watch('payeeType')
+  const hasPsrValue    = watch('hasPsr')
+  const initialTin     = isEdit ? (freelancer?.tin ?? '') : ''
+  const defaultPayee   = isAgency ? 'COMPANY' : 'INDIVIDUAL'
 
   useEffect(() => {
     if (!open) return
+    // Tax identity defaults shared by both forms.
+    const tax = isEdit
+      ? {
+          tin:       freelancer.tin ?? '',
+          bin:       freelancer.bin ?? '',
+          payeeType: freelancer.payeeType ?? defaultPayee,
+          hasPsr:    !!freelancer.hasPsr,
+        }
+      : { tin: '', bin: '', payeeType: defaultPayee, hasPsr: false }
     if (isEdit) {
       if (isAgency) {
         reset({
+          ...tax,
           email:              freelancer.userId?.email            ?? '',
           agencyName:         freelancer.agencyInfo?.agencyName   ?? '',
           agencyPhone:        freelancer.agencyInfo?.phone        ?? '',
@@ -113,6 +160,7 @@ export default function FreelancerModal({ open, onOpenChange, freelancer, onSave
         })
       } else {
         reset({
+          ...tax,
           name:            freelancer.userId?.name  ?? '',
           email:           freelancer.userId?.email ?? '',
           phone:           freelancer.userId?.phone ?? '',
@@ -128,12 +176,16 @@ export default function FreelancerModal({ open, onOpenChange, freelancer, onSave
         })
       }
     } else {
-      reset({ employmentMode: 'PROJECT', paymentCurrency: 'BDT' })
+      reset({ employmentMode: 'PROJECT', paymentCurrency: 'BDT', ...tax })
     }
-  }, [open, isEdit, freelancer, isAgency, reset])
+  }, [open, isEdit, freelancer, isAgency, reset, defaultPayee])
 
   async function onSubmit(data) {
    try {
+    if (isMasked(data.tin) && data.tin !== initialTin) {
+      toast.error('Clear the hidden TIN fully, then type the full 12-digit e-TIN')
+      return
+    }
     let body
     if (isAgency) {
       body = {
@@ -153,6 +205,7 @@ export default function FreelancerModal({ open, onOpenChange, freelancer, onSave
           email:       data.contactEmail       || null,
           designation: data.contactDesignation || null,
         },
+        ...taxPayload(data, initialTin),
       }
     } else {
       body = {
@@ -172,6 +225,7 @@ export default function FreelancerModal({ open, onOpenChange, freelancer, onSave
           salaryEndDate:   data.salaryEndDate || null,
           salaryActive:    Boolean(data.salaryAmount && data.salaryDay),
         } : { employmentMode: 'PROJECT' }),
+        ...taxPayload(data, initialTin),
       }
     }
 
@@ -179,7 +233,11 @@ export default function FreelancerModal({ open, onOpenChange, freelancer, onSave
     const method = isEdit ? 'PUT' : 'POST'
     const res    = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     const json   = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(json.error ?? `Failed to save (${res.status})`)
+    if (!res.ok) {
+      // Surface the first field message of a 422 { details: zod.flatten() }.
+      const fieldMsg = Object.values(json?.details?.fieldErrors ?? {}).find(m => Array.isArray(m) && m.length)?.[0]
+      throw new Error(fieldMsg ?? json.error ?? `Failed to save (${res.status})`)
+    }
     // Pass the whole payload up (not just data) so the caller can report the real
     // email-delivery outcome instead of always claiming "Invitation sent!".
     onSaved(json)
@@ -290,6 +348,46 @@ export default function FreelancerModal({ open, onOpenChange, freelancer, onSave
             )}
           </>
         )}
+
+        {/* Tax identity — drives TDS when this person / agency is paid */}
+        <div className="border-t border-gray-100 pt-4 space-y-3">
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Tax identity</p>
+            <p className="text-xs text-gray-400 mt-0.5">Used to work out income tax deducted at source (TDS) when you pay {isAgency ? 'this agency' : 'this freelancer'}.</p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Field label="TIN (e-TIN)" error={errors.tin?.message}>
+              <Input register={register} name="tin" placeholder="12-digit e-TIN" className="font-mono" />
+              {!errors.tin && isMasked(initialTin) && (
+                <p className="mt-1 text-xs text-gray-400">Hidden for privacy. Leave as is, or clear it and type the new number.</p>
+              )}
+            </Field>
+            <Field label={isAgency ? 'BIN' : 'BIN (if VAT registered)'} error={errors.bin?.message}>
+              <Input register={register} name="bin" placeholder="000123456-0101" className="font-mono" />
+            </Field>
+            <Field label="Payee type (for TDS rate)" error={errors.payeeType?.message}>
+              <select {...register('payeeType')}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition bg-white">
+                {PAYEE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+              </select>
+              {payeeTypeValue === 'NON_RESIDENT' && (
+                <p className="mt-1 text-xs text-gray-400">Payments abroad fall under s.119 (non-resident) rates.</p>
+              )}
+            </Field>
+            <div className="flex items-end">
+              <label className="flex items-start gap-2 cursor-pointer pb-1">
+                <input type="checkbox" {...register('hasPsr')}
+                  className="mt-0.5 w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                <span>
+                  <span className="block text-sm font-medium text-gray-800">PSR on file</span>
+                  <span className={`block text-xs ${hasPsrValue ? 'text-gray-400' : 'text-amber-600'}`}>
+                    Proof of return submission. Without it TDS is deducted at 1.5× the normal rate.
+                  </span>
+                </span>
+              </label>
+            </div>
+          </div>
+        </div>
 
         {/* Engagement & currency */}
         <div className="border-t border-gray-100 pt-4 space-y-4">

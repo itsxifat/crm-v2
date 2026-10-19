@@ -64,6 +64,8 @@ export default function ClientCombinedInvoicePage() {
           phone:   d.company_phone   ?? '',
           email:   d.company_email   ?? '',
           website: d.company_website ?? '',
+          bin:     d.company_bin     ?? '',
+          tin:     d.company_tin     ?? '',
         })
       })
       .catch(() => {})

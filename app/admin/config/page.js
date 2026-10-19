@@ -3,11 +3,12 @@
 import { useState, useEffect, useRef, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { useSession } from 'next-auth/react'
+import Link from 'next/link'
 import {
   Mail, Plus, Trash2, Pencil, Save, X, Check, Loader2,
   Eye, EyeOff, Send, ChevronDown, ChevronUp, ShieldCheck,
   MessageCircle, ExternalLink, Building2, ShieldAlert, Users, UserCheck,
-  CreditCard, GripVertical, ChevronRight, Settings2, AlertTriangle,
+  CreditCard, GripVertical, ChevronRight, Settings2, AlertTriangle, Receipt,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/utils'
@@ -827,6 +828,8 @@ function ConfigContent() {
 
   // ── Company ───────────────────────────────────────────────────────────────────
   const [company,        setCompany]        = useState({ name: '', address: '', phone: '', email: '', website: '' })
+  // Read-only: BIN/TIN are edited in Tax & VAT → Tax Settings (company_bin / company_tin).
+  const [companyTax,     setCompanyTax]     = useState({ bin: '', tin: '' })
   const [companyLoaded,  setCompanyLoaded]  = useState(false)
   const [companyLoading, setCompanyLoading] = useState(false)
   const [companySaving,  setCompanySaving]  = useState(false)
@@ -875,6 +878,7 @@ function ConfigContent() {
       .then(j => {
         const d = j.data ?? {}
         setCompany({ name: d.company_name ?? '', address: d.company_address ?? '', phone: d.company_phone ?? '', email: d.company_email ?? '', website: d.company_website ?? '' })
+        setCompanyTax({ bin: d.company_bin ?? '', tin: d.company_tin ?? '' })
         setCompanyLoaded(true)
         setCompanyLoading(false)
       })
@@ -1250,6 +1254,18 @@ function ConfigContent() {
                 <div><label className={lc}>Phone</label>       <input value={company.phone}   onChange={e => setCompany(c => ({ ...c, phone:   e.target.value }))} placeholder="e.g. +8801XXXXXXXXX"        className={ic} /></div>
                 <div><label className={lc}>Website</label>     <input value={company.website} onChange={e => setCompany(c => ({ ...c, website: e.target.value }))} placeholder="e.g. www.yourcompany.com"    className={ic} /></div>
                 <div className="sm:col-span-2"><label className={lc}>Address</label><input value={company.address} onChange={e => setCompany(c => ({ ...c, address: e.target.value }))} placeholder="e.g. 123 Main St, Dhaka, Bangladesh" className={ic} /></div>
+              </div>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
+                <Receipt className="w-4 h-4 text-gray-400 shrink-0 hidden sm:block" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-gray-700">BIN/TIN &amp; VAT settings are managed in Tax &amp; VAT → Tax Settings.</p>
+                  <p className="text-xs text-gray-400 mt-0.5 font-mono break-all">
+                    BIN {companyTax.bin || 'not set'} · TIN {companyTax.tin || 'not set'}
+                  </p>
+                </div>
+                <Link href="/admin/tax/settings" className="inline-flex items-center gap-1 text-sm font-medium text-gray-900 hover:underline shrink-0">
+                  Open Tax Settings <ExternalLink className="w-3.5 h-3.5" />
+                </Link>
               </div>
               <div className="flex justify-end pt-2">
                 <button type="submit" disabled={companySaving} className={btnPrimary}>

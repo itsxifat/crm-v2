@@ -14,7 +14,8 @@
     "db:migrate-expense-statuses": "node scripts/migrate-expense-statuses.js",
     "db:drop-collections": "node scripts/drop-collections.js",
     "db:migrate-combined-invoices": "node scripts/migrate-combined-invoices.js",
-    "db:migrate-drop-project-discount": "node scripts/migrate-drop-project-discount.js"
+    "db:migrate-drop-project-discount": "node scripts/migrate-drop-project-discount.js",
+    "db:migrate-company-items": "node scripts/migrate-company-items-to-assets.js"
   },
   "dependencies": {
     "@hello-pangea/dnd": "^16.6.0",
@@ -40,6 +41,7 @@
     "next-auth": "^4.24.10",
     "nodemailer": "^7.0.7",
     "postcss": "^8.4.47",
+    "qrcode": "^1.5.4",
     "react": "^18.3.1",
     "react-beautiful-dnd": "^13.1.1",
     "react-dom": "^18.3.1",

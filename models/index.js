@@ -43,3 +43,24 @@ export { default as ProjectDiscussion }     from './ProjectDiscussion.js'
 export { default as Quotation }             from './Quotation.js'
 export { default as Purchase }              from './Purchase.js'
 export { default as Department }            from './Department.js'
+
+// ── Finance: money accounts & reconciliation ──
+export { default as MoneyAccount }          from './MoneyAccount.js'
+export { default as Reconciliation }        from './Reconciliation.js'
+
+// ── Tax & VAT ──
+export { default as TaxEntry }              from './TaxEntry.js'
+export { default as TaxCode }               from './TaxCode.js'
+export { default as TaxFiling }             from './TaxFiling.js'
+export { default as CreditNote }            from './CreditNote.js'
+
+// ── Inventory & assets ──
+export { default as AssetCategory }         from './AssetCategory.js'
+export { default as InventoryLocation }     from './InventoryLocation.js'
+export { default as Asset }                 from './Asset.js'
+export { default as AssetEvent }            from './AssetEvent.js'
+export { default as StockItem }             from './StockItem.js'
+export { default as StockMovement }         from './StockMovement.js'
+export { default as PurchaseBill }          from './PurchaseBill.js'
+export { default as DepreciationRun }       from './DepreciationRun.js'
+export { default as AssetAudit }            from './AssetAudit.js'

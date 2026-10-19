@@ -1,6 +1,31 @@
 import mongoose from 'mongoose'
 import { nextSequence } from '../lib/sequence'
 
+// Tax breakdown of a supplier bill / payment. `amount` on the expense stays the
+// GROSS bill (incl. VAT); cash actually paid = netPayable = amount − vds − tds.
+const ExpenseTaxSchema = new mongoose.Schema({
+  vatAmount:         { type: Number,  default: 0 },      // VAT included in the bill
+  vatRate:           { type: Number,  default: null },
+  vatCreditable:     { type: Boolean, default: false },  // claim as input tax credit
+  treatment:         { type: String,  default: null },   // VAT_TREATMENTS value
+  supplierBin:       { type: String,  default: null },
+  supplierVatType:   { type: String,  default: null },   // REGISTERED | TURNOVER | UNREGISTERED | FOREIGN
+  mushakNo:          { type: String,  default: null },   // supplier's Mushak-6.3 number
+  mushakDate:        { type: Date,    default: null },
+  vatServiceCode:    { type: String,  default: null },
+  vdsRate:           { type: Number,  default: null },
+  vdsAmount:         { type: Number,  default: 0 },      // VAT deducted at source by us
+  tdsSection:        { type: String,  default: null },
+  tdsRate:           { type: Number,  default: null },
+  tdsAmount:         { type: Number,  default: 0 },      // income tax deducted at source by us
+  tdsBase:           { type: Number,  default: null },   // amount the TDS is computed on when not the bill excl. VAT (salary: gross pay)
+  payeeType:         { type: String,  default: null },   // COMPANY | INDIVIDUAL | NON_RESIDENT
+  hasPsr:            { type: Boolean, default: null },
+  higherRateApplied: { type: Boolean, default: false },
+  netPayable:        { type: Number,  default: null },
+  taxDeductible:     { type: Boolean, default: true },   // false ⇒ disallowed for income tax (e.g. cash salary/rent)
+}, { _id: false })
+
 const ProjectExpenseSchema = new mongoose.Schema(
   {
     // Human-readable id assigned to every expense on creation (EXP-YYMM-####).
@@ -32,7 +57,9 @@ const ProjectExpenseSchema = new mongoose.Schema(
     submittedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     // Three-stage flow: PENDING → PAID (payment recorded + ledger entry, paid invoice printable)
     // → AUTHORIZED (authorized invoice scan uploaded). REJECTED terminal.
-    status:      { type: String, enum: ['PENDING','PAID','AUTHORIZED','REJECTED'], default: 'PENDING' },
+    // REVERSING is transient: a recorded payment being undone (lib/expensePayment
+    // reverseExpensePayment) — it ends at PENDING, or back at PAID / AUTHORIZED on failure.
+    status:      { type: String, enum: ['PENDING','PAID','AUTHORIZED','REJECTED','REVERSING'], default: 'PENDING' },
 
     // ── Review / rejection ──
     reviewedBy:      { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
@@ -66,6 +93,19 @@ const ProjectExpenseSchema = new mongoose.Schema(
     // After PAID, synced to Transaction in accounts module
     syncedToAccounts:     { type: Boolean, default: false },
     accountsTransactionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Transaction', default: null },
+
+    // ── Money account & tax (Bangladesh VAT / withholding) ──
+    accountId:   { type: mongoose.Schema.Types.ObjectId, ref: 'MoneyAccount', default: null }, // paid from
+    channel:     { type: String, default: null },   // PAYMENT_CHANNELS value
+    tax:         { type: ExpenseTaxSchema, default: undefined },
+    // Portion of this expense capitalised as fixed assets (not charged to P&L).
+    capitalizedAmountBDT: { type: Number, default: 0 },
+    // BDT the payment added to Project.approvedExpenses (the bill excluding
+    // creditable input VAT); the reversal takes off exactly this. null ⇒ not paid,
+    // or paid before it was recorded (those payments added the gross bill).
+    projectCostBDT: { type: Number, default: null },
+    purchaseBillId: { type: mongoose.Schema.Types.ObjectId, ref: 'PurchaseBill', default: null },
+    taxEntryIds:    [{ type: mongoose.Schema.Types.ObjectId, ref: 'TaxEntry' }],
   },
   {
     timestamps: true,

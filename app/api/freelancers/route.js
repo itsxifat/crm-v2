@@ -13,6 +13,26 @@ import { sendFreelancerInviteEmail, sendEmployeeLoginEmail } from '@/lib/mailer'
 import { sendFreelancerInviteWhatsApp } from '@/lib/whatsapp'
 import { getConfig } from '@/lib/getConfig'
 import { logActivity } from '@/lib/logActivity'
+import { BIN_REGEX, TIN_REGEX, normalizeBin } from '@/lib/tax/catalog'
+import { z } from 'zod'
+
+// ── Tax identity (payee side of TDS / VDS). Blank ⇒ null. ───────────────────
+const freelancerTaxSchema = z.object({
+  tin: z.preprocess(
+    v => (typeof v === 'string' ? (v.replace(/[\s-]+/g, '') || null) : v),
+    z.string().regex(TIN_REGEX, 'TIN must be the 12-digit e-TIN').nullable().optional(),
+  ),
+  bin: z.preprocess(
+    v => (typeof v === 'string' ? (v.replace(/\s+/g, '') || null) : v),
+    z.string().regex(BIN_REGEX, 'BIN must be 9 or 13 digits, e.g. 000123456-0101')
+      .transform(s => normalizeBin(s) || s).nullable().optional(),
+  ),
+  payeeType: z.preprocess(
+    v => (v === null || (typeof v === 'string' && v.trim() === '') ? undefined : v),
+    z.enum(['COMPANY', 'INDIVIDUAL', 'NON_RESIDENT']).optional(),
+  ),
+  hasPsr: z.boolean().optional(),
+})
 
 // GET /api/freelancers
 export async function GET(request) {
@@ -212,6 +232,12 @@ export async function POST(request) {
       if (!name) return NextResponse.json({ error: 'name is required' }, { status: 422 })
     }
 
+    const taxParsed = freelancerTaxSchema.safeParse(body ?? {})
+    if (!taxParsed.success) {
+      return NextResponse.json({ error: 'Validation failed', details: taxParsed.error.flatten() }, { status: 422 })
+    }
+    const tax = taxParsed.data
+
     const displayName = type === 'AGENCY'
       ? (contactPerson?.name ?? agencyInfo?.agencyName ?? 'Agency')
       : name
@@ -251,6 +277,14 @@ export async function POST(request) {
       inviteTokenExpiry,
       // When verification is off, account is immediately active
       inviteAccepted: !requireVerification,
+      // Tax identity (model defaults apply when omitted: payeeType INDIVIDUAL, hasPsr false).
+      // An agency is a firm, so it defaults to the COMPANY TDS rate instead.
+      tin: tax.tin ?? null,
+      bin: tax.bin ?? null,
+      ...(tax.payeeType !== undefined
+        ? { payeeType: tax.payeeType }
+        : type === 'AGENCY' ? { payeeType: 'COMPANY' } : {}),
+      ...(tax.hasPsr    !== undefined && { hasPsr: tax.hasPsr }),
     }
 
     if (employmentMode === 'SALARY') {

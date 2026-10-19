@@ -19,11 +19,15 @@ const SalarySlipSchema = new mongoose.Schema(
       type:   { type: String, enum: ['EARNING', 'DEDUCTION'], required: true },
       label:  { type: String, required: true, trim: true },
       amount: { type: Number, required: true },
+      // DEDUCTION only: income tax deducted at source on salary (s.86) — it is
+      // a TDS payable to the government, not a reduction of salary cost.
+      isTax:  { type: Boolean, default: false },
     }],
 
     grossEarnings:   { type: Number, required: true }, // baseSalary + sum(EARNING items)
     totalDeductions: { type: Number, required: true }, // sum(DEDUCTION items)
     netPay:          { type: Number, required: true }, // grossEarnings - totalDeductions
+    taxDeduction:    { type: Number, default: 0 },     // sum(DEDUCTION items with isTax) — included in totalDeductions
 
     currency:  { type: String, default: 'BDT' },
     amountBDT: { type: Number, default: null }, // BDT-equivalent; == netPay for BDT

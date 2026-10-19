@@ -20,6 +20,10 @@ import DocPreview from '@/components/ui/DocPreview'
 import Select from '@/components/ui/Select'
 import DatePicker from '@/components/ui/DatePicker'
 import PeoplePicker from '@/components/ui/PeoplePicker'
+import MoneyAccountSelect, { useMoneyAccounts, invalidateMoneyAccounts, accountRequiredOn } from '@/components/finance/MoneyAccountSelect'
+import WithholdingFields, { emptyWithholding, invoiceAllowsVds } from '@/components/tax/WithholdingFields'
+import { PAYMENT_CHANNELS, channelFromPaymentMethod } from '@/lib/finance/constants'
+import { round2 } from '@/lib/tax/catalog'
 import { currencyOptions, BASE_CURRENCY } from '@/lib/currencies'
 import { dhakaDayKey } from '@/lib/dhakaTime'
 import { allowedStatusTransitions, canRenewProject } from '@/lib/projectStatus'
@@ -42,7 +46,7 @@ const fmtMoney = (amount, currency) => {
 // Date-only values (deadline, due date) are overdue only once their Dhaka
 // calendar day has passed — not from 06:00 on the day itself.
 const isPastDay = (d) => !!d && dhakaDayKey(d) < dhakaDayKey()
-const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
+const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Dhaka' }) : '—'
 const fmtDateTime = (d) => d ? new Date(d).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'
 
 const VENTURE_COLOR_PALETTE = [
@@ -464,6 +468,12 @@ function ExpenseModal({ projectId, onClose, onSaved }) {
 
 // ─── PaymentModal ─────────────────────────────────────────────────────────────
 
+const PAYMENT_CHANNEL_OPTIONS = PAYMENT_CHANNELS.filter(c => c.value !== 'INTERNAL' && c.value !== 'CHALLAN')
+const numOr0 = (v) => {
+  const n = Number(v)
+  return Number.isFinite(n) ? n : 0
+}
+
 function PaymentModal({ projectId, project, onClose, onSaved }) {
   const { paymentMethods } = useConfig()
   const [form, setForm] = useState({
@@ -474,25 +484,55 @@ function PaymentModal({ projectId, project, onClose, onSaved }) {
   const [saving,   setSaving]   = useState(false)
   const [invoices, setInvoices] = useState([])
   const [invoiceId, setInvoiceId] = useState('')
+  // The invoice list needs sales.invoices.view; without it the server links the
+  // oldest open invoice itself (and then decides the currency).
+  const [invoicesUnavailable, setInvoicesUnavailable] = useState(false)
   const { data: session } = useSession()
-  const autoConfirmed = ['SUPER_ADMIN', 'MANAGER'].includes(session?.user?.role)
+  // Confirmers (finance.payments.confirm) book the payment immediately: they pick
+  // the money account and record any VDS / TDS the client withheld.
+  const canConfirm = canDo(session, 'finance.payments.confirm')
+  const { accounts: moneyAccounts, goLiveDate } = useMoneyAccounts()
+  const [accountId,      setAccountId]      = useState(null)
+  const [account,        setAccount]        = useState(null)
+  const [channel,        setChannel]        = useState('')
+  const [channelTouched, setChannelTouched] = useState(false)
+  const [withholding,    setWithholding]    = useState(() => emptyWithholding())
+  const [amountBDT,      setAmountBDT]      = useState('')
 
   // Billable (issued, not cancelled) invoices of this project. Default to the
   // oldest one with a balance — the same invoice the server picks by default.
   useEffect(() => {
     fetch(`/api/projects/${projectId}/invoices`)
-      .then(r => r.json())
+      .then(async r => {
+        const j = await r.json().catch(() => ({}))
+        if (!r.ok) { setInvoicesUnavailable(true); return { data: [] } }
+        return j
+      })
       .then(j => {
         const billable = (j.data ?? [])
           .filter(i => !['DRAFT', 'CANCELLED'].includes(i.status))
           .sort((a, b) => new Date(a.issueDate ?? 0) - new Date(b.issueDate ?? 0))
         setInvoices(billable)
-        const def = billable.find(i => Number(i.total ?? 0) - Number(i.paidAmount ?? 0) > 0.01) ?? billable[0]
+        // A fully paid invoice cannot take a payment (the server refuses it), so with
+        // nothing outstanding the payment stays project-level unless one is picked.
+        const def = billable.find(i => Number(i.total ?? 0) - Number(i.paidAmount ?? 0) > 0.01) ?? null
         if (def) setInvoiceId(def.id)
       })
       .catch(() => {})
   }, [projectId])
   const invoice = invoices.find(i => i.id === invoiceId) ?? null
+  // An invoice payment is always in the invoice's currency (the server refuses
+  // anything else); a foreign-currency receipt also needs the BDT actually received.
+  const payCurrency = String(invoice?.currency || BASE_CURRENCY).toUpperCase()
+  const isForeign   = payCurrency !== BASE_CURRENCY
+  const money       = (n) => fmtMoney(n, payCurrency)
+  useEffect(() => { setAmountBDT('') }, [payCurrency])
+
+  // Withholding is recorded against a BDT invoice only.
+  const canWithhold = canConfirm && !!invoice && !isForeign
+  useEffect(() => {
+    if (!canWithhold) setWithholding(emptyWithholding())
+  }, [canWithhold])
 
   // Compute outstanding balance — prefer invoice, fall back to project budget
   const outstanding = (() => {
@@ -507,21 +547,71 @@ function PaymentModal({ projectId, project, onClose, onSaved }) {
     return null
   })()
 
-  const enteredAmt   = Number(form.amount) || 0
-  const amountExceedsBalance = outstanding !== null && outstanding > 0.01 && enteredAmt > outstanding + 0.01
+  const enteredAmt = Number(form.amount) || 0
+  const vds        = canWithhold ? Math.max(0, numOr0(withholding.vdsAmount)) : 0
+  const tds        = canWithhold ? Math.max(0, numOr0(withholding.tdsAmount)) : 0
+  const withheld   = round2(vds + tds)
+  const settledAmt = round2(enteredAmt + withheld)
+  const amountExceedsBalance = outstanding !== null && outstanding > 0.01 && settledAmt > outstanding + 0.01
+
+  // WithholdingFields base = value excl. VAT of the part being settled.
+  const invTotal = Number(invoice?.total ?? 0)
+  const share    = invTotal > 0 ? Math.min(1, settledAmt / invTotal) : 0
+  const vatShare = invTotal > 0 ? round2(Number(invoice?.vatAmount ?? 0) * share) : 0
+  const taxable  = invoice?.taxableValue !== null && invoice?.taxableValue !== undefined ? Number(invoice.taxableValue) : null
+  const base     = invTotal > 0 && taxable !== null
+    ? round2(taxable * share)
+    : round2(Math.max(0, settledAmt - vatShare))
+
+  const accountObj  = account ?? moneyAccounts.find(a => a.id === accountId) ?? null
+  const autoChannel = channelFromPaymentMethod(form.paymentMethod || null, accountObj) ?? ''
+  const effectiveChannel = channelTouched ? channel : autoChannel
+  // A payment dated before go-live needs no account (the server only requires one
+  // from go-live on, and accounts opened on go-live refuse earlier dates).
+  const accountLive      = accountRequiredOn(form.paymentDate, goLiveDate)
+  const accountRequired  = canConfirm && moneyAccounts.length > 0 && enteredAmt > 0 && accountLive
 
   async function save() {
-    if (!form.amount || enteredAmt <= 0) { toast.error('Amount required'); return }
-    if (amountExceedsBalance) { toast.error(`Amount exceeds outstanding balance of ৳${outstanding.toFixed(2)}`); return }
-    if (!form.receiptUrl) { toast.error('Payment proof required'); return }
+    if (!(enteredAmt > 0) && !(withheld > 0)) { toast.error('Amount required'); return }
+    if (form.amount !== '' && enteredAmt < 0) { toast.error('Amount cannot be negative'); return }
+    if (amountExceedsBalance) { toast.error(`${withheld > 0 ? 'Amount + VDS + TDS' : 'Amount'} exceeds outstanding balance of ${money(outstanding)}`); return }
+    if (enteredAmt > 0 && !form.receiptUrl) { toast.error('Payment proof required'); return }
+    if (form.paymentDate && form.paymentDate > dhakaDayKey()) { toast.error('The payment date cannot be in the future'); return }
+    if (accountRequired && !accountId) { toast.error('Select the money account the payment landed in'); return }
+    const bdtReceived = Number(amountBDT)
+    if (isForeign && amountBDT !== '' && !(bdtReceived > 0)) { toast.error('Enter a valid BDT amount received'); return }
+    // Confirmers book the payment now, so the BDT value is required; a requester
+    // may leave it for Accounts to fill in when confirming.
+    if (isForeign && canConfirm && enteredAmt > 0 && !(bdtReceived > 0)) {
+      toast.error(`Enter the BDT amount received for this ${payCurrency} payment`); return
+    }
     setSaving(true)
     try {
+      const body = {
+        ...form,
+        amount: enteredAmt,
+        // Without the invoice list the server picks the invoice and its currency.
+        ...(invoicesUnavailable && !invoice ? {} : { currency: payCurrency }),
+        ...(isForeign && bdtReceived > 0 ? { amountBDT: bdtReceived } : {}),
+        ...(invoice ? { invoiceId: invoice.id } : {}),
+        ...(canConfirm && enteredAmt > 0 ? { accountId: accountId || undefined, channel: effectiveChannel || undefined } : {}),
+        ...(canWithhold && withheld > 0 ? {
+          vdsAmount:          vds,
+          tdsAmount:          tds,
+          tdsSection:         withholding.tdsSection || null,
+          vdsCertificateNo:   withholding.vdsCertificateNo || null,
+          vdsCertificateDate: withholding.vdsCertificateDate || null,
+          tdsCertificateNo:   withholding.tdsCertificateNo || null,
+          tdsCertificateDate: withholding.tdsCertificateDate || null,
+        } : {}),
+      }
       const res  = await fetch(`/api/projects/${projectId}/payments`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, amount: enteredAmt, currency: 'BDT', ...(invoice ? { invoiceId: invoice.id } : {}) }),
+        body: JSON.stringify(body),
       })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error)
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json.error || 'Payment could not be recorded')
+      if (json.data?.status === 'CONFIRMED') invalidateMoneyAccounts()
       toast.success(json.data?.status === 'CONFIRMED'
         ? 'Payment recorded and confirmed'
         : 'Payment recorded — pending confirmation in Accounts')
@@ -533,73 +623,149 @@ function PaymentModal({ projectId, project, onClose, onSaved }) {
   const ic = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900'
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-xl border border-gray-200 w-full max-w-md p-6 space-y-4">
-        <div className="flex items-center justify-between">
+      <div className={`bg-white rounded-xl border border-gray-200 w-full ${canConfirm ? 'max-w-2xl' : 'max-w-md'} max-h-[92vh] flex flex-col`}>
+        <div className="flex items-center justify-between px-6 pt-6 pb-4 shrink-0">
           <h3 className="text-base font-semibold text-gray-900">Record Payment</h3>
           <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100"><X className="w-4 h-4 text-gray-400" /></button>
         </div>
-        {invoices.length > 1 && (
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Invoice</label>
-            <Select value={invoiceId} onChange={v => setInvoiceId(v ?? '')}
-              options={invoices.map(i => ({
-                value: i.id,
-                label: `${i.invoiceNumber} — due ৳${Math.max(0, Number(i.total ?? 0) - Number(i.paidAmount ?? 0)).toFixed(2)}`,
-              }))}
-              placeholder="Select invoice…"
-            />
-          </div>
-        )}
-        {invoice ? (
-          <div className="text-xs bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 space-y-0.5">
-            <p className="text-blue-600">Linked to invoice <strong>{invoice.invoiceNumber}</strong> — {autoConfirmed
-              ? 'the payment is confirmed immediately and updates the invoice status.'
-              : 'payment will update invoice status automatically on confirmation.'}</p>
-            {outstanding !== null && (
-              <p className={outstanding <= 0.01 ? 'text-green-600 font-medium' : 'text-blue-700'}>
-                Outstanding balance: <strong>৳{outstanding.toFixed(2)}</strong>
-                {outstanding <= 0.01 && ' — invoice fully paid'}
-              </p>
+        <div className="flex-1 overflow-y-auto px-6 space-y-4 pb-2">
+          {invoices.length > 1 && (
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Invoice</label>
+              <Select value={invoiceId} onChange={v => setInvoiceId(v ?? '')}
+                options={invoices.map(i => ({
+                  value: i.id,
+                  label: `${i.invoiceNumber} — due ${fmtMoney(Math.max(0, Number(i.total ?? 0) - Number(i.paidAmount ?? 0)), i.currency)}`,
+                }))}
+                placeholder="Select invoice…"
+              />
+            </div>
+          )}
+          {invoice ? (
+            <div className="text-xs bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 space-y-0.5">
+              <p className="text-blue-600">Linked to invoice <strong>{invoice.invoiceNumber}</strong> — {canConfirm
+                ? 'the payment is confirmed immediately and updates the invoice status.'
+                : 'payment will update invoice status automatically on confirmation.'}</p>
+              {outstanding !== null && (
+                <p className={outstanding <= 0.01 ? 'text-green-600 font-medium' : 'text-blue-700'}>
+                  Outstanding balance: <strong>{money(outstanding)}</strong>
+                  {outstanding <= 0.01 && ' — invoice fully paid'}
+                  {Number(invoice.vatAmount ?? 0) > 0 && <span className="text-blue-500"> · invoice VAT {money(invoice.vatAmount)}</span>}
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="text-xs text-gray-400 border border-gray-100 rounded-lg px-3 py-2 space-y-0.5">
+              <p>{canConfirm
+                ? 'The payment is confirmed immediately and added to income.'
+                : 'Payment will be sent to Accounts for confirmation before being added to income.'}</p>
+              {outstanding !== null && (
+                <p className="text-gray-600">Outstanding balance: <strong>৳{outstanding.toFixed(2)}</strong></p>
+              )}
+            </div>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">
+                {canWithhold ? 'Cash received (৳)' : `Amount (${isForeign ? payCurrency : '৳'}) *`}
+              </label>
+              <input type="number" step="0.01" min="0" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} onKeyDown={e => { if (e.key === '-' || e.key === 'e') e.preventDefault() }} placeholder="0.00" className={`${ic} ${amountExceedsBalance ? 'border-red-400 focus:ring-red-400' : ''}`} />
+              {amountExceedsBalance && (
+                <p className="text-xs text-red-500 mt-1">{withheld > 0 ? 'Cash + VDS + TDS exceeds' : 'Exceeds'} outstanding balance of {money(outstanding)}</p>
+              )}
+            </div>
+            {isForeign && (
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">
+                  BDT received {canConfirm ? '*' : <span className="text-gray-400 font-normal">(optional — Accounts confirms it)</span>}
+                </label>
+                <input type="number" step="0.01" min="0" value={amountBDT} onChange={e => setAmountBDT(e.target.value)}
+                  onKeyDown={e => { if (e.key === '-' || e.key === 'e') e.preventDefault() }}
+                  placeholder={`Taka value of ${payCurrency} ${enteredAmt > 0 ? enteredAmt.toFixed(2) : '…'}`} className={ic} />
+                <p className="text-[11px] text-gray-400 mt-1">The taka actually credited (bank advice / encashment certificate) — used for income and balances.</p>
+              </div>
             )}
-          </div>
-        ) : (
-          <div className="text-xs text-gray-400 border border-gray-100 rounded-lg px-3 py-2 space-y-0.5">
-            <p>{autoConfirmed
-              ? 'The payment is confirmed immediately and added to income.'
-              : 'Payment will be sent to Accounts for confirmation before being added to income.'}</p>
-            {outstanding !== null && (
-              <p className="text-gray-600">Outstanding balance: <strong>৳{outstanding.toFixed(2)}</strong></p>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Method</label>
+              <Select value={form.paymentMethod} onChange={v => setForm(f => ({ ...f, paymentMethod: v ?? 'BANK_TRANSFER' }))}
+                options={paymentMethods}
+                placeholder="Select method…"
+              />
+            </div>
+            {canConfirm && (
+              <>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">
+                    Received into {accountRequired ? '*' : <span className="text-gray-400 font-normal">(optional)</span>}
+                  </label>
+                  <MoneyAccountSelect
+                    value={accountId}
+                    onChange={(id, acc) => { setAccountId(id); setAccount(acc ?? null) }}
+                    currency={payCurrency}
+                    paymentMethod={form.paymentMethod || null}
+                    placeholder="Select bank / cash / wallet account"
+                    required={accountRequired}
+                    disabled={!(enteredAmt > 0) && withheld > 0}
+                    autoSelect={accountLive}
+                    date={form.paymentDate || null}
+                  />
+                  {moneyAccounts.length === 0 ? (
+                    <p className="mt-1 text-[11px] text-gray-400">No money accounts yet — add them in Finance → Money Accounts.</p>
+                  ) : enteredAmt > 0 && !accountLive && (
+                    <p className="mt-1 text-[11px] text-gray-400">Received before go-live ({goLiveDate}) — no money account needed.</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Channel</label>
+                  <select value={effectiveChannel} onChange={e => { setChannel(e.target.value); setChannelTouched(true) }}
+                    disabled={!(enteredAmt > 0) && withheld > 0} className={`${ic} disabled:bg-gray-50 disabled:text-gray-400`}>
+                    <option value="">Select channel…</option>
+                    {PAYMENT_CHANNEL_OPTIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                  </select>
+                </div>
+              </>
             )}
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Payment Date</label>
+              <DatePicker value={form.paymentDate || null} onChange={v => setForm(f => ({ ...f, paymentDate: v ?? '' }))} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Description</label>
+              <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Invoice ref, note…" className={ic} />
+            </div>
+            <div className="sm:col-span-2">
+              <FileUpload label={enteredAmt > 0 || !(withheld > 0) ? 'Payment Proof / Receipt *' : 'Proof / client deduction note (optional)'} value={form.receiptUrl} onUploaded={url => setForm(f => ({ ...f, receiptUrl: url }))} />
+            </div>
           </div>
-        )}
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Amount (৳) *</label>
-            <input type="number" step="0.01" min="0" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} onKeyDown={e => { if (e.key === '-' || e.key === 'e') e.preventDefault() }} placeholder="0.00" className={`${ic} ${amountExceedsBalance ? 'border-red-400 focus:ring-red-400' : ''}`} />
-            {amountExceedsBalance && (
-              <p className="text-xs text-red-500 mt-1">Exceeds outstanding balance of ৳{outstanding.toFixed(2)}</p>
-            )}
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Method</label>
-            <Select value={form.paymentMethod} onChange={v => setForm(f => ({ ...f, paymentMethod: v ?? 'BANK_TRANSFER' }))}
-              options={paymentMethods}
-              placeholder="Select method…"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Payment Date</label>
-            <DatePicker value={form.paymentDate || null} onChange={v => setForm(f => ({ ...f, paymentDate: v ?? '' }))} />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Description</label>
-            <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Invoice ref, note…" className={ic} />
-          </div>
-          <div className="col-span-2">
-            <FileUpload label="Payment Proof / Receipt *" value={form.receiptUrl} onUploaded={url => setForm(f => ({ ...f, receiptUrl: url }))} />
-          </div>
+
+          {canWithhold && (
+            <>
+              <WithholdingFields
+                mode="CUSTOMER"
+                baseAmount={base}
+                vatAmount={vatShare}
+                payeeType="COMPANY"
+                value={withholding}
+                onChange={setWithholding}
+                date={form.paymentDate || null}
+                compact
+                vdsAllowed={invoiceAllowsVds(invoice)}
+              />
+              {withheld > 0 && (
+                <div className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-xs flex flex-wrap items-center gap-x-3 gap-y-1 text-gray-600">
+                  <span>Cash ৳{enteredAmt.toFixed(2)}</span>
+                  {vds > 0 && <span>+ VDS ৳{vds.toFixed(2)}</span>}
+                  {tds > 0 && <span>+ TDS ৳{tds.toFixed(2)}</span>}
+                  <span className={`ml-auto font-semibold ${amountExceedsBalance ? 'text-red-600' : 'text-gray-900'}`}>Settles ৳{settledAmt.toFixed(2)}</span>
+                </div>
+              )}
+            </>
+          )}
+          {canConfirm && invoice && !canWithhold && (
+            <p className="text-xs text-gray-400">VDS / TDS withholding is recorded on BDT invoices only.</p>
+          )}
         </div>
-        <div className="flex gap-2 justify-end">
+        <div className="flex gap-2 justify-end px-6 py-4 border-t border-gray-100 mt-2 shrink-0">
           <button onClick={onClose} className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
           <button onClick={save} disabled={saving || amountExceedsBalance}
             className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 disabled:opacity-40 flex items-center gap-2">
@@ -1622,7 +1788,17 @@ export default function ProjectDetailPage() {
                   {payments.map(p => (
                     <tr key={p.id} className="hover:bg-gray-50/50">
                       <td className="px-5 py-3 text-sm text-gray-800">{p.description || '—'}</td>
-                      <td className="px-5 py-3 text-sm text-gray-900 whitespace-nowrap">BDT {Number(p.amount).toLocaleString()}</td>
+                      <td className="px-5 py-3 text-sm text-gray-900 whitespace-nowrap">
+                        {p.currency && p.currency !== 'BDT' ? p.currency : 'BDT'} {Number(p.amount).toLocaleString()}
+                        {(numOr0(p.vdsAmount) > 0 || numOr0(p.tdsAmount) > 0) && (
+                          <span className="block text-[11px] text-gray-400">
+                            {numOr0(p.vdsAmount) > 0 ? `+ VDS ${numOr0(p.vdsAmount).toLocaleString()}` : ''}
+                            {numOr0(p.vdsAmount) > 0 && numOr0(p.tdsAmount) > 0 ? ' · ' : ''}
+                            {numOr0(p.tdsAmount) > 0 ? `+ TDS ${numOr0(p.tdsAmount).toLocaleString()}` : ''}
+                          </span>
+                        )}
+                        {p.accountId?.name && <span className="block text-[11px] text-gray-400">into {p.accountId.name}</span>}
+                      </td>
                       <td className="px-5 py-3 text-sm text-gray-400 whitespace-nowrap">{fmtMethod(p.paymentMethod)}</td>
                       <td className="px-5 py-3 text-sm text-gray-400 whitespace-nowrap">{fmtDate(p.paymentDate)}</td>
                       <td className="px-5 py-3 whitespace-nowrap">
@@ -1630,10 +1806,11 @@ export default function ProjectDetailPage() {
                           <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
                             p.status === 'CONFIRMED' ? 'bg-green-500' :
                             p.status === 'REJECTED'  ? 'bg-red-500'   :
+                            p.status === 'REVERSED' || p.status === 'REVERSING' ? 'bg-gray-400' :
                             'bg-yellow-400'
                           }`} />
-                          <span className="text-xs text-gray-500">
-                            {p.status === 'PENDING_CONFIRMATION' ? 'Pending' : p.status === 'CONFIRMED' ? 'Confirmed' : 'Rejected'}
+                          <span className="text-xs text-gray-500" title={p.status === 'REVERSED' && p.reversalReason ? `Reversed: ${p.reversalReason}` : undefined}>
+                            {({ PENDING_CONFIRMATION: 'Pending', CONFIRMED: 'Confirmed', REJECTED: 'Rejected', REVERSING: 'Reversing…', REVERSED: 'Reversed' })[p.status] ?? p.status}
                           </span>
                         </div>
                       </td>

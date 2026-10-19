@@ -4,9 +4,12 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
-import { SalarySlip, Setting } from '@/models'
-import { requirePerm } from '@/lib/rbac'
+import { SalarySlip } from '@/models'
+import { requirePerm, canDo } from '@/lib/rbac'
 import { getConfig } from '@/lib/getConfig'
+import { getCompanyProfile } from '@/lib/finance/settings'
+import { moneyAccountText } from '@/lib/expensePayment'
+import { maskIdentity } from '@/lib/pii'
 import { amountToWords } from '@/lib/numberToWords'
 import { escapeHtml } from '@/lib/html'
 import { isValidObjectId } from '@/lib/objectId'
@@ -45,27 +48,29 @@ export async function GET(request, { params }) {
     if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     await connectDB()
 
-    const [slip, settingsDocs, appCfg] = await Promise.all([
+    const [slip, profile, appCfg] = await Promise.all([
       SalarySlip.findById(params.id)
         .populate({
           path: 'employeeId',
-          select: 'employeeId designation position department venture hireDate userId',
+          select: 'employeeId designation position department venture hireDate tin userId',
           populate: { path: 'userId', select: 'name' },
         })
-        .populate('expenseId'),
-      Setting.find({ group: 'company' }).lean(),
+        .populate({
+          path: 'expenseId',
+          populate: { path: 'accountId', select: 'name type bankName last4 mfsProvider currency' },
+        }),
+      getCompanyProfile(),
       getConfig(),
     ])
     if (!slip) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-    const cfg = {}
-    settingsDocs.forEach(d => { cfg[d.key] = d.value })
     const company = {
-      name:    cfg.company_name    ?? 'Enfinito Bangladesh',
-      address: cfg.company_address ?? '',
-      phone:   cfg.company_phone   ?? '',
-      email:   cfg.company_email   ?? '',
-      website: cfg.company_website ?? '',
+      name:    profile.name || 'Enfinito Bangladesh',
+      address: profile.address || '',
+      phone:   profile.phone || '',
+      email:   profile.email || '',
+      website: profile.website || '',
+      tin:     profile.tin || '',
     }
     const contactLine = [company.phone, company.email].filter(Boolean).join(' – ')
 
@@ -74,15 +79,26 @@ export async function GET(request, { params }) {
     const exp = s.expenseId ?? null
     const cur = s.currency ?? 'BDT'
     const isForeign = cur !== 'BDT'
+    // Employee e-TIN: shown in full only to viewers allowed to see identity numbers.
+    const empTin = emp.tin ? (canDo(session, 'pii.identity.view') ? emp.tin : maskIdentity(emp.tin)) : null
 
     const status       = exp?.status ?? 'PENDING'
     const statusLabel  = STATUS_LABEL[status]  ?? status
     const accent       = STATUS_ACCENT[status] ?? '#d97706'
     const statusBg     = STATUS_BG[status]     ?? '#fffbeb'
     const isPaid       = status === 'PAID' || status === 'AUTHORIZED'
+    // Income tax withheld at source (s.86): explicit total, else the flagged deduction lines.
+    const taxDeduction = Number(s.taxDeduction) > 0
+      ? Number(s.taxDeduction)
+      : (s.items ?? []).filter(i => i.type === 'DEDUCTION' && i.isTax).reduce((sum, i) => sum + (Number(i.amount) || 0), 0)
     // BDT actually paid (set by Accounts on payment) beats the generation-time estimate.
-    const bdtAmount    = isPaid && exp?.amountBDT != null ? exp.amountBDT : s.amountBDT
+    // With income tax withheld the expense covers net pay + tax, so scale it back to the net pay.
+    const expenseBDT   = isPaid && exp?.amountBDT != null && Number(exp.amount) > 0
+      ? Number(exp.amountBDT) * (Number(s.netPay) / Number(exp.amount))
+      : null
+    const bdtAmount    = expenseBDT ?? s.amountBDT
     const methodLabel  = appCfg.paymentMethods?.find(m => m.value === exp?.paymentMethod)?.label ?? exp?.paymentMethod ?? null
+    const accountLabel = moneyAccountText(exp?.accountId)
 
     const earningsRows = [
       { label: 'Basic Salary', amount: s.baseSalary },
@@ -98,7 +114,7 @@ export async function GET(request, { params }) {
 
     const deductionsHtml = deductionRows.length ? deductionRows.map(i => `
       <tr>
-        <td style="${TD}padding-left:0;">${escapeHtml(i.label)}</td>
+        <td style="${TD}padding-left:0;">${escapeHtml(i.label)}${i.isTax ? `<br /><span style="font-size:10px;color:#b45309;font-weight:600;">Income tax deducted (s.86)</span>` : ''}</td>
         <td style="${TD}text-align:right;padding-right:0;font-weight:500;">${money(i.amount, cur)}</td>
       </tr>`).join('') : `
       <tr><td style="${TD}padding-left:0;color:#94a3b8;font-style:italic;" colspan="2">No deductions</td></tr>`
@@ -134,7 +150,8 @@ export async function GET(request, { params }) {
       ${company.name    ? `<p style="margin:0 0 2px;font-size:13px;font-weight:700;color:#0f172a;">${escapeHtml(company.name)}</p>` : ''}
       ${company.address ? `<p style="margin:0 0 2px;font-size:11px;color:#64748b;">${escapeHtml(company.address)}</p>` : ''}
       ${contactLine     ? `<p style="margin:0 0 2px;font-size:11px;color:#64748b;">${escapeHtml(contactLine)}</p>` : ''}
-      ${company.website ? `<p style="margin:0;font-size:11px;color:#64748b;">${escapeHtml(company.website)}</p>` : ''}
+      ${company.website ? `<p style="margin:0 0 2px;font-size:11px;color:#64748b;">${escapeHtml(company.website)}</p>` : ''}
+      ${company.tin     ? `<p style="margin:0;font-size:11px;color:#475569;font-weight:600;">Employer TIN: ${escapeHtml(company.tin)}</p>` : ''}
     </div>
     <div style="text-align:right;">
       <p style="margin:0;font-size:26px;font-weight:700;color:#0f172a;letter-spacing:-0.5px;">Salary Slip</p>
@@ -175,6 +192,11 @@ export async function GET(request, { params }) {
         <p style="margin:0 0 2px;font-size:10px;color:#94a3b8;">Date of Joining</p>
         <p style="margin:0;font-size:13px;font-weight:600;color:#334155;">${fmtDate(emp.hireDate)}</p>
       </div>
+      ${empTin ? `
+      <div>
+        <p style="margin:0 0 2px;font-size:10px;color:#94a3b8;">e-TIN</p>
+        <p style="margin:0;font-size:13px;font-weight:600;color:#334155;font-family:monospace;">${escapeHtml(empTin)}</p>
+      </div>` : ''}
     </div>
   </div>
 
@@ -212,6 +234,11 @@ export async function GET(request, { params }) {
             <td style="padding:9px 0 0 0;font-size:12.5px;font-weight:700;color:#0f172a;">Total Deductions</td>
             <td style="padding:9px 0 0 0;text-align:right;font-size:12.5px;font-weight:700;color:#0f172a;">${money(s.totalDeductions, cur)}</td>
           </tr>
+          ${taxDeduction > 0 ? `
+          <tr>
+            <td style="padding:4px 0 0 0;font-size:11px;color:#b45309;">of which income tax deducted (s.86)</td>
+            <td style="padding:4px 0 0 0;text-align:right;font-size:11px;color:#b45309;font-weight:600;">${money(taxDeduction, cur)}</td>
+          </tr>` : ''}
         </tfoot>
       </table>
     </div>
@@ -232,6 +259,18 @@ export async function GET(request, { params }) {
     </p>
   </div>
 
+  ${taxDeduction > 0 ? `
+  <!-- INCOME TAX -->
+  <div style="margin-bottom:22px;border:1px solid #fde68a;border-radius:12px;background:#fffbeb;padding:12px 18px;">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;">
+      <span style="font-size:12px;font-weight:700;color:#92400e;">Income tax deducted at source (ITA 2023 s.86)</span>
+      <span style="font-size:14px;font-weight:800;color:#92400e;white-space:nowrap;">${money(taxDeduction, cur)}</span>
+    </div>
+    <p style="margin:6px 0 0;font-size:11px;color:#92400e;line-height:1.6;">
+      Deducted from this month's salary and deposited to the government on your behalf. It counts as tax already paid in your income tax return; the employer issues a salary tax certificate (Tofsil-1).
+    </p>
+  </div>` : ''}
+
   ${isPaid ? `
   <!-- PAYMENT DETAILS -->
   <div style="margin-bottom:16px;">
@@ -240,6 +279,7 @@ export async function GET(request, { params }) {
       <thead>
         <tr>
           <th style="${TH}text-align:left;padding-left:0;">Payment Date</th>
+          <th style="${TH}text-align:left;">Paid From</th>
           <th style="${TH}text-align:left;">Method</th>
           <th style="${TH}text-align:right;padding-right:0;">Reference</th>
         </tr>
@@ -247,6 +287,7 @@ export async function GET(request, { params }) {
       <tbody>
         <tr>
           <td style="${TD}padding-left:0;">${fmtDate(exp?.paidAt)}</td>
+          <td style="${TD}">${escapeHtml(accountLabel ?? '—')}</td>
           <td style="${TD}">${escapeHtml(methodLabel ?? '—')}</td>
           <td style="${TD}text-align:right;padding-right:0;font-family:monospace;font-size:11px;">${escapeHtml(exp?.paymentTxnId ?? exp?.expenseInvoiceNo ?? '—')}</td>
         </tr>

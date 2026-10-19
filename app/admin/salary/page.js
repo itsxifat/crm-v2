@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   ChevronLeft, ChevronRight, Users, Clock, CheckCircle2, FileWarning,
-  Plus, Trash2, X, Loader2, Printer, Ban, ExternalLink, Banknote,
+  Plus, Trash2, X, Loader2, Printer, Ban, ExternalLink, Banknote, AlertTriangle,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import Link from 'next/link'
@@ -22,12 +22,14 @@ import { useConfig } from '@/lib/useConfig'
 import { currencyOptions, BASE_CURRENCY } from '@/lib/currencies'
 import { amountToWords } from '@/lib/numberToWords'
 import { formatCurrency } from '@/lib/utils'
+import { dhakaDayKey } from '@/lib/dhakaTime'
 
 // ─── Period helpers ────────────────────────────────────────────────────────────
 
+// Payroll periods follow the business timezone (Asia/Dhaka), like the API —
+// not the browser's clock, which may sit in another month at a month boundary.
 function currentPeriodKey() {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  return dhakaDayKey().slice(0, 7)
 }
 function periodLabel(period) {
   const [y, m] = String(period).split('-').map(Number)
@@ -85,13 +87,19 @@ function GenerateSalaryModal({ open, onClose, employee, period, onGenerated }) {
   const baseSalary      = Number(employee.baseSalary) || 0
   const earningsTotal   = items.filter(i => i.type === 'EARNING').reduce((s, i) => s + (Number(i.amount) || 0), 0)
   const deductionsTotal = items.filter(i => i.type === 'DEDUCTION').reduce((s, i) => s + (Number(i.amount) || 0), 0)
+  // Income tax withheld at source on salary (ITA 2023 s.86) — part of the deductions.
+  const taxTotal        = items.filter(i => i.type === 'DEDUCTION' && i.isTax).reduce((s, i) => s + (Number(i.amount) || 0), 0)
   const gross = baseSalary + earningsTotal
   const net   = gross - deductionsTotal
   const isForeign = currency !== BASE_CURRENCY
   const netWords  = net > 0 ? amountToWords(isForeign ? Number(amtBDT) || 0 : net, isForeign ? BASE_CURRENCY : currency) : ''
+  const missingTin = taxTotal > 0 && employee.hasTin === false
 
   function addItem(type) {
-    setItems(list => [...list, { key: `new-${itemKey++}`, type, label: '', amount: '' }])
+    setItems(list => [...list, { key: `new-${itemKey++}`, type, label: '', amount: '', isTax: false }])
+  }
+  function addTaxItem() {
+    setItems(list => [...list, { key: `new-${itemKey++}`, type: 'DEDUCTION', label: 'Income tax (TDS)', amount: '', isTax: true }])
   }
   function updateItem(key, patch) {
     setItems(list => list.map(i => i.key === key ? { ...i, ...patch } : i))
@@ -115,7 +123,10 @@ function GenerateSalaryModal({ open, onClose, employee, period, onGenerated }) {
         body: JSON.stringify({
           employeeId: employee.id,
           period,
-          items: items.map(i => ({ type: i.type, label: i.label.trim(), amount: Number(i.amount) })),
+          items: items.map(i => ({
+            type: i.type, label: i.label.trim(), amount: Number(i.amount),
+            ...(i.type === 'DEDUCTION' && { isTax: !!i.isTax }),
+          })),
           currency,
           amountBDT: isForeign ? Number(amtBDT) : undefined,
           note: note.trim() || undefined,
@@ -194,28 +205,55 @@ function GenerateSalaryModal({ open, onClose, employee, period, onGenerated }) {
 
         {/* Deductions */}
         <div>
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Deductions <span className="text-gray-400 normal-case">(advance, penalty, tax…)</span></p>
-            <button onClick={() => addItem('DEDUCTION')} className="text-xs font-medium text-red-700 hover:text-red-800 flex items-center gap-1">
-              <Plus className="w-3.5 h-3.5" /> Add deduction
-            </button>
+          <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Deductions <span className="text-gray-400 normal-case">(advance, penalty, income tax…)</span></p>
+            <div className="flex items-center gap-3">
+              {!items.some(i => i.type === 'DEDUCTION' && i.isTax) && (
+                <button type="button" onClick={addTaxItem} className="text-xs font-medium text-amber-700 hover:text-amber-800 flex items-center gap-1">
+                  <Plus className="w-3.5 h-3.5" /> Income tax
+                </button>
+              )}
+              <button type="button" onClick={() => addItem('DEDUCTION')} className="text-xs font-medium text-red-700 hover:text-red-800 flex items-center gap-1">
+                <Plus className="w-3.5 h-3.5" /> Add deduction
+              </button>
+            </div>
           </div>
           <div className="space-y-2">
             {items.filter(i => i.type === 'DEDUCTION').length === 0 && (
               <p className="text-xs text-gray-400 italic">No deductions added.</p>
             )}
             {items.filter(i => i.type === 'DEDUCTION').map(item => (
-              <div key={item.key} className="flex items-center gap-2">
+              <div key={item.key} className="flex flex-wrap sm:flex-nowrap items-center gap-2">
                 <input value={item.label} onChange={e => updateItem(item.key, { label: e.target.value })}
-                  placeholder="e.g. Salary Advance" className={icRow + ' flex-1 min-w-0'} />
-                <input type="number" value={item.amount} onChange={e => updateItem(item.key, { amount: e.target.value })}
-                  placeholder="Amount" className={icRow + ' w-32 shrink-0'} />
-                <button onClick={() => removeItem(item.key)} className="p-2 text-gray-400 hover:text-red-500 shrink-0">
+                  placeholder="e.g. Salary Advance" aria-label="Deduction label"
+                  className={icRow + ' w-full sm:w-auto sm:flex-1 min-w-0'} />
+                <input type="number" min="0" step="0.01" value={item.amount} onChange={e => updateItem(item.key, { amount: e.target.value })}
+                  placeholder="Amount" aria-label="Deduction amount" className={icRow + ' w-32 shrink-0'} />
+                <label className={`flex items-center gap-1.5 px-2 py-2 rounded-lg border text-xs font-medium cursor-pointer shrink-0 select-none ${
+                  item.isTax ? 'border-amber-300 bg-amber-50 text-amber-800' : 'border-gray-200 text-gray-500 hover:bg-gray-50'}`}
+                  title="Income tax deducted at source on salary (ITA 2023 s.86) — recorded as TDS payable to the government">
+                  <input type="checkbox" checked={!!item.isTax} onChange={e => updateItem(item.key, { isTax: e.target.checked })}
+                    className="w-3.5 h-3.5 rounded border-gray-300 accent-amber-600" />
+                  Income tax (TDS)
+                </label>
+                <button type="button" onClick={() => removeItem(item.key)} aria-label="Remove deduction"
+                  className="p-2 text-gray-400 hover:text-red-500 shrink-0 ml-auto sm:ml-0">
                   <Trash2 className="w-4 h-4" />
                 </button>
               </div>
             ))}
           </div>
+          {taxTotal > 0 && (
+            <p className="mt-2 text-[11px] text-gray-500">
+              Income tax is withheld under ITA 2023 s.86. When the salary is paid it is recorded as TDS payable — deposit it by challan from Tax &amp; VAT → Withholding.
+            </p>
+          )}
+          {missingTin && (
+            <p className="mt-1.5 text-[11px] text-amber-700 flex items-start gap-1.5">
+              <AlertTriangle className="w-3.5 h-3.5 mt-px shrink-0" />
+              No e-TIN on file for this employee. Add it to their profile so the salary tax certificate (Tofsil-1) can be issued.
+            </p>
+          )}
         </div>
 
         {/* Currency */}
@@ -256,6 +294,12 @@ function GenerateSalaryModal({ open, onClose, employee, period, onGenerated }) {
             <span className="text-gray-500">Total Deductions</span>
             <span className="font-medium text-red-600">−{formatCurrency(deductionsTotal, currency)}</span>
           </div>
+          {taxTotal > 0 && (
+            <div className="px-4 py-2 flex justify-between gap-3 text-xs border-b border-gray-50 bg-amber-50/50">
+              <span className="text-amber-800">of which income tax deducted (TDS, s.86)</span>
+              <span className="font-medium text-amber-800">{formatCurrency(taxTotal, currency)}</span>
+            </div>
+          )}
           <div className="px-4 py-3 flex justify-between items-center bg-green-50">
             <span className="text-sm font-bold text-green-800">Net Pay</span>
             <span className="text-lg font-extrabold text-green-800">{formatCurrency(net, currency)}</span>
@@ -317,14 +361,18 @@ export default function SalaryPage() {
     if (venture)    p.set('venture', venture)
     if (status)     p.set('status', status)
     fetch(`/api/salary?${p.toString()}`)
-      .then(r => r.json())
+      .then(async r => {
+        const j = await r.json().catch(() => ({}))
+        if (!r.ok) throw new Error(j.error || 'Failed to load salary data')
+        return j
+      })
       .then(j => {
         if (seq !== loadSeq.current) return
         setRows(j.data ?? [])
         setMeta(j.meta ?? { total: 0, pages: 1 })
         setSummary(j.summary ?? {})
       })
-      .catch(() => { if (seq === loadSeq.current) toast.error('Failed to load salary data') })
+      .catch(err => { if (seq === loadSeq.current) toast.error(err.message || 'Failed to load salary data') })
       .finally(() => { if (seq === loadSeq.current) setLoading(false) })
   }, [period, search, department, venture, status, page])
 
@@ -390,7 +438,16 @@ export default function SalaryPage() {
     {
       key: 'netPay', label: 'Net Pay',
       render: (row) => row.slip
-        ? <span className="font-semibold text-gray-900">{formatCurrency(row.slip.netPay, row.slip.currency)}</span>
+        ? (
+          <div>
+            <span className="font-semibold text-gray-900">{formatCurrency(row.slip.netPay, row.slip.currency)}</span>
+            {Number(row.slip.taxDeduction) > 0 && (
+              <p className="text-[11px] text-amber-700" title="Income tax deducted at source (ITA 2023 s.86)">
+                TDS {formatCurrency(row.slip.taxDeduction, row.slip.currency)}
+              </p>
+            )}
+          </div>
+        )
         : <span className="text-gray-300">—</span>,
     },
     {
@@ -446,7 +503,9 @@ export default function SalaryPage() {
         <StatsCard title="Employees" value={summary.totalEmployees ?? 0} icon={Users} color="blue" />
         <StatsCard title="Not Generated" value={summary.notGenerated ?? 0} icon={FileWarning} color="orange" />
         <StatsCard title="Awaiting Payment" value={summary.pending ?? 0} icon={Clock} color="yellow" />
-        <StatsCard title="Paid This Period" value={formatCurrency(summary.paidAmountBDT ?? 0)} changeLabel={`${summary.paidCount ?? 0} employee(s)`} icon={CheckCircle2} color="green" />
+        <StatsCard title="Paid This Period" value={formatCurrency(summary.paidAmountBDT ?? 0)}
+          changeLabel={`${summary.paidCount ?? 0} employee(s)${Number(summary.taxDeductedBDT) > 0 ? ` · TDS ${formatCurrency(summary.taxDeductedBDT)}` : ''}`}
+          icon={CheckCircle2} color="green" />
       </div>
 
       {/* Filters */}

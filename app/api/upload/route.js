@@ -12,6 +12,9 @@ export async function POST(request) {
 
     const formData = await request.formData()
     const file     = formData.get('file')
+    // Optional target bucket (whitelisted). Anything else falls back to 'receipts'.
+    const requested = formData.get('bucket')
+    const bucket    = ['receipts', 'assets', 'tax'].includes(requested) ? requested : 'receipts'
 
     if (!file || typeof file === 'string') {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 })
@@ -19,7 +22,7 @@ export async function POST(request) {
 
     // Type is decided from the file's magic bytes (never the client-declared
     // MIME type or file name), and the file is stored outside public/.
-    const saved = await saveUpload(file, { bucket: 'receipts', maxSize: 5 * 1024 * 1024 })
+    const saved = await saveUpload(file, { bucket, maxSize: 5 * 1024 * 1024 })
     if (saved.error) return NextResponse.json({ error: saved.error }, { status: saved.status })
 
     return NextResponse.json({ url: saved.url }, { status: 201 })

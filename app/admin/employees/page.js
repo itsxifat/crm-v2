@@ -17,11 +17,16 @@ import {
   PERMISSION_MODULES, ALL_PERMISSIONS, DEFAULT_ROLE_PERMISSIONS,
   applyPermissionOverrides,
 } from '@/lib/rbac'
+import { TIN_REGEX } from '@/lib/tax/catalog'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 const fmt = (n) => n != null ? `৳ ${Number(n).toLocaleString('en-BD')}` : '—'
+
+// e-TIN: identity PII, masked ('••••••••9012') for viewers without pii.identity.view.
+const isMaskedValue = (v) => typeof v === 'string' && v.includes('••')
+const tinDigits     = (v) => String(v ?? '').replace(/[\s-]+/g, '')
 
 // Auto-generate a short code from a department name (mirrors server logic)
 function autoShortCode(name) {
@@ -57,11 +62,14 @@ function EmployeeModal({ open, onClose, employee, onSaved, customRoles = [], ven
   // Assigning a custom role is role management (the API requires hr.roles.manage).
   const { can } = usePermission()
   const canManageRoles = can('hr.roles.manage')
+  // The API only accepts a TIN from callers who may see it unmasked.
+  const canEditTin = can('pii.identity.view')
+  const initialTin = isEdit ? (employee.tin ?? '') : ''
   const [form, setForm] = useState({
     name: '', email: '', phone: '', password: '',
     venture: '', department: '', position: '', designation: '', salary: '',
     hireDate: '', role: 'EMPLOYEE', customRoleId: '',
-    bloodGroup: '', emergencyContact: '', address: '', nidNumber: '',
+    bloodGroup: '', emergencyContact: '', address: '', nidNumber: '', tin: '',
     appointmentLetterUrl: '', agreementUrl: '',
     panelAccessGranted: false,
   })
@@ -86,6 +94,7 @@ function EmployeeModal({ open, onClose, employee, onSaved, customRoles = [], ven
         emergencyContact:     employee.emergencyContact ?? '',
         address:              employee.address ?? '',
         nidNumber:            employee.nidNumber ?? '',
+        tin:                  employee.tin ?? '',
         appointmentLetterUrl: employee.appointmentLetterUrl ?? '',
         agreementUrl:         employee.agreementUrl ?? '',
         panelAccessGranted:   employee.panelAccessGranted ?? false,
@@ -95,17 +104,24 @@ function EmployeeModal({ open, onClose, employee, onSaved, customRoles = [], ven
         name: '', email: '', phone: '', password: '',
         venture: '', department: '', position: '', designation: '', salary: '',
         hireDate: '', role: 'EMPLOYEE', customRoleId: '',
-        bloodGroup: '', emergencyContact: '', address: '', nidNumber: '',
+        bloodGroup: '', emergencyContact: '', address: '', nidNumber: '', tin: '',
         appointmentLetterUrl: '', agreementUrl: '',
         panelAccessGranted: false,
       })
     }
   }, [open, employee, isEdit])
 
+  // e-TIN (edit only): sent only when changed; a masked value is never sent back.
+  const tinChanged  = isEdit && form.tin !== initialTin
+  const tinMaskEdit = tinChanged && isMaskedValue(form.tin)
+  const tinInvalid  = tinChanged && !tinMaskEdit && !!tinDigits(form.tin) && !TIN_REGEX.test(tinDigits(form.tin))
+
   function set(k, v) { setForm(f => ({ ...f, [k]: v })) }
 
   async function handleSubmit(e) {
     e.preventDefault()
+    if (tinMaskEdit) { toast.error('Clear the hidden e-TIN fully, then type the full 12-digit e-TIN'); return }
+    if (tinInvalid)  { toast.error('e-TIN must be 12 digits'); return }
     setSaving(true)
     try {
       const body = {
@@ -130,6 +146,8 @@ function EmployeeModal({ open, onClose, employee, onSaved, customRoles = [], ven
         customRoleId:         form.customRoleId || null,
       }
       if (form.password) body.password = form.password
+      // e-TIN: only a changed, unmasked value (blank clears it). Digits only.
+      if (tinChanged && canEditTin) body.tin = tinDigits(form.tin) || null
       // Never round-trip masked display values (email, salary, address, NID…):
       // an untouched masked field is left out so the stored value is kept.
       if (isEdit) {
@@ -186,6 +204,21 @@ function EmployeeModal({ open, onClose, employee, onSaved, customRoles = [], ven
                 <label className={lc}>Email *</label>
                 <input required type="email" value={form.email} onChange={e => set('email', e.target.value)} placeholder="hasan@company.com" className={ic} disabled={isEdit} />
               </div>
+              {isEdit && (
+                <div className="col-span-2 sm:col-span-1">
+                  <label className={lc}>e-TIN</label>
+                  <input value={form.tin} onChange={e => set('tin', e.target.value)} inputMode="numeric"
+                    placeholder="12-digit e-TIN" disabled={!canEditTin}
+                    className={`${ic} font-mono ${tinInvalid || tinMaskEdit ? 'border-red-300' : ''} ${!canEditTin ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''}`} />
+                  <p className={`text-xs mt-1 ${tinInvalid || tinMaskEdit ? 'text-red-500' : 'text-gray-400'}`}>
+                    {!canEditTin ? 'You need identity access to change the e-TIN.'
+                      : tinMaskEdit ? 'Clear the hidden e-TIN fully, then type the new one.'
+                      : tinInvalid ? 'e-TIN must be 12 digits.'
+                      : isMaskedValue(form.tin) ? 'Hidden for privacy. Leave as is, or replace it.'
+                      : 'Printed on the salary TDS certificate (s.86).'}
+                  </p>
+                </div>
+              )}
             </div>
             {!isEdit && (
               <p className="text-xs text-blue-500 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 mt-3">

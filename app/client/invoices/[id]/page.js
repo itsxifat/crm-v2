@@ -9,6 +9,7 @@ import {
   FileText, CreditCard, X, Printer, Layers, ExternalLink,
 } from 'lucide-react'
 import InvoicePrintView, { openInvoicePrint } from '@/components/shared/InvoicePrintView'
+import { paymentSettlement, paymentMethodLabel, settlementParts } from '@/lib/paymentSettlement'
 import { useConfig } from '@/lib/useConfig'
 import { formatMoney } from '@/lib/currencies'
 
@@ -30,6 +31,9 @@ const CONFIRM_STATUS = {
   PENDING_CONFIRMATION: { label: 'Pending Approval', bg: 'bg-yellow-100', text: 'text-yellow-700' },
   CONFIRMED:            { label: 'Confirmed',         bg: 'bg-green-100',  text: 'text-green-700' },
   REJECTED:             { label: 'Rejected',          bg: 'bg-red-100',    text: 'text-red-600' },
+  // A confirmed payment our finance team reversed (to be recorded again correctly).
+  REVERSING:            { label: 'Confirmed',         bg: 'bg-green-100',  text: 'text-green-700' },
+  REVERSED:             { label: 'Reversed',          bg: 'bg-gray-100',   text: 'text-gray-600' },
 }
 
 function PaymentModal({ invoice, onClose, onDone }) {
@@ -190,6 +194,9 @@ export default function ClientInvoiceDetailPage() {
           phone:   d.company_phone   ?? '',
           email:   d.company_email   ?? '',
           website: d.company_website ?? '',
+          // Seller BIN / TIN for VAT invoices (the issue-time snapshot on the invoice wins for the BIN).
+          bin:     d.company_bin     ?? '',
+          tin:     d.company_tin     ?? '',
         })
       })
       .catch(() => {})
@@ -284,13 +291,22 @@ export default function ClientInvoiceDetailPage() {
           <div className="divide-y divide-gray-50">
             {paymentReqs.map(req => {
               const cs = CONFIRM_STATUS[req.status] ?? CONFIRM_STATUS.PENDING_CONFIRMATION
+              // What it settles on the invoice: cash + VAT / income tax withheld at
+              // source (a withholding-only settlement has no cash).
+              const s      = paymentSettlement(req)
+              const reqCur = req.currency ?? invoice?.currency
               return (
                 <div key={req._id ?? req.id} className="px-5 py-3.5 flex items-center justify-between gap-4">
                   <div>
-                    <p className="text-sm font-medium text-gray-800">{fmtAmt(req.amount, req.currency ?? invoice?.currency)}</p>
+                    <p className="text-sm font-medium text-gray-800">{fmtAmt(s.settled, reqCur)}</p>
                     <p className="text-xs text-gray-400 mt-0.5">
-                      {fmtMethod(req.paymentMethod)} · {fmtDate(req.paymentDate ?? req.createdAt)}
+                      {s.withholdingOnly ? paymentMethodLabel(req.paymentMethod) : fmtMethod(req.paymentMethod)} · {fmtDate(req.paymentDate ?? req.createdAt)}
                     </p>
+                    {s.hasWithholding && (
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {settlementParts(s).map(([k, v]) => `${k} ${fmtAmt(v, reqCur)}`).join(' · ')}
+                      </p>
+                    )}
                     {req.notes && <p className="text-xs text-gray-500 mt-0.5">{req.notes}</p>}
                   </div>
                   <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${cs.bg} ${cs.text}`}>

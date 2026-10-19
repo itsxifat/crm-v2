@@ -9,7 +9,7 @@ import { canDo } from '@/lib/rbac'
 // Credential blobs are only served (masked) by /api/settings/email and /api/settings/whatsapp.
 const SECRET_KEYS = ['email_accounts', 'whatsapp_accounts']
 // Keys owned by dedicated endpoints / the system — never writable here.
-const RESERVED_KEYS = [...SECRET_KEYS, 'gain_disabled', 'crm_config']
+const RESERVED_KEYS = [...SECRET_KEYS, 'gain_disabled', 'crm_config', 'finance_settings']
 
 // GET /api/settings/[key]
 export async function GET(request, { params }) {

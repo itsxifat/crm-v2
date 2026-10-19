@@ -4,7 +4,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Invoice, Project, CombinedInvoice } from '@/models'
-import { requirePerm } from '@/lib/rbac'
+import { requirePerm, canDoAny } from '@/lib/rbac'
 import { isValidObjectId } from '@/lib/objectId'
 import { canAccessProject, canViewProjectFinancials } from '@/lib/projectAccess'
 import { maskDoc, INVOICE_PII } from '@/lib/pii'
@@ -23,20 +23,24 @@ import {
 export async function GET(_, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    const denied  = requirePerm(session, 'sales.invoices.view')
-    if (denied) return denied
+    if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    // Payment confirmers/requesters pick the invoice a payment settles from this list.
+    if (!canDoAny(session, ['sales.invoices.view', 'finance.payments.confirm', 'finance.payments.request']))
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     if (!canViewProjectFinancials(session))
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
     await connectDB()
 
-    const project = await Project.findById(params.id).select('name projectCode venture budget paidAmount currency').lean()
+    const project = await Project.findById(params.id).select('name projectCode venture budget paidAmount currency clientId').lean()
     if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
     if (!(await canAccessProject(session, params.id)))
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
-    // Admin view shows drafts too, flagged as excluded from the rollup.
-    const all      = await findProjectInvoices(params.id, { billableOnly: false })
+    // Admin view shows drafts too, flagged as excluded from the rollup. Only the
+    // project client's invoices count — same scope as the combined invoice and
+    // the client portal, so an invoice of another client never joins the rollup.
+    const all      = await findProjectInvoices(params.id, { billableOnly: false, clientId: project.clientId })
     const children = all.map(serialiseChild)
     const billable = children.filter(c => !NON_BILLABLE_STATUSES.includes(c.status))
     const totals   = rollUp(billable)
@@ -56,10 +60,15 @@ export async function GET(_, { params }) {
         currency:     project.currency ?? 'BDT',
         projectValue: Number(project.budget ?? 0),
         // What the project is worth vs what has actually been invoiced — the
-        // gap tells you how much of the project value is still un-billed.
+        // gap tells you how much of the project value is still un-billed. The
+        // project value excludes VAT/SD, so it is compared with the invoice
+        // totals net of output VAT and SD.
         uninvoiced: Math.max(
           0,
-          Math.round((Number(project.budget ?? 0) - totals.total) * 100) / 100
+          Math.round((
+            Number(project.budget ?? 0) -
+            (totals.total - (Number(totals.vatAmount) || 0) - (Number(totals.sdAmount) || 0))
+          ) * 100) / 100
         ),
       },
       combined: combinedDoc

@@ -5,6 +5,62 @@ import { X, Loader2, Plus, Trash2, Globe, Facebook, Instagram, Linkedin, Twitter
 import toast from 'react-hot-toast'
 import FileUpload from '@/components/ui/FileUpload'
 import Select from '@/components/ui/Select'
+import TaxCodeSelect from '@/components/tax/TaxCodeSelect'
+import { BIN_REGEX, TIN_REGEX, normalizeBin } from '@/lib/tax/catalog'
+
+const VAT_REGISTRATION_TYPES = [
+  { value: 'REGISTERED',   label: 'VAT registered (has BIN)' },
+  { value: 'TURNOVER',     label: 'Turnover tax enlisted' },
+  { value: 'UNREGISTERED', label: 'Not VAT registered' },
+  { value: 'FOREIGN',      label: 'Foreign / overseas' },
+]
+
+// Masked placeholders from the API ('••••••••9012') — never validated or re-sent.
+const isMaskedValue = v => typeof v === 'string' && v.includes('••')
+const binDigits = v => String(v ?? '').replace(/\s+/g, '')
+const tinDigits = v => String(v ?? '').replace(/[\s-]+/g, '')
+
+/** Normalised BIN ('' when blank) or null when invalid. */
+function cleanBin(v) {
+  const s = binDigits(v)
+  if (!s) return ''
+  if (!BIN_REGEX.test(s)) return null
+  return normalizeBin(s) || s
+}
+
+/** Normalised TIN ('' when blank) or null when invalid. */
+function cleanTin(v) {
+  const s = tinDigits(v)
+  if (!s) return ''
+  return TIN_REGEX.test(s) ? s : null
+}
+
+/** Tax-identity part of the request body, normalised so edits can be diffed. */
+function taxBody(f) {
+  const bin = cleanBin(f.bin)
+  const tin = isMaskedValue(f.tin) ? f.tin : cleanTin(f.tin)
+  return {
+    bin:                 bin || null,
+    tin:                 tin || null,
+    vatRegistrationType: f.vatRegistrationType || null,
+    isVdsEntity:         !!f.isVdsEntity,
+    isTdsEntity:         !!f.isTdsEntity,
+    // The section only applies while the client deducts TDS.
+    defaultTdsSection:   f.isTdsEntity ? (f.defaultTdsSection || null) : null,
+    taxNotes:            f.taxNotes?.trim() || null,
+  }
+}
+
+/** First field-level message from a 422 { details: zod.flatten() } response. */
+function firstValidationMessage(json) {
+  const fe = json?.details?.fieldErrors
+  if (fe && typeof fe === 'object') {
+    for (const msgs of Object.values(fe)) {
+      if (Array.isArray(msgs) && msgs.length) return msgs[0]
+    }
+  }
+  return null
+}
 
 const SOCIAL_PLATFORMS = [
   { value: 'facebook',  label: 'Facebook',  Icon: Facebook },
@@ -43,6 +99,10 @@ const EMPTY = {
   priority: 'MEDIUM', altPhone: '', timezone: 'Asia/Dhaka',
   address: '', city: '', country: 'Bangladesh',
   socialLinks: [], notes: '',
+  // Tax identity
+  bin: '', tin: '', vatRegistrationType: '', isVdsEntity: false, isTdsEntity: false,
+  defaultTdsSection: '', taxNotes: '',
+  _binFromLegacy: false,  // BIN pre-filled from the legacy vatNumber (display only)
   // Portfolio link
   parentClientId: null,   // _id of the "owner" client (individual or primary company)
   _parentLabel: '',       // display label, not sent to API
@@ -141,7 +201,7 @@ function ParentClientSearch({ value, label, onChange }) {
 
 // ─── Modal ────────────────────────────────────────────────────────────────────
 
-export default function ClientModal({ open, onOpenChange, client, onSaved }) {
+export default function ClientModal({ open, onOpenChange, client, onSaved, initialTab = 'basic' }) {
   const isEdit = !!client
   const [saving, setSaving] = useState(false)
   const [tab, setTab]       = useState('basic')
@@ -152,8 +212,13 @@ export default function ClientModal({ open, onOpenChange, client, onSaved }) {
 
   useEffect(() => {
     if (!open) return
-    setTab('basic')
+    setTab(initialTab || 'basic')
     if (isEdit) {
+      // Legacy records kept the BIN in vatNumber — offer it as the BIN.
+      const legacyBin = !client.bin && client.vatNumber && !isMaskedValue(client.vatNumber)
+        && BIN_REGEX.test(binDigits(client.vatNumber))
+        ? (normalizeBin(binDigits(client.vatNumber)) || binDigits(client.vatNumber))
+        : null
       const initial = {
         clientType:    client.clientType    ?? 'COMPANY',
         // Company info
@@ -180,6 +245,15 @@ export default function ClientModal({ open, onOpenChange, client, onSaved }) {
         country:       client.country       ?? 'Bangladesh',
         socialLinks:    client.socialLinks   ?? [],
         notes:          client.notes         ?? '',
+        // Tax identity
+        bin:                 client.bin                 ?? '',
+        tin:                 client.tin                 ?? '',
+        vatRegistrationType: client.vatRegistrationType ?? '',
+        isVdsEntity:         !!client.isVdsEntity,
+        isTdsEntity:         !!client.isTdsEntity,
+        defaultTdsSection:   client.defaultTdsSection   ?? '',
+        taxNotes:            client.taxNotes            ?? '',
+        _binFromLegacy:      false,
         parentClientId: typeof client.parentClientId === 'object'
           ? (client.parentClientId?.id ?? client.parentClientId?._id ?? null)
           : (client.parentClientId ?? null),
@@ -187,15 +261,42 @@ export default function ClientModal({ open, onOpenChange, client, onSaved }) {
           ? `${client.parentClientId.company || client.parentClientId.userId?.name || ''} · ${client.parentClientId.clientCode || ''}`
           : '',
       }
+      // The snapshot keeps the stored (empty) BIN so a legacy pre-fill is saved.
       initialRef.current = initial
-      setForm(initial)
+      setForm(legacyBin
+        ? { ...initial, bin: legacyBin, vatRegistrationType: initial.vatRegistrationType || 'REGISTERED', _binFromLegacy: true }
+        : initial)
     } else {
       initialRef.current = null
       setForm(EMPTY)
     }
-  }, [open, client, isEdit])
+  }, [open, client, isEdit, initialTab])
 
   function set(k, v) { setForm(f => ({ ...f, [k]: v })) }
+
+  // Typing a valid BIN marks the client VAT registered when no status is set.
+  function setBin(v) {
+    setForm(f => ({
+      ...f,
+      bin: v,
+      _binFromLegacy: false,
+      vatRegistrationType: !f.vatRegistrationType && BIN_REGEX.test(binDigits(v)) ? 'REGISTERED' : f.vatRegistrationType,
+    }))
+  }
+
+  // An overseas client with no VAT status yet is marked FOREIGN (export of
+  // services is usually zero-rated) — the user can still change it.
+  function setCountry(v) {
+    setForm(f => ({
+      ...f,
+      country: v,
+      vatRegistrationType: !f.vatRegistrationType && v && v !== 'Bangladesh' ? 'FOREIGN' : f.vatRegistrationType,
+    }))
+  }
+
+  const binInvalid = !!binDigits(form.bin) && cleanBin(form.bin) === null
+  const tinChanged = form.tin !== (initialRef.current?.tin ?? '')
+  const tinInvalid = !!tinDigits(form.tin) && !(isMaskedValue(form.tin) && !tinChanged) && cleanTin(form.tin) === null
 
   function addSocialLink() {
     setForm(f => ({ ...f, socialLinks: [...f.socialLinks, { platform: 'facebook', url: '' }] }))
@@ -215,6 +316,11 @@ export default function ClientModal({ open, onOpenChange, client, onSaved }) {
     e.preventDefault()
     if (!form.name.trim())  { toast.error('Name is required');  return }
     if (!isEdit && !form.parentClientId && !form.email.trim()) { toast.error('Email is required'); return }
+    if (binInvalid) { setTab('tax'); toast.error('BIN must be 9 or 13 digits, e.g. 000123456-0101'); return }
+    if (isMaskedValue(form.tin) && tinChanged) {
+      setTab('tax'); toast.error('Clear the hidden TIN and type the full 12-digit e-TIN'); return
+    }
+    if (tinInvalid) { setTab('tax'); toast.error('TIN must be the 12-digit e-TIN'); return }
     setSaving(true)
     try {
       let body = {
@@ -243,6 +349,8 @@ export default function ClientModal({ open, onOpenChange, client, onSaved }) {
         country:        form.country        || 'Bangladesh',
         socialLinks:    form.socialLinks.filter(s => s.url?.trim()),
         notes:          form.notes          || null,
+        // Tax identity
+        ...taxBody(form),
         // Portfolio
         parentClientId: form.parentClientId || null,
       }
@@ -261,6 +369,7 @@ export default function ClientModal({ open, onOpenChange, client, onSaved }) {
           priority: init.priority, altPhone: init.altPhone || null, timezone: init.timezone || null,
           address: init.address || null, city: init.city || null, country: init.country || 'Bangladesh',
           socialLinks: (init.socialLinks ?? []).filter(s => s.url?.trim()), notes: init.notes || null,
+          ...taxBody(init),
         }
         body = Object.fromEntries(
           Object.entries(body).filter(([k, v]) => JSON.stringify(v) !== JSON.stringify(initBody[k]))
@@ -276,7 +385,7 @@ export default function ClientModal({ open, onOpenChange, client, onSaved }) {
       const method = isEdit ? 'PUT' : 'POST'
       const res    = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       const json   = await res.json()
-      if (!res.ok) throw new Error(json.error ?? 'Failed')
+      if (!res.ok) throw new Error(firstValidationMessage(json) ?? json.error ?? 'Failed')
       onSaved(json.data, null, json.emailSent, json.linkedToExisting)
       onOpenChange(false)
     } catch (err) {
@@ -291,9 +400,12 @@ export default function ClientModal({ open, onOpenChange, client, onSaved }) {
   const ic = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500'
   const lc = 'block text-xs font-medium text-gray-600 mb-1'
 
+  const hc = 'text-xs text-gray-400 mt-1'
+
   const TABS = [
     { id: 'basic',    label: 'Basic Info'   },
     { id: 'contact',  label: 'Contact'      },
+    { id: 'tax',      label: 'Tax & VAT'    },
     { id: 'social',   label: 'Social Links' },
     { id: 'notes',    label: 'Notes'        },
   ]
@@ -319,10 +431,10 @@ export default function ClientModal({ open, onOpenChange, client, onSaved }) {
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-gray-100 px-6">
+        <div className="flex border-b border-gray-100 px-6 overflow-x-auto">
           {TABS.map(t => (
-            <button key={t.id} onClick={() => setTab(t.id)}
-              className={`px-3 py-2.5 text-sm font-medium -mb-px border-b-2 transition-colors ${
+            <button key={t.id} type="button" onClick={() => setTab(t.id)}
+              className={`px-3 py-2.5 text-sm font-medium whitespace-nowrap -mb-px border-b-2 transition-colors ${
                 tab === t.id ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'
               }`}>
               {t.label}
@@ -416,10 +528,13 @@ export default function ClientModal({ open, onOpenChange, client, onSaved }) {
                         placeholder="— Select industry —"
                       />
                     </div>
-                    <div>
-                      <label className={lc}>VAT / Tax Number</label>
-                      <input value={form.vatNumber} onChange={e => set('vatNumber', e.target.value)}
-                        placeholder="Optional" className={ic} />
+                    <div className="col-span-2 sm:col-span-1">
+                      <label className={lc}>BIN (VAT registration no.)</label>
+                      <input value={form.bin} onChange={e => setBin(e.target.value)} inputMode="numeric"
+                        placeholder="000123456-0101" className={`${ic} font-mono ${binInvalid ? 'border-red-300' : ''}`} />
+                      <p className={binInvalid ? 'text-xs text-red-500 mt-1' : hc}>
+                        {binInvalid ? 'BIN must be 9 or 13 digits' : 'More tax details in the Tax & VAT tab.'}
+                      </p>
                     </div>
                     <div>
                       <label className={lc}>Priority</label>
@@ -537,7 +652,7 @@ export default function ClientModal({ open, onOpenChange, client, onSaved }) {
               </div>
               <div>
                 <label className={lc}>Country</label>
-                <Select value={form.country} onChange={v => set('country', v ?? 'Bangladesh')}
+                <Select value={form.country} onChange={v => setCountry(v ?? 'Bangladesh')}
                   options={COUNTRIES.map(c => ({ value: c, label: c }))}
                   placeholder="Select country…"
                 />
@@ -574,6 +689,101 @@ export default function ClientModal({ open, onOpenChange, client, onSaved }) {
                 <label className={lc}>Website</label>
                 <input value={form.website} onChange={e => set('website', e.target.value)}
                   placeholder="https://company.com" className={ic} />
+              </div>
+            </div>
+          )}
+
+          {/* ── TAX & VAT ── */}
+          {tab === 'tax' && (
+            <div className="space-y-6">
+              <p className="text-xs text-gray-500 bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
+                Printed on Mushak-6.3 VAT invoices and used to track the VAT (VDS) and income tax (TDS / AIT)
+                this client deducts from your payments.
+              </p>
+
+              <div className="space-y-3">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-100 pb-1.5">Registration</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className={lc}>BIN (VAT registration no.)</label>
+                    <input value={form.bin} onChange={e => setBin(e.target.value)} inputMode="numeric"
+                      placeholder="000123456-0101" className={`${ic} font-mono ${binInvalid ? 'border-red-300' : ''}`} />
+                    {binInvalid
+                      ? <p className="text-xs text-red-500 mt-1">BIN must be 9 or 13 digits, e.g. 000123456-0101</p>
+                      : <p className={hc}>13 digits, e.g. 000123456-0101. Needed on Mushak-6.3 for supplies above Tk 25,000 and for the client to claim input VAT.</p>}
+                    {form._binFromLegacy && (
+                      <p className="text-xs text-amber-600 mt-1">Filled in from the old VAT number. Saving stores it as the BIN.</p>
+                    )}
+                  </div>
+                  <div>
+                    <label className={lc}>TIN (e-TIN)</label>
+                    <input value={form.tin} onChange={e => set('tin', e.target.value)} inputMode="numeric"
+                      placeholder="12-digit e-TIN" className={`${ic} font-mono ${tinInvalid ? 'border-red-300' : ''}`} />
+                    {isMaskedValue(form.tin) && tinChanged
+                      ? <p className="text-xs text-red-500 mt-1">Clear the hidden TIN fully, then type the new 12-digit e-TIN.</p>
+                      : tinInvalid
+                        ? <p className="text-xs text-red-500 mt-1">TIN must be the 12-digit e-TIN</p>
+                        : <p className={hc}>
+                            {isMaskedValue(form.tin) ? 'Hidden for privacy. Leave it as is, or replace it with the full number.' : 'Shown on TDS certificates the client issues to you.'}
+                          </p>}
+                  </div>
+                  <div>
+                    <label className={lc}>VAT registration status</label>
+                    <select value={form.vatRegistrationType} onChange={e => set('vatRegistrationType', e.target.value)} className={ic}>
+                      <option value="">Not specified</option>
+                      {VAT_REGISTRATION_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                    </select>
+                    {form.vatRegistrationType === 'FOREIGN' ? (
+                      <p className={hc}>Services exported to overseas clients are usually zero-rated.</p>
+                    ) : form.country && form.country !== 'Bangladesh' && !form.vatRegistrationType ? (
+                      <p className="text-xs text-amber-600 mt-1">This client is outside Bangladesh. Consider marking them Foreign.</p>
+                    ) : form.vatRegistrationType === 'REGISTERED' && !binDigits(form.bin) ? (
+                      <p className="text-xs text-amber-600 mt-1">Add the BIN for a VAT-registered client.</p>
+                    ) : null}
+                  </div>
+                  <div>
+                    <label className={lc}>Foreign VAT / other tax ID</label>
+                    <input value={form.vatNumber} onChange={e => set('vatNumber', e.target.value)}
+                      placeholder="e.g. EU VAT ID (optional)" className={ic} />
+                    <p className={hc}>For overseas clients. Bangladesh clients: use the BIN.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-100 pb-1.5">Tax this client deducts from your payments</p>
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input type="checkbox" checked={form.isVdsEntity} onChange={e => set('isVdsEntity', e.target.checked)}
+                    className="mt-0.5 w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                  <span>
+                    <span className="block text-sm font-medium text-gray-800">Withholds VAT at source (VDS)</span>
+                    <span className="block text-xs text-gray-400">Government bodies, NGOs, banks, insurers, schools and limited companies deduct VAT when they pay and should give you a Mushak-6.6 certificate.</span>
+                  </span>
+                </label>
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input type="checkbox" checked={form.isTdsEntity} onChange={e => set('isTdsEntity', e.target.checked)}
+                    className="mt-0.5 w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                  <span>
+                    <span className="block text-sm font-medium text-gray-800">Deducts income tax at source (TDS / AIT)</span>
+                    <span className="block text-xs text-gray-400">Companies and other specified payers deduct advance income tax and give a TDS certificate. It counts as tax already paid.</span>
+                  </span>
+                </label>
+                {form.isTdsEntity && (
+                  <div className="sm:w-1/2 sm:pl-7">
+                    <label className={lc}>Default TDS section</label>
+                    <TaxCodeSelect kind="TDS_SECTION" value={form.defaultTdsSection || null}
+                      onChange={code => set('defaultTdsSection', code ?? '')}
+                      placeholder="Select section…" className={ic} />
+                    <p className={hc}>IT and digital marketing work usually falls under s.90 &quot;Any other service&quot;.</p>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className={lc}>Tax notes</label>
+                <textarea value={form.taxNotes} onChange={e => set('taxNotes', e.target.value)}
+                  rows={3} placeholder="e.g. Sends Mushak-6.6 quarterly; finance contact for certificates…"
+                  className={`${ic} resize-none`} />
               </div>
             </div>
           )}

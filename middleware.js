@@ -129,6 +129,13 @@ const ROLE_DASHBOARDS = {
 // "view all notifications" page linked from the client/freelancer bell.
 const SHARED_ROUTES = ['/notifications']
 
+// Pages an employee may still open while onboarding is pending: their own
+// profile/KYC, and the equipment issued to them (handover acknowledgement
+// usually happens on day one, before onboarding is approved). That includes the
+// asset-label QR resolver, which only sends the holder on to My Assets — its API
+// checks custody itself (trailing slash: the resolver page only).
+const ONBOARDING_OPEN_PAGES = ['/admin/profile', '/admin/my-assets', '/admin/inventory/assets/tag/']
+
 function hasAccess(role, pathname) {
   if (SHARED_ROUTES.some(r => pathname.startsWith(r))) return true
   return (ROLE_ROUTES[role] || []).some(r => pathname.startsWith(r))
@@ -257,7 +264,7 @@ export default async function middleware(req) {
     // (its GET/PUT /api/employee/profile and POST /api/upload calls would be
     // redirected to the HTML page). API routes enforce their own auth.
     if (role === 'EMPLOYEE' && token.needsOnboarding && !pathname.startsWith('/api/')) {
-      if (!pathname.startsWith('/admin/profile')) {
+      if (!ONBOARDING_OPEN_PAGES.some(p => pathname.startsWith(p))) {
         return addSecurityHeaders(NextResponse.redirect(new URL('/admin/profile', req.url)))
       }
       return addSecurityHeaders(NextResponse.next())

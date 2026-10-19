@@ -14,6 +14,31 @@ import { findOrCreateClientUser, ensureMembership } from '@/lib/clientAccess'
 import { createNotification } from '@/lib/createNotification'
 import { isValidObjectId } from '@/lib/objectId'
 import { ACTIVE_PROJECT_STATUSES, OUTSTANDING_INVOICE_STATUSES, INVOICE_MONEY_FIELDS, sumInvoiceMoneyBDT } from '@/lib/clientStats'
+import { BIN_REGEX, TIN_REGEX, normalizeBin } from '@/lib/tax/catalog'
+import { z } from 'zod'
+
+// ── Tax identity (BIN / e-TIN / VAT status / withholding behaviour) ──────────
+// Blank strings are stored as null. BIN accepts 9 or 13 digits (stored as
+// 'NNNNNNNNN-NNNN' when 13); TIN is the 12-digit e-TIN.
+const blankToNull = v => (typeof v === 'string' ? (v.trim() === '' ? null : v.trim()) : v)
+const binField = z.preprocess(
+  v => (typeof v === 'string' ? (v.replace(/\s+/g, '') || null) : v),
+  z.string().regex(BIN_REGEX, 'BIN must be 9 or 13 digits, e.g. 000123456-0101')
+    .transform(s => normalizeBin(s) || s).nullable().optional(),
+)
+const tinField = z.preprocess(
+  v => (typeof v === 'string' ? (v.replace(/[\s-]+/g, '') || null) : v),
+  z.string().regex(TIN_REGEX, 'TIN must be the 12-digit e-TIN').nullable().optional(),
+)
+const clientTaxSchema = z.object({
+  bin:                 binField,
+  tin:                 tinField,
+  vatRegistrationType: z.preprocess(blankToNull, z.enum(['REGISTERED', 'TURNOVER', 'UNREGISTERED', 'FOREIGN']).nullable().optional()),
+  isVdsEntity:         z.boolean().optional(),
+  isTdsEntity:         z.boolean().optional(),
+  defaultTdsSection:   z.preprocess(blankToNull, z.string().max(40).nullable().optional()),
+  taxNotes:            z.preprocess(blankToNull, z.string().max(2000).nullable().optional()),
+})
 
 // GET /api/clients
 export async function GET(request) {
@@ -51,6 +76,10 @@ export async function GET(request) {
         { userId:     { $in: userIds } },
         { clientCode: ciContains(search) },
         { company:    ciContains(search) },
+        // BIN is a public business identifier (printed on Mushak-6.3); the
+        // e-TIN is identity PII and only searchable by those who may see it.
+        { bin:        ciContains(search) },
+        ...(canDo(session, 'pii.identity.view') ? [{ tin: ciContains(search) }] : []),
       ]
     }
 
@@ -126,6 +155,13 @@ export async function POST(request) {
 
     if (!name?.trim()) return NextResponse.json({ error: 'Name is required' }, { status: 422 })
 
+    // Validate the tax identity before any account is created/linked.
+    const taxParsed = clientTaxSchema.safeParse(body ?? {})
+    if (!taxParsed.success) {
+      return NextResponse.json({ error: 'Validation failed', details: taxParsed.error.flatten() }, { status: 422 })
+    }
+    const tax = taxParsed.data
+
     let user, isNewUser = false, activationToken = null
     let parent = null
     if (parentClientId) {
@@ -184,6 +220,14 @@ export async function POST(request) {
       socialLinks:    socialLinks    ?? [],
       logo:           logo           || null,
       notes:          notes          || null,
+      // Tax identity
+      bin:                 tax.bin                 ?? null,
+      tin:                 tax.tin                 ?? null,
+      vatRegistrationType: tax.vatRegistrationType ?? null,
+      isVdsEntity:         tax.isVdsEntity         ?? false,
+      isTdsEntity:         tax.isTdsEntity         ?? false,
+      defaultTdsSection:   tax.defaultTdsSection   ?? null,
+      taxNotes:            tax.taxNotes            ?? null,
       // When KYC verification is disabled, auto-verify new clients on creation
       ...(requireKyc ? {} : {
         kyc: { status: 'VERIFIED', submittedAt: new Date(), reviewedAt: new Date() },
@@ -226,7 +270,11 @@ export async function POST(request) {
       action:   'CREATE',
       entity:   'CLIENT',
       entityId: client._id.toString(),
-      changes:  JSON.stringify({ name: name.trim(), clientCode: client.clientCode }),
+      changes:  JSON.stringify({
+        name: name.trim(), clientCode: client.clientCode,
+        bin: client.bin ?? null, tin: client.tin ? 'set' : null,
+        vatRegistrationType: client.vatRegistrationType ?? null,
+      }),
       request,
     })
 

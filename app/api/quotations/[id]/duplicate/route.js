@@ -6,7 +6,8 @@ import connectDB from '@/lib/mongodb'
 import { Quotation } from '@/models'
 import { requirePerm } from '@/lib/rbac'
 import { isValidObjectId } from '@/lib/objectId'
-import { quotationJSON } from '@/lib/quotation'
+import { logActivity } from '@/lib/logActivity'
+import { QUOTATION_POPULATE, quotationJSON } from '../../_lib/server'
 
 // Today's calendar date in the business timezone, stored as UTC midnight —
 // the same shape a YYYY-MM-DD date input produces.
@@ -15,7 +16,8 @@ function businessToday() {
   return new Date(`${ymd}T00:00:00.000Z`)
 }
 
-// POST /api/quotations/[id]/duplicate
+// POST /api/quotations/[id]/duplicate → 201 { data: new DRAFT quotation }
+// Copies lines, MFS charge, discount and the VAT setup (treatment, rates, service code) as they are.
 export async function POST(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
@@ -40,6 +42,20 @@ export async function POST(request, { params }) {
       duplicatedFromId: _id,
     }).save()
 
+    logActivity({
+      userId:   session.user.id,
+      userRole: session.user.role,
+      action:   'CREATE',
+      entity:   'QUOTATION',
+      entityId: copy._id.toString(),
+      changes:  JSON.stringify({
+        quotationNumber: copy.quotationNumber, duplicatedFrom: quotationNumber ?? null,
+        total: copy.total, currency: copy.currency, vatTreatment: copy.vatTreatment,
+      }),
+      request,
+    })
+
+    await copy.populate(QUOTATION_POPULATE)
     return NextResponse.json({ data: quotationJSON(session, copy) }, { status: 201 })
   } catch (err) {
     console.error('[POST /api/quotations/[id]/duplicate]', err)

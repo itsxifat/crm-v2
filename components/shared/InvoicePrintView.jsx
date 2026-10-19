@@ -1,6 +1,9 @@
 'use client'
 
 import Image from 'next/image'
+import { isVatInvoice, taxableValueOf, invoiceVatLabel } from '@/lib/invoiceTotals'
+import { paymentSettlement, paymentMethodLabel, settlementParts } from '@/lib/paymentSettlement'
+import { BIN_REGEX } from '@/lib/tax/catalog'
 
 // Shared, print-ready invoice layout used by BOTH the admin invoice detail page
 // and the client invoice detail page, so the two always render identically.
@@ -16,6 +19,20 @@ const STATUS_LABELS = {
 
 const fmtDate = (d) =>
   d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
+
+const fmtNum = (v) => (Number(v) || 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })
+
+/**
+ * Buyer BIN for an invoice: issue-time snapshot → client BIN → a legacy VAT
+ * number that is shaped like a BIN (a masked value is never printed).
+ */
+export function buyerBinOf(invoice) {
+  const client = invoice?.clientId && typeof invoice.clientId === 'object' ? invoice.clientId : null
+  if (invoice?.buyer?.bin) return invoice.buyer.bin
+  if (client?.bin && !String(client.bin).includes('••')) return client.bin
+  const legacy = client?.vatNumber ? String(client.vatNumber).replace(/\s/g, '') : ''
+  return legacy && BIN_REGEX.test(legacy) ? client.vatNumber : null
+}
 
 // Opens the on-screen invoice (#invoice-print, rendered by InvoicePrintView) in a
 // print window and triggers the browser print / save-as-PDF dialog. Both the admin
@@ -52,6 +69,27 @@ export default function InvoicePrintView({ invoice, payments = [], company = {} 
   const balance    = Math.max(0, total - paidAmount)
   const cur        = invoice.currency   ?? 'BDT'
   const statusLabel = STATUS_LABELS[invoice.status] ?? STATUS_LABELS.DRAFT
+
+  // VAT (Mushak) details — only for VAT invoices; legacy invoices render as before.
+  const showVat      = isVatInvoice(invoice)
+  const vatAmount    = Number(invoice.vatAmount) || 0
+  const sdAmount     = Number(invoice.sdAmount)  || 0
+  const taxableValue = taxableValueOf(invoice)
+  const showSdCol    = showVat && (sdAmount > 0 || (invoice.items ?? []).some(i => (Number(i?.sdAmount) || 0) > 0))
+  const sellerBin    = invoice.seller?.bin || company.bin || null
+  const sellerTin    = company.tin || null
+  const buyerBin     = buyerBinOf(invoice)
+  const destination  = invoice.deliveryDestination || null
+
+  // Settlement breakdown: paidAmount = cash + VDS + TDS withheld by the client + credit notes.
+  const withheldVds  = Number(invoice.withheldVds)    || 0
+  const withheldTds  = Number(invoice.withheldTds)    || 0
+  const credited     = Number(invoice.creditedAmount) || 0
+  // Debit notes (Mushak-6.8) raise the total by their gross amount (value + VAT +
+  // SD) but leave subtotal / VAT as invoiced — a row explains the difference.
+  const debited      = Number(invoice.debitedAmount)  || 0
+  const hasBreakdown = withheldVds + withheldTds + credited > 0.005
+  const cashReceived = Math.max(0, paidAmount - withheldVds - withheldTds - credited)
 
   const isBDT = cur === 'BDT'
   const curSymbol = isBDT ? '৳' : cur
@@ -94,6 +132,11 @@ export default function InvoicePrintView({ invoice, payments = [], company = {} 
             </p>
           )}
           {company.website && <p style={{ margin: 0, fontSize: 11, color: '#64748b' }}>{company.website}</p>}
+          {(sellerBin || sellerTin) && (
+            <p style={{ margin: '3px 0 0', fontSize: 11, color: '#475569', fontWeight: 600 }}>
+              {[sellerBin && `BIN: ${sellerBin}`, sellerTin && `TIN: ${sellerTin}`].filter(Boolean).join('  ·  ')}
+            </p>
+          )}
         </div>
         <div style={{ textAlign: 'right' }}>
           <p style={{ margin: 0, fontSize: 26, fontWeight: 700, color: '#0f172a', letterSpacing: '-0.5px' }}>Invoice</p>
@@ -139,6 +182,10 @@ export default function InvoicePrintView({ invoice, payments = [], company = {} 
           </p>
         )}
         {user?.phone && <p style={{ margin: 0, fontSize: 11, color: '#64748b' }}>Phone: {user.phone}</p>}
+        {buyerBin && <p style={{ margin: '2px 0 0', fontSize: 11, color: '#475569', fontWeight: 600 }}>BIN: {buyerBin}</p>}
+        {showVat && destination && (
+          <p style={{ margin: '2px 0 0', fontSize: 11, color: '#64748b' }}>Delivery destination: {destination}</p>
+        )}
       </div>
 
       {/* ── ITEMS TABLE ── */}
@@ -149,7 +196,10 @@ export default function InvoicePrintView({ invoice, payments = [], company = {} 
             <th style={TH({ textAlign: 'left',   borderTop: '2px solid #0f172a' })}>Description</th>
             <th style={TH({ textAlign: 'center', borderTop: '2px solid #0f172a' })}>Qty</th>
             <th style={TH({ textAlign: 'right',  borderTop: '2px solid #0f172a', whiteSpace: 'nowrap' })}>Unit Price</th>
-            <th style={TH({ textAlign: 'right',  borderTop: '2px solid #0f172a', paddingRight: 0, whiteSpace: 'nowrap' })}>Amount</th>
+            <th style={TH({ textAlign: 'right',  borderTop: '2px solid #0f172a', whiteSpace: 'nowrap', ...(showVat ? {} : { paddingRight: 0 }) })}>Amount</th>
+            {showSdCol && <th style={TH({ textAlign: 'right', borderTop: '2px solid #0f172a', whiteSpace: 'nowrap', padding: '7px 8px' })}>SD</th>}
+            {showVat && <th style={TH({ textAlign: 'center', borderTop: '2px solid #0f172a', whiteSpace: 'nowrap', padding: '7px 8px' })}>VAT %</th>}
+            {showVat && <th style={TH({ textAlign: 'right', borderTop: '2px solid #0f172a', paddingRight: 0, whiteSpace: 'nowrap' })}>VAT</th>}
           </tr>
         </thead>
         <tbody>
@@ -176,13 +226,30 @@ export default function InvoicePrintView({ invoice, payments = [], company = {} 
                   <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: '#0f172a', lineHeight: 1.4 }}>{descTitle}</p>
                   {descDetail && <p style={{ margin: '3px 0 0', fontSize: 10, fontWeight: 400, color: '#64748b', lineHeight: 1.6 }}>{descDetail}</p>}
                 </td>
-                <td style={TD({ textAlign: 'center', color: '#64748b' })}>{item.quantity}</td>
+                <td style={TD({ textAlign: 'center', color: '#64748b', whiteSpace: 'nowrap' })}>
+                  {item.quantity}{item.unit ? <span style={{ fontSize: 10, color: '#94a3b8' }}>&nbsp;{item.unit}</span> : null}
+                </td>
                 <td style={TD({ textAlign: 'right', color: '#64748b', whiteSpace: 'nowrap' })}>
                   <Sym />&nbsp;{Number(item.rate).toLocaleString('en-BD', { minimumFractionDigits: 2 })}
                 </td>
-                <td style={TD({ textAlign: 'right', paddingRight: 0, fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap' })}>
+                <td style={TD({ textAlign: 'right', fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap', ...(showVat ? {} : { paddingRight: 0 }) })}>
                   <Sym />&nbsp;{(Number(item.quantity) * Number(item.rate)).toLocaleString('en-BD', { minimumFractionDigits: 2 })}
                 </td>
+                {showSdCol && (
+                  <td style={TD({ textAlign: 'right', color: '#64748b', whiteSpace: 'nowrap', padding: '8px 8px' })}>
+                    {(Number(item.sdAmount) || 0) > 0 ? <><Sym />&nbsp;{fmtNum(item.sdAmount)}</> : '—'}
+                  </td>
+                )}
+                {showVat && (
+                  <td style={TD({ textAlign: 'center', color: '#64748b', whiteSpace: 'nowrap', padding: '8px 8px' })}>
+                    {Number(item.vatRate) || 0}%
+                  </td>
+                )}
+                {showVat && (
+                  <td style={TD({ textAlign: 'right', paddingRight: 0, color: '#334155', whiteSpace: 'nowrap' })}>
+                    <Sym />&nbsp;{fmtNum(item.vatAmount)}
+                  </td>
+                )}
               </tr>
             )
           })}
@@ -196,7 +263,11 @@ export default function InvoicePrintView({ invoice, payments = [], company = {} 
           {[
             { label: 'Sub Total',   n: subtotal,  prefix: '',  show: true,          valueColor: '#334155' },
             { label: 'Discount',    n: discount,  prefix: '−', show: discount > 0,  valueColor: '#ef4444' },
+            { label: 'Taxable value', n: taxableValue, prefix: '', show: showVat, valueColor: '#334155' },
+            { label: 'SD',          n: sdAmount,  prefix: '',  show: showVat && sdAmount > 0, valueColor: '#334155' },
+            { label: invoiceVatLabel(invoice), n: vatAmount, prefix: '', show: showVat, valueColor: '#334155' },
             { label: `MFS Charge (${invoice.taxRate ?? 0}%)`, n: taxAmount, prefix: '', show: taxAmount > 0, valueColor: '#334155' },
+            { label: showVat ? 'Debit notes (Mushak-6.8, incl. VAT)' : 'Debit notes', n: debited, prefix: '+', show: debited > 0, valueColor: '#334155' },
           ].filter(r => r.show).map((row, i) => (
             <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid #f1f5f9' }}>
               <span style={{ fontSize: 12, color: '#64748b' }}>{row.label}</span>
@@ -210,9 +281,20 @@ export default function InvoicePrintView({ invoice, payments = [], company = {} 
             <span style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}><Sym />&nbsp;{(total).toLocaleString('en-BD', { minimumFractionDigits: 2 })}</span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid #f1f5f9' }}>
-            <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 500 }}>Paid</span>
+            <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 500 }}>{hasBreakdown ? 'Paid / settled' : 'Paid'}</span>
             <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 500 }}>−<Sym />&nbsp;{(paidAmount).toLocaleString('en-BD', { minimumFractionDigits: 2 })}</span>
           </div>
+          {hasBreakdown && [
+            { label: 'Received',                      n: cashReceived, show: true },
+            { label: 'VAT deducted at source (VDS)',  n: withheldVds,  show: withheldVds > 0 },
+            { label: 'Income tax deducted (TDS/AIT)', n: withheldTds,  show: withheldTds > 0 },
+            { label: 'Credit notes',                  n: credited,     show: credited > 0 },
+          ].filter(r => r.show).map(r => (
+            <div key={r.label} style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0 2px 10px' }}>
+              <span style={{ fontSize: 10.5, color: '#64748b' }}>{r.label}</span>
+              <span style={{ fontSize: 10.5, color: '#64748b' }}><Sym />&nbsp;{fmtNum(r.n)}</span>
+            </div>
+          ))}
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 16px', marginTop: 3, marginLeft: -16, marginRight: -16, borderRadius: 8, background: balance > 0.01 ? '#fef2f2' : '#f0fdf4' }}>
             <span style={{ fontSize: 14, fontWeight: 800, color: balance > 0.01 ? '#dc2626' : '#16a34a' }}>Due</span>
             <span style={{ fontSize: 14, fontWeight: 800, color: balance > 0.01 ? '#dc2626' : '#16a34a' }}><Sym />&nbsp;{(balance).toLocaleString('en-BD', { minimumFractionDigits: 2 })}</span>
@@ -230,18 +312,30 @@ export default function InvoicePrintView({ invoice, payments = [], company = {} 
                 <th style={TH({ textAlign: 'left',   paddingLeft: 0, borderTop: '2px solid #0f172a' })}>Date</th>
                 <th style={TH({ textAlign: 'left',   borderTop: '2px solid #0f172a' })}>Gateway / Method</th>
                 <th style={TH({ textAlign: 'center', borderTop: '2px solid #0f172a' })}>Transaction ID</th>
-                <th style={TH({ textAlign: 'right',  paddingRight: 0, borderTop: '2px solid #0f172a' })}>Paid Amount</th>
+                <th style={TH({ textAlign: 'right',  paddingRight: 0, borderTop: '2px solid #0f172a' })}>Amount Settled</th>
               </tr>
             </thead>
             <tbody>
-              {payments.map((p, i) => (
-                <tr key={i}>
-                  <td style={TD({ paddingLeft: 0 })}>{fmtDate(p.paymentDate ?? p.createdAt)}</td>
-                  <td style={TD()}>{(p.paymentMethod ?? '—').replace(/_/g, ' ')}</td>
-                  <td style={TD({ textAlign: 'center', fontFamily: 'monospace', fontSize: 11 })}>{p.transactionId?.txnId ?? p.txnId ?? '—'}</td>
-                  <td style={TD({ textAlign: 'right', paddingRight: 0, color: '#16a34a', fontWeight: 600 })}><Sym />&nbsp;{(p.amount ?? 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })}</td>
-                </tr>
-              ))}
+              {payments.map((p, i) => {
+                // What the payment settled (cash + VDS + TDS withheld at source), so
+                // the rows add up to "Paid / settled"; a withholding-only row has no cash.
+                const s = paymentSettlement(p)
+                return (
+                  <tr key={i}>
+                    <td style={TD({ paddingLeft: 0 })}>{fmtDate(p.paymentDate ?? p.createdAt)}</td>
+                    <td style={TD()}>
+                      {paymentMethodLabel(p.paymentMethod)}
+                      {s.hasWithholding && (
+                        <span style={{ display: 'block', marginTop: 2, fontSize: 10.5, color: '#64748b' }}>
+                          {settlementParts(s).map(([k, v]) => `${k} ${curSymbol} ${fmtNum(v)}`).join(' · ')}
+                        </span>
+                      )}
+                    </td>
+                    <td style={TD({ textAlign: 'center', fontFamily: 'monospace', fontSize: 11 })}>{p.transactionId?.txnId ?? p.txnId ?? '—'}</td>
+                    <td style={TD({ textAlign: 'right', paddingRight: 0, color: '#16a34a', fontWeight: 600 })}><Sym />&nbsp;{fmtNum(s.settled)}</td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>

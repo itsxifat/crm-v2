@@ -5,13 +5,84 @@ import { useSession } from 'next-auth/react'
 import {
   Plus, Search, X, Loader2, Pencil, Trash2,
   Building2, Phone, Mail, Globe, MapPin, Tag, FileText, Settings2,
-  ShoppingCart,
+  ShoppingCart, Receipt,
 } from 'lucide-react'
+import Link from 'next/link'
 import toast from 'react-hot-toast'
 import { dhakaDayKey } from '@/lib/dhakaTime'
+import { usePermission } from '@/components/auth/Can'
+import TaxCodeSelect from '@/components/tax/TaxCodeSelect'
+import { BIN_REGEX, TIN_REGEX, normalizeBin } from '@/lib/tax/catalog'
 
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
-const fmt     = (n) => `৳ ${(n ?? 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })}`
+const fmt     = (n) => `৳ ${(Number(n) || 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })}`
+const fmtCur  = (n, currency) => (!currency || currency === 'BDT')
+  ? fmt(n)
+  : `${currency} ${(Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+// ─── Tax identity helpers ─────────────────────────────────────────────────────
+
+const VAT_REGISTRATION_TYPES = [
+  { value: 'REGISTERED',   label: 'VAT registered (has BIN)' },
+  { value: 'TURNOVER',     label: 'Turnover tax enlisted' },
+  { value: 'UNREGISTERED', label: 'Not VAT registered' },
+  { value: 'FOREIGN',      label: 'Foreign supplier' },
+]
+const VAT_REG_LABELS = Object.fromEntries(VAT_REGISTRATION_TYPES.map(t => [t.value, t.label]))
+
+const PAYEE_TYPES = [
+  { value: 'COMPANY',      label: 'Company / firm' },
+  { value: 'INDIVIDUAL',   label: 'Individual / proprietor' },
+  { value: 'NON_RESIDENT', label: 'Non-resident (foreign)' },
+]
+const PAYEE_LABELS = Object.fromEntries(PAYEE_TYPES.map(t => [t.value, t.label]))
+
+const BILL_STATUS_COLORS = {
+  DRAFT:     'bg-gray-100 text-gray-600',
+  RECEIVED:  'bg-green-100 text-green-700',
+  CANCELLED: 'bg-red-100 text-red-700',
+}
+const BILL_PAYMENT_COLORS = {
+  UNPAID:    'bg-yellow-50 text-yellow-700',
+  REQUESTED: 'bg-blue-50 text-blue-700',
+  PAID:      'bg-green-50 text-green-700',
+}
+
+// Masked placeholders from the API ('••••••••9012') are never validated or re-sent.
+const isMaskedValue = v => typeof v === 'string' && v.includes('••')
+const binDigits = v => String(v ?? '').replace(/\s+/g, '')
+const tinDigits = v => String(v ?? '').replace(/[\s-]+/g, '')
+
+/** First field-level message from a 422 { details: zod.flatten() } response. */
+function firstValidationMessage(json) {
+  const fe = json?.details?.fieldErrors
+  if (fe && typeof fe === 'object') {
+    for (const msgs of Object.values(fe)) {
+      if (Array.isArray(msgs) && msgs.length) return msgs[0]
+    }
+  }
+  return null
+}
+
+// code → label map for tax codes (cached per page load).
+const taxCodeCache = {}
+function useTaxCodeLabels(kind, enabled) {
+  const [labels, setLabels] = useState(() => taxCodeCache[kind] ?? null)
+  useEffect(() => {
+    if (!enabled || taxCodeCache[kind]) { if (taxCodeCache[kind]) setLabels(taxCodeCache[kind]); return }
+    let alive = true
+    fetch(`/api/tax/codes?kind=${kind}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => {
+        const map = Object.fromEntries((Array.isArray(j?.data) ? j.data : []).map(c => [c.code, c.label]))
+        taxCodeCache[kind] = map
+        if (alive) setLabels(map)
+      })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [kind, enabled])
+  return labels ?? {}
+}
 
 // ─── Service Types Manager Modal ──────────────────────────────────────────────
 
@@ -107,27 +178,66 @@ function VendorModal({ vendor, onClose, onSaved, serviceTypes = [] }) {
     address:     vendor?.address     ?? '',
     website:     vendor?.website     ?? '',
     notes:       vendor?.notes       ?? '',
+    // Tax identity & withholding defaults
+    bin:                   vendor?.bin                   ?? '',
+    tin:                   vendor?.tin                   ?? '',
+    tradeLicense:          vendor?.tradeLicense          ?? '',
+    vatRegistrationType:   vendor?.vatRegistrationType   ?? '',
+    payeeType:             vendor?.payeeType             ?? 'COMPANY',
+    hasPsr:                !!vendor?.hasPsr,
+    defaultTdsSection:     vendor?.defaultTdsSection     ?? '',
+    defaultVatServiceCode: vendor?.defaultVatServiceCode ?? '',
   })
   const [saving, setSaving] = useState(false)
+  const initialTin = vendor?.tin ?? ''
 
   function set(k, v) { setForm(f => ({ ...f, [k]: v })) }
 
+  // A valid BIN marks the vendor VAT registered when no status is set yet.
+  function setBin(v) {
+    setForm(f => ({
+      ...f,
+      bin: v,
+      vatRegistrationType: !f.vatRegistrationType && BIN_REGEX.test(binDigits(v)) ? 'REGISTERED' : f.vatRegistrationType,
+    }))
+  }
+
+  const binInvalid   = !!binDigits(form.bin) && !BIN_REGEX.test(binDigits(form.bin))
+  const tinUntouched = isMaskedValue(form.tin) && form.tin === initialTin
+  const tinMaskEdit  = isMaskedValue(form.tin) && form.tin !== initialTin
+  const tinInvalid   = !!tinDigits(form.tin) && !tinUntouched && !TIN_REGEX.test(tinDigits(form.tin))
+
   async function save() {
     if (!form.company.trim()) { toast.error('Company name is required'); return }
+    if (binInvalid)  { toast.error('BIN must be 9 or 13 digits, e.g. 000123456-0101'); return }
+    if (tinMaskEdit) { toast.error('Clear the hidden TIN fully, then type the full 12-digit e-TIN'); return }
+    if (tinInvalid)  { toast.error('TIN must be the 12-digit e-TIN'); return }
     setSaving(true)
     try {
       const url    = isEdit ? `/api/vendors/${vendor.id}` : '/api/vendors'
       const method = isEdit ? 'PUT' : 'POST'
+      const bin    = binDigits(form.bin)
+      const body   = {
+        ...form,
+        email:   form.email   || null,
+        website: form.website || null,
+        bin:     bin ? (normalizeBin(bin) || bin) : null,
+        tin:     tinDigits(form.tin) || null,
+        tradeLicense:          form.tradeLicense.trim() || null,
+        vatRegistrationType:   form.vatRegistrationType || null,
+        payeeType:             form.payeeType || 'COMPANY',
+        hasPsr:                !!form.hasPsr,
+        defaultTdsSection:     form.defaultTdsSection || null,
+        defaultVatServiceCode: form.defaultVatServiceCode || null,
+      }
+      // An untouched (masked) TIN is left as stored.
+      if (tinUntouched) delete body.tin
       const res    = await fetch(url, {
         method, headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...form,
-          email:   form.email   || null,
-          website: form.website || null,
-        }),
+        body: JSON.stringify(body),
       })
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error ?? 'Failed')
+      if (!res.ok) throw new Error(firstValidationMessage(json) ?? json.error ?? 'Failed')
       toast.success(isEdit ? 'Vendor updated' : 'Vendor added')
       onSaved(); onClose()
     } catch (err) { toast.error(err.message) }
@@ -135,6 +245,8 @@ function VendorModal({ vendor, onClose, onSaved, serviceTypes = [] }) {
   }
 
   const ic = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900'
+  const lc = 'block text-xs font-medium text-gray-500 mb-1'
+  const hc = 'text-xs text-gray-400 mt-1'
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -179,6 +291,78 @@ function VendorModal({ vendor, onClose, onSaved, serviceTypes = [] }) {
           <div className="col-span-2">
             <label className="block text-xs font-medium text-gray-500 mb-1">Notes</label>
             <textarea value={form.notes} onChange={e => set('notes', e.target.value)} rows={3} placeholder="Payment terms, special instructions…" className={`${ic} resize-none`} />
+          </div>
+        </div>
+
+        {/* ── Tax identity ── */}
+        <div className="border-t border-gray-100 pt-4 space-y-3">
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Tax identity</p>
+            <p className="text-xs text-gray-400 mt-0.5">Used for input VAT credit, VDS (Mushak-6.6) and TDS when you pay this vendor.</p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className={lc}>BIN</label>
+              <input value={form.bin} onChange={e => setBin(e.target.value)} inputMode="numeric"
+                placeholder="000123456-0101" className={`${ic} font-mono ${binInvalid ? 'border-red-300' : ''}`} />
+              <p className={binInvalid ? 'text-xs text-red-500 mt-1' : hc}>
+                {binInvalid ? 'BIN must be 9 or 13 digits' : '13 digits, e.g. 000123456-0101'}
+              </p>
+            </div>
+            <div>
+              <label className={lc}>TIN (e-TIN)</label>
+              <input value={form.tin} onChange={e => set('tin', e.target.value)} inputMode="numeric"
+                placeholder="12-digit e-TIN" className={`${ic} font-mono ${tinInvalid || tinMaskEdit ? 'border-red-300' : ''}`} />
+              <p className={tinInvalid || tinMaskEdit ? 'text-xs text-red-500 mt-1' : hc}>
+                {tinMaskEdit ? 'Clear the hidden TIN fully, then type the new one'
+                  : tinInvalid ? 'TIN must be 12 digits'
+                  : tinUntouched ? 'Hidden for privacy. Leave as is or replace it.'
+                  : 'Printed on the TDS certificate you issue'}
+              </p>
+            </div>
+            <div>
+              <label className={lc}>VAT status</label>
+              <select value={form.vatRegistrationType} onChange={e => set('vatRegistrationType', e.target.value)} className={ic}>
+                <option value="">Not specified</option>
+                {VAT_REGISTRATION_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+              </select>
+              {['TURNOVER', 'UNREGISTERED'].includes(form.vatRegistrationType) && (
+                <p className="text-xs text-amber-600 mt-1">No input VAT credit and no VDS on purchases from this vendor.</p>
+              )}
+              {form.vatRegistrationType === 'FOREIGN' && (
+                <p className={hc}>No BIN or Mushak-6.3 from a foreign supplier.</p>
+              )}
+            </div>
+            <div>
+              <label className={lc}>Trade licence no.</label>
+              <input value={form.tradeLicense} onChange={e => set('tradeLicense', e.target.value)} placeholder="Optional" className={ic} />
+            </div>
+            <div>
+              <label className={lc}>Payee type (for TDS rate)</label>
+              <select value={form.payeeType} onChange={e => set('payeeType', e.target.value)} className={ic}>
+                {PAYEE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+              </select>
+            </div>
+            <div className="flex items-end">
+              <label className="flex items-start gap-2 cursor-pointer pb-1">
+                <input type="checkbox" checked={form.hasPsr} onChange={e => set('hasPsr', e.target.checked)}
+                  className="mt-0.5 w-4 h-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900" />
+                <span>
+                  <span className="block text-sm font-medium text-gray-800">PSR on file</span>
+                  <span className="block text-xs text-gray-400">Proof of return submission. Without it TDS is 50% higher (ITA 2023 s.142).</span>
+                </span>
+              </label>
+            </div>
+            <div>
+              <label className={lc}>Default TDS section</label>
+              <TaxCodeSelect kind="TDS_SECTION" value={form.defaultTdsSection || null}
+                onChange={code => set('defaultTdsSection', code ?? '')} placeholder="Select section…" className={ic} />
+            </div>
+            <div>
+              <label className={lc}>Default VAT service code</label>
+              <TaxCodeSelect kind="VAT_SERVICE" value={form.defaultVatServiceCode || null}
+                onChange={code => set('defaultVatServiceCode', code ?? '')} placeholder="Select service…" className={ic} />
+            </div>
           </div>
         </div>
 
@@ -364,13 +548,160 @@ function PurchaseModal({ vendorId, purchase, onClose, onSaved }) {
 
 // ─── Vendor Detail Panel ──────────────────────────────────────────────────────
 
+// Read-only list of the vendor's purchase bills (inventory module). The bills
+// API may be unavailable or forbidden for this user — degrade quietly.
+function VendorPurchaseBills({ vendorId }) {
+  const { can, ready } = usePermission()
+  const [state, setState] = useState({ loading: true, rows: [], total: 0, status: 'ok' })
+
+  useEffect(() => {
+    let alive = true
+    setState(s => ({ ...s, loading: true }))
+    fetch(`/api/inventory/purchases?vendorId=${encodeURIComponent(vendorId)}&limit=10`)
+      .then(async res => {
+        if (!alive) return
+        if (res.status === 403) { setState({ loading: false, rows: [], total: 0, status: 'forbidden' }); return }
+        if (!res.ok)            { setState({ loading: false, rows: [], total: 0, status: 'unavailable' }); return }
+        const json = await res.json().catch(() => ({}))
+        if (!alive) return
+        const rows = Array.isArray(json?.data) ? json.data : []
+        setState({ loading: false, rows, total: Number(json?.meta?.total) || rows.length, status: 'ok' })
+      })
+      .catch(() => { if (alive) setState({ loading: false, rows: [], total: 0, status: 'unavailable' }) })
+    return () => { alive = false }
+  }, [vendorId])
+
+  const canCreate = ready && can('inventory.purchase')
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3 gap-2">
+        <h4 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+          <ShoppingCart className="w-4 h-4 text-gray-400" /> Purchase bills
+        </h4>
+        <div className="flex items-center gap-3">
+          {state.status === 'ok' && state.total > state.rows.length && (
+            <Link href={`/admin/inventory/purchases?vendorId=${encodeURIComponent(vendorId)}`} className="text-xs text-blue-600 hover:underline">
+              View all {state.total}
+            </Link>
+          )}
+          {canCreate && state.status === 'ok' && (
+            <Link href={`/admin/inventory/purchases/new?vendorId=${encodeURIComponent(vendorId)}`}
+              className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-800">
+              <Plus className="w-3.5 h-3.5" /> New bill
+            </Link>
+          )}
+        </div>
+      </div>
+
+      {state.loading ? (
+        <div className="flex justify-center py-4"><Loader2 className="w-4 h-4 animate-spin text-gray-400" /></div>
+      ) : state.status === 'forbidden' ? (
+        <p className="text-xs text-gray-400 text-center py-4 border border-dashed border-gray-200 rounded-lg">
+          You don&apos;t have access to purchase bills (Inventory permission needed).
+        </p>
+      ) : state.status === 'unavailable' ? (
+        <p className="text-xs text-gray-400 text-center py-4 border border-dashed border-gray-200 rounded-lg">
+          Purchase bills couldn&apos;t be loaded right now.
+        </p>
+      ) : state.rows.length === 0 ? (
+        <p className="text-xs text-gray-400 text-center py-4 border border-dashed border-gray-200 rounded-lg">
+          No purchase bills from this vendor yet. Record equipment and supply purchases in Inventory → Purchases.
+        </p>
+      ) : (
+        <div className="divide-y divide-gray-50 border border-gray-100 rounded-lg overflow-hidden">
+          {state.rows.map(b => {
+            const id = b.id ?? b._id
+            const payStatus = b.payment?.status
+            return (
+              <Link key={id} href={`/admin/inventory/purchases/${id}`}
+                className="flex items-start justify-between px-4 py-3 gap-3 hover:bg-gray-50 transition-colors">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-gray-800 truncate">
+                    {b.billNo || 'Draft bill'}
+                    {b.supplierInvoiceNo ? <span className="text-gray-400 font-normal"> · {b.supplierInvoiceNo}</span> : null}
+                  </p>
+                  <p className="text-xs text-gray-400">
+                    {fmtDate(b.billDate)}
+                    {b.mushakNo ? ` · Mushak ${b.mushakNo}` : ''}
+                    {Array.isArray(b.lines) ? ` · ${b.lines.length} line${b.lines.length !== 1 ? 's' : ''}` : ''}
+                  </p>
+                </div>
+                <div className="flex flex-col items-end gap-1 shrink-0">
+                  <span className="text-sm font-semibold text-gray-800">{fmtCur(b.total, b.currency)}</span>
+                  <div className="flex items-center gap-1">
+                    {b.status && (
+                      <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${BILL_STATUS_COLORS[b.status] ?? 'bg-gray-100 text-gray-600'}`}>
+                        {String(b.status).toLowerCase()}
+                      </span>
+                    )}
+                    {payStatus && b.status === 'RECEIVED' && (
+                      <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${BILL_PAYMENT_COLORS[payStatus] ?? 'bg-gray-100 text-gray-600'}`}>
+                        {String(payStatus).toLowerCase()}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </Link>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Vendor tax identity summary (BIN / TIN / VAT status / TDS defaults).
+function VendorTaxIdentity({ vendor, onEdit }) {
+  const tdsLabels = useTaxCodeLabels('TDS_SECTION', !!vendor.defaultTdsSection)
+  const vatLabels = useTaxCodeLabels('VAT_SERVICE', !!vendor.defaultVatServiceCode)
+  const items = [
+    ['BIN', vendor.bin, true],
+    ['TIN (e-TIN)', vendor.tin, true],
+    ['VAT status', VAT_REG_LABELS[vendor.vatRegistrationType], false],
+    ['Trade licence', vendor.tradeLicense, false],
+    ['Payee type', PAYEE_LABELS[vendor.payeeType] ?? PAYEE_LABELS.COMPANY, false],
+    ['Default TDS section', vendor.defaultTdsSection
+      ? `${vendor.defaultTdsSection}${tdsLabels[vendor.defaultTdsSection] ? ` — ${tdsLabels[vendor.defaultTdsSection]}` : ''}` : null, false],
+    ['Default VAT service', vendor.defaultVatServiceCode
+      ? `${vendor.defaultVatServiceCode}${vatLabels[vendor.defaultVatServiceCode] ? ` — ${vatLabels[vendor.defaultVatServiceCode]}` : ''}` : null, false],
+  ]
+  const noIdentity = !vendor.bin && !vendor.tin && !vendor.vatRegistrationType
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <h4 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+          <Receipt className="w-4 h-4 text-gray-400" /> Tax identity
+        </h4>
+        <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${vendor.hasPsr ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}`}>
+          {vendor.hasPsr ? 'PSR on file' : 'No PSR — TDS +50%'}
+        </span>
+      </div>
+      {noIdentity && (
+        <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2 mb-3">
+          No BIN or TIN on file. Without the supplier&apos;s BIN you can&apos;t claim input VAT.{' '}
+          {onEdit && <button onClick={onEdit} className="font-medium underline">Add tax details</button>}
+        </p>
+      )}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 border border-gray-100 rounded-lg px-4 py-3">
+        {items.map(([label, value, mono]) => (
+          <div key={label} className="min-w-0">
+            <p className="text-[11px] text-gray-400">{label}</p>
+            <p className={`text-sm break-words ${value ? 'text-gray-800' : 'text-gray-300'} ${mono && value ? 'font-mono' : ''}`}>{value || '—'}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function VendorDetail({ vendor, onClose, onEdit }) {
   const { data: session } = useSession()
   const [detail,       setDetail]       = useState(null)
   const [loading,      setLoading]      = useState(true)
   const [purchaseModal, setPurchaseModal] = useState(false)
   const [editPurchase, setEditPurchase] = useState(null)
-  const [delPurchase,  setDelPurchase]  = useState(null)
   const [deletingId,   setDeletingId]   = useState(null)
 
   const canDelete = session?.user?.role === 'SUPER_ADMIN' || session?.user?.role === 'MANAGER'
@@ -383,6 +714,7 @@ function VendorDetail({ vendor, onClose, onEdit }) {
       .finally(() => setLoading(false))
   }
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { loadDetail() }, [vendor.id])
 
   async function deletePurchase(p) {
@@ -460,6 +792,10 @@ function VendorDetail({ vendor, onClose, onEdit }) {
             </div>
           )}
 
+          <VendorTaxIdentity vendor={detail ?? vendor} onEdit={onEdit} />
+
+          <VendorPurchaseBills vendorId={vendor.id} />
+
           {loading && (
             <div className="flex justify-center py-8">
               <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
@@ -471,7 +807,7 @@ function VendorDetail({ vendor, onClose, onEdit }) {
               {/* Purchases */}
               <div>
                 <div className="flex items-center justify-between mb-3">
-                  <h4 className="text-sm font-semibold text-gray-800">Purchases</h4>
+                  <h4 className="text-sm font-semibold text-gray-800">Purchase records</h4>
                   <div className="flex items-center gap-3">
                     <span className="text-xs text-gray-400">Total: <strong>{fmt(detail.totalPurchased)}</strong></span>
                     {canDelete && (
@@ -651,7 +987,7 @@ export default function VendorsPage() {
         <input
           value={search}
           onChange={e => setSearch(e.target.value)}
-          placeholder="Search by company, contact, email…"
+          placeholder="Search by company, contact, email or BIN…"
           className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
         />
         {search && (
@@ -696,6 +1032,11 @@ export default function VendorsPage() {
                           <button onClick={() => setDetail(v)} className="text-left">
                             <p className="text-sm font-medium text-gray-900 hover:text-blue-600 transition-colors">{v.company}</p>
                             {v.email && <p className="text-xs text-gray-400 mt-0.5">{v.email}</p>}
+                            {v.bin
+                              ? <p className="text-[11px] text-gray-400 font-mono mt-0.5">BIN {v.bin}</p>
+                              : ['TURNOVER', 'UNREGISTERED', 'FOREIGN'].includes(v.vatRegistrationType)
+                                ? <p className="text-[11px] text-gray-400 mt-0.5">{VAT_REG_LABELS[v.vatRegistrationType]}</p>
+                                : null}
                           </button>
                         </td>
                         <td className="px-4 py-3">

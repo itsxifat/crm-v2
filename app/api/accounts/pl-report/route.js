@@ -6,9 +6,17 @@ import connectDB from '@/lib/mongodb'
 import { Transaction } from '@/models'
 import { requirePerm } from '@/lib/rbac'
 import { parseDhakaDay, dhakaParts } from '@/lib/dhakaTime'
-import { BASE_CURRENCY } from '@/lib/currencies'
+import {
+  plEffect, nonPlBreakdown, depreciationTotal, ebitdaOf, PL_SELECT, round2,
+} from '@/app/api/accounts/_lib/pl'
 
 // GET /api/accounts/pl-report?startDate=&endDate=
+// Profit & loss by Asia/Dhaka month. Only P&L rows count (kind OPERATING /
+// NON_CASH, or legacy rows without a kind) at their P&L value (plAmountBDT ⇒
+// amountBDT ⇒ amount for BDT rows). INCOME rows are income, EXPENSE rows are
+// expense; reversal rows reduce the side they reverse. Non-P&L cash movements
+// (transfers, capital, loans, tax payments, asset purchases…) are returned
+// separately in `nonPl` for reference.
 export async function GET(request) {
   try {
     const session = await getServerSession(authOptions)
@@ -31,40 +39,55 @@ export async function GET(request) {
         if (end) filter.date.$lt  = end.next
         else     filter.date.$lte = new Date(endDate)
       }
+      if (Object.values(filter.date).some(d => Number.isNaN(d.getTime())))
+        return NextResponse.json({ error: 'Invalid date' }, { status: 400 })
     }
 
-    const transactions = await Transaction.find(filter).sort({ date: 1 }).lean()
+    const transactions = await Transaction.find(filter).select(PL_SELECT).sort({ date: 1 }).lean()
 
     const months = {}
-    transactions.forEach(tx => {
-      // Roll up in BDT — amountBDT falls back to the original amount for BDT rows
-      // only; a foreign row with no BDT-equivalent can't be summed as BDT.
-      const amt = tx.amountBDT != null
-        ? (Number(tx.amountBDT) || 0)
-        : ((tx.currency || BASE_CURRENCY) === BASE_CURRENCY ? (Number(tx.amount) || 0) : null)
-      if (amt == null) return
-      // Month buckets follow the business timezone (Asia/Dhaka).
+    let unconvertedCount = 0
+    for (const tx of transactions) {
+      const effect = plEffect(tx)
+      if (!effect) continue                                   // not a P&L row
+      if (effect.unconverted) { unconvertedCount++; continue } // foreign row with no BDT figure
       const { year, month } = dhakaParts(tx.date)
       const key = `${year}-${String(month + 1).padStart(2, '0')}`
       if (!months[key]) {
         months[key] = { month: key, income: {}, expense: {}, totalIncome: 0, totalExpense: 0 }
       }
-      const m = months[key]
-      if (tx.type === 'INCOME') {
-        m.income[tx.category] = (m.income[tx.category] ?? 0) + amt
-        m.totalIncome += amt
+      const m   = months[key]
+      const cat = tx.category || 'Uncategorised'
+      if (effect.side === 'INCOME') {
+        m.income[cat] = (m.income[cat] ?? 0) + effect.amount
+        m.totalIncome += effect.amount
       } else {
-        m.expense[tx.category] = (m.expense[tx.category] ?? 0) + amt
-        m.totalExpense += amt
+        m.expense[cat] = (m.expense[cat] ?? 0) + effect.amount
+        m.totalExpense += effect.amount
       }
-    })
+    }
 
+    const roundMap = (obj) => Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, round2(v)]))
     const rows = Object.values(months)
-      .map(m => ({ ...m, netProfit: m.totalIncome - m.totalExpense }))
+      .map(m => {
+        const totalIncome  = round2(m.totalIncome)
+        const totalExpense = round2(m.totalExpense)
+        return {
+          month:     m.month,
+          income:    roundMap(m.income),
+          expense:   roundMap(m.expense),
+          totalIncome,
+          totalExpense,
+          netProfit: round2(totalIncome - totalExpense),
+        }
+      })
       .sort((a, b) => a.month.localeCompare(b.month))
 
-    const totalIncome  = rows.reduce((s, r) => s + r.totalIncome,  0)
-    const totalExpense = rows.reduce((s, r) => s + r.totalExpense, 0)
+    const totalIncome  = round2(rows.reduce((s, r) => s + r.totalIncome,  0))
+    const totalExpense = round2(rows.reduce((s, r) => s + r.totalExpense, 0))
+    const netProfit    = round2(totalIncome - totalExpense)
+    const depreciation = depreciationTotal(transactions)
+    const { ebitda, interestExpense, interestIncome } = ebitdaOf(netProfit, transactions, depreciation)
 
     return NextResponse.json({
       data: {
@@ -72,9 +95,15 @@ export async function GET(request) {
         summary: {
           totalIncome,
           totalExpense,
-          netProfit: totalIncome - totalExpense,
-          margin:    totalIncome > 0 ? ((totalIncome - totalExpense) / totalIncome) * 100 : 0,
+          netProfit,
+          margin:    totalIncome > 0 ? (netProfit / totalIncome) * 100 : 0,
+          depreciation,
+          interestExpense,
+          interestIncome,
+          ebitda,
+          unconvertedCount,
         },
+        nonPl:  nonPlBreakdown(transactions),
         period: { startDate, endDate },
       },
     })

@@ -50,6 +50,13 @@ const FreelancerSchema = new mongoose.Schema(
     // Pricing — Mixed array
     pricing: { type: mongoose.Schema.Types.Mixed, default: [] },
 
+    // ── Tax identity (Bangladesh withholding) ──
+    tin:       { type: String, default: null },   // e-TIN (12 digits)
+    bin:       { type: String, default: null },   // VAT BIN (agencies)
+    // Agencies are firms (company TDS rates); individual freelancers default to INDIVIDUAL.
+    payeeType: { type: String, enum: ['COMPANY', 'INDIVIDUAL', 'NON_RESIDENT'], default: function () { return this.type === 'AGENCY' ? 'COMPANY' : 'INDIVIDUAL' } },
+    hasPsr:    { type: Boolean, default: false }, // Proof of Submission of Return — no PSR ⇒ TDS +50%
+
     agencyInfo: {
       agencyName: { type: String, default: null }, // encrypted
       phone:      { type: String, default: null }, // encrypted

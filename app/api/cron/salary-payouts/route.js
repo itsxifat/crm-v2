@@ -64,7 +64,8 @@ async function run() {
   const results = []
   for (const f of due) {
     // Respect the temporary employment window (end date inclusive, Dhaka day).
-    if (f.salaryStartDate && now < new Date(f.salaryStartDate)) continue
+    // The start day counts from Dhaka midnight (a 'YYYY-MM-DD' start is stored at 00:00 UTC = 06:00 Dhaka).
+    if (f.salaryStartDate && now < dhakaDayStart(f.salaryStartDate)) continue
     if (f.salaryEndDate && now >= dhakaDayStart(f.salaryEndDate, 1)) continue
     // Deleted or deactivated accounts must not keep accruing salary.
     if (!f.userId || f.userId.isActive === false) continue
