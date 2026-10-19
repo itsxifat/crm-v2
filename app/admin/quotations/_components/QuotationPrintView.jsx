@@ -3,6 +3,7 @@
 import Image from 'next/image'
 import { isVatQuotation, quotationTaxableValue, quotationVatLabel, quotationLineAmount } from '@/lib/quotation'
 import { STATUS_STYLES } from './quotationUi'
+import { BENGALI_FONT_CSS } from '@/lib/printFonts'
 
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Dhaka' }) : '—'
 const fmtNum  = (v) => (Number(v) || 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })
@@ -36,7 +37,7 @@ export default function QuotationPrintView({ quotation: q, company = {}, venture
 
   const isBDT = cur === 'BDT'
   const Sym = () => isBDT
-    ? <span style={{ fontSize: 14, fontWeight: 400, lineHeight: 1, letterSpacing: '-0.5px', fontFamily: 'Georgia, serif' }}>৳</span>
+    ? <span style={{ fontFamily: 'var(--font-bengali), serif', fontSize: '1.05em', lineHeight: 1 }}>৳</span>
     : <span>{cur}</span>
 
   const accent = {
@@ -58,7 +59,7 @@ export default function QuotationPrintView({ quotation: q, company = {}, venture
 
   return (
     <div id="quotation-print" style={{
-      fontFamily: "'Inter', 'Segoe UI', sans-serif",
+      fontFamily: "'Inter', 'Segoe UI', var(--font-bengali), sans-serif",
       background: '#ffffff', padding: '36px 56px',
       maxWidth: 820, minWidth: 640, margin: '0 auto',
     }}>
@@ -259,8 +260,9 @@ export function openQuotationPrint(quotationNumber) {
     <title>Quotation ${quotationNumber ?? ''}</title>
     <style>
       @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+      ${BENGALI_FONT_CSS}
       * { box-sizing: border-box; margin: 0; padding: 0; }
-      body { font-family: 'Inter','Segoe UI',sans-serif; background:#fff; }
+      body { font-family: 'Inter','Segoe UI',var(--font-bengali),sans-serif; background:#fff; }
       #quotation-print { min-width: 0 !important; }
       @page { margin: 0; size: A4; }
     </style>

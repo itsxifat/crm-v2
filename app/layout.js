@@ -1,5 +1,5 @@
 import './globals.css'
-import { Inter } from 'next/font/google'
+import { Inter, Anek_Bangla } from 'next/font/google'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import Providers from '@/components/providers/Providers'
@@ -7,6 +7,13 @@ import Providers from '@/components/providers/Providers'
 const inter = Inter({
   subsets:  ['latin'],
   variable: '--font-sans',
+  display:  'swap',
+})
+
+// Bengali subset only — supplies the ৳ (and any Bangla text) next to Inter.
+const anekBangla = Anek_Bangla({
+  subsets:  ['bengali'],
+  variable: '--font-bengali',
   display:  'swap',
 })
 
@@ -35,7 +42,7 @@ export default async function RootLayout({ children }) {
   const session = await getServerSession(authOptions)
 
   return (
-    <html lang="en" className={inter.variable} suppressHydrationWarning>
+    <html lang="en" className={`${inter.variable} ${anekBangla.variable}`} suppressHydrationWarning>
       <body className="min-h-screen bg-background font-sans antialiased">
         <Providers session={session}>
           {children}

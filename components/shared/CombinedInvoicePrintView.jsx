@@ -4,6 +4,7 @@ import Image from 'next/image'
 import { isVatInvoice, taxableValueOf, invoiceVatLabel } from '@/lib/invoiceTotals'
 import { buyerBinOf } from '@/components/shared/InvoicePrintView'
 import { paymentSettlement, paymentMethodLabel, settlementParts } from '@/lib/paymentSettlement'
+import { BENGALI_FONT_CSS } from '@/lib/printFonts'
 
 // Shared, print-ready COMBINED invoice layout, used by both the admin and the
 // client portal so the two always render identically.
@@ -46,8 +47,9 @@ export function openCombinedInvoicePrint(combinedNumber) {
     <title>Combined Invoice ${combinedNumber ?? ''}</title>
     <style>
       @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+      ${BENGALI_FONT_CSS}
       * { box-sizing: border-box; margin: 0; padding: 0; }
-      body { font-family: 'Inter','Segoe UI',sans-serif; background:#fff; }
+      body { font-family: 'Inter','Segoe UI',var(--font-bengali),sans-serif; background:#fff; }
       @page { margin: 0; size: A4; }
     </style>
   </head><body>${el.outerHTML}</body></html>`)
@@ -83,7 +85,7 @@ export default function CombinedInvoicePrintView({ combined, company = {} }) {
   }[combined.status] ?? '#2563eb'
 
   const Sym = () => isBDT
-    ? <span style={{ fontSize: 14, fontWeight: 400, lineHeight: 1, letterSpacing: '-0.5px', fontFamily: 'Georgia, serif' }}>৳</span>
+    ? <span style={{ fontFamily: 'var(--font-bengali), serif', fontSize: '1.05em', lineHeight: 1 }}>৳</span>
     : <span>{cur}</span>
 
   const money = (v) => (Number(v) || 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })
@@ -101,7 +103,7 @@ export default function CombinedInvoicePrintView({ combined, company = {} }) {
 
   return (
     <div id="combined-invoice-print" style={{
-      fontFamily: "'Inter', 'Segoe UI', sans-serif",
+      fontFamily: "'Inter', 'Segoe UI', var(--font-bengali), sans-serif",
       background: '#ffffff', padding: '36px 56px',
       maxWidth: 820, margin: '0 auto',
     }}>

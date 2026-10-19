@@ -12,6 +12,7 @@ import { moneyAccountText } from '@/lib/expensePayment'
 import { maskIdentity } from '@/lib/pii'
 import { amountToWords } from '@/lib/numberToWords'
 import { escapeHtml } from '@/lib/html'
+import { BENGALI_FONT_CSS } from '@/lib/printFonts'
 import { isValidObjectId } from '@/lib/objectId'
 
 const fmtDate = (d) =>
@@ -26,7 +27,7 @@ function fmtPeriod(period) {
 function money(amount, currency = 'BDT') {
   const n = (amount ?? 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })
   if (!currency || currency === 'BDT') {
-    return `<span style="font-family:Georgia,serif;font-weight:400;font-size:1.05em;letter-spacing:-0.5px">৳</span>&nbsp;${n}`
+    return `<span style="font-family:var(--font-bengali),serif;font-size:1.05em">৳</span>&nbsp;${n}`
   }
   return `${escapeHtml(currency)}&nbsp;${n}`
 }
@@ -132,7 +133,8 @@ export async function GET(request, { params }) {
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Inter','Segoe UI',sans-serif; background: #fff; color: #0f172a; }
+  ${BENGALI_FONT_CSS}
+  body { font-family: 'Inter','Segoe UI', var(--font-bengali),sans-serif; background: #fff; color: #0f172a; }
   table { width: 100%; border-collapse: collapse; }
   thead { display: table-header-group; }
   tr { page-break-inside: avoid; break-inside: avoid; }
@@ -320,7 +322,7 @@ export async function GET(request, { params }) {
       headers: {
         'Content-Type': 'text/html; charset=utf-8',
         // Only our own nonce'd print script may run in this document.
-        'Content-Security-Policy': `default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; script-src 'nonce-${cspNonce}'; base-uri 'self'; form-action 'none'; frame-ancestors 'self'`,
+        'Content-Security-Policy': `default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; font-src 'self'; script-src 'nonce-${cspNonce}'; base-uri 'self'; form-action 'none'; frame-ancestors 'self'`,
         'Content-Disposition': `inline; filename="salary-slip-${String(s.slipNo ?? s.id).replace(/[^\w.-]/g, '_')}.html"`,
       },
     })

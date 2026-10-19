@@ -8,6 +8,7 @@ import { MoneyAccount, Reconciliation } from '@/models'
 import { canDoAny } from '@/lib/rbac'
 import { isValidObjectId } from '@/lib/objectId'
 import { escapeHtml } from '@/lib/html'
+import { BENGALI_FONT_CSS } from '@/lib/printFonts'
 import { dhakaDayKey } from '@/lib/dhakaTime'
 import { dayKeyLabel } from '@/lib/finance/fiscal'
 import { getCompanyProfile } from '@/lib/finance/settings'
@@ -28,7 +29,7 @@ function money(amount, currency = 'BDT') {
   const abs = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   const sym = SYMBOLS[currency] ?? currency
   const symHtml = currency === 'BDT'
-    ? '<span style="font-family:Georgia,serif;font-weight:400;font-size:1.05em;letter-spacing:-0.5px">৳</span>'
+    ? '<span style="font-family:var(--font-bengali),serif;font-size:1.05em">৳</span>'
     : escapeHtml(sym)
   return `${n < -EPS ? '−' : ''}${symHtml}&nbsp;${abs}`
 }
@@ -119,7 +120,8 @@ export async function GET(request, { params }) {
 <title>Bank reconciliation — ${escapeHtml(account.name)} — ${escapeHtml(dayKeyLabel(dayKey))}</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Inter','Segoe UI',Roboto,sans-serif; background: #fff; color: #0f172a; }
+  ${BENGALI_FONT_CSS}
+  body { font-family: 'Inter','Segoe UI',Roboto, var(--font-bengali),sans-serif; background: #fff; color: #0f172a; }
   table { width: 100%; border-collapse: collapse; }
   thead { display: table-header-group; }
   tr { page-break-inside: avoid; break-inside: avoid; }
@@ -201,7 +203,7 @@ export async function GET(request, { params }) {
     return new Response(html, {
       headers: {
         'Content-Type': 'text/html; charset=utf-8',
-        'Content-Security-Policy': `default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; script-src 'nonce-${cspNonce}'; base-uri 'self'; form-action 'none'; frame-ancestors 'self'`,
+        'Content-Security-Policy': `default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; font-src 'self'; script-src 'nonce-${cspNonce}'; base-uri 'self'; form-action 'none'; frame-ancestors 'self'`,
         'Content-Disposition': `inline; filename="reconciliation-${String(account.name).replace(/[^\w.-]+/g, '_')}-${dayKey}.html"`,
       },
     })

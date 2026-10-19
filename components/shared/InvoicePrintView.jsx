@@ -4,6 +4,7 @@ import Image from 'next/image'
 import { isVatInvoice, taxableValueOf, invoiceVatLabel } from '@/lib/invoiceTotals'
 import { paymentSettlement, paymentMethodLabel, settlementParts } from '@/lib/paymentSettlement'
 import { BIN_REGEX } from '@/lib/tax/catalog'
+import { BENGALI_FONT_CSS } from '@/lib/printFonts'
 
 // Shared, print-ready invoice layout used by BOTH the admin invoice detail page
 // and the client invoice detail page, so the two always render identically.
@@ -48,8 +49,9 @@ export function openInvoicePrint(invoiceNumber) {
     <title>Invoice ${invoiceNumber ?? ''}</title>
     <style>
       @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+      ${BENGALI_FONT_CSS}
       * { box-sizing: border-box; margin: 0; padding: 0; }
-      body { font-family: 'Inter','Segoe UI',sans-serif; background:#fff; }
+      body { font-family: 'Inter','Segoe UI',var(--font-bengali),sans-serif; background:#fff; }
       @page { margin: 0; size: A4; }
     </style>
   </head><body>${el.outerHTML}</body></html>`)
@@ -94,7 +96,7 @@ export default function InvoicePrintView({ invoice, payments = [], company = {} 
   const isBDT = cur === 'BDT'
   const curSymbol = isBDT ? '৳' : cur
   const Sym = () => isBDT
-    ? <span style={{ fontSize: 14, fontWeight: 400, lineHeight: 1, letterSpacing: '-0.5px', fontFamily: 'Georgia, serif' }}>৳</span>
+    ? <span style={{ fontFamily: 'var(--font-bengali), serif', fontSize: '1.05em', lineHeight: 1 }}>৳</span>
     : <span>{cur}</span>
 
   const accent = {
@@ -115,7 +117,7 @@ export default function InvoicePrintView({ invoice, payments = [], company = {} 
 
   return (
     <div id="invoice-print" style={{
-      fontFamily: "'Inter', 'Segoe UI', sans-serif",
+      fontFamily: "'Inter', 'Segoe UI', var(--font-bengali), sans-serif",
       background: '#ffffff', padding: '36px 56px',
       maxWidth: 820, margin: '0 auto',
     }}>

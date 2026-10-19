@@ -7,6 +7,7 @@ import crypto from 'crypto'
 import { Invoice, Payment, ProjectPayment, Setting } from '@/models'
 import { getMyCompanyIds } from '@/lib/clientAccess'
 import { escapeHtml } from '@/lib/html'
+import { BENGALI_FONT_CSS } from '@/lib/printFonts'
 import { isValidObjectId } from '@/lib/objectId'
 import { isVatInvoice, taxableValueOf, invoiceVatLabel } from '@/lib/invoiceTotals'
 import { paymentSettlement, paymentMethodLabel, settlementParts } from '@/lib/paymentSettlement'
@@ -93,7 +94,7 @@ export async function GET(_, { params }) {
         'Content-Type': 'text/html; charset=utf-8',
         'Content-Disposition': `inline; filename="invoice-${String(inv.invoiceNumber ?? '').replace(/[^A-Za-z0-9_-]/g, '')}.html"`,
         // Only our own nonce'd print script may run in this document.
-        'Content-Security-Policy': `default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; script-src 'nonce-${html.nonce}'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'`,
+        'Content-Security-Policy': `default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; font-src 'self'; script-src 'nonce-${html.nonce}'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'`,
       },
     })
   } catch (err) {
@@ -157,7 +158,8 @@ function renderInvoiceHtml({ inv, payments, cfg, nonce }) {
 <title>Invoice ${e(inv.invoiceNumber)}</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: 'Segoe UI', Arial, sans-serif; color: #1a1a2e; background: #fff; font-size: 14px; line-height: 1.5; }
+  ${BENGALI_FONT_CSS}
+  body { font-family: 'Segoe UI', Arial, var(--font-bengali), sans-serif; color: #1a1a2e; background: #fff; font-size: 14px; line-height: 1.5; }
   .page { max-width: 800px; margin: 0 auto; padding: 40px; }
   .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 40px; border-bottom: 3px solid #4f46e5; padding-bottom: 24px; }
   .company-name { font-size: 28px; font-weight: 700; color: #4f46e5; }

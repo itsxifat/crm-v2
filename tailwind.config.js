@@ -113,8 +113,9 @@ module.exports = {
         '2xs': ['0.6875rem', { lineHeight: '1rem' }],
       },
       fontFamily: {
-        sans: ['var(--font-sans)', 'Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
-        mono: ['JetBrains Mono', 'Fira Code', 'Consolas', 'monospace'],
+        // Inter for Latin; Anek Bangla picks up ৳ and Bangla (its face only covers Bengali code points).
+        sans: ['var(--font-sans)', 'var(--font-bengali)', 'Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
+        mono: ['JetBrains Mono', 'Fira Code', 'Consolas', 'var(--font-bengali)', 'monospace'],
       },
       boxShadow: {
         xs:   '0 1px 2px 0 rgb(0 0 0 / 0.04)',

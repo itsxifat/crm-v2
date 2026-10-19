@@ -1,0 +1,9 @@
+anek-bangla-bengali.woff2 — Anek Bangla (Bengali subset, variable weight 100–800)
+Copyright 2021 The Anek Project Authors (https://github.com/EkType/Anek)
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+The license is available with a FAQ at: https://openfontlicense.org
+
+Used to render the ৳ (taka) sign and Bangla text in standalone print documents
+(vouchers, slips, invoice PDFs, print popups). The app itself loads the same font
+via next/font/google in app/layout.js.

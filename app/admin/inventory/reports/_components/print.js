@@ -5,6 +5,7 @@
 
 import { STATUS_META } from '@/lib/inventory/constants'
 import { escapeHtml, fmtMoney, fmtNumber, fmtDay } from './format'
+import { BENGALI_FONT_CSS } from '@/lib/printFonts'
 
 function cellText(col, value) {
   if (value === null || value === undefined || value === '') return ''
@@ -65,7 +66,8 @@ export function reportPrintHtml(report, { companyName = '', filtersText = '' } =
 <style>
   @page { size: A4 ${wide ? 'landscape' : 'portrait'}; margin: 12mm; }
   * { box-sizing: border-box; }
-  body { font-family: 'Inter', 'Segoe UI', Arial, sans-serif; color: #111827; font-size: 10px; margin: 0; }
+  ${BENGALI_FONT_CSS}
+  body { font-family: 'Inter', 'Segoe UI', Arial, var(--font-bengali), sans-serif; color: #111827; font-size: 10px; margin: 0; }
   header { border-bottom: 2px solid #111827; padding-bottom: 6px; margin-bottom: 10px; }
   .company { font-size: 11px; font-weight: 600; color: #374151; }
   h1 { font-size: 16px; margin: 2px 0 0; }

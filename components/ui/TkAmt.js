@@ -14,8 +14,8 @@ export default function TkAmt({ value, decimals = 0, className = '' }) {
   })
   return (
     <span className={className}>
-      {/* ৳ comes from a fallback font that renders small next to Inter — scale it up. */}
-      <span className="mr-[0.18em] align-[-0.04em] text-[1.18em] font-normal leading-none opacity-70">৳</span>
+      {/* ৳ is drawn by Anek Bangla (see app/layout.js), matching weight with the digits. */}
+      <span className="mr-[0.22em]">৳</span>
       <span className="tabular-nums">{formatted}</span>
     </span>
   )
