@@ -42,8 +42,8 @@ function PortalDropdown({ anchor, onClose, children, align = 'right' }) {
   }
   return createPortal(
     <>
-      <div className="fixed inset-0 z-[9998]" onClick={onClose} />
-      <div style={style}>
+      <div className="pointer-events-auto fixed inset-0 z-[9998]" onClick={onClose} />
+      <div style={{ ...style, pointerEvents: 'auto' }}>
         {children}
       </div>
     </>,

@@ -221,19 +221,22 @@ export default function DatePicker({
   )
 
   // ── Portal popup ───────────────────────────────────────────────────────────
+  // Rendered into <body>; an open Radix dialog sets `pointer-events: none` on
+  // body, so every popup layer must opt back in or clicks fall through to the
+  // dialog overlay.
   const popup = open && typeof document !== 'undefined' && createPortal(
     pos.mobile ? (
       /* Mobile: backdrop + bottom sheet */
       <>
         <div
-          className="fixed inset-0 z-[9998] bg-black/40"
+          className="pointer-events-auto fixed inset-0 z-[9998] bg-black/40"
           onMouseDown={() => setOpen(false)}
           onTouchStart={() => setOpen(false)}
         />
         <div
           ref={popoverRef}
           data-datepicker-popup=""
-          className="fixed bottom-0 left-0 right-0 z-[9999] bg-white rounded-t-2xl p-4 pb-8 shadow-2xl animate-in slide-in-from-bottom duration-200"
+          className="pointer-events-auto fixed bottom-0 left-0 right-0 z-[9999] bg-white rounded-t-2xl p-4 pb-8 shadow-2xl animate-in slide-in-from-bottom duration-200"
         >
           {/* Handle bar */}
           <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-4" />
@@ -246,7 +249,7 @@ export default function DatePicker({
         ref={popoverRef}
         data-datepicker-popup=""
         style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 9999, width: POPUP_W }}
-        className="rounded-xl border border-gray-200/80 bg-white p-3 shadow-lg animate-in fade-in-0 zoom-in-95 duration-100"
+        className="pointer-events-auto rounded-xl border border-gray-200/80 bg-white p-3 shadow-lg animate-in fade-in-0 zoom-in-95 duration-100"
       >
         {calendarBody}
       </div>

@@ -64,7 +64,7 @@ export default function ActionMenu({ items = [], align = 'right' }) {
         <div
           ref={menuRef}
           style={{ position: 'fixed', top: coords.top, left: coords.left, width: 200 }}
-          className="z-[60] rounded-xl border border-gray-200/80 bg-white p-1 shadow-lg animate-in fade-in-0 zoom-in-95 duration-100"
+          className="pointer-events-auto z-[60] rounded-xl border border-gray-200/80 bg-white p-1 shadow-lg animate-in fade-in-0 zoom-in-95 duration-100"
           onClick={(e) => e.stopPropagation()}
         >
           {items.filter(Boolean).map((it, i) => {

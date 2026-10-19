@@ -43,3 +43,4 @@ dump/
 
 # Claude Code machine-local settings — never commit
 .claude/settings.local.json
+.env

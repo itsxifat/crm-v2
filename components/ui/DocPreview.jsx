@@ -70,7 +70,7 @@ function ImageLightbox({ url, onClose }) {
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[9999] bg-black/95 flex flex-col select-none"
+      className="pointer-events-auto fixed inset-0 z-[9999] bg-black/95 flex flex-col select-none"
       onWheel={onWheel}
       style={{ touchAction: 'none' }}
     >
@@ -153,7 +153,7 @@ function PdfViewer({ url, onClose }) {
   }, [onClose])
 
   return createPortal(
-    <div className="fixed inset-0 z-[9999] bg-black/95 flex flex-col">
+    <div className="pointer-events-auto fixed inset-0 z-[9999] bg-black/95 flex flex-col">
       {/* Toolbar */}
       <div className="flex items-center justify-between px-4 py-3 bg-black/50 border-b border-white/10 shrink-0">
         <span className="text-sm text-white/70 font-medium flex items-center gap-2">
