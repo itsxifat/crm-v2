@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
-import { AlertTriangle, Ban, Loader2 } from 'lucide-react'
+import { AlertTriangle, Ban } from 'lucide-react'
 import Modal, { ModalFooter } from '@/components/ui/Modal'
+import Button from '@/components/ui/Button'
+import { Field, Textarea } from '@/components/ui/Input'
 import { num, qtyText } from './billMath'
 
 /** Cancel a DRAFT or RECEIVED bill (POST /api/inventory/purchases/[id]/cancel). */
@@ -34,7 +36,7 @@ export default function CancelBillDialog({ open, onOpenChange, bill, onDone }) {
         body: JSON.stringify({ reason: reason.trim() || null }),
       })
       const json = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(json.error || 'Could not cancel the bill')
+      if (!res.ok) throw new Error(json.error || "Couldn't cancel the bill")
       toast.success(`${bill.billNo} cancelled`)
       for (const w of json.warnings ?? []) toast(w, { duration: 8000 })
       onDone?.(json.data)
@@ -51,39 +53,32 @@ export default function CancelBillDialog({ open, onOpenChange, bill, onDone }) {
       description={received ? 'Undo the receipt of this bill.' : 'The draft is kept as a cancelled record.'} size="md">
       <div className="space-y-4">
         {received && (
-          <ul className="space-y-1.5 text-sm text-gray-700">
-            {assetCount > 0 && <li>• {assetCount} asset{assetCount === 1 ? '' : 's'} created from this bill will be deleted (their tags are not reused).</li>}
-            {stockLines.length > 0 && (
-              <li>• Stock is taken back out: {stockLines.map(l => `${qtyText(num(l.qty))} ${l.unit || 'pcs'} ${l.stockItem?.name ?? l.description}`).join(', ')}.</li>
-            )}
-            {pendingRequest && <li>• The payment request in Accounts is rejected.</li>}
-            <li className="text-gray-500">Only possible while the assets are untouched, the stock is still on hand and nothing is paid.</li>
-          </ul>
+          <div className="space-y-2 rounded-lg bg-gray-50 px-3.5 py-3 text-sm text-gray-700">
+            <ul className="list-disc space-y-1 pl-4">
+              {assetCount > 0 && <li>{assetCount} asset{assetCount === 1 ? '' : 's'} from this bill will be deleted (tags aren&apos;t reused).</li>}
+              {stockLines.length > 0 && (
+                <li>Stock is taken back out: {stockLines.map(l => `${qtyText(num(l.qty))} ${l.unit || 'pcs'} ${l.stockItem?.name ?? l.description}`).join(', ')}.</li>
+              )}
+              {pendingRequest && <li>The payment request in Accounts is rejected.</li>}
+            </ul>
+            <p className="text-xs text-muted-foreground">Only while assets are untouched, stock is on hand and nothing is paid.</p>
+          </div>
         )}
-        <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">
-            Reason {received ? <span className="text-red-500">*</span> : <span className="text-gray-400 font-normal">(optional)</span>}
-          </label>
-          <textarea rows={3} value={reason} onChange={e => setReason(e.target.value)} maxLength={500}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
-            placeholder="e.g. Supplier delivered the wrong model — returned" />
-        </div>
+        <Field label="Reason" required={received}>
+          <Textarea rows={3} value={reason} onChange={e => setReason(e.target.value)} maxLength={500}
+            placeholder="e.g. Wrong model delivered, returned" />
+        </Field>
         {error && (
-          <p className="flex items-start gap-2 text-sm text-red-700 bg-red-50 rounded-lg px-3 py-2">
-            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" /> {error}
+          <p className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" /> {error}
           </p>
         )}
       </div>
       <ModalFooter>
-        <button type="button" onClick={() => onOpenChange(false)} disabled={saving}
-          className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 bg-white">
-          Keep bill
-        </button>
-        <button type="button" onClick={submit} disabled={saving || tooShort}
-          className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center gap-1.5">
-          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Ban className="w-4 h-4" />}
-          Cancel bill
-        </button>
+        <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Keep bill</Button>
+        <Button variant="destructive" onClick={submit} loading={saving} disabled={tooShort}>
+          {!saving && <Ban />} Cancel bill
+        </Button>
       </ModalFooter>
     </Modal>
   )

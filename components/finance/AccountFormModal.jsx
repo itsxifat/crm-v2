@@ -2,8 +2,11 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
-import { Loader2, Lock, Info, Check, ChevronDown, Star, RotateCcw } from 'lucide-react'
+import { Lock, Check, ChevronDown, Star, RotateCcw } from 'lucide-react'
 import Modal, { ModalFooter } from '@/components/ui/Modal'
+import Button from '@/components/ui/Button'
+import Badge from '@/components/ui/Badge'
+import { Input, Textarea, NativeSelect, Label, inputClass } from '@/components/ui/Input'
 import DatePicker from '@/components/ui/DatePicker'
 import PeoplePicker from '@/components/ui/PeoplePicker'
 import { useConfig } from '@/lib/useConfig'
@@ -19,8 +22,8 @@ import AccountIcon from './AccountIcon'
 import AmountInput from './AmountInput'
 import { FieldError } from './FinanceDialogs'
 import {
-  INPUT, INPUT_ERR, LABEL, BTN_PRIMARY, BTN_SECONDARY, FOOTER_STICKY, ACCOUNT_COLOR_SWATCHES,
-  accountColor, accountSubtitle, findBank, parseAmount, todayKey, dayKeyOf, fetchJson, plainAmount,
+  FOOTER_STICKY, ACCOUNT_COLOR_SWATCHES,
+  accountSubtitle, findBank, parseAmount, todayKey, dayKeyOf, fetchJson, plainAmount,
 } from './accountTheme'
 
 const TYPE_HINTS = {
@@ -102,15 +105,19 @@ function suggestName(f) {
 
 function Section({ title, hint, children, className }) {
   return (
-    <section className={cn('space-y-3', className)}>
+    <section className={cn('space-y-4', className)}>
       <div>
         <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
-        {hint && <p className="text-xs text-gray-500 mt-0.5">{hint}</p>}
+        {hint && <p className="mt-1 text-[13px] text-muted-foreground">{hint}</p>}
       </div>
       {children}
     </section>
   )
 }
+
+/** Selectable option card (account type, overdraft mode, toggles). */
+const OPTION_CARD = 'flex items-start gap-2.5 rounded-lg border p-3 text-left transition-colors'
+const optionState = (active) => (active ? 'border-gray-900 bg-gray-50 ring-1 ring-gray-900' : 'border-gray-200/80 hover:bg-gray-50')
 
 /**
  * Create / edit a money account.
@@ -283,36 +290,35 @@ export default function AccountFormModal({ open, onOpenChange, account = null, a
 
   const numberLabel = {
     BANK_CURRENT: 'Account number', BANK_SAVINGS: 'Account number', LOAN_OD: 'Loan / OD account number',
-    MFS: 'Wallet number', CARD: 'Card number (last 4 digits are enough)', GATEWAY: 'Merchant / store ID', OTHER: 'Account / reference number',
+    MFS: 'Wallet number', CARD: 'Card number', GATEWAY: 'Merchant / store ID', OTHER: 'Account / reference number',
   }[type]
+  const numberPlaceholder = isMfs ? '01XXXXXXXXX' : type === 'CARD' ? 'Last 4 digits' : ''
   const providerLabel = { CARD: 'Issuing bank', LOAN_OD: 'Lender / bank', GATEWAY: 'Gateway provider', OTHER: 'Provider / institution' }[type] ?? 'Bank name'
-  const color = accountColor(preview)
   const goLiveLabel = settings?.goLiveDate ? dayKeyLabel(addDays(settings.goLiveDate, -1)) : null
 
   return (
     <Modal
       open={open}
       onOpenChange={(v) => !saving && onOpenChange(v)}
-      title={isEdit ? 'Edit money account' : 'Add money account'}
-      description={isEdit ? 'Changes apply to future entries; history stays as recorded.' : 'A bank account, cash box, mobile wallet or card the business pays from or into.'}
+      title={isEdit ? 'Edit money account' : 'New money account'}
       size="lg"
     >
-      <div className="space-y-6">
+      <div className="space-y-7">
         {/* Live preview */}
-        <div className="flex items-center gap-3 rounded-xl border border-gray-100 p-3" style={{ borderLeft: `4px solid ${color}` }}>
+        <div className="flex items-center gap-3 rounded-lg bg-gray-50 p-3">
           <AccountIcon account={preview} />
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-gray-900 truncate">{preview.name}</p>
-            <p className="text-xs text-gray-500 truncate">
+            <p className="truncate text-sm font-semibold text-gray-900">{preview.name}</p>
+            <p className="truncate text-xs text-muted-foreground">
               {accountSubtitle(preview)}{preview.last4 ? ` · •••• ${preview.last4}` : ''}{form.currency !== 'BDT' ? ` · ${form.currency}` : ''}
             </p>
           </div>
-          {form.isDefault && <span className="ml-auto inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full"><Star className="w-3 h-3" /> Default</span>}
+          {form.isDefault && <Badge variant="warning" className="ml-auto"><Star className="size-3" /> Default</Badge>}
         </div>
 
         {/* Type */}
-        <Section title="Account type" hint={lockedGroup ? 'This account already has transactions, so it can only switch to a similar type.' : null}>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+        <Section title="Account type" hint={lockedGroup ? 'Has transactions — only a similar type is allowed.' : null}>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             {MONEY_ACCOUNT_TYPES.map(t => {
               const disabled = lockedGroup && accountTypeGroup(t.value) !== lockedGroup
               const active = type === t.value
@@ -322,18 +328,14 @@ export default function AccountFormModal({ open, onOpenChange, account = null, a
                   type="button"
                   disabled={disabled}
                   onClick={() => set({ type: t.value })}
-                  className={cn(
-                    'flex items-start gap-2 rounded-xl border p-2.5 text-left transition-colors',
-                    active ? 'border-gray-900 ring-1 ring-gray-900 bg-gray-50' : 'border-gray-200 hover:bg-gray-50',
-                    disabled && 'opacity-40 cursor-not-allowed hover:bg-white',
-                  )}
+                  className={cn(OPTION_CARD, optionState(active), disabled && 'cursor-not-allowed opacity-40 hover:bg-white')}
                 >
                   <AccountIcon type={t.value} size="xs" />
-                  <span className="min-w-0">
-                    <span className="block text-xs font-semibold text-gray-900 leading-tight">{t.label.replace(' (bKash/Nagad…)', '')}</span>
-                    <span className="block text-[11px] text-gray-500 leading-tight mt-0.5">{TYPE_HINTS[t.value]}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[13px] font-medium leading-tight text-gray-900">{t.label.replace(' (bKash/Nagad…)', '')}</span>
+                    <span className="mt-0.5 block text-xs leading-tight text-muted-foreground">{TYPE_HINTS[t.value]}</span>
                   </span>
-                  {active && <Check className="w-3.5 h-3.5 text-gray-900 ml-auto shrink-0" />}
+                  {active && <Check className="size-4 shrink-0 text-gray-900" />}
                 </button>
               )
             })}
@@ -343,120 +345,124 @@ export default function AccountFormModal({ open, onOpenChange, account = null, a
         {/* Identity */}
         <Section title="Details">
           {isMfs && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <label className={LABEL}>Provider <span className="text-red-500">*</span></label>
-                <select value={form.mfsProvider} onChange={e => set({ mfsProvider: e.target.value })} className={cn(INPUT, errors.mfsProvider && INPUT_ERR)}>
-                  <option value="">Choose…</option>
+                <Label required>Provider</Label>
+                <NativeSelect value={form.mfsProvider} onChange={e => set({ mfsProvider: e.target.value })} invalid={!!errors.mfsProvider}>
+                  <option value="">Select…</option>
                   {MFS_PROVIDERS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
-                </select>
+                </NativeSelect>
                 <FieldError message={errors.mfsProvider} />
               </div>
               <div>
-                <label className={LABEL}>Wallet type</label>
-                <select value={form.walletType} onChange={e => set({ walletType: e.target.value })} className={INPUT}>
+                <Label>Wallet type</Label>
+                <NativeSelect
+                  value={form.walletType}
+                  onChange={e => set({ walletType: e.target.value })}
+                  title={form.walletType === 'PERSONAL' ? 'Personal wallets have lower limits; merchant wallets give statements suitable as Mushak evidence.' : undefined}
+                >
                   <option value="">Not specified</option>
                   {WALLET_TYPES.map(w => <option key={w.value} value={w.value}>{w.label}</option>)}
-                </select>
-                {form.walletType === 'AGENT' && <p className="mt-1 text-[11px] text-amber-700">Agent wallets are not meant for business receipts — use a merchant wallet where possible.</p>}
-                {form.walletType === 'PERSONAL' && <p className="mt-1 text-[11px] text-gray-500">Personal wallets have lower limits; merchant wallets give statements suitable as Mushak evidence.</p>}
+                </NativeSelect>
+                {form.walletType === 'AGENT' && <p className="mt-1.5 text-xs text-amber-700">Agent wallets aren&apos;t meant for business receipts.</p>}
               </div>
             </div>
           )}
 
           {!isCash && !isMfs && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className={cn(isBank ? '' : 'sm:col-span-2')}>
-                <label className={LABEL}>{providerLabel}{(type === 'BANK_CURRENT' || type === 'BANK_SAVINGS') && <span className="text-red-500"> *</span>}</label>
-                <input
+                <Label required={type === 'BANK_CURRENT' || type === 'BANK_SAVINGS'}>{providerLabel}</Label>
+                <Input
                   list={type === 'GATEWAY' ? 'finance-gateway-list' : 'finance-bank-list'}
                   value={form.bankName}
                   onChange={e => onBankName(e.target.value)}
-                  placeholder={type === 'GATEWAY' ? 'e.g. SSLCommerz' : 'Start typing, e.g. BRAC Bank'}
-                  className={cn(INPUT, errors.bankName && INPUT_ERR)}
+                  placeholder={type === 'GATEWAY' ? 'e.g. SSLCommerz' : 'e.g. BRAC Bank'}
+                  invalid={!!errors.bankName}
                 />
                 <FieldError message={errors.bankName} />
               </div>
               {isBank && (
                 <div>
-                  <label className={LABEL}>Branch</label>
-                  <input value={form.branchName} onChange={e => set({ branchName: e.target.value })} placeholder="e.g. Gulshan" className={INPUT} />
+                  <Label>Branch</Label>
+                  <Input value={form.branchName} onChange={e => set({ branchName: e.target.value })} placeholder="e.g. Gulshan" />
                 </div>
               )}
             </div>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <label className={LABEL}>Account name in the app <span className="text-red-500">*</span></label>
-              <input
+              <Label required>Display name</Label>
+              <Input
                 value={form.name}
                 onChange={e => { setNameTouched(true); set({ name: e.target.value }) }}
                 placeholder="e.g. BRAC Current"
-                className={cn(INPUT, errors.name && INPUT_ERR)}
+                invalid={!!errors.name}
               />
               <FieldError message={errors.name} />
               {nameTouched && !isEdit && suggestName(form) && suggestName(form) !== form.name && (
-                <button type="button" onClick={() => { setNameTouched(false); set({ name: suggestName(form) }) }} className="mt-1 inline-flex items-center gap-1 text-[11px] text-gray-500 hover:text-gray-800">
-                  <RotateCcw className="w-3 h-3" /> Use “{suggestName(form)}”
+                <button type="button" onClick={() => { setNameTouched(false); set({ name: suggestName(form) }) }} className="mt-1.5 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-gray-900">
+                  <RotateCcw className="size-3" /> Use “{suggestName(form)}”
                 </button>
               )}
             </div>
             <div>
-              <label className={LABEL}>Currency</label>
-              <select value={form.currency} onChange={e => set({ currency: e.target.value })} disabled={currencyLocked} className={INPUT}>
+              <Label>Currency</Label>
+              <NativeSelect value={form.currency} onChange={e => set({ currency: e.target.value })} disabled={currencyLocked}>
                 {CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.code} — {c.label}</option>)}
-              </select>
-              {currencyLocked && <p className="mt-1 text-[11px] text-gray-500">Locked — the account already has transactions.</p>}
-              {!currencyLocked && form.currency !== 'BDT' && <p className="mt-1 text-[11px] text-gray-500">Foreign-currency balances are shown separately and not added to BDT totals.</p>}
+              </NativeSelect>
+              {currencyLocked && <p className="mt-1.5 text-xs text-muted-foreground">Locked — the account has transactions</p>}
+              {!currencyLocked && form.currency !== 'BDT' && <p className="mt-1.5 text-xs text-muted-foreground">Kept out of BDT totals</p>}
             </div>
           </div>
 
           {!isCash && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <label className={LABEL}>{numberLabel}</label>
+                <Label>{numberLabel}</Label>
                 {numberLocked ? (
                   <div className="flex items-center gap-2">
-                    <span className={cn(INPUT, 'bg-gray-50 text-gray-500 tabular-nums')}>{account.accountNumber}</span>
-                    <button type="button" onClick={() => { setNumberLocked(false); set({ accountNumber: '' }) }} className="text-xs font-medium text-gray-600 hover:text-gray-900 shrink-0">Replace</button>
+                    <span className={cn(inputClass, 'items-center bg-gray-50 text-gray-500 tabular-nums')}>{account.accountNumber}</span>
+                    <Button variant="outline" onClick={() => { setNumberLocked(false); set({ accountNumber: '' }) }}>Replace</Button>
                   </div>
                 ) : (
-                  <input
+                  <Input
                     value={form.accountNumber}
                     onChange={e => set({ accountNumber: e.target.value })}
                     inputMode={isMfs ? 'tel' : 'text'}
-                    placeholder={isMfs ? '01XXXXXXXXX' : ''}
-                    className={cn(INPUT, 'tabular-nums', errors.accountNumber && INPUT_ERR)}
+                    placeholder={numberPlaceholder}
+                    title="Shown as •••• last 4 to people without bank-detail access"
+                    className="tabular-nums"
+                    invalid={!!errors.accountNumber}
                   />
                 )}
                 <FieldError message={errors.accountNumber} />
-                {!numberLocked && <p className="mt-1 text-[11px] text-gray-400">Shown as •••• last 4 to people without bank-detail access.</p>}
               </div>
               <div>
-                <label className={LABEL}>{isMfs ? 'Wallet holder name' : 'Account title'}</label>
-                <input value={form.accountName} onChange={e => set({ accountName: e.target.value })} placeholder="Name on the statement" className={INPUT} />
+                <Label>{isMfs ? 'Wallet holder name' : 'Account title'}</Label>
+                <Input value={form.accountName} onChange={e => set({ accountName: e.target.value })} placeholder="Name on the statement" />
               </div>
             </div>
           )}
 
           {isBank && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <label className={LABEL}>Routing number</label>
+                <Label>Routing number</Label>
                 {routingLocked ? (
                   <div className="flex items-center gap-2">
-                    <span className={cn(INPUT, 'bg-gray-50 text-gray-500 tabular-nums')}>{account.routingNumber}</span>
-                    <button type="button" onClick={() => { setRoutingLocked(false); set({ routingNumber: '' }) }} className="text-xs font-medium text-gray-600 hover:text-gray-900 shrink-0">Replace</button>
+                    <span className={cn(inputClass, 'items-center bg-gray-50 text-gray-500 tabular-nums')}>{account.routingNumber}</span>
+                    <Button variant="outline" onClick={() => { setRoutingLocked(false); set({ routingNumber: '' }) }}>Replace</Button>
                   </div>
                 ) : (
-                  <input value={form.routingNumber} onChange={e => set({ routingNumber: e.target.value })} inputMode="numeric" placeholder="9 digits" className={cn(INPUT, 'tabular-nums', errors.routingNumber && INPUT_ERR)} />
+                  <Input value={form.routingNumber} onChange={e => set({ routingNumber: e.target.value })} inputMode="numeric" placeholder="9 digits" className="tabular-nums" invalid={!!errors.routingNumber} />
                 )}
                 <FieldError message={errors.routingNumber} />
               </div>
               <div>
-                <label className={LABEL}>SWIFT / BIC</label>
-                <input value={form.swiftCode} onChange={e => set({ swiftCode: e.target.value.toUpperCase() })} placeholder="e.g. BRAKBDDH" className={cn(INPUT, 'uppercase', errors.swiftCode && INPUT_ERR)} />
+                <Label>SWIFT / BIC</Label>
+                <Input value={form.swiftCode} onChange={e => set({ swiftCode: e.target.value.toUpperCase() })} placeholder="e.g. BRAKBDDH" className="uppercase" invalid={!!errors.swiftCode} />
                 <FieldError message={errors.swiftCode} />
               </div>
             </div>
@@ -464,7 +470,7 @@ export default function AccountFormModal({ open, onOpenChange, account = null, a
 
           {isCash && (
             <div>
-              <label className={LABEL}>Custodian {type === 'PETTY_CASH' && <span className="text-gray-400 font-normal">(recommended)</span>}</label>
+              <Label>Custodian {type === 'PETTY_CASH' && <span className="font-normal text-muted-foreground">(recommended)</span>}</Label>
               <PeoplePicker
                 types={['EMPLOYEE']}
                 typeFilter={false}
@@ -473,7 +479,7 @@ export default function AccountFormModal({ open, onOpenChange, account = null, a
                 placeholder="Who holds this cash?"
               />
               {isEdit && account?.custodian && !account.custodian.employeeId && !custodianTouched && (
-                <p className="mt-1 text-[11px] text-gray-500">Current custodian: {account.custodian.name}</p>
+                <p className="mt-1.5 text-xs text-muted-foreground">Current custodian: {account.custodian.name}</p>
               )}
               <FieldError message={errors.custodian} />
             </div>
@@ -483,38 +489,40 @@ export default function AccountFormModal({ open, onOpenChange, account = null, a
         {/* Opening balance */}
         <Section
           title="Opening balance"
-          hint={openingDisabled ? null : `The balance on the ${isCash ? 'cash count' : 'statement'} at the end of the day before the opening date${goLiveLabel ? ` (go-live: balance as at ${goLiveLabel})` : ''}. Entries dated before the opening date are ignored for the balance.`}
+          hint={openingDisabled ? null : `${isCash ? 'Cash count' : 'Statement balance'} at the close of the day before the opening date${goLiveLabel ? ` (go-live: as at ${goLiveLabel})` : ''}.`}
         >
           {openingDisabled && (
-            <div className="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-100 px-3 py-2 text-xs text-amber-800">
-              <Lock className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-              <span>
-                {openingLocked
-                  ? 'Opening balances are locked (Finance → Opening Balances). Record the first deposit as a transfer or a “Capital introduced” movement instead.'
-                  : 'This account has been reconciled — undo its reconciliations before changing the opening balance.'}
+            <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
+              <Lock className="mt-0.5 size-4 shrink-0" />
+              <div className="min-w-0">
+                <p>
+                  {openingLocked
+                    ? 'Opening balances are locked — record the first deposit as a transfer or a “Capital introduced” movement.'
+                    : 'Reconciled — undo its reconciliations to change the opening balance.'}
+                </p>
                 {isEdit && (
-                  <span className="block mt-1 text-amber-900">
-                    Current: <strong className="tabular-nums">{plainAmount(account.openingBalance)}</strong>{account.openingDate ? ` as of ${dayKeyLabel(account.openingDate)}` : ''}{account.openingReference ? ` · ${account.openingReference}` : ''}
-                  </span>
+                  <p className="mt-1 text-amber-900">
+                    Current: <strong className="font-semibold tabular-nums">{plainAmount(account.openingBalance)}</strong>{account.openingDate ? ` as of ${dayKeyLabel(account.openingDate)}` : ''}{account.openingReference ? ` · ${account.openingReference}` : ''}
+                  </p>
                 )}
-              </span>
+              </div>
             </div>
           )}
           {!openingDisabled && (
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <div>
-                <label className={LABEL}>Amount ({form.currency})</label>
+                <Label>Amount ({form.currency})</Label>
                 <AmountInput value={form.openingBalance} onChange={v => set({ openingBalance: v })} currency={form.currency} allowNegative={form.overdraft !== 'NONE'} error={errors.openingBalance} />
                 <FieldError message={errors.openingBalance} />
               </div>
-              <div>
-                <label className={LABEL}>Opening date</label>
+              <div title="Entries dated before the opening date are ignored for the balance">
+                <Label>Opening date</Label>
                 <DatePicker value={form.openingDate || null} onChange={v => set({ openingDate: v ?? '' })} placeholder="From the first entry" />
                 <FieldError message={errors.openingDate} />
               </div>
               <div>
-                <label className={LABEL}>Statement reference</label>
-                <input value={form.openingReference} onChange={e => set({ openingReference: e.target.value })} placeholder="e.g. Stmt 30 Jun 2026" className={INPUT} />
+                <Label>Statement reference</Label>
+                <Input value={form.openingReference} onChange={e => set({ openingReference: e.target.value })} placeholder="e.g. Stmt 30 Jun 2026" />
               </div>
             </div>
           )}
@@ -522,31 +530,31 @@ export default function AccountFormModal({ open, onOpenChange, account = null, a
 
         {/* Behaviour */}
         <Section title="Overdraft & usage">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
             {[
-              { v: 'NONE', t: 'Not allowed', d: 'Payments that would take it below zero are refused' },
-              { v: 'LIMIT', t: 'Up to a limit', d: 'Overdraft facility with a fixed limit' },
-              { v: 'UNLIMITED', t: 'No limit', d: 'Current account / loan / card may go negative' },
+              { v: 'NONE', t: 'Not allowed', d: 'Refuse payments below zero' },
+              { v: 'LIMIT', t: 'Up to a limit', d: 'Fixed overdraft facility' },
+              { v: 'UNLIMITED', t: 'No limit', d: 'Current account, loan or card' },
             ].map(o => (
-              <label key={o.v} className={cn('flex items-start gap-2 rounded-xl border p-2.5 cursor-pointer', form.overdraft === o.v ? 'border-gray-900 bg-gray-50' : 'border-gray-200 hover:bg-gray-50')}>
-                <input type="radio" name="overdraft" checked={form.overdraft === o.v} onChange={() => { setOverdraftTouched(true); set({ overdraft: o.v }) }} className="mt-0.5 accent-gray-900" />
+              <label key={o.v} className={cn(OPTION_CARD, 'cursor-pointer', optionState(form.overdraft === o.v))}>
+                <input type="radio" name="overdraft" checked={form.overdraft === o.v} onChange={() => { setOverdraftTouched(true); set({ overdraft: o.v }) }} className="mt-0.5" />
                 <span>
-                  <span className="block text-xs font-semibold text-gray-900">{o.t}</span>
-                  <span className="block text-[11px] text-gray-500 leading-tight">{o.d}</span>
+                  <span className="block text-[13px] font-medium text-gray-900">{o.t}</span>
+                  <span className="mt-0.5 block text-xs leading-tight text-muted-foreground">{o.d}</span>
                 </span>
               </label>
             ))}
           </div>
           {form.overdraft === 'LIMIT' && (
             <div className="sm:w-1/2">
-              <label className={LABEL}>Overdraft limit ({form.currency})</label>
+              <Label>Overdraft limit ({form.currency})</Label>
               <AmountInput value={form.creditLimit} onChange={v => set({ creditLimit: v })} currency={form.currency} error={errors.creditLimit} />
               <FieldError message={errors.creditLimit} />
             </div>
           )}
 
           <div>
-            <label className={LABEL}>Default for payment methods</label>
+            <Label>Default for payment methods</Label>
             <div className="flex flex-wrap gap-1.5">
               {methods.map(m => {
                 const on = form.linkedPaymentMethods.some(x => String(x).toUpperCase() === String(m.value).toUpperCase())
@@ -558,34 +566,34 @@ export default function AccountFormModal({ open, onOpenChange, account = null, a
                     onClick={() => toggleMethod(m.value)}
                     title={elsewhere.length ? `Also linked to ${elsewhere.join(', ')}` : undefined}
                     className={cn(
-                      'inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors',
-                      on ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 text-gray-600 hover:bg-gray-50',
+                      'inline-flex h-7 items-center gap-1 rounded-full border px-2.5 text-xs font-medium transition-colors',
+                      on ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50',
                     )}
                   >
-                    {on && <Check className="w-3 h-3" />}
+                    {on && <Check className="size-3" />}
                     {m.label}
-                    {elsewhere.length > 0 && <span className={cn('text-[10px]', on ? 'text-gray-300' : 'text-amber-600')}>•{elsewhere.length}</span>}
+                    {elsewhere.length > 0 && <span className={cn('text-[11px]', on ? 'text-gray-300' : 'text-amber-600')}>•{elsewhere.length}</span>}
                   </button>
                 )
               })}
             </div>
-            <p className="mt-1 text-[11px] text-gray-500">When someone records a payment with one of these methods, this account is picked automatically. An amber dot means another {form.currency} account is linked too.</p>
+            <p className="mt-1.5 text-xs text-muted-foreground">Auto-selected when a payment uses one of these methods.</p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <label className="flex items-start gap-2 rounded-xl border border-gray-200 p-2.5 cursor-pointer hover:bg-gray-50">
-              <input type="checkbox" checked={form.isDefault} onChange={e => set({ isDefault: e.target.checked })} className="mt-0.5 rounded border-gray-300 accent-gray-900" />
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <label className={cn(OPTION_CARD, 'cursor-pointer', optionState(form.isDefault))}>
+              <input type="checkbox" checked={form.isDefault} onChange={e => set({ isDefault: e.target.checked })} className="mt-0.5" />
               <span>
-                <span className="block text-xs font-semibold text-gray-900">Default {form.currency} account</span>
-                <span className="block text-[11px] text-gray-500 leading-tight">Pre-selected when no payment method matches.</span>
+                <span className="block text-[13px] font-medium text-gray-900">Default {form.currency} account</span>
+                <span className="mt-0.5 block text-xs leading-tight text-muted-foreground">Used when no payment method matches</span>
               </span>
             </label>
             {!isCash && (
-              <label className="flex items-start gap-2 rounded-xl border border-gray-200 p-2.5 cursor-pointer hover:bg-gray-50">
-                <input type="checkbox" checked={form.isBankingChannel} onChange={e => set({ isBankingChannel: e.target.checked })} className="mt-0.5 rounded border-gray-300 accent-gray-900" />
+              <label className={cn(OPTION_CARD, 'cursor-pointer', optionState(form.isBankingChannel))}>
+                <input type="checkbox" checked={form.isBankingChannel} onChange={e => set({ isBankingChannel: e.target.checked })} className="mt-0.5" />
                 <span>
-                  <span className="block text-xs font-semibold text-gray-900">Counts as a banking channel</span>
-                  <span className="block text-[11px] text-gray-500 leading-tight">Bank/MFS transfers satisfy the ITA s.55 cash rules and avoid the +50% TDS rate.</span>
+                  <span className="block text-[13px] font-medium text-gray-900">Counts as a banking channel</span>
+                  <span className="mt-0.5 block text-xs leading-tight text-muted-foreground">Meets ITA s.55 cash rules; avoids the +50% TDS rate</span>
                 </span>
               </label>
             )}
@@ -594,28 +602,34 @@ export default function AccountFormModal({ open, onOpenChange, account = null, a
 
         {/* Advanced */}
         <div className="border-t border-gray-100 pt-4">
-          <button type="button" onClick={() => setShowAdvanced(s => !s)} className="inline-flex items-center gap-1 text-sm font-medium text-gray-700 hover:text-gray-900">
-            <ChevronDown className={cn('w-4 h-4 transition-transform', showAdvanced && 'rotate-180')} /> More options
-          </button>
+          <Button variant="ghost" size="sm" className="-ml-2.5" onClick={() => setShowAdvanced(s => !s)}>
+            <ChevronDown className={cn('transition-transform', showAdvanced && 'rotate-180')} /> More options
+          </Button>
           {showAdvanced && (
-            <div className="mt-3 space-y-3">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="mt-3 space-y-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
-                  <label className={LABEL}>Short code</label>
-                  <input value={form.code} onChange={e => set({ code: e.target.value.toUpperCase() })} placeholder="e.g. BRAC-01" className={cn(INPUT, 'uppercase', errors.code && INPUT_ERR)} />
+                  <Label>Short code</Label>
+                  <Input value={form.code} onChange={e => set({ code: e.target.value.toUpperCase() })} placeholder="e.g. BRAC-01" className="uppercase" invalid={!!errors.code} />
                   <FieldError message={errors.code} />
                 </div>
                 <div>
-                  <label className={LABEL}>Card colour</label>
+                  <Label>Colour</Label>
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <button type="button" onClick={() => set({ color: '' })} className={cn('h-7 px-2 rounded-lg border text-[11px] font-medium', !form.color ? 'border-gray-900 text-gray-900' : 'border-gray-200 text-gray-500')}>Auto</button>
+                    <button
+                      type="button"
+                      onClick={() => set({ color: '' })}
+                      className={cn('h-7 rounded-md border px-2 text-xs font-medium transition-colors', !form.color ? 'border-gray-900 text-gray-900' : 'border-gray-200 text-gray-500 hover:bg-gray-50')}
+                    >
+                      Auto
+                    </button>
                     {ACCOUNT_COLOR_SWATCHES.map(c => (
                       <button
                         key={c}
                         type="button"
                         aria-label={`Colour ${c}`}
                         onClick={() => set({ color: c })}
-                        className={cn('w-7 h-7 rounded-lg border-2', form.color === c ? 'border-gray-900' : 'border-transparent')}
+                        className={cn('size-7 rounded-md ring-offset-2 transition-shadow', form.color === c ? 'ring-2 ring-gray-900' : 'hover:ring-2 hover:ring-gray-200')}
                         style={{ backgroundColor: c }}
                       />
                     ))}
@@ -623,19 +637,12 @@ export default function AccountFormModal({ open, onOpenChange, account = null, a
                 </div>
               </div>
               <div>
-                <label className={LABEL}>Notes</label>
-                <textarea rows={2} value={form.notes} onChange={e => set({ notes: e.target.value })} placeholder="Signatories, limits, relationship manager…" className={cn(INPUT, 'resize-none')} />
+                <Label>Notes</Label>
+                <Textarea rows={2} value={form.notes} onChange={e => set({ notes: e.target.value })} placeholder="Signatories, limits, relationship manager…" className="resize-none" />
               </div>
             </div>
           )}
         </div>
-
-        {!isEdit && (
-          <p className="flex items-start gap-1.5 text-[11px] text-gray-500">
-            <Info className="w-3.5 h-3.5 mt-px shrink-0" />
-            After go-live every payment, receipt and transfer must name the account it moved through, so balances here stay real.
-          </p>
-        )}
       </div>
 
       <datalist id="finance-bank-list">
@@ -646,11 +653,10 @@ export default function AccountFormModal({ open, onOpenChange, account = null, a
       </datalist>
 
       <ModalFooter className={FOOTER_STICKY}>
-        <button type="button" className={BTN_SECONDARY} onClick={() => onOpenChange(false)} disabled={saving}>Cancel</button>
-        <button type="button" className={BTN_PRIMARY} onClick={submit} disabled={saving}>
-          {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+        <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
+        <Button onClick={submit} loading={saving}>
           {isEdit ? 'Save changes' : 'Add account'}
-        </button>
+        </Button>
       </ModalFooter>
     </Modal>
   )

@@ -2,43 +2,48 @@
 
 import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
-import { Lock, Eye, EyeOff, Loader2, CheckCircle, Shield, UserCog } from 'lucide-react'
+import { Eye, EyeOff } from 'lucide-react'
 import toast, { Toaster } from 'react-hot-toast'
 import { validateStrongPassword } from '@/lib/passwordPolicy'
 import Avatar from '@/components/ui/Avatar'
 import FileUpload from '@/components/ui/FileUpload'
+import Button from '@/components/ui/Button'
+import Badge from '@/components/ui/Badge'
+import PageHeader from '@/components/ui/PageHeader'
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/Card'
+import { Input, Field } from '@/components/ui/Input'
+import { PageLoader } from '@/components/ui/LoadingSpinner'
 
 const ROLE_META = {
-  SUPER_ADMIN: { label: 'Super Admin', bg: 'bg-red-50',    text: 'text-red-700'    },
-  MANAGER:     { label: 'Manager',     bg: 'bg-blue-50',   text: 'text-blue-700'   },
-  EMPLOYEE:    { label: 'Employee',    bg: 'bg-gray-100',  text: 'text-gray-600'   },
+  SUPER_ADMIN: { label: 'Super admin', variant: 'danger'  },
+  MANAGER:     { label: 'Manager',     variant: 'primary' },
+  EMPLOYEE:    { label: 'Employee',    variant: 'default' },
 }
 
-const inputCls = 'w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition bg-white text-gray-800 placeholder:text-gray-400'
-
-function PasswordField({ label, value, onChange, show, onToggle }) {
+function PasswordField({ label, value, onChange, show, onToggle, error, className }) {
   return (
-    <div>
-      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">{label}</label>
+    <Field label={label} error={error || undefined} className={className}>
       <div className="relative">
-        <input
+        <Input
           type={show ? 'text' : 'password'}
-          className={inputCls}
+          className="pr-10"
           placeholder="••••••••"
           value={value}
           onChange={onChange}
           autoComplete="new-password"
+          invalid={!!error}
         />
         <button
           type="button"
           onClick={onToggle}
           tabIndex={-1}
-          className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+          aria-label={show ? 'Hide password' : 'Show password'}
+          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
         >
-          {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+          {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
         </button>
       </div>
-    </div>
+    </Field>
   )
 }
 
@@ -67,12 +72,12 @@ export default function AdminAccountPage() {
           setForm({ name: j.data.name ?? '', email: j.data.email ?? '', phone: j.data.phone ?? '', avatar: j.data.avatar ?? null })
         }
       })
-      .catch(() => toast.error('Failed to load profile'))
+      .catch(() => toast.error("Couldn't load profile"))
       .finally(() => setLoading(false))
   }, [])
 
   const role     = profile?.role ?? session?.user?.role
-  const roleMeta = ROLE_META[role] ?? { label: role, bg: 'bg-gray-100', text: 'text-gray-600' }
+  const roleMeta = ROLE_META[role] ?? { label: role, variant: 'default' }
 
   async function saveProfile(e) {
     e.preventDefault()
@@ -85,7 +90,7 @@ export default function AdminAccountPage() {
         body: JSON.stringify({ name: form.name.trim(), email: form.email.trim(), phone: form.phone.trim() || null, avatar: form.avatar ?? null }),
       })
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error ?? 'Failed')
+      if (!res.ok) throw new Error(json.error ?? "Couldn't save profile")
       toast.success('Profile updated')
       setProfile(p => ({ ...p, ...json.data }))
       await update()   // refresh name/avatar in the session (sidebar + header)
@@ -111,8 +116,8 @@ export default function AdminAccountPage() {
         body: JSON.stringify({ oldPassword: pw.old, newPassword: pw.new }),
       })
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error ?? 'Failed')
-      toast.success('Password updated successfully')
+      if (!res.ok) throw new Error(json.error ?? "Couldn't update password")
+      toast.success('Password updated')
       setPw({ old: '', new: '', confirm: '' })
     } catch (err) {
       toast.error(err.message)
@@ -121,136 +126,111 @@ export default function AdminAccountPage() {
     }
   }
 
-  if (loading || !profile) return (
-    <div className="flex items-center justify-center py-20">
-      <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
-    </div>
-  )
+  if (loading || !profile) return <PageLoader />
+
+  const newPwError     = pw.new && validateStrongPassword(pw.new)
+  const confirmPwError = pw.new && pw.confirm && pw.new !== pw.confirm ? 'Passwords do not match' : null
 
   return (
-    <div className="max-w-2xl space-y-6">
+    <div className="max-w-3xl space-y-6">
       <Toaster position="top-center" />
 
-      <div>
-        <h1 className="text-xl font-semibold text-gray-900">My Account</h1>
-        <p className="text-sm text-gray-400 mt-0.5">Manage your profile and security settings</p>
-      </div>
+      <PageHeader title="Account" />
 
       {/* Profile edit */}
-      <div className="bg-white border border-gray-100 rounded-2xl p-6">
-        <div className="flex items-center gap-2.5 mb-5">
-          <div className="w-9 h-9 bg-gray-50 rounded-xl flex items-center justify-center">
-            <UserCog className="w-4 h-4 text-gray-500" />
-          </div>
-          <div>
-            <p className="text-sm font-semibold text-gray-900">Profile</p>
-            <p className="text-xs text-gray-400">Your name, photo and contact number</p>
-          </div>
-        </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Profile</CardTitle>
+        </CardHeader>
 
-        <form onSubmit={saveProfile} className="space-y-5">
-          {/* Avatar + identity */}
-          <div className="flex items-center gap-4">
-            <Avatar name={form.name || profile.name} src={form.avatar} size="lg" />
-            <div className="min-w-0">
-              <p className="text-base font-semibold text-gray-900 truncate">{form.name || profile.name}</p>
-              <p className="text-sm text-gray-500 break-all">{form.email || profile.email}</p>
-              <span className={`inline-flex items-center gap-1 mt-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${roleMeta.bg} ${roleMeta.text}`}>
-                <Shield className="w-3 h-3" /> {roleMeta.label}
-              </span>
+        <form onSubmit={saveProfile}>
+          <CardContent className="space-y-5">
+            {/* Avatar + identity */}
+            <div className="flex items-center gap-4">
+              <Avatar name={form.name || profile.name} src={form.avatar} size="lg" />
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="truncate text-base font-semibold text-gray-900">{form.name || profile.name}</p>
+                  <Badge variant={roleMeta.variant}>{roleMeta.label}</Badge>
+                </div>
+                <p className="break-all text-sm text-muted-foreground">{form.email || profile.email}</p>
+              </div>
             </div>
-          </div>
 
-          <FileUpload
-            label="Profile photo"
-            value={form.avatar || ''}
-            onUploaded={url => setForm(f => ({ ...f, avatar: url || null }))}
-            accept="image/*"
-          />
+            <FileUpload
+              label="Profile photo"
+              value={form.avatar || ''}
+              onUploaded={url => setForm(f => ({ ...f, avatar: url || null }))}
+              accept="image/*"
+            />
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Full Name</label>
-              <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Your name" className={inputCls} />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Full name">
+                <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Your name" />
+              </Field>
+              <Field label="Phone">
+                <Input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} placeholder="+880…" />
+              </Field>
+              <Field label="Email" hint="Used to sign in; changes apply next login." className="sm:col-span-2">
+                <Input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="you@example.com" />
+              </Field>
             </div>
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Phone</label>
-              <input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} placeholder="+880…" className={inputCls} />
-            </div>
-            <div className="sm:col-span-2">
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Email <span className="text-gray-400 normal-case font-normal">(login)</span></label>
-              <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="you@example.com" className={inputCls} />
-              <p className="text-xs text-gray-400 mt-1">This is the email you sign in with. You’ll use the new address next time you log in.</p>
-            </div>
-          </div>
+          </CardContent>
 
-          <div className="flex justify-end pt-1">
-            <button type="submit" disabled={savingProfile || !form.name.trim()}
-              className="flex items-center gap-2 px-5 py-2.5 bg-gray-900 text-white text-sm font-medium rounded-xl hover:bg-black transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-              {savingProfile ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-              {savingProfile ? 'Saving…' : 'Save Profile'}
-            </button>
-          </div>
+          <CardFooter className="justify-end">
+            <Button type="submit" loading={savingProfile} disabled={!form.name.trim()}>
+              {savingProfile ? 'Saving…' : 'Save profile'}
+            </Button>
+          </CardFooter>
         </form>
-      </div>
+      </Card>
 
       {/* Change password */}
-      <div className="bg-white border border-gray-100 rounded-2xl p-6">
-        <div className="flex items-center gap-2.5 mb-5">
-          <div className="w-9 h-9 bg-gray-50 rounded-xl flex items-center justify-center">
-            <Lock className="w-4 h-4 text-gray-500" />
-          </div>
+      <Card>
+        <CardHeader>
           <div>
-            <p className="text-sm font-semibold text-gray-900">Change Password</p>
-            <p className="text-xs text-gray-400">Minimum 8 characters</p>
+            <CardTitle>Change password</CardTitle>
+            <CardDescription>8+ characters, mixed case, number, symbol</CardDescription>
           </div>
-        </div>
+        </CardHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <PasswordField
-            label="Current Password"
-            value={pw.old}
-            onChange={e => setPw(p => ({ ...p, old: e.target.value }))}
-            show={showOld}
-            onToggle={() => setShowOld(v => !v)}
-          />
+        <form onSubmit={handleSubmit}>
+          <CardContent>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <PasswordField
+                label="Current password"
+                className="sm:col-span-2"
+                value={pw.old}
+                onChange={e => setPw(p => ({ ...p, old: e.target.value }))}
+                show={showOld}
+                onToggle={() => setShowOld(v => !v)}
+              />
+              <PasswordField
+                label="New password"
+                value={pw.new}
+                onChange={e => setPw(p => ({ ...p, new: e.target.value }))}
+                show={showNew}
+                onToggle={() => setShowNew(v => !v)}
+                error={newPwError}
+              />
+              <PasswordField
+                label="Confirm password"
+                value={pw.confirm}
+                onChange={e => setPw(p => ({ ...p, confirm: e.target.value }))}
+                show={showCfm}
+                onToggle={() => setShowCfm(v => !v)}
+                error={confirmPwError}
+              />
+            </div>
+          </CardContent>
 
-          <div className="grid grid-cols-2 gap-3">
-            <PasswordField
-              label="New Password"
-              value={pw.new}
-              onChange={e => setPw(p => ({ ...p, new: e.target.value }))}
-              show={showNew}
-              onToggle={() => setShowNew(v => !v)}
-            />
-            <PasswordField
-              label="Confirm Password"
-              value={pw.confirm}
-              onChange={e => setPw(p => ({ ...p, confirm: e.target.value }))}
-              show={showCfm}
-              onToggle={() => setShowCfm(v => !v)}
-            />
-          </div>
-
-          {pw.new && validateStrongPassword(pw.new) && (
-            <p className="text-xs text-red-500">{validateStrongPassword(pw.new)}</p>
-          )}
-          {pw.new && pw.confirm && pw.new !== pw.confirm && (
-            <p className="text-xs text-red-500">Passwords do not match</p>
-          )}
-
-          <div className="flex justify-end pt-1">
-            <button
-              type="submit"
-              disabled={saving || !pw.old || !pw.new || !pw.confirm}
-              className="flex items-center gap-2 px-5 py-2.5 bg-gray-900 text-white text-sm font-medium rounded-xl hover:bg-black transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-              {saving ? 'Saving…' : 'Update Password'}
-            </button>
-          </div>
+          <CardFooter className="justify-end">
+            <Button type="submit" loading={saving} disabled={!pw.old || !pw.new || !pw.confirm}>
+              {saving ? 'Saving…' : 'Update password'}
+            </Button>
+          </CardFooter>
         </form>
-      </div>
+      </Card>
     </div>
   )
 }

@@ -6,11 +6,16 @@ import { Download, Printer, RefreshCw, AlertTriangle } from 'lucide-react'
 import DatePicker from '@/components/ui/DatePicker'
 import EmptyState from '@/components/ui/EmptyState'
 import LoadingSpinner, { PageLoader } from '@/components/ui/LoadingSpinner'
+import Button, { buttonVariants } from '@/components/ui/Button'
+import { Card } from '@/components/ui/Card'
+import { Label } from '@/components/ui/Input'
+import PageHeader from '@/components/ui/PageHeader'
+import Tabs from '@/components/ui/Tabs'
 import { cn } from '@/lib/utils'
 import {
   taxPeriodOf, periodFirstDay, periodLastDay, addPeriods, fiscalYearOf, fiscalYearRange, addFiscalYears, isDayKey,
 } from '@/lib/finance/fiscal'
-import { readJson, btnGhost, labelCls } from '../vat-return/_lib/format'
+import { readJson } from '../vat-return/_lib/format'
 import RegisterView from './_components/RegisterView'
 
 const TABS = [
@@ -87,96 +92,83 @@ function RegistersContent() {
   const activePreset = presetList.find(p => p.start === start && p.end === end)?.key
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-gray-900">Tax registers</h1>
-          <p className="text-sm text-gray-500">Mushak-6.2 sales, 6.1 purchases, 6.10 disclosure, VDS and TDS — built from the tax ledger.</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <a
-            href={`/api/tax/registers?${qs}&format=csv`}
-            className={cn(btnGhost, (rangeInvalid || !reg?.rows?.length) && 'pointer-events-none opacity-50')}
-            aria-disabled={rangeInvalid || !reg?.rows?.length}
-          >
-            <Download className="w-4 h-4" /> CSV
-          </a>
-          <button
-            type="button"
-            disabled={rangeInvalid}
-            onClick={() => window.open(`/api/tax/registers/print?${qs}${showStock ? '&stock=1' : ''}`, '_blank', 'noopener')}
-            className={btnGhost}
-          >
-            <Printer className="w-4 h-4" /> Print
-          </button>
-        </div>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Tax registers"
+        actions={
+          <>
+            <a
+              href={`/api/tax/registers?${qs}&format=csv`}
+              className={cn(buttonVariants({ variant: 'outline' }), (rangeInvalid || !reg?.rows?.length) && 'pointer-events-none opacity-50')}
+              aria-disabled={rangeInvalid || !reg?.rows?.length}
+            >
+              <Download /> CSV
+            </a>
+            <Button
+              variant="outline"
+              disabled={rangeInvalid}
+              onClick={() => window.open(`/api/tax/registers/print?${qs}${showStock ? '&stock=1' : ''}`, '_blank', 'noopener')}
+            >
+              <Printer /> Print
+            </Button>
+          </>
+        }
+      />
 
       {/* Tabs */}
-      <div className="border-b border-gray-200 overflow-x-auto">
-        <nav className="flex gap-1 min-w-max" aria-label="Registers">
-          {TABS.map(t => (
-            <button
-              key={t.type}
-              type="button"
-              onClick={() => setQuery({ type: t.type })}
-              className={cn(
-                'px-3 sm:px-4 py-2.5 text-sm font-medium border-b-2 -mb-px whitespace-nowrap',
-                type === t.type ? 'border-gray-900 text-gray-900' : 'border-transparent text-gray-500 hover:text-gray-800',
-              )}
-            >
-              {t.label}{t.form && <span className="ml-1 text-xs text-gray-400">{t.form}</span>}
-            </button>
-          ))}
-        </nav>
-      </div>
+      <nav aria-label="Registers">
+        <Tabs
+          variant="underline"
+          value={type}
+          onChange={v => setQuery({ type: v })}
+          tabs={TABS.map(t => ({
+            value: t.type,
+            label: t.form ? <>{t.label}<span className="ml-1 text-xs font-normal text-muted-foreground">{t.form}</span></> : t.label,
+          }))}
+        />
+      </nav>
 
       {/* Filters */}
-      <div className="bg-white border border-gray-100 rounded-xl p-4 space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[200px_200px_1fr] gap-3 items-end">
-          <div>
-            <label className={labelCls}>From</label>
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="w-full sm:w-44">
+            <Label>From</Label>
             <DatePicker value={start} onChange={v => v && setQuery({ start: v })} clearable={false} />
           </div>
-          <div>
-            <label className={labelCls}>To</label>
+          <div className="w-full sm:w-44">
+            <Label>To</Label>
             <DatePicker value={end} onChange={v => v && setQuery({ end: v })} clearable={false} />
           </div>
-          <div className="flex flex-wrap gap-2">
-            {presetList.map(p => (
-              <button
-                key={p.key}
-                type="button"
-                onClick={() => setQuery({ start: p.start, end: p.end })}
-                className={cn(
-                  'px-3 py-1.5 rounded-lg text-xs font-medium border',
-                  activePreset === p.key ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50',
-                )}
-              >
-                {p.label}
-              </button>
-            ))}
-            <button type="button" onClick={load} className="px-2 py-1.5 rounded-lg text-gray-400 hover:text-gray-700" aria-label="Refresh">
-              <RefreshCw className={cn('w-4 h-4', loading && 'animate-spin')} />
-            </button>
+          <Tabs
+            value={activePreset ?? ''}
+            onChange={key => {
+              const p = presetList.find(x => x.key === key)
+              if (p) setQuery({ start: p.start, end: p.end })
+            }}
+            tabs={presetList.map(p => ({ value: p.key, label: p.label }))}
+          />
+          <div className="ml-auto flex items-center gap-3">
+            {(type === 'sales' || type === 'purchases') && (
+              <label className="inline-flex items-center gap-2 text-[13px] text-gray-700" title="Stock columns stay blank for services">
+                <input type="checkbox" className="rounded border-gray-300" checked={showStock} onChange={e => setShowStock(e.target.checked)} />
+                Show stock columns
+              </label>
+            )}
+            <Button variant="outline" size="icon" onClick={load} aria-label="Refresh" title="Refresh">
+              <RefreshCw className={cn('size-4', loading && 'animate-spin')} />
+            </Button>
           </div>
         </div>
         {rangeInvalid && <p className="text-sm text-red-600">The start date must not be after the end date.</p>}
-        {(type === 'sales' || type === 'purchases') && (
-          <label className="inline-flex items-center gap-2 text-xs text-gray-600">
-            <input type="checkbox" className="rounded border-gray-300" checked={showStock} onChange={e => setShowStock(e.target.checked)} />
-            Show stock columns (blank for services)
-          </label>
-        )}
       </div>
 
       {loading && !reg ? (
-        <div className="bg-white border border-gray-100 rounded-xl"><LoadingSpinner className="py-16" /></div>
+        <Card><LoadingSpinner className="py-16" /></Card>
       ) : error ? (
-        <div className="bg-white border border-gray-100 rounded-xl">
-          <EmptyState icon={AlertTriangle} title="Could not load the register" description={error}
-            action={<button type="button" onClick={load} className={btnGhost}>Try again</button>} />
-        </div>
+        <Card>
+          <EmptyState icon={AlertTriangle} title="Couldn't load the register" description={error}
+            action={<Button variant="outline" onClick={load}>Try again</Button>} />
+        </Card>
       ) : reg ? (
         <RegisterView reg={reg} showStock={showStock} loading={loading} />
       ) : null}

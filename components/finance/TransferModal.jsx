@@ -2,8 +2,10 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
-import { ArrowDownUp, Loader2, AlertTriangle, Info } from 'lucide-react'
+import { ArrowDownUp, AlertTriangle, Info } from 'lucide-react'
 import Modal, { ModalFooter } from '@/components/ui/Modal'
+import Button from '@/components/ui/Button'
+import { Input, NativeSelect, Label } from '@/components/ui/Input'
 import DatePicker from '@/components/ui/DatePicker'
 import { cn } from '@/lib/utils'
 import { dayKeyLabel } from '@/lib/finance/fiscal'
@@ -13,8 +15,7 @@ import AccountIcon from './AccountIcon'
 import AmountInput from './AmountInput'
 import { FieldError } from './FinanceDialogs'
 import {
-  INPUT, INPUT_ERR, LABEL, BTN_PRIMARY, BTN_SECONDARY, FOOTER_STICKY,
-  formatAmount, parseAmount, round2, todayKey, fetchJson, accountSubtitle, maskedNumber,
+  FOOTER_STICKY, formatAmount, parseAmount, round2, todayKey, fetchJson, accountSubtitle, maskedNumber,
 } from './accountTheme'
 
 const CHEQUE_CHANNELS = ['CHEQUE', 'AC_PAYEE_CHEQUE', 'PAY_ORDER']
@@ -39,10 +40,10 @@ function BalanceLine({ account, delta, label }) {
   const limit = account.allowNegative ? null : -(Number(account.creditLimit) || 0)
   const breach = limit !== null && after < limit - 0.005
   return (
-    <div className="mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 text-[11px]">
-      <span className="text-gray-500">{label}: <span className="tabular-nums text-gray-700">{formatAmount(before, account.currency)}</span></span>
+    <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 text-xs">
+      <span className="text-muted-foreground">{label}: <span className="tabular-nums text-gray-700">{formatAmount(before, account.currency)}</span></span>
       {Math.abs(delta) > 0.004 && (
-        <span className={cn('tabular-nums font-medium', breach ? 'text-red-600' : 'text-gray-700')}>
+        <span className={cn('font-medium tabular-nums', breach ? 'text-red-600' : 'text-gray-700')}>
           After: {formatAmount(after, account.currency)}
         </span>
       )}
@@ -173,10 +174,10 @@ export default function TransferModal({ open, onOpenChange, defaultFromId = null
   }
 
   const accountSelect = (value, onChange, options, error, placeholder) => (
-    <select value={value} onChange={e => onChange(e.target.value)} disabled={loading} className={cn(INPUT, error && INPUT_ERR)}>
+    <NativeSelect value={value} onChange={e => onChange(e.target.value)} disabled={loading} invalid={!!error}>
       <option value="">{loading ? 'Loading accounts…' : placeholder}</option>
       {options.map(a => <option key={a.id} value={a.id}>{moneyAccountLabel(a)}</option>)}
-    </select>
+    </NativeSelect>
   )
 
   return (
@@ -184,43 +185,44 @@ export default function TransferModal({ open, onOpenChange, defaultFromId = null
       open={open}
       onOpenChange={(v) => !saving && onOpenChange(v)}
       title="Transfer between accounts"
-      description="Cash deposits, withdrawals, wallet cash-outs and bank-to-bank moves. Transfers never touch the P&L."
+      description="Transfers never touch the P&L."
       size="lg"
     >
       <div className="space-y-5">
         {!loading && accounts.length < 2 && (
-          <div className="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-100 px-3 py-2 text-xs text-amber-800">
-            <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" /> You need at least two active accounts to make a transfer.
+          <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
+            <Info className="mt-0.5 size-4 shrink-0" /> You need at least two active accounts to transfer.
           </div>
         )}
 
         {/* From / To */}
-        <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-3 space-y-2">
+        <div className="space-y-2 rounded-lg bg-gray-50 p-3">
           <div>
-            <label className={LABEL}>From</label>
+            <Label>From</Label>
             <div className="flex items-center gap-2">
               {from && <AccountIcon account={from} size="sm" />}
-              <div className="flex-1 min-w-0">{accountSelect(fromId, (v) => { setFromId(v); if (v && v === toId) setToId('') }, fromOptions, errors.fromAccountId, 'Choose account')}</div>
+              <div className="min-w-0 flex-1">{accountSelect(fromId, (v) => { setFromId(v); if (v && v === toId) setToId('') }, fromOptions, errors.fromAccountId, 'Select account')}</div>
             </div>
             <FieldError message={errors.fromAccountId} />
             {from && <BalanceLine account={from} delta={outDelta} label="Balance" />}
           </div>
           <div className="flex justify-center">
-            <button
-              type="button"
+            <Button
+              variant="outline"
+              size="icon-sm"
+              className="rounded-full"
               onClick={() => { const f = fromId; setFromId(toId); setToId(f) }}
               disabled={!fromId && !toId}
-              className="w-8 h-8 rounded-full border border-gray-200 bg-white flex items-center justify-center text-gray-500 hover:text-gray-900 hover:border-gray-300 disabled:opacity-40"
               aria-label="Swap accounts"
             >
-              <ArrowDownUp className="w-4 h-4" />
-            </button>
+              <ArrowDownUp />
+            </Button>
           </div>
           <div>
-            <label className={LABEL}>To</label>
+            <Label>To</Label>
             <div className="flex items-center gap-2">
               {to && <AccountIcon account={to} size="sm" />}
-              <div className="flex-1 min-w-0">{accountSelect(toId, setToId, toOptions, errors.toAccountId, 'Choose account')}</div>
+              <div className="min-w-0 flex-1">{accountSelect(toId, setToId, toOptions, errors.toAccountId, 'Select account')}</div>
             </div>
             <FieldError message={errors.toAccountId} />
             {to && <BalanceLine account={to} delta={inDelta} label="Balance" />}
@@ -228,43 +230,43 @@ export default function TransferModal({ open, onOpenChange, defaultFromId = null
         </div>
 
         {/* Amounts */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label className={LABEL}>Amount sent{from ? ` (${fromCur})` : ''} <span className="text-red-500">*</span></label>
+            <Label required>Amount sent{from ? ` (${fromCur})` : ''}</Label>
             <AmountInput value={amount} onChange={onAmount} currency={fromCur} error={errors.amount} autoFocus />
             <FieldError message={errors.amount} />
             {overdraw && (
-              <p className="mt-1 text-[11px] text-red-600 flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> Only {formatAmount(available, fromCur)} available in {from.name}.</p>
+              <p className="mt-1.5 flex items-center gap-1 text-xs text-red-600"><AlertTriangle className="size-3.5" /> Only {formatAmount(available, fromCur)} available in {from.name}.</p>
             )}
           </div>
           <div>
-            <label className={LABEL}>Date <span className="text-red-500">*</span></label>
+            <Label required>Date</Label>
             <DatePicker value={date} onChange={v => setDate(v ?? '')} clearable={false} />
             <FieldError message={errors.date} />
-            {dateLocked && !errors.date && <p className="mt-1 text-[11px] text-red-600">Books are locked up to {dayKeyLabel(lockedUntil)}.</p>}
+            {dateLocked && !errors.date && <p className="mt-1.5 text-xs text-red-600">Books are locked up to {dayKeyLabel(lockedUntil)}.</p>}
           </div>
         </div>
 
         {crossCurrency && (
-          <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-3 space-y-3">
-            <p className="text-xs font-semibold text-indigo-900">Currency exchange {fromCur} → {toCur}</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="space-y-4 rounded-lg border border-gray-200/80 p-3">
+            <p className="text-sm font-medium text-gray-900">Currency exchange {fromCur} → {toCur}</p>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <label className={LABEL}>Rate (1 {fromCur} = ? {toCur})</label>
-                <input value={rate} onChange={e => onRate(e.target.value)} inputMode="decimal" placeholder={effectiveRate ? effectiveRate.toFixed(4) : 'e.g. 121.50'} className={cn(INPUT, 'text-right tabular-nums')} />
+                <Label>Rate (1 {fromCur} = ? {toCur})</Label>
+                <Input value={rate} onChange={e => onRate(e.target.value)} inputMode="decimal" placeholder={effectiveRate ? effectiveRate.toFixed(4) : 'e.g. 121.50'} className="text-right tabular-nums" />
               </div>
               <div>
-                <label className={LABEL}>Amount received ({toCur}) <span className="text-red-500">*</span></label>
+                <Label required>Amount received ({toCur})</Label>
                 <AmountInput value={toAmount} onChange={(v) => { setToAmount(v); setRate('') }} currency={toCur} error={errors.toAmount} />
                 <FieldError message={errors.toAmount} />
               </div>
             </div>
             {effectiveRate && (
-              <p className="text-[11px] text-indigo-800">Effective rate: 1 {fromCur} = {effectiveRate.toFixed(4)} {toCur}</p>
+              <p className="text-xs text-muted-foreground tabular-nums">Effective rate: 1 {fromCur} = {effectiveRate.toFixed(4)} {toCur}</p>
             )}
             {neitherBDT && (
               <div className="sm:w-1/2">
-                <label className={LABEL}>Value in BDT <span className="text-red-500">*</span></label>
+                <Label required>Value in BDT</Label>
                 <AmountInput value={amountBDT} onChange={setAmountBDT} currency="BDT" error={errors.amountBDT} />
                 <FieldError message={errors.amountBDT} />
               </div>
@@ -274,72 +276,72 @@ export default function TransferModal({ open, onOpenChange, defaultFromId = null
 
         {neitherBDT && !crossCurrency && (
           <div className="sm:w-1/2">
-            <label className={LABEL}>Value in BDT <span className="text-red-500">*</span></label>
+            <Label required>Value in BDT</Label>
             <AmountInput value={amountBDT} onChange={setAmountBDT} currency="BDT" error={errors.amountBDT} />
             <FieldError message={errors.amountBDT} />
           </div>
         )}
 
         {/* Fee & channel */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label className={LABEL}>Fee charged{from ? ` (${fromCur})` : ''}</label>
+            <Label>Fee charged{from ? ` (${fromCur})` : ''}</Label>
             <AmountInput value={fee} onChange={setFee} currency={fromCur} error={errors.fee} />
             <FieldError message={errors.fee} />
             {from?.type === 'MFS' && amt > 0 && (
-              <div className="mt-1.5 flex flex-wrap gap-1">
+              <div className="mt-2 flex flex-wrap gap-1">
                 {MFS_FEE_PRESETS.map(p => (
-                  <button key={p.label} type="button" onClick={() => setFee(String(round2(amt * p.pct / 100)))} className="rounded-full border border-gray-200 px-2 py-0.5 text-[11px] text-gray-600 hover:bg-gray-50">
+                  <Button key={p.label} variant="outline" size="xs" className="rounded-full font-normal text-gray-600" onClick={() => setFee(String(round2(amt * p.pct / 100)))}>
                     {p.label}
-                  </button>
+                  </Button>
                 ))}
               </div>
             )}
-            <p className="mt-1 text-[11px] text-gray-500">Booked as “Bank Charges” (expense) on the sending account.</p>
+            <p className="mt-1.5 text-xs text-muted-foreground">Booked as a bank charge on the sending account.</p>
           </div>
           <div>
-            <label className={LABEL}>Channel</label>
-            <select value={channel} onChange={e => setChannel(e.target.value)} className={INPUT}>
+            <Label>Channel</Label>
+            <NativeSelect value={channel} onChange={e => setChannel(e.target.value)}>
               <option value="">Automatic{resolvedChannel && !channel ? ` (${TRANSFER_CHANNELS.find(c => c.value === resolvedChannel)?.label ?? resolvedChannel})` : ''}</option>
               {TRANSFER_CHANNELS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-            </select>
+            </NativeSelect>
           </div>
         </div>
 
         {showCheque && (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 rounded-xl border border-gray-100 p-3">
+          <div className="grid grid-cols-1 gap-4 rounded-lg border border-gray-200/80 p-3 sm:grid-cols-3">
             <div>
-              <label className={LABEL}>Cheque / instrument no.</label>
-              <input value={cheque.no} onChange={e => setCheque(c => ({ ...c, no: e.target.value }))} className={INPUT} />
+              <Label>Cheque / instrument no.</Label>
+              <Input value={cheque.no} onChange={e => setCheque(c => ({ ...c, no: e.target.value }))} />
             </div>
             <div>
-              <label className={LABEL}>Cheque date</label>
+              <Label>Cheque date</Label>
               <DatePicker value={cheque.date || null} onChange={v => setCheque(c => ({ ...c, date: v ?? '' }))} />
             </div>
             <div>
-              <label className={LABEL}>Drawn on bank</label>
-              <input list="finance-transfer-banks" value={cheque.bank} onChange={e => setCheque(c => ({ ...c, bank: e.target.value }))} placeholder={from?.bankName ?? ''} className={INPUT} />
+              <Label>Drawn on bank</Label>
+              <Input list="finance-transfer-banks" value={cheque.bank} onChange={e => setCheque(c => ({ ...c, bank: e.target.value }))} placeholder={from?.bankName ?? ''} />
             </div>
           </div>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label className={LABEL}>Reference</label>
-            <input value={reference} onChange={e => setReference(e.target.value)} placeholder="Bank ref / TrxID / slip no." className={INPUT} />
+            <Label>Reference</Label>
+            <Input value={reference} onChange={e => setReference(e.target.value)} placeholder="Bank ref / TrxID / slip no." />
           </div>
           <div>
-            <label className={LABEL}>Note</label>
-            <input value={description} onChange={e => setDescription(e.target.value)} placeholder={from && to ? `Transfer: ${from.name} → ${to.name}` : 'Optional'} className={INPUT} />
+            <Label>Note</Label>
+            <Input value={description} onChange={e => setDescription(e.target.value)} placeholder={from && to ? `Transfer: ${from.name} → ${to.name}` : 'Optional'} />
           </div>
         </div>
 
         {from && to && amt > 0 && (
-          <div className="rounded-xl border border-gray-100 p-3 text-xs text-gray-600 space-y-1">
-            <p className="font-semibold text-gray-900">Summary</p>
-            <p><span className="text-gray-500">{from.name}{maskedNumber(from) ? ` ${maskedNumber(from)}` : ''}:</span> <span className="tabular-nums text-red-600">−{formatAmount(amt + (feeAmt > 0 ? feeAmt : 0), fromCur)}</span>{feeAmt > 0 ? ` (incl. fee ${formatAmount(feeAmt, fromCur)})` : ''}</p>
-            <p><span className="text-gray-500">{to.name}{maskedNumber(to) ? ` ${maskedNumber(to)}` : ''}:</span> <span className="tabular-nums text-emerald-700">+{formatAmount(Number.isFinite(toAmt) ? toAmt : 0, toCur)}</span></p>
-            <p className="text-gray-400">{accountSubtitle(from)} → {accountSubtitle(to)}</p>
+          <div className="space-y-1 rounded-lg border border-gray-200/80 bg-gray-50/60 p-3 text-[13px] text-gray-600">
+            <p className="font-medium text-gray-900">Summary</p>
+            <p><span className="text-muted-foreground">{from.name}{maskedNumber(from) ? ` ${maskedNumber(from)}` : ''}:</span> <span className="tabular-nums text-red-600">−{formatAmount(amt + (feeAmt > 0 ? feeAmt : 0), fromCur)}</span>{feeAmt > 0 ? ` (incl. fee ${formatAmount(feeAmt, fromCur)})` : ''}</p>
+            <p><span className="text-muted-foreground">{to.name}{maskedNumber(to) ? ` ${maskedNumber(to)}` : ''}:</span> <span className="tabular-nums text-emerald-700">+{formatAmount(Number.isFinite(toAmt) ? toAmt : 0, toCur)}</span></p>
+            <p className="text-xs text-gray-400">{accountSubtitle(from)} → {accountSubtitle(to)}</p>
           </div>
         )}
       </div>
@@ -349,11 +351,10 @@ export default function TransferModal({ open, onOpenChange, defaultFromId = null
       </datalist>
 
       <ModalFooter className={FOOTER_STICKY}>
-        <button type="button" className={BTN_SECONDARY} onClick={() => onOpenChange(false)} disabled={saving}>Cancel</button>
-        <button type="button" className={BTN_PRIMARY} onClick={submit} disabled={saving || loading || accounts.length < 2}>
-          {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+        <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
+        <Button onClick={submit} loading={saving} disabled={loading || accounts.length < 2}>
           Transfer
-        </button>
+        </Button>
       </ModalFooter>
     </Modal>
   )

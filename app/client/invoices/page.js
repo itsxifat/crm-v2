@@ -3,25 +3,36 @@
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import {
-  FileText, Search, Clock, CheckCircle, AlertCircle, ChevronLeft, ChevronRight,
-  Layers, List, FolderTree, ExternalLink,
+  FileText, Clock, CheckCircle2, AlertCircle, ChevronRight,
+  Layers, List, FolderTree,
 } from 'lucide-react'
 import { formatMoney } from '@/lib/currencies'
+import PageHeader from '@/components/ui/PageHeader'
+import Tabs from '@/components/ui/Tabs'
+import Badge from '@/components/ui/Badge'
+import StatsCard from '@/components/ui/StatsCard'
+import SearchInput from '@/components/ui/SearchInput'
+import Pagination from '@/components/ui/Pagination'
+import EmptyState from '@/components/ui/EmptyState'
+import { Card } from '@/components/ui/Card'
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table'
+import { buttonVariants } from '@/components/ui/Button'
+import { cn } from '@/lib/utils'
 
 const STATUS_OPTIONS = [
   { value: 'ALL',            label: 'All' },
-  { value: 'SENT',           label: 'Awaiting Payment' },
+  { value: 'SENT',           label: 'Awaiting payment' },
   { value: 'PARTIALLY_PAID', label: 'Partial' },
   { value: 'PAID',           label: 'Paid' },
   { value: 'OVERDUE',        label: 'Overdue' },
 ]
 
 const STATUS_MAP = {
-  SENT:           { label: 'Awaiting Payment',  bg: 'bg-blue-100',   text: 'text-blue-700' },
-  PARTIALLY_PAID: { label: 'Partial',           bg: 'bg-yellow-100', text: 'text-yellow-700' },
-  PAID:           { label: 'Paid',              bg: 'bg-green-100',  text: 'text-green-700' },
-  OVERDUE:        { label: 'Overdue',           bg: 'bg-red-100',    text: 'text-red-700' },
-  CANCELLED:      { label: 'Cancelled',         bg: 'bg-gray-100',   text: 'text-gray-500' },
+  SENT:           { label: 'Awaiting payment', variant: 'primary' },
+  PARTIALLY_PAID: { label: 'Partial',          variant: 'warning' },
+  PAID:           { label: 'Paid',             variant: 'success' },
+  OVERDUE:        { label: 'Overdue',          variant: 'danger'  },
+  CANCELLED:      { label: 'Cancelled',        variant: 'default' },
 }
 
 // Every amount is shown in its own currency — never a hard-coded ৳.
@@ -40,11 +51,7 @@ const isPayable = (status) => ['SENT', 'OVERDUE', 'PARTIALLY_PAID'].includes(sta
 
 function StatusBadge({ status }) {
   const s = STATUS_MAP[status] ?? STATUS_MAP.SENT
-  return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${s.bg} ${s.text}`}>
-      {s.label}
-    </span>
-  )
+  return <Badge variant={s.variant}>{s.label}</Badge>
 }
 
 export default function ClientInvoicesPage() {
@@ -117,184 +124,152 @@ export default function ClientInvoicesPage() {
         g.invoices.some(i => i.invoiceNumber?.toLowerCase().includes(q)))
     : groups
 
+  const count = summary?.invoiceCount ?? total
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Invoices</h1>
-          <p className="text-sm text-gray-500 mt-0.5">
-            {summary?.invoiceCount ?? total} invoice{(summary?.invoiceCount ?? total) !== 1 ? 's' : ''} total
-          </p>
-        </div>
-        <div className="flex items-center gap-0.5 p-0.5 bg-gray-100 rounded-lg">
-          {[
-            ['list',    'All Invoices', List],
-            ['project', 'By Project',   FolderTree],
-          ].map(([v, label, Icon]) => (
-            <button key={v} onClick={() => { setView(v); setPage(1); setExpanded(null) }}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                view === v ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-              }`}>
-              <Icon className="w-3.5 h-3.5" /> {label}
-            </button>
-          ))}
-        </div>
-      </div>
+      <PageHeader
+        title="Invoices"
+        description={`${count} invoice${count !== 1 ? 's' : ''}`}
+        actions={
+          <Tabs
+            size="sm"
+            value={view}
+            onChange={(v) => { setView(v); setPage(1); setExpanded(null) }}
+            tabs={[
+              { value: 'list',    label: 'All invoices', icon: List },
+              { value: 'project', label: 'By project',   icon: FolderTree },
+            ]}
+          />
+        }
+      />
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        {[
-          { label: 'Total Billed', value: fmtSummary(summary, 'billed'),      icon: FileText,    bg: 'bg-gray-50',  color: 'text-gray-500' },
-          { label: 'Total Paid',   value: fmtSummary(summary, 'collected'),   icon: CheckCircle, bg: 'bg-green-50', color: 'text-green-600' },
-          { label: 'Outstanding',  value: fmtSummary(summary, 'outstanding'), icon: Clock,       bg: 'bg-blue-50',  color: 'text-blue-600' },
-          { label: 'Overdue',      value: fmtSummary(summary, 'overdueAmount'), icon: AlertCircle, bg: 'bg-red-50', color: 'text-red-500',
-            sub: `${summary?.overdueCount ?? 0} invoice${summary?.overdueCount === 1 ? '' : 's'}` },
-        ].map(c => {
-          const Icon = c.icon
-          return (
-            <div key={c.label} className="bg-white border border-gray-100 rounded-xl p-4 flex items-center gap-3">
-              <div className={`w-9 h-9 ${c.bg} rounded-lg flex items-center justify-center shrink-0`}>
-                <Icon className={`w-5 h-5 ${c.color}`} />
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs text-gray-500">{c.label}</p>
-                <p className="text-base font-bold text-gray-900 truncate">{c.value}</p>
-                {c.sub && <p className="text-xs text-gray-400">{c.sub}</p>}
-              </div>
-            </div>
-          )
-        })}
+      {/* Summary */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatsCard title="Total billed" value={fmtSummary(summary, 'billed')} icon={FileText} />
+        <StatsCard title="Total paid" value={fmtSummary(summary, 'collected')} icon={CheckCircle2} color="green" />
+        <StatsCard title="Outstanding" value={fmtSummary(summary, 'outstanding')} icon={Clock} />
+        <StatsCard
+          title="Overdue"
+          value={fmtSummary(summary, 'overdueAmount')}
+          icon={AlertCircle}
+          color={(summary?.overdueCount ?? 0) > 0 ? 'red' : 'gray'}
+          changeLabel={`${summary?.overdueCount ?? 0} invoice${summary?.overdueCount === 1 ? '' : 's'}`}
+        />
       </div>
 
       {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1 max-w-xs">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input
-            type="text"
-            placeholder={view === 'project' ? 'Search project or invoice…' : 'Search invoice # or project…'}
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="w-full pl-9 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-        <div className="flex gap-2 flex-wrap">
-          {STATUS_OPTIONS.map(opt => (
-            <button key={opt.value} onClick={() => { setStatus(opt.value); setPage(1) }}
-              className={`px-3 py-2 rounded-xl text-xs font-medium border transition-colors ${
-                status === opt.value
-                  ? 'bg-blue-600 text-white border-blue-600'
-                  : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300 hover:text-blue-600'
-              }`}>
-              {opt.label}
-            </button>
-          ))}
-        </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          debounceMs={0}
+          placeholder="Search…"
+          className="w-full sm:w-64"
+        />
+        <Tabs
+          value={status}
+          onChange={(v) => { setStatus(v); setPage(1) }}
+          tabs={STATUS_OPTIONS}
+        />
       </div>
 
       {/* ── PROJECT-WISE VIEW ── */}
       {view === 'project' ? (
-        <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden">
+        <Card className="overflow-hidden">
           {loading ? (
-            <div className="divide-y divide-gray-50">
+            <div className="divide-y divide-gray-100">
               {[...Array(3)].map((_, i) => (
-                <div key={i} className="px-6 py-5 animate-pulse">
-                  <div className="h-4 bg-gray-100 rounded w-48 mb-2" />
-                  <div className="h-3 bg-gray-100 rounded w-32" />
+                <div key={i} className="animate-pulse px-5 py-5">
+                  <div className="mb-2 h-4 w-48 rounded-md bg-gray-100" />
+                  <div className="h-3 w-32 rounded-md bg-gray-100" />
                 </div>
               ))}
             </div>
           ) : error ? (
-            <div className="p-12 text-center text-red-500 text-sm">{error}</div>
+            <div className="p-12 text-center text-sm text-red-600">{error}</div>
           ) : filteredGroups.length === 0 ? (
-            <div className="p-16 text-center">
-              <FolderTree className="w-12 h-12 text-gray-200 mx-auto mb-3" />
-              <p className="text-gray-500 font-medium">No invoiced projects yet</p>
-              <p className="text-gray-400 text-sm mt-1">Invoices will appear here once your projects are billed.</p>
-            </div>
+            <EmptyState icon={FolderTree} title="No invoiced projects yet" />
           ) : (
-            <div className="divide-y divide-gray-50">
+            <div className="divide-y divide-gray-100">
               {filteredGroups.map(g => {
                 const key    = g.projectId ?? '__none__'
                 const isOpen = expanded === key
                 return (
                   <div key={key}>
                     <button onClick={() => setExpanded(isOpen ? null : key)}
-                      className="w-full px-5 py-4 flex items-center gap-4 hover:bg-gray-50/70 transition-colors text-left">
-                      <ChevronRight className={`w-4 h-4 text-gray-300 shrink-0 transition-transform ${isOpen ? 'rotate-90' : ''}`} />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-sm font-semibold text-gray-900 truncate">
+                      aria-expanded={isOpen}
+                      className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-gray-50/70">
+                      <ChevronRight className={cn('size-4 shrink-0 text-gray-400 transition-transform', isOpen && 'rotate-90')} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="truncate text-sm font-medium text-gray-900">
                             {g.project?.name ?? 'Other invoices'}
                           </span>
                           {g.project?.projectCode && (
-                            <span className="text-xs font-mono text-gray-400">{g.project.projectCode}</span>
+                            <span className="font-mono text-xs text-muted-foreground">{g.project.projectCode}</span>
                           )}
                           <StatusBadge status={g.status} />
                         </div>
-                        <p className="text-xs text-gray-400 mt-0.5">
+                        <p className="mt-0.5 text-xs text-muted-foreground">
                           {g.invoiceCount} invoice{g.invoiceCount === 1 ? '' : 's'}
                           {g.combined && ` · Combined ${g.combined.combinedNumber}`}
                           {g.mixedCurrency && ' · Mixed currencies (totals not converted)'}
                         </p>
                       </div>
-                      <div className="hidden sm:grid grid-cols-3 gap-6 shrink-0 text-right">
+                      <div className="hidden shrink-0 grid-cols-3 gap-6 text-right sm:grid">
                         <div>
-                          <p className="text-xs text-gray-400">Billed</p>
-                          <p className="text-sm font-semibold text-gray-900">{fmtAmt(g.total, g.currency)}</p>
+                          <p className="text-xs text-muted-foreground">Billed</p>
+                          <p className="text-sm font-medium tabular-nums text-gray-900">{fmtAmt(g.total, g.currency)}</p>
                         </div>
                         <div>
-                          <p className="text-xs text-gray-400">Paid</p>
-                          <p className="text-sm font-semibold text-green-600">{fmtAmt(g.paidAmount, g.currency)}</p>
+                          <p className="text-xs text-muted-foreground">Paid</p>
+                          <p className="text-sm font-medium tabular-nums text-emerald-600">{fmtAmt(g.paidAmount, g.currency)}</p>
                         </div>
                         <div>
-                          <p className="text-xs text-gray-400">Due</p>
-                          <p className={`text-sm font-semibold ${g.due > 0.01 ? 'text-red-600' : 'text-green-600'}`}>{fmtAmt(g.due, g.currency)}</p>
+                          <p className="text-xs text-muted-foreground">Due</p>
+                          <p className={cn('text-sm font-medium tabular-nums', g.due > 0.01 ? 'text-red-600' : 'text-emerald-600')}>{fmtAmt(g.due, g.currency)}</p>
                         </div>
                       </div>
                     </button>
 
                     {isOpen && (
-                      <div className="bg-gray-50/60 px-5 pb-4">
+                      <div className="space-y-3 bg-gray-50/60 px-4 pb-4 pt-1">
                         {g.combined && (
                           <Link href={`/client/invoices/combined/${g.combined.id}`}
-                            className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 hover:bg-blue-100 transition-colors">
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              <Layers className="w-4 h-4 text-blue-600 shrink-0" />
+                            className="flex items-center justify-between gap-3 rounded-lg border border-gray-200/80 bg-white px-4 py-3 shadow-xs transition-colors hover:border-gray-300">
+                            <div className="flex min-w-0 items-center gap-3">
+                              <Layers className="size-4 shrink-0 text-gray-500" />
                               <div className="min-w-0">
-                                <p className="text-sm font-semibold text-blue-800">Combined invoice {g.combined.combinedNumber}</p>
-                                <p className="text-xs text-blue-600/80">
-                                  All {g.invoiceCount} invoices in one document · {fmtAmt(g.due, g.currency)} still due
+                                <p className="text-sm font-medium text-gray-900">Combined invoice {g.combined.combinedNumber}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {g.invoiceCount} invoices · {fmtAmt(g.due, g.currency)} due
                                 </p>
                               </div>
                             </div>
-                            <ExternalLink className="w-4 h-4 text-blue-500 shrink-0" />
+                            <ChevronRight className="size-4 shrink-0 text-gray-400" />
                           </Link>
                         )}
-                        <div className="rounded-xl border border-gray-100 bg-white divide-y divide-gray-50">
+                        <div className="divide-y divide-gray-100 rounded-lg border border-gray-200/80 bg-white">
                           {g.invoices.map(inv => (
                             <Link key={inv.id} href={`/client/invoices/${inv.id}`}
-                              className="flex items-center justify-between gap-4 px-4 py-3 hover:bg-gray-50/70 transition-colors">
+                              className="flex items-center justify-between gap-4 px-4 py-3 transition-colors hover:bg-gray-50/70">
                               <div className="min-w-0">
-                                <p className="text-sm font-semibold text-gray-900">{inv.invoiceNumber}</p>
-                                <p className="text-xs text-gray-400 mt-0.5">
+                                <p className="text-sm font-medium text-gray-900">{inv.invoiceNumber}</p>
+                                <p className="mt-0.5 text-xs text-muted-foreground">
                                   Issued {fmtDate(inv.issueDate)}{inv.dueDate ? ` · Due ${fmtDate(inv.dueDate)}` : ''}
                                 </p>
                               </div>
-                              <div className="flex items-center gap-4 shrink-0">
+                              <div className="flex shrink-0 items-center gap-3 sm:gap-4">
                                 <div className="text-right">
-                                  <p className="text-sm font-bold text-gray-900">{fmtAmt(inv.total, inv.currency)}</p>
-                                  <p className={`text-xs mt-0.5 ${inv.due > 0.01 ? 'text-red-500' : 'text-green-600'}`}>
+                                  <p className="text-sm font-medium tabular-nums text-gray-900">{fmtAmt(inv.total, inv.currency)}</p>
+                                  <p className={cn('mt-0.5 text-xs tabular-nums', inv.due > 0.01 ? 'text-red-600' : 'text-emerald-600')}>
                                     {inv.due > 0.01 ? `${fmtAmt(inv.due, inv.currency)} due` : 'Paid in full'}
                                   </p>
                                 </div>
                                 <StatusBadge status={inv.status} />
-                                <span className={`inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-medium ${
-                                  isPayable(inv.status)
-                                    ? 'bg-blue-600 text-white'
-                                    : 'text-blue-600 border border-blue-100'
-                                }`}>
-                                  {isPayable(inv.status) ? 'Pay Now' : 'View'}
+                                <span className={cn(buttonVariants({ variant: isPayable(inv.status) ? 'outline' : 'ghost', size: 'xs' }), 'hidden sm:inline-flex')}>
+                                  {isPayable(inv.status) ? 'Pay now' : 'View'}
                                 </span>
                               </div>
                             </Link>
@@ -307,103 +282,81 @@ export default function ClientInvoicesPage() {
               })}
             </div>
           )}
-        </div>
+        </Card>
       ) : (
         /* ── FLAT LIST ── */
-        <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden">
+        <Card className="overflow-hidden">
           {loading ? (
-            <div className="divide-y divide-gray-50">
+            <div className="divide-y divide-gray-100">
               {[...Array(5)].map((_, i) => (
-                <div key={i} className="px-6 py-4 flex items-center gap-4 animate-pulse">
-                  <div className="h-4 bg-gray-100 rounded w-32" />
-                  <div className="h-4 bg-gray-100 rounded w-24 ml-auto" />
-                  <div className="h-4 bg-gray-100 rounded w-20" />
-                  <div className="h-5 bg-gray-100 rounded-full w-16" />
+                <div key={i} className="flex animate-pulse items-center gap-4 px-4 py-4">
+                  <div className="h-4 w-32 rounded-md bg-gray-100" />
+                  <div className="ml-auto h-4 w-24 rounded-md bg-gray-100" />
+                  <div className="h-4 w-20 rounded-md bg-gray-100" />
+                  <div className="h-5 w-16 rounded-full bg-gray-100" />
                 </div>
               ))}
             </div>
           ) : error ? (
-            <div className="p-12 text-center text-red-500 text-sm">{error}</div>
+            <div className="p-12 text-center text-sm text-red-600">{error}</div>
           ) : filtered.length === 0 ? (
-            <div className="p-16 text-center">
-              <FileText className="w-12 h-12 text-gray-200 mx-auto mb-3" />
-              <p className="text-gray-500 font-medium">No invoices found</p>
-              <p className="text-gray-400 text-sm mt-1">Invoices will appear here once your projects are billed.</p>
-            </div>
+            <EmptyState icon={FileText} title={status !== 'ALL' || debounced ? 'No results' : 'No invoices yet'} />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[760px]">
-                <thead>
-                  <tr className="bg-gray-50 border-b border-gray-100">
-                    <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Invoice</th>
-                    <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Project</th>
-                    <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide hidden md:table-cell">Due Date</th>
-                    <th className="px-5 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Amount</th>
-                    <th className="px-5 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Paid</th>
-                    <th className="px-5 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Due</th>
-                    <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
-                    <th className="px-5 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {filtered.map(inv => (
-                    <tr key={inv.id} className="hover:bg-gray-50/60 transition-colors">
-                      <td className="px-5 py-3.5">
-                        <p className="text-sm font-semibold text-gray-900">{inv.invoiceNumber}</p>
-                        <p className="text-xs text-gray-400 mt-0.5">{fmtDate(inv.issueDate)}</p>
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <p className="text-sm text-gray-600 truncate max-w-[160px]">{inv.projectId?.name ?? '—'}</p>
-                        {inv.combined && (
-                          <Link href={`/client/invoices/combined/${inv.combined.id}`}
-                            className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-600 border border-blue-100 hover:bg-blue-100">
-                            <Layers className="w-2.5 h-2.5" /> Combined
-                          </Link>
-                        )}
-                      </td>
-                      <td className="px-5 py-3.5 hidden md:table-cell">
-                        <p className="text-sm text-gray-600">{fmtDate(inv.dueDate)}</p>
-                      </td>
-                      <td className="px-5 py-3.5 text-right text-sm font-bold text-gray-900 whitespace-nowrap">{fmtAmt(inv.total, inv.currency)}</td>
-                      <td className="px-5 py-3.5 text-right text-sm text-green-600 whitespace-nowrap">{fmtAmt(inv.paidAmount, inv.currency)}</td>
-                      <td className={`px-5 py-3.5 text-right text-sm font-semibold whitespace-nowrap ${inv.due > 0.01 ? 'text-red-600' : 'text-green-600'}`}>
-                        {fmtAmt(inv.due, inv.currency)}
-                      </td>
-                      <td className="px-5 py-3.5"><StatusBadge status={inv.status} /></td>
-                      <td className="px-5 py-3.5 text-right">
-                        <Link href={`/client/invoices/${inv.id}`}
-                          className={`inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                            isPayable(inv.status)
-                              ? 'bg-blue-600 text-white hover:bg-blue-700'
-                              : 'text-blue-600 hover:text-blue-700 border border-blue-100 hover:border-blue-300'
-                          }`}>
-                          {isPayable(inv.status) ? 'Pay Now' : 'View'}
+            <Table className="min-w-[760px]">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Invoice</TableHead>
+                  <TableHead>Project</TableHead>
+                  <TableHead className="hidden md:table-cell">Due date</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead className="text-right">Paid</TableHead>
+                  <TableHead className="text-right">Due</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right"><span className="sr-only">Action</span></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filtered.map(inv => (
+                  <TableRow key={inv.id}>
+                    <TableCell>
+                      <p className="font-medium text-gray-900">{inv.invoiceNumber}</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">{fmtDate(inv.issueDate)}</p>
+                    </TableCell>
+                    <TableCell>
+                      <p className="max-w-[160px] truncate">{inv.projectId?.name ?? '—'}</p>
+                      {inv.combined && (
+                        <Link href={`/client/invoices/combined/${inv.combined.id}`}
+                          className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-gray-600 underline-offset-4 hover:text-gray-900 hover:underline">
+                          <Layers className="size-3" /> Combined
                         </Link>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      )}
+                    </TableCell>
+                    <TableCell className="hidden whitespace-nowrap md:table-cell">{fmtDate(inv.dueDate)}</TableCell>
+                    <TableCell className="whitespace-nowrap text-right font-medium tabular-nums text-gray-900">{fmtAmt(inv.total, inv.currency)}</TableCell>
+                    <TableCell className="whitespace-nowrap text-right tabular-nums text-emerald-600">{fmtAmt(inv.paidAmount, inv.currency)}</TableCell>
+                    <TableCell className={cn('whitespace-nowrap text-right font-medium tabular-nums', inv.due > 0.01 ? 'text-red-600' : 'text-emerald-600')}>
+                      {fmtAmt(inv.due, inv.currency)}
+                    </TableCell>
+                    <TableCell><StatusBadge status={inv.status} /></TableCell>
+                    <TableCell className="text-right">
+                      <Link href={`/client/invoices/${inv.id}`}
+                        className={buttonVariants({ variant: isPayable(inv.status) ? 'outline' : 'ghost', size: 'xs' })}>
+                        {isPayable(inv.status) ? 'Pay now' : 'View'}
+                      </Link>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+
+          {/* Pagination (flat list only) */}
+          {pages > 1 && (
+            <div className="border-t border-gray-100 px-4 py-3">
+              <Pagination page={page} pages={pages} total={total} limit={limit} onPageChange={setPage} />
             </div>
           )}
-        </div>
-      )}
-
-      {/* Pagination (flat list only) */}
-      {view === 'list' && pages > 1 && (
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-gray-500">Page {page} of {pages}</p>
-          <div className="flex gap-2">
-            <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
-              className="flex items-center gap-1 px-3 py-2 text-sm border border-gray-200 rounded-xl hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-              <ChevronLeft className="w-4 h-4" /> Prev
-            </button>
-            <button onClick={() => setPage(p => Math.min(pages, p + 1))} disabled={page === pages}
-              className="flex items-center gap-1 px-3 py-2 text-sm border border-gray-200 rounded-xl hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-              Next <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
+        </Card>
       )}
     </div>
   )

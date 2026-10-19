@@ -136,22 +136,22 @@ export default function AssetPicker({
     const cat = categoryName(selected)
     const sub = subtitle(selected)
     return (
-      <div className={cn('flex items-center gap-3 w-full border border-gray-200 rounded-lg px-3 py-2 bg-white', disabled && 'opacity-60', className)}>
-        <span className="w-8 h-8 rounded-lg bg-gray-100 text-gray-500 flex items-center justify-center shrink-0">
-          <Package className="w-4 h-4" />
+      <div className={cn('flex w-full items-center gap-3 rounded-lg border border-input bg-white px-3 py-2 shadow-xs', disabled && 'opacity-60', className)}>
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-gray-200/80 bg-white shadow-xs">
+          <Package className="size-4 text-gray-500" />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-gray-900 truncate">
-            <span className="font-mono text-xs text-gray-500 mr-1.5">{selected.assetTag}</span>
+          <p className="truncate text-sm font-medium text-gray-900">
+            <span className="mr-1.5 font-mono text-xs text-gray-500">{selected.assetTag}</span>
             {selected.name}
           </p>
-          {(cat || sub) && <p className="text-xs text-gray-400 truncate">{[cat, sub].filter(Boolean).join(' · ')}</p>}
+          {(cat || sub) && <p className="truncate text-xs text-muted-foreground">{[cat, sub].filter(Boolean).join(' · ')}</p>}
         </div>
         {selected.status && <AssetStatusBadge status={selected.status} className="hidden sm:inline-flex" />}
         {!disabled && (
           <button type="button" onClick={clear} aria-label="Clear selected asset"
-            className="p-1 text-gray-400 hover:text-gray-700 shrink-0">
-            <X className="w-4 h-4" />
+            className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-900">
+            <X className="size-4" />
           </button>
         )}
       </div>
@@ -161,11 +161,11 @@ export default function AssetPicker({
   return (
     <div ref={boxRef} className={cn('relative', className)}>
       <div className={cn(
-        'flex items-center gap-2 w-full border border-gray-200 rounded-lg px-3 py-2 bg-white',
-        'focus-within:ring-2 focus-within:ring-gray-900 focus-within:border-transparent',
-        disabled && 'opacity-60 pointer-events-none',
+        'flex h-9 w-full items-center gap-2 rounded-lg border border-input bg-white px-3 shadow-xs transition-[color,box-shadow,border-color]',
+        'focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/30',
+        disabled && 'pointer-events-none opacity-60',
       )}>
-        <Search className="w-4 h-4 text-gray-400 shrink-0" />
+        <Search className="size-4 shrink-0 text-gray-400" />
         <input
           ref={inputRef}
           type="text"
@@ -179,21 +179,21 @@ export default function AssetPicker({
           aria-controls={listId}
           aria-expanded={open}
           aria-autocomplete="list"
-          className="flex-1 min-w-0 text-sm bg-transparent outline-none border-0 p-0 focus:ring-0 placeholder-gray-400"
+          className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm text-gray-900 outline-none placeholder:text-gray-400 focus:ring-0"
         />
         {loading
-          ? <Loader2 className="w-4 h-4 animate-spin text-gray-400 shrink-0" />
-          : <ChevronDown className="w-4 h-4 text-gray-300 shrink-0" />}
+          ? <Loader2 className="size-4 shrink-0 animate-spin text-gray-400" />
+          : <ChevronDown className="size-4 shrink-0 text-gray-400" />}
       </div>
 
       {open && (
-        <div className="absolute z-50 mt-1 w-full bg-white border border-gray-100 rounded-xl shadow-lg overflow-hidden">
-          <div id={listId} className="max-h-72 overflow-y-auto py-1" role="listbox">
+        <div className="absolute z-50 mt-1 w-full overflow-hidden rounded-xl border border-gray-200/80 bg-white shadow-lg">
+          <div id={listId} className="max-h-72 overflow-y-auto p-1" role="listbox">
             {error ? (
-              <p className="px-4 py-6 text-center text-sm text-red-500">{error}</p>
+              <p className="px-4 py-6 text-center text-sm text-red-600">{error}</p>
             ) : results.length === 0 ? (
-              <p className="px-4 py-6 text-center text-sm text-gray-400">
-                {loading ? 'Searching…' : query.trim() ? `No assets match "${query.trim()}"` : 'No assets available'}
+              <p className="px-4 py-6 text-center text-sm text-muted-foreground">
+                {loading ? 'Searching…' : query.trim() ? 'No results' : 'No assets'}
               </p>
             ) : (
               results.map((a, i) => {
@@ -208,14 +208,14 @@ export default function AssetPicker({
                     aria-selected={i === active}
                     onMouseEnter={() => setActive(i)}
                     onClick={() => pick(a)}
-                    className={cn('w-full flex items-center gap-3 px-3 py-2 text-left', i === active ? 'bg-gray-50' : 'hover:bg-gray-50')}
+                    className={cn('flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left transition-colors', i === active ? 'bg-gray-100' : 'hover:bg-gray-100')}
                   >
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm text-gray-900 truncate">
-                        <span className="font-mono text-xs text-gray-500 mr-1.5">{a.assetTag}</span>
+                      <p className="truncate text-sm text-gray-900">
+                        <span className="mr-1.5 font-mono text-xs text-gray-500">{a.assetTag}</span>
                         <span className="font-medium">{a.name}</span>
                       </p>
-                      <p className="text-xs text-gray-400 truncate">
+                      <p className="truncate text-xs text-muted-foreground">
                         {[cat, sub, holder ? `with ${holder}` : null].filter(Boolean).join(' · ') || '—'}
                       </p>
                     </div>

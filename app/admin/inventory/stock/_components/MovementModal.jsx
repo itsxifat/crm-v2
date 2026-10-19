@@ -2,15 +2,17 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
-import { AlertTriangle, ArrowDownLeft, ArrowUpRight, Loader2 } from 'lucide-react'
+import { AlertTriangle, ArrowDownLeft, ArrowUpRight } from 'lucide-react'
 import Modal, { ModalFooter } from '@/components/ui/Modal'
+import Button from '@/components/ui/Button'
+import { Field, Input, Label, NativeSelect } from '@/components/ui/Input'
 import DatePicker from '@/components/ui/DatePicker'
 import PeoplePicker from '@/components/ui/PeoplePicker'
 import { usePermission } from '@/components/auth/Can'
 import { cn } from '@/lib/utils'
 import { dhakaDayKey } from '@/lib/dhakaTime'
 import { STOCK_MOVEMENT_META } from '@/lib/inventory/constants'
-import { ic, lc, num, qtyText, round2, tk, useDepartments } from './stockShared'
+import { num, qtyText, round2, tk, useDepartments } from './stockShared'
 
 const TYPES = [
   { value: 'ISSUE',      perm: 'inventory.assign', hint: 'Hand out to an employee, department or project' },
@@ -100,7 +102,7 @@ export default function MovementModal({ open, onOpenChange, item, initialType = 
         }),
       })
       const json = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(json.error || 'Could not record the movement')
+      if (!res.ok) throw new Error(json.error || "Couldn't record the movement")
       const m = json.data?.movement
       toast.success(`${STOCK_MOVEMENT_META[type]?.label ?? type}: ${qtyText(q)} ${item.unit}${m?.movementNo ? ` (${m.movementNo})` : ''}`)
       if (json.lowStockAlert) toast(`${item.name} is now low — managers were notified`, { duration: 6000 })
@@ -116,117 +118,104 @@ export default function MovementModal({ open, onOpenChange, item, initialType = 
   return (
     <Modal open={open} onOpenChange={(v) => { if (!saving) onOpenChange(v) }} title={item.name}
       description={`${item.sku} · ${qtyText(onHand)} ${item.unit} on hand · avg ${tk(item.avgCost)}`} size="md">
-      <div className="space-y-4">
+      <div className="space-y-5">
         {allowed.length === 0 ? (
-          <p className="text-sm text-gray-500">You do not have permission to move this stock.</p>
+          <p className="text-sm text-muted-foreground">You don&apos;t have permission to move this stock.</p>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             {allowed.map(t => {
               const m = STOCK_MOVEMENT_META[t.value]
               const active = type === t.value
               const Icon = m.direction === 'OUT' ? ArrowUpRight : ArrowDownLeft
               return (
                 <button key={t.value} type="button" onClick={() => setType(t.value)} title={t.hint}
-                  className={cn('flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-xs font-medium text-left',
-                    active ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 text-gray-700 hover:border-gray-300')}>
-                  <Icon className={cn('w-3.5 h-3.5 shrink-0', active ? 'text-white' : m.direction === 'OUT' ? 'text-orange-500' : 'text-green-600')} />
-                  {m.label}
+                  className={cn('flex h-9 items-center gap-1.5 rounded-lg border px-2.5 text-left text-[13px] font-medium transition-colors',
+                    active ? 'border-gray-900 bg-gray-900 text-white shadow-xs' : 'border-gray-200/80 bg-white text-gray-700 hover:bg-gray-50')}>
+                  <Icon className={cn('size-4 shrink-0', active ? 'text-white' : m.direction === 'OUT' ? 'text-orange-500' : 'text-emerald-600')} />
+                  <span className="truncate">{m.label}</span>
                 </button>
               )
             })}
           </div>
         )}
-        <p className="text-xs text-gray-500">{TYPES.find(t => t.value === type)?.hint}</p>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className={lc}>Quantity ({item.unit}) <span className="text-red-500">*</span></label>
-            <input type="number" min="0" step="any" inputMode="decimal" value={qty} onChange={e => setQty(e.target.value)}
-              className={cn(ic, short && 'border-red-300')} autoFocus />
-            <p className={cn('mt-1 text-[11px]', short ? 'text-red-600' : 'text-gray-400')}>
+            <Label required>Quantity ({item.unit})</Label>
+            <Input type="number" min="0" step="any" inputMode="decimal" value={qty} onChange={e => setQty(e.target.value)}
+              invalid={short} className="tabular-nums" autoFocus />
+            <p className={cn('mt-1.5 text-xs tabular-nums', short ? 'text-red-600' : 'text-muted-foreground')}>
               {q > 0 ? `${qtyText(onHand)} → ${qtyText(Math.max(0, after))} ${item.unit}` : `${qtyText(onHand)} ${item.unit} on hand`}
             </p>
           </div>
           {costed ? (
-            <div>
-              <label className={lc}>Unit cost {type === 'OPENING' ? <span className="text-red-500">*</span> : <span className="text-gray-400 font-normal">(default avg)</span>}</label>
-              <input type="number" min="0" step="0.01" inputMode="decimal" value={unitCost} onChange={e => setUnitCost(e.target.value)}
-                className={ic} placeholder={num(item.avgCost).toFixed(2)} />
-              <p className="mt-1 text-[11px] text-gray-400">Value {tk(value)}</p>
-            </div>
+            <Field label="Unit cost" required={type === 'OPENING'} hint={`Value ${tk(value)}`}>
+              <Input type="number" min="0" step="0.01" inputMode="decimal" value={unitCost} onChange={e => setUnitCost(e.target.value)}
+                className="tabular-nums" placeholder={num(item.avgCost).toFixed(2)} />
+            </Field>
           ) : (
             <div>
-              <p className={lc}>Value at average cost</p>
-              <p className="text-sm text-gray-900 py-2">{tk(value)}</p>
+              <Label>Value at average cost</Label>
+              <p className="flex h-9 items-center text-sm tabular-nums text-gray-900">{tk(value)}</p>
             </div>
           )}
         </div>
 
         {['ISSUE', 'RETURN'].includes(type) && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className={lc}>{type === 'ISSUE' ? 'Issued to (employee)' : 'Returned by'}</label>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label={type === 'ISSUE' ? 'Issued to (employee)' : 'Returned by'}>
               <PeoplePicker types={['EMPLOYEE']} typeFilter={false} value={employee} onChange={setEmployee} placeholder="Search employee…" />
-            </div>
-            <div>
-              <label className={lc}>Department</label>
-              <select value={departmentId} onChange={e => setDepartmentId(e.target.value)} className={ic}>
+            </Field>
+            <Field label="Department">
+              <NativeSelect value={departmentId} onChange={e => setDepartmentId(e.target.value)}>
                 <option value="">—</option>
                 {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-              </select>
-            </div>
+              </NativeSelect>
+            </Field>
           </div>
         )}
 
         <div>
-          <label className={lc}>Reason {needsReason ? <span className="text-red-500">*</span> : <span className="text-gray-400 font-normal">(optional)</span>}</label>
+          <Label required={needsReason}>Reason</Label>
           {REASONS[type] && (
-            <div className="flex flex-wrap gap-1.5 mb-2">
+            <div className="mb-2 flex flex-wrap gap-1.5">
               {REASONS[type].map(r => (
                 <button key={r} type="button" onClick={() => setReason(r)}
-                  className={cn('px-2 py-1 rounded-md text-xs border', reason === r ? 'border-gray-900 bg-gray-50 text-gray-900' : 'border-gray-200 text-gray-600 hover:border-gray-300')}>
+                  className={cn('h-7 rounded-md border px-2 text-xs transition-colors', reason === r ? 'border-gray-900 bg-gray-100 text-gray-900' : 'border-gray-200/80 text-gray-600 hover:bg-gray-50')}>
                   {r}
                 </button>
               ))}
             </div>
           )}
-          <input value={reason} onChange={e => setReason(e.target.value)} className={ic} maxLength={500}
-            placeholder={type === 'ISSUE' ? 'e.g. Monthly office supplies' : 'Why this movement'} />
+          <Input value={reason} onChange={e => setReason(e.target.value)} maxLength={500}
+            placeholder={type === 'ISSUE' ? 'e.g. Monthly office supplies' : 'Reason…'} />
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={lc}>Reference</label>
-            <input value={reference} onChange={e => setReference(e.target.value)} className={ic} maxLength={120} placeholder="Requisition / count sheet no." />
-          </div>
-          <div>
-            <label className={lc}>Date</label>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Reference">
+            <Input value={reference} onChange={e => setReference(e.target.value)} maxLength={120} placeholder="Requisition / count sheet no." />
+          </Field>
+          <Field label="Date" hint={isOut && date && date < today ? 'Back-dated: stock must be on hand that day and after.' : null}>
             <DatePicker value={date} onChange={v => setDate(v || today)} clearable={false} />
-            {isOut && date && date < today && (
-              <p className="mt-1 text-[11px] text-gray-400">Back-dated: the stock must have been on hand that day and stay above zero after it.</p>
-            )}
-          </div>
+          </Field>
         </div>
 
         {willBeLow && (
-          <p className="flex items-start gap-2 text-xs text-amber-800 bg-amber-50 rounded-lg px-3 py-2">
-            <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" /> This takes the item to its reorder level ({qtyText(item.reorderLevel)} {item.unit}) — managers will be alerted.
+          <p className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" /> Reaches its reorder level ({qtyText(item.reorderLevel)} {item.unit}) — managers will be alerted.
           </p>
         )}
         {error && (
-          <p className="flex items-start gap-2 text-sm text-red-700 bg-red-50 rounded-lg px-3 py-2">
-            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" /> {error}
+          <p className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" /> {error}
           </p>
         )}
       </div>
       <ModalFooter>
-        <button type="button" onClick={() => onOpenChange(false)} disabled={saving}
-          className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 bg-white">Cancel</button>
-        <button type="button" onClick={submit} disabled={saving || allowed.length === 0 || short || !(q > 0)}
-          className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 disabled:opacity-50 flex items-center gap-1.5">
-          {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+        <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
+        <Button onClick={submit} loading={saving} disabled={allowed.length === 0 || short || !(q > 0)}>
           Record {STOCK_MOVEMENT_META[type]?.label?.toLowerCase() ?? 'movement'}
-        </button>
+        </Button>
       </ModalFooter>
     </Modal>
   )

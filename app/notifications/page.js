@@ -1,9 +1,15 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Bell, CheckCheck, Trash2, Loader2 } from 'lucide-react'
+import { Bell, CheckCheck, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/utils'
+import Button from '@/components/ui/Button'
+import { Card } from '@/components/ui/Card'
+import PageHeader from '@/components/ui/PageHeader'
+import Badge from '@/components/ui/Badge'
+import EmptyState from '@/components/ui/EmptyState'
+import LoadingSpinner from '@/components/ui/LoadingSpinner'
 
 const fmtAgo = (d) => {
   const diff = Date.now() - new Date(d).getTime()
@@ -30,7 +36,7 @@ export default function NotificationsPage() {
       const json = await res.json()
       setNotifications(json.data ?? [])
       setTotal(json.meta?.total ?? 0)
-    } catch { toast.error('Failed to load') }
+    } catch { toast.error("Couldn't load notifications") }
     finally { setLoading(false) }
   }, [page])
 
@@ -60,60 +66,60 @@ export default function NotificationsPage() {
   const pages = Math.ceil(total / limit)
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-8 space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-gray-900">Notifications</h1>
-        {unreadCount > 0 && (
-          <button onClick={markAll} disabled={markingAll}
-            className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800 disabled:opacity-50">
-            {markingAll ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCheck className="w-4 h-4" />}
+    <div className="mx-auto max-w-2xl space-y-6 px-4 py-8">
+      <PageHeader
+        title="Notifications"
+        meta={unreadCount > 0 ? <Badge>{unreadCount} unread</Badge> : null}
+        actions={unreadCount > 0 && (
+          <Button variant="outline" size="sm" onClick={markAll} loading={markingAll}>
+            {!markingAll && <CheckCheck />}
             Mark all read
-          </button>
+          </Button>
         )}
-      </div>
+      />
 
-      <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+      <Card className="overflow-hidden">
         {loading ? (
-          <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
+          <div className="flex justify-center py-16"><LoadingSpinner /></div>
         ) : notifications.length === 0 ? (
-          <div className="text-center py-16 text-gray-400">
-            <Bell className="w-10 h-10 mx-auto mb-3 opacity-30" />
-            <p className="text-sm">No notifications</p>
-          </div>
+          <EmptyState icon={Bell} title="No notifications" />
         ) : (
-          <div className="divide-y divide-gray-50">
+          <div className="divide-y divide-gray-100">
             {notifications.map(n => (
               <div key={n.id}
-                className={cn('flex items-start gap-3 px-5 py-4 group', !n.isRead && 'bg-blue-50/40')}
+                className={cn('group flex items-start gap-3 px-5 py-4 transition-colors', !n.isRead ? 'cursor-pointer hover:bg-gray-50/70' : '')}
                 onClick={() => { if (!n.isRead) markOne(n.id) }}
               >
-                <div className="w-2 h-2 rounded-full mt-2 shrink-0" style={{ background: n.isRead ? 'transparent' : '#3b82f6' }} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-800">{n.title}</p>
-                  <p className="text-sm text-gray-500 mt-0.5">{n.message}</p>
-                  <p className="text-xs text-gray-400 mt-1">{fmtAgo(n.createdAt)}</p>
+                <span className={cn('mt-[7px] size-2 shrink-0 rounded-full', n.isRead ? 'bg-transparent' : 'bg-brand')} />
+                <div className="min-w-0 flex-1">
+                  <p className={cn('text-sm', n.isRead ? 'text-gray-600' : 'font-medium text-gray-900')}>{n.title}</p>
+                  <p className="mt-0.5 text-sm text-muted-foreground">{n.message}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{fmtAgo(n.createdAt)}</p>
                 </div>
-                <button onClick={e => { e.stopPropagation(); deleteOne(n.id) }}
-                  className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-red-500 transition-opacity">
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={e => { e.stopPropagation(); deleteOne(n.id) }}
+                  className="text-gray-400 opacity-0 hover:text-red-600 focus-visible:opacity-100 group-hover:opacity-100"
+                  aria-label="Delete"
+                >
+                  <Trash2 />
+                </Button>
               </div>
             ))}
           </div>
         )}
 
         {pages > 1 && (
-          <div className="flex items-center justify-between px-5 py-3 border-t border-gray-100">
-            <p className="text-xs text-gray-400">Page {page} of {pages}</p>
+          <div className="flex items-center justify-between border-t border-gray-100 px-5 py-3">
+            <p className="text-xs text-muted-foreground">Page {page} of {pages}</p>
             <div className="flex gap-2">
-              <button disabled={page <= 1} onClick={() => setPage(p => p - 1)}
-                className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-50">Previous</button>
-              <button disabled={page >= pages} onClick={() => setPage(p => p + 1)}
-                className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-50">Next</button>
+              <Button variant="outline" size="xs" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Previous</Button>
+              <Button variant="outline" size="xs" disabled={page >= pages} onClick={() => setPage(p => p + 1)}>Next</Button>
             </div>
           </div>
         )}
-      </div>
+      </Card>
     </div>
   )
 }

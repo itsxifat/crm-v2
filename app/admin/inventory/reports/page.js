@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import { ChevronRight } from 'lucide-react'
 import { PageLoader } from '@/components/ui/LoadingSpinner'
+import PageHeader from '@/components/ui/PageHeader'
 import { REPORT_GROUPS, REPORTS } from './_components/catalog'
 import ReportView from './_components/ReportView'
 import { fetchJson } from './_components/format'
@@ -11,26 +12,23 @@ import { fetchJson } from './_components/format'
 function ReportCatalog({ onPick }) {
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold text-gray-900">Inventory reports</h1>
-        <p className="text-sm text-gray-500">Registers, depreciation schedules for the accounts and the tax return, damage records and stock reports. Every report exports to CSV and prints.</p>
-      </div>
+      <PageHeader title="Inventory reports" />
       {REPORT_GROUPS.map(g => (
         <section key={g.title}>
-          <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">{g.title}</h2>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <h2 className="mb-3 text-sm font-semibold text-gray-900">{g.title}</h2>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {g.items.map(r => (
-              <button key={r.type} onClick={() => onPick(r.type)}
-                className="group text-left bg-white border border-gray-100 rounded-xl p-4 hover:border-gray-200 hover:shadow-sm transition-all flex gap-3">
-                <div className="w-10 h-10 rounded-lg bg-gray-100 group-hover:bg-gray-900 flex items-center justify-center shrink-0 transition-colors">
-                  <r.icon className="w-5 h-5 text-gray-600 group-hover:text-white transition-colors" />
+              <button key={r.type} type="button" onClick={() => onPick(r.type)}
+                className="group flex gap-3 rounded-xl border border-gray-200/80 bg-white p-4 text-left shadow-xs transition-colors hover:border-gray-300 hover:bg-gray-50/60 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-gray-200/80 bg-white shadow-xs">
+                  <r.icon className="size-4 text-gray-600" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-gray-900 flex items-center gap-1">
+                  <p className="flex items-center gap-1 text-sm font-medium text-gray-900">
                     {r.title}
-                    <ChevronRight className="w-3.5 h-3.5 text-gray-300 group-hover:text-gray-500" />
+                    <ChevronRight className="size-3.5 text-gray-300 transition-colors group-hover:text-gray-500" />
                   </p>
-                  <p className="text-xs text-gray-500 mt-0.5">{r.description}</p>
+                  <p className="mt-0.5 text-[13px] text-muted-foreground">{r.description}</p>
                 </div>
               </button>
             ))}

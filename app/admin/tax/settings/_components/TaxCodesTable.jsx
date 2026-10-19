@@ -8,17 +8,21 @@ import SearchInput from '@/components/ui/SearchInput'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
 import EmptyState from '@/components/ui/EmptyState'
 import Modal, { ModalFooter } from '@/components/ui/Modal'
+import Badge from '@/components/ui/Badge'
+import Button from '@/components/ui/Button'
+import { Card, CardTitle } from '@/components/ui/Card'
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table'
 import { cn } from '@/lib/utils'
 import { VAT_SERVICE_CODES, TDS_SECTIONS, vatTreatmentMeta, tdsRateText, RATES_VERIFIED_AS_OF } from '@/lib/tax/catalog'
 import { invalidateTaxCodesCache } from '@/components/tax/TaxCodeSelect'
 import TaxCodeModal from './TaxCodeModal'
-import { readJson, fmtDay, todayKey, btnPrimary, btnGhost } from '../../vat-return/_lib/format'
+import { readJson, fmtDay, todayKey } from '../../vat-return/_lib/format'
 
-const STATE_STYLES = {
-  current:  'bg-emerald-50 text-emerald-700',
-  upcoming: 'bg-blue-50 text-blue-700',
-  past:     'bg-gray-100 text-gray-500',
-  inactive: 'bg-red-50 text-red-600',
+const STATE_VARIANTS = {
+  current:  'success',
+  upcoming: 'primary',
+  past:     'default',
+  inactive: 'danger',
 }
 const STATE_LABELS = { current: 'Current', upcoming: 'Upcoming', past: 'Past', inactive: 'Inactive' }
 
@@ -128,29 +132,22 @@ export default function TaxCodesTable({ kind, canEdit }) {
   }
 
   return (
-    <section className="bg-white border border-gray-100 rounded-xl overflow-hidden">
-      <div className="p-4 border-b border-gray-100 flex flex-col md:flex-row md:items-center gap-3">
-        <div className="flex-1 min-w-0">
-          <h2 className="text-sm font-semibold text-gray-900">{isVat ? 'VAT service codes' : 'TDS sections'}</h2>
-          <p className="text-xs text-gray-500">
-            {isVat
-              ? 'VAT rate charged and VDS rate deducted at source, by service code (VAT & SD Act 2012, VDS Rules 2025).'
-              : 'Income-tax withholding rates by section of the Income Tax Act 2023 (Withholding Tax Rules).'}
-          </p>
-        </div>
+    <Card as="section" className="overflow-hidden">
+      <div className="flex flex-col gap-3 border-b border-gray-100 p-3 pl-5 md:flex-row md:items-center">
+        <CardTitle as="h2" className="flex-1">{isVat ? 'VAT service codes' : 'TDS sections'}</CardTitle>
         <div className="flex flex-wrap items-center gap-2">
-          <SearchInput value={search} onChange={setSearch} placeholder="Search code or label" className="w-full sm:w-56" />
-          <label className="inline-flex items-center gap-2 text-xs text-gray-600 whitespace-nowrap">
-            <input type="checkbox" className="rounded border-gray-300" checked={showHistory} onChange={e => setShowHistory(e.target.checked)} />
+          <SearchInput value={search} onChange={setSearch} placeholder="Search…" className="w-full sm:w-56" />
+          <label className="inline-flex items-center gap-2 whitespace-nowrap text-[13px] text-gray-600">
+            <input type="checkbox" checked={showHistory} onChange={e => setShowHistory(e.target.checked)} />
             Past &amp; inactive{hiddenCount > 0 ? ` (${hiddenCount})` : ''}
           </label>
-          <button type="button" onClick={load} className="p-2 rounded-lg text-gray-400 hover:text-gray-700" aria-label="Refresh">
-            <RefreshCw className={cn('w-4 h-4', loading && 'animate-spin')} />
-          </button>
+          <Button variant="ghost" size="icon-sm" onClick={load} aria-label="Refresh" className="text-gray-500">
+            <RefreshCw className={cn(loading && 'animate-spin')} />
+          </Button>
           {canEdit && (
-            <button type="button" onClick={() => setModal({ mode: 'create', row: null })} className={btnPrimary}>
-              <Plus className="w-4 h-4" /> Add
-            </button>
+            <Button size="sm" onClick={() => setModal({ mode: 'create', row: null })}>
+              <Plus /> {isVat ? 'Add code' : 'Add section'}
+            </Button>
           )}
         </div>
       </div>
@@ -158,85 +155,88 @@ export default function TaxCodesTable({ kind, canEdit }) {
       {loading && !rows.length ? (
         <LoadingSpinner className="py-12" />
       ) : error ? (
-        <EmptyState icon={AlertTriangle} title="Could not load tax codes" description={error}
-          action={<button type="button" onClick={load} className={btnGhost}>Try again</button>} />
+        <EmptyState icon={AlertTriangle} title="Couldn’t load tax codes" description={error}
+          action={<Button variant="outline" onClick={load}>Try again</Button>} />
       ) : visible.length === 0 ? (
-        <EmptyState icon={ShieldCheck} title="No codes match" description={search ? 'Try another search.' : 'Add a code, or show past and inactive versions.'} />
+        <EmptyState icon={ShieldCheck} title={search ? 'No results' : 'No current codes'} description={search ? undefined : 'Show past & inactive to see older versions.'} />
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[900px]">
-            <thead>
-              <tr className="text-xs text-gray-500 border-b border-gray-100 bg-gray-50/60">
-                <th className="text-left font-medium px-4 py-2">Code</th>
-                {!isVat && <th className="text-left font-medium px-3 py-2">Section</th>}
-                <th className="text-left font-medium px-3 py-2">Description</th>
-                {isVat ? (
-                  <>
-                    <th className="text-right font-medium px-3 py-2">VAT</th>
-                    <th className="text-right font-medium px-3 py-2">VDS</th>
-                    <th className="text-left font-medium px-3 py-2">Treatment</th>
-                  </>
-                ) : (
-                  <>
-                    <th className="text-right font-medium px-3 py-2">Company</th>
-                    <th className="text-right font-medium px-3 py-2">Individual</th>
-                    <th className="text-left font-medium px-3 py-2">Basis</th>
-                  </>
-                )}
-                <th className="text-left font-medium px-3 py-2">Effective</th>
-                <th className="text-left font-medium px-3 py-2">Status</th>
-                <th className="text-left font-medium px-3 py-2">Source · last verified</th>
-                <th className="w-10" />
-              </tr>
-            </thead>
-            <tbody>
-              {visible.map(r => (
-                <tr key={r.id ?? `${r.code}-${r.effectiveFromDay}`} className={cn('border-b border-gray-50 align-top', (r.state === 'past' || r.state === 'inactive') && 'text-gray-400')}>
-                  <td className="px-4 py-2.5">
+        <Table className="min-w-[900px]">
+          <TableHeader>
+            <TableRow>
+              <TableHead>Code</TableHead>
+              {!isVat && <TableHead>Section</TableHead>}
+              <TableHead>Description</TableHead>
+              {isVat ? (
+                <>
+                  <TableHead className="text-right">VAT</TableHead>
+                  <TableHead className="text-right">VDS</TableHead>
+                  <TableHead>Treatment</TableHead>
+                </>
+              ) : (
+                <>
+                  <TableHead className="text-right">Company</TableHead>
+                  <TableHead className="text-right">Individual</TableHead>
+                  <TableHead>Basis</TableHead>
+                </>
+              )}
+              <TableHead>Effective</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Source · last verified</TableHead>
+              <TableHead className="w-10" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {visible.map(r => {
+              const muted = r.state === 'past' || r.state === 'inactive'
+              return (
+                <TableRow key={r.id ?? `${r.code}-${r.effectiveFromDay}`} className={cn('align-top', muted && '[&_td]:text-gray-400')}>
+                  <TableCell>
                     <p className="font-mono text-xs font-semibold text-gray-900">{r.code}</p>
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {r.isSystem && <span className="px-1.5 py-0.5 rounded bg-gray-100 text-[10px] text-gray-500">Built-in</span>}
-                      {r.catalog?.verify && (
-                        <span className="px-1.5 py-0.5 rounded bg-amber-100 text-[10px] text-amber-800" title="Flagged for professional confirmation">Verify</span>
-                      )}
-                    </div>
-                  </td>
-                  {!isVat && <td className="px-3 py-2.5 whitespace-nowrap">s.{r.section}</td>}
-                  <td className="px-3 py-2.5 max-w-[320px]">
-                    <p className={cn('text-gray-800', (r.state === 'past' || r.state === 'inactive') && 'text-gray-400')}>{r.label}</p>
-                    {r.description && <p className="text-[11px] text-gray-400 mt-0.5 line-clamp-2">{r.description}</p>}
-                  </td>
+                    {(r.isSystem || r.catalog?.verify) && (
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {r.isSystem && <Badge variant="outline">Built-in</Badge>}
+                        {r.catalog?.verify && (
+                          <span title="Flagged for professional confirmation"><Badge variant="warning">Verify</Badge></span>
+                        )}
+                      </div>
+                    )}
+                  </TableCell>
+                  {!isVat && <TableCell className="whitespace-nowrap">s.{r.section}</TableCell>}
+                  <TableCell className="max-w-[320px]">
+                    <p className={cn('text-gray-900', muted && 'text-gray-400')}>{r.label}</p>
+                    {r.description && <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{r.description}</p>}
+                  </TableCell>
                   {isVat ? (
                     <>
-                      <td className="px-3 py-2.5 text-right tabular-nums">{pct(r.vatRate)}</td>
-                      <td className="px-3 py-2.5 text-right tabular-nums">{pct(r.vdsRate)}</td>
-                      <td className="px-3 py-2.5 whitespace-nowrap text-xs">{vatTreatmentMeta(r.treatment)?.label ?? '—'}</td>
+                      <TableCell className="text-right tabular-nums">{pct(r.vatRate)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{pct(r.vdsRate)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-xs">{vatTreatmentMeta(r.treatment)?.label ?? '—'}</TableCell>
                     </>
                   ) : r.basis === 'COMMISSION_OR_GROSS' ? (
-                    <td colSpan={3} className="px-3 py-2.5 text-xs">{tdsRateText(r)}</td>
+                    <TableCell colSpan={3} className="text-xs">{tdsRateText(r)}</TableCell>
                   ) : (
                     <>
-                      <td className="px-3 py-2.5 text-right tabular-nums">{r.code === '86-SALARY' ? 'avg' : pct(r.rateCompany)}</td>
-                      <td className="px-3 py-2.5 text-right tabular-nums">{r.code === '86-SALARY' ? 'avg' : pct(r.rateIndividual)}</td>
-                      <td className="px-3 py-2.5 text-xs">Gross</td>
+                      <TableCell className="text-right tabular-nums">{r.code === '86-SALARY' ? 'avg' : pct(r.rateCompany)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{r.code === '86-SALARY' ? 'avg' : pct(r.rateIndividual)}</TableCell>
+                      <TableCell className="text-xs">Gross</TableCell>
                     </>
                   )}
-                  <td className="px-3 py-2.5 whitespace-nowrap text-xs">
+                  <TableCell className="whitespace-nowrap text-xs">
                     {fmtDay(r.effectiveFromDay)}
                     <span className="text-gray-400"> → {r.effectiveToDay ? fmtDay(r.effectiveToDay) : 'open'}</span>
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <span className={cn('inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold', STATE_STYLES[r.state])}>{STATE_LABELS[r.state]}</span>
-                  </td>
-                  <td className="px-3 py-2.5 max-w-[260px]">
-                    <p className="text-[11px] text-gray-500 line-clamp-2" title={r.notes || ''}>{r.notes || '—'}</p>
-                    <p className="text-[10px] text-gray-400 mt-0.5">
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={STATE_VARIANTS[r.state]}>{STATE_LABELS[r.state]}</Badge>
+                  </TableCell>
+                  <TableCell className="max-w-[260px]">
+                    <p className="line-clamp-2 text-xs text-muted-foreground" title={r.notes || ''}>{r.notes || '—'}</p>
+                    <p className="mt-0.5 text-[11px] text-gray-400">
                       {r.isSystem && r.createdAt && r.updatedAt && Math.abs(new Date(r.updatedAt) - new Date(r.createdAt)) < 1000
                         ? `Built-in rate · verified ${fmtDay(RATES_VERIFIED_AS_OF)}`
                         : r.updatedAt ? `Changed ${fmtDay(r.updatedAt)}` : ''}
                     </p>
-                  </td>
-                  <td className="px-2 py-2.5">
+                  </TableCell>
+                  <TableCell className="px-2 text-right">
                     {canEdit && r.id && (
                       <ActionMenu items={[
                         { label: 'Edit', icon: Pencil, onClick: () => setModal({ mode: 'edit', row: r }) },
@@ -247,12 +247,12 @@ export default function TaxCodesTable({ kind, canEdit }) {
                         !r.isSystem && { label: 'Delete', icon: Trash2, danger: true, onClick: () => setConfirm({ action: 'delete', row: r }) },
                       ].filter(Boolean)} />
                     )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                  </TableCell>
+                </TableRow>
+              )
+            })}
+          </TableBody>
+        </Table>
       )}
 
       <TaxCodeModal
@@ -272,23 +272,22 @@ export default function TaxCodesTable({ kind, canEdit }) {
       >
         <p className="text-sm text-gray-600">
           {confirm?.action === 'delete'
-            ? 'The code version is removed. If it is already used on tax entries it is deactivated instead.'
+            ? 'This version is removed. If tax entries already use it, it’s deactivated instead.'
             : confirm?.action === 'activate'
-              ? 'The code will be offered again in invoice, expense and purchase forms.'
-              : 'The code is no longer offered in forms. Entries that already use it are not changed.'}
+              ? 'It will be offered in forms again.'
+              : 'It won’t be offered in forms. Existing entries are unchanged.'}
         </p>
-        <ModalFooter className="-mx-4 sm:-mx-6 -mb-4 mt-5">
-          <button type="button" onClick={() => setConfirm(null)} disabled={busy} className={btnGhost}>Cancel</button>
-          <button
-            type="button"
+        <ModalFooter>
+          <Button variant="outline" onClick={() => setConfirm(null)} disabled={busy}>Cancel</Button>
+          <Button
+            variant={confirm?.action === 'delete' ? 'destructive' : 'default'}
             onClick={runConfirm}
-            disabled={busy}
-            className={cn(btnPrimary, confirm?.action === 'delete' && 'bg-red-600 hover:bg-red-700')}
+            loading={busy}
           >
             {confirm?.action === 'delete' ? 'Delete' : confirm?.action === 'activate' ? 'Activate' : 'Deactivate'}
-          </button>
+          </Button>
         </ModalFooter>
       </Modal>
-    </section>
+    </Card>
   )
 }

@@ -2,30 +2,49 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
-  Plus, Pencil, Trash2, X, Loader2, ShieldCheck,
-  Search, ChevronDown, ChevronRight,
+  Plus, Pencil, Trash2, Loader2, ShieldCheck,
+  ChevronDown, ChevronRight,
   LayoutDashboard, TrendingUp, Briefcase, Wallet, Users, BarChart2, Settings2, CircleUser, EyeOff,
   Calculator, Package,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import Select from '@/components/ui/Select'
+import Button from '@/components/ui/Button'
+import { Card } from '@/components/ui/Card'
+import { Input, Textarea, Field } from '@/components/ui/Input'
+import PageHeader from '@/components/ui/PageHeader'
+import Modal from '@/components/ui/Modal'
+import SearchInput from '@/components/ui/SearchInput'
+import EmptyState from '@/components/ui/EmptyState'
+import { PageLoader } from '@/components/ui/LoadingSpinner'
+import { Table, TableHeader, TableRow, TableHead, TableCell } from '@/components/ui/Table'
 import { PERMISSION_MODULES, ALL_PERMISSIONS, DEFAULT_ROLE_PERMISSIONS } from '@/lib/rbac'
 import { useConfig } from '@/lib/useConfig'
+import { cn } from '@/lib/utils'
 
 // ─── Module metadata ──────────────────────────────────────────────────────────
 
-const MODULE_META = {
-  dashboard: { Icon: LayoutDashboard, ring: 'ring-indigo-200',  bg: 'bg-indigo-50',  text: 'text-indigo-600',  bar: 'bg-indigo-500' },
-  sales:     { Icon: TrendingUp,      ring: 'ring-emerald-200', bg: 'bg-emerald-50', text: 'text-emerald-600', bar: 'bg-emerald-500' },
-  projects:  { Icon: Briefcase,       ring: 'ring-blue-200',    bg: 'bg-blue-50',    text: 'text-blue-600',    bar: 'bg-blue-500' },
-  finance:   { Icon: Wallet,          ring: 'ring-amber-200',   bg: 'bg-amber-50',   text: 'text-amber-600',   bar: 'bg-amber-500' },
-  tax:       { Icon: Calculator,      ring: 'ring-cyan-200',    bg: 'bg-cyan-50',    text: 'text-cyan-600',    bar: 'bg-cyan-500' },
-  inventory: { Icon: Package,         ring: 'ring-orange-200',  bg: 'bg-orange-50',  text: 'text-orange-600',  bar: 'bg-orange-500' },
-  hr:        { Icon: Users,           ring: 'ring-violet-200',  bg: 'bg-violet-50',  text: 'text-violet-600',  bar: 'bg-violet-500' },
-  analytics: { Icon: BarChart2,       ring: 'ring-pink-200',    bg: 'bg-pink-50',    text: 'text-pink-600',    bar: 'bg-pink-500' },
-  system:    { Icon: Settings2,       ring: 'ring-slate-200',   bg: 'bg-slate-50',   text: 'text-slate-600',   bar: 'bg-slate-500' },
-  pii:       { Icon: EyeOff,          ring: 'ring-rose-200',    bg: 'bg-rose-50',    text: 'text-rose-600',    bar: 'bg-rose-500' },
-  account:   { Icon: CircleUser,      ring: 'ring-teal-200',    bg: 'bg-teal-50',    text: 'text-teal-600',    bar: 'bg-teal-500' },
+const MODULE_ICONS = {
+  dashboard: LayoutDashboard,
+  sales:     TrendingUp,
+  projects:  Briefcase,
+  finance:   Wallet,
+  tax:       Calculator,
+  inventory: Package,
+  hr:        Users,
+  analytics: BarChart2,
+  system:    Settings2,
+  pii:       EyeOff,
+  account:   CircleUser,
+}
+
+// rbac labels are Title Case — render them in sentence case, keeping acronyms (VAT, KYC…) and proper nouns.
+const KEEP_CASE = new Set(['Mushak', 'bKash', 'Nagad'])
+function sentenceCase(s = '') {
+  return s
+    .split(' ')
+    .map((w, i) => (i > 0 && /^[A-Z][a-z]/.test(w) && !KEEP_CASE.has(w) ? w.toLowerCase() : w))
+    .join(' ')
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -33,10 +52,10 @@ const MODULE_META = {
 const COLORS = ['#6366f1','#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#14b8a6','#f97316','#64748b']
 
 const PRESETS = [
-  { label: 'Manager',  key: 'MANAGER',  color: 'text-violet-700 bg-violet-50 hover:bg-violet-100 border-violet-200' },
-  { label: 'Employee', key: 'EMPLOYEE', color: 'text-blue-700 bg-blue-50 hover:bg-blue-100 border-blue-200' },
-  { label: 'Grant All', key: '__ALL__', color: 'text-green-700 bg-green-50 hover:bg-green-100 border-green-200' },
-  { label: 'Clear All', key: '__NONE__', color: 'text-red-600 bg-red-50 hover:bg-red-100 border-red-200' },
+  { label: 'Manager',   key: 'MANAGER' },
+  { label: 'Employee',  key: 'EMPLOYEE' },
+  { label: 'Grant all', key: '__ALL__' },
+  { label: 'Clear all', key: '__NONE__', danger: true },
 ]
 
 // ─── Toggle switch ─────────────────────────────────────────────────────────────
@@ -49,13 +68,16 @@ function Toggle({ checked, onChange, disabled }) {
       aria-checked={checked}
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50 ${
-        checked ? 'bg-blue-600' : 'bg-gray-200'
-      }`}
+      className={cn(
+        'relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-150 outline-none',
+        'focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50',
+        checked ? 'bg-gray-900' : 'bg-gray-200'
+      )}
     >
-      <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform duration-150 ${
+      <span className={cn(
+        'pointer-events-none inline-block size-4 rounded-full bg-white shadow-xs transition-transform duration-150',
         checked ? 'translate-x-4' : 'translate-x-0'
-      }`} />
+      )} />
     </button>
   )
 }
@@ -96,73 +118,47 @@ function RoleModal({ open, onClose, role, onSaved, ventureOptions, departments }
     finally { setSaving(false) }
   }
 
-  if (!open) return null
-  const ic = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
-  const lc = 'block text-xs font-medium text-gray-500 mb-1.5'
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm ring-1 ring-black/5">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-          <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center">
-              <ShieldCheck className="w-4 h-4 text-blue-600" />
+    <Modal open={open} onOpenChange={o => { if (!o) onClose() }} title={isEdit ? 'Edit role' : 'New role'} size="sm">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <Field label="Department" htmlFor="role-department" required>
+          <Input id="role-department" list="dept-list" value={form.department} onChange={e => set('department', e.target.value)} placeholder="e.g. Engineering" required />
+          <datalist id="dept-list">{(departments ?? []).map(d => <option key={d.id ?? d} value={d.name ?? d} />)}</datalist>
+        </Field>
+        <Field label="Role title" htmlFor="role-title" required>
+          <Input id="role-title" value={form.title} onChange={e => set('title', e.target.value)} placeholder="e.g. Senior Designer" required />
+        </Field>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Venture">
+            <Select value={form.venture} onChange={v => set('venture', v ?? '')} options={ventureOptions ?? []} placeholder="All ventures" />
+          </Field>
+          <Field label="Badge colour">
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              {COLORS.map(c => (
+                <button key={c} type="button" onClick={() => set('color', c)} style={{ background: c }}
+                  aria-label={c}
+                  className={cn('size-5 rounded-full transition-all', form.color === c ? 'ring-2 ring-gray-900 ring-offset-2' : 'hover:scale-110')} />
+              ))}
             </div>
-            <h2 className="text-sm font-semibold text-gray-900">{isEdit ? 'Edit Role' : 'New Role'}</h2>
-          </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 transition-colors">
-            <X className="w-4 h-4" />
-          </button>
+          </Field>
         </div>
-        <form onSubmit={handleSubmit} className="px-5 py-4 space-y-4">
-          <div>
-            <label className={lc}>Department *</label>
-            <input list="dept-list" value={form.department} onChange={e => set('department', e.target.value)} placeholder="e.g. Engineering" className={ic} required />
-            <datalist id="dept-list">{(departments ?? []).map(d => <option key={d.id ?? d} value={d.name ?? d} />)}</datalist>
-          </div>
-          <div>
-            <label className={lc}>Role Title *</label>
-            <input value={form.title} onChange={e => set('title', e.target.value)} placeholder="e.g. Senior Designer" className={ic} required />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className={lc}>Venture</label>
-              <Select value={form.venture} onChange={v => set('venture', v ?? '')} options={ventureOptions ?? []} placeholder="All Ventures" />
-            </div>
-            <div>
-              <label className={lc}>Badge Color</label>
-              <div className="flex flex-wrap gap-1.5 mt-1">
-                {COLORS.map(c => (
-                  <button key={c} type="button" onClick={() => set('color', c)} style={{ background: c }}
-                    className={`w-5 h-5 rounded-full transition-all ${form.color === c ? 'ring-2 ring-offset-1 ring-gray-400 scale-110' : 'hover:scale-110'}`} />
-                ))}
-              </div>
-            </div>
-          </div>
-          <div>
-            <label className={lc}>Description</label>
-            <textarea value={form.description} onChange={e => set('description', e.target.value)} rows={2} placeholder="Optional" className={`${ic} resize-none`} />
-          </div>
-          <div className="flex justify-end gap-2 pt-1">
-            <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
-            <button type="submit" disabled={saving} className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-60 flex items-center gap-2 transition-colors">
-              {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-              {isEdit ? 'Save Changes' : 'Create Role'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+        <Field label="Description" htmlFor="role-description">
+          <Textarea id="role-description" value={form.description} onChange={e => set('description', e.target.value)} rows={2} placeholder="Optional" className="min-h-0 resize-none" />
+        </Field>
+        <div className="flex justify-end gap-2 pt-1">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button type="submit" loading={saving}>{isEdit ? 'Save' : 'Create role'}</Button>
+        </div>
+      </form>
+    </Modal>
   )
 }
 
-// ─── Module Card ────────────────────────────────────────────────────────────────
+// ─── Module rows (one <tbody> per module) ─────────────────────────────────────
 
-function ModuleCard({ module, activePerms, onToggle, onToggleAll, saving, searchQuery }) {
+function ModuleRows({ module, activePerms, onToggle, onToggleAll, saving, searchQuery }) {
   const [expanded, setExpanded] = useState(true)
-  const meta = MODULE_META[module.key] ?? MODULE_META.system
-  const { Icon, bg, text, bar } = meta
+  const Icon = MODULE_ICONS[module.key] ?? Settings2
 
   const filteredPerms = useMemo(() => {
     if (!searchQuery) return module.permissions
@@ -170,84 +166,69 @@ function ModuleCard({ module, activePerms, onToggle, onToggleAll, saving, search
     return module.permissions.filter(p => p.label.toLowerCase().includes(q) || p.key.toLowerCase().includes(q))
   }, [module.permissions, searchQuery])
 
-  // If searching and no results, hide the card
+  // If searching and no results, hide the module
   if (searchQuery && filteredPerms.length === 0) return null
 
   const modulePerms  = module.permissions.map(p => p.key)
   const enabledCount = modulePerms.filter(k => activePerms.has(k)).length
   const allEnabled   = enabledCount === modulePerms.length
-  const pct          = modulePerms.length > 0 ? Math.round((enabledCount / modulePerms.length) * 100) : 0
 
   return (
-    <div className="bg-white border border-gray-100 rounded-xl overflow-hidden shadow-sm">
+    <tbody>
       {/* Module header */}
-      <div className={`flex items-center gap-3 px-4 py-3 border-b border-gray-100 ${expanded ? '' : ''}`}>
-        <div className={`w-7 h-7 rounded-lg ${bg} flex items-center justify-center shrink-0`}>
-          <Icon className={`w-4 h-4 ${text}`} />
-        </div>
-        <button
-          type="button"
-          onClick={() => setExpanded(e => !e)}
-          className="flex items-center gap-2 flex-1 min-w-0 text-left"
-        >
-          <span className="text-xs font-semibold text-gray-700 uppercase tracking-wider truncate">
-            {module.label}
-          </span>
-          {expanded
-            ? <ChevronDown className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-            : <ChevronRight className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-          }
-        </button>
-        <span className="text-xs font-medium text-gray-500 shrink-0">{enabledCount}/{modulePerms.length}</span>
-        <button
-          type="button"
-          disabled={saving}
-          onClick={() => onToggleAll(modulePerms, !allEnabled)}
-          className={`text-xs px-2.5 py-1 rounded-md font-medium transition-colors shrink-0 border ${
-            allEnabled
-              ? 'text-red-600 border-red-100 hover:bg-red-50'
-              : 'text-blue-600 border-blue-100 hover:bg-blue-50'
-          }`}
-        >
-          {allEnabled ? 'Remove all' : 'Grant all'}
-        </button>
-      </div>
+      <tr className="border-y border-gray-100 bg-gray-50/60">
+        <td colSpan={3} className="px-4 py-2">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setExpanded(e => !e)}
+              className="flex min-w-0 flex-1 items-center gap-2 text-left outline-none"
+            >
+              {expanded
+                ? <ChevronDown className="size-4 shrink-0 text-gray-400" />
+                : <ChevronRight className="size-4 shrink-0 text-gray-400" />
+              }
+              <Icon className="size-4 shrink-0 text-gray-500" />
+              <span className="truncate text-sm font-medium text-gray-900">{sentenceCase(module.label)}</span>
+              <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{enabledCount}/{modulePerms.length}</span>
+            </button>
+            <Button
+              variant="ghost"
+              size="xs"
+              disabled={saving}
+              onClick={() => onToggleAll(modulePerms, !allEnabled)}
+              className={allEnabled ? 'text-red-600 hover:bg-red-50 hover:text-red-700' : ''}
+            >
+              {allEnabled ? 'Remove all' : 'Grant all'}
+            </Button>
+          </div>
+        </td>
+      </tr>
 
-      {/* Mini progress bar */}
-      <div className="h-0.5 bg-gray-100">
-        <div className={`h-full ${bar} transition-all duration-300`} style={{ width: `${pct}%` }} />
-      </div>
-
-      {/* Permissions list */}
-      {expanded && (
-        <div className="divide-y divide-gray-50">
-          {filteredPerms.map(perm => {
-            const enabled = activePerms.has(perm.key)
-            return (
-              <div
-                key={perm.key}
-                className={`flex items-center justify-between gap-3 px-4 py-3 transition-colors cursor-pointer hover:bg-gray-50 ${
-                  enabled ? '' : 'opacity-60'
-                }`}
-                onClick={() => !saving && onToggle(perm.key, !enabled)}
-              >
-                <div className="flex-1 min-w-0">
-                  <p className={`text-sm font-medium ${enabled ? 'text-gray-800' : 'text-gray-500'}`}>
-                    {perm.label}
-                  </p>
-                  <p className="text-xs text-gray-300 font-mono mt-0.5 truncate">{perm.key}</p>
-                </div>
-                <Toggle
-                  checked={enabled}
-                  onChange={val => onToggle(perm.key, val)}
-                  disabled={saving}
-                />
-              </div>
-            )
-          })}
-        </div>
-      )}
-    </div>
+      {/* Permissions */}
+      {expanded && filteredPerms.map(perm => {
+        const enabled = activePerms.has(perm.key)
+        return (
+          <TableRow
+            key={perm.key}
+            className="cursor-pointer last:border-0"
+            onClick={() => !saving && onToggle(perm.key, !enabled)}
+          >
+            <TableCell className={cn('py-2.5 pl-10', enabled ? 'text-gray-900' : 'text-gray-500')}>
+              {sentenceCase(perm.label)}
+            </TableCell>
+            <TableCell className="hidden py-2.5 font-mono text-xs text-gray-400 sm:table-cell">{perm.key}</TableCell>
+            <TableCell className="w-16 py-2.5 text-right">
+              <Toggle
+                checked={enabled}
+                onChange={val => onToggle(perm.key, val)}
+                disabled={saving}
+              />
+            </TableCell>
+          </TableRow>
+        )
+      })}
+    </tbody>
   )
 }
 
@@ -307,7 +288,7 @@ export default function RolesPage() {
   }
 
   async function handleDelete(role) {
-    if (!confirm(`Delete role "${role.title}"? This cannot be undone.`)) return
+    if (!confirm(`Delete role "${role.title}"? This can't be undone.`)) return
     try {
       const res = await fetch(`/api/custom-roles/${role.id}`, { method: 'DELETE' })
       if (!res.ok) throw new Error((await res.json()).error)
@@ -363,7 +344,7 @@ export default function RolesPage() {
       if (!confirm('Remove all permissions from this role?')) return
       perms = []
     } else {
-      if (!confirm(`Apply the default "${key}" preset? This will replace current permissions.`)) return
+      if (!confirm(`Apply the default "${key}" preset? This replaces the current permissions.`)) return
       perms = DEFAULT_ROLE_PERMISSIONS[key] ?? []
     }
     const next = new Set(perms)
@@ -375,190 +356,177 @@ export default function RolesPage() {
   const totalEnabled = activePerms.size
   const pct          = ALL_PERMISSIONS.length > 0 ? Math.round((totalEnabled / ALL_PERMISSIONS.length) * 100) : 0
 
+  const openNew = () => { setEditingRole(null); setModalOpen(true) }
+
   return (
-    <div className="space-y-5">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-gray-900">Roles & Permissions</h1>
-          <p className="text-sm text-gray-400 mt-0.5">Manage roles and configure granular feature access</p>
-        </div>
-        <button
-          onClick={() => { setEditingRole(null); setModalOpen(true) }}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
-        >
-          <Plus className="w-4 h-4" /> New Role
-        </button>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Roles & permissions"
+        actions={<Button onClick={openNew}><Plus /> New role</Button>}
+      />
 
       {loading ? (
-        <div className="flex items-center justify-center py-24">
-          <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-        </div>
+        <PageLoader />
       ) : roles.length === 0 ? (
-        <div className="text-center py-24 bg-white rounded-xl border border-gray-100">
-          <ShieldCheck className="w-10 h-10 text-gray-200 mx-auto mb-3" />
-          <p className="text-sm font-medium text-gray-500">No roles yet</p>
-          <p className="text-xs text-gray-400 mt-1 mb-4">Add a role to start configuring permissions</p>
-          <button
-            onClick={() => { setEditingRole(null); setModalOpen(true) }}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700"
-          >
-            <Plus className="w-4 h-4" /> New Role
-          </button>
-        </div>
+        <Card>
+          <EmptyState
+            icon={ShieldCheck}
+            title="No roles yet"
+            action={<Button variant="outline" onClick={openNew}><Plus /> New role</Button>}
+          />
+        </Card>
       ) : (
-        <div className="flex flex-col lg:flex-row gap-5">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
 
-          {/* ── Left: Role List ─────────────────────────────────────────────── */}
-          <div className="lg:w-64 shrink-0">
-            <div className="bg-white rounded-xl border border-gray-100 overflow-hidden sticky top-4 shadow-sm">
-              <div className="px-4 py-3 border-b border-gray-100">
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-0">Roles</p>
-                <p className="text-xs text-gray-400 mt-0.5">{roles.length} total</p>
+          {/* ── Left: Role list ─────────────────────────────────────────────── */}
+          <div className="shrink-0 lg:sticky lg:top-4 lg:w-64">
+            <Card className="overflow-hidden">
+              <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+                <p className="text-sm font-semibold text-gray-900">Roles</p>
+                <span className="text-xs text-muted-foreground tabular-nums">{roles.length}</span>
               </div>
-              <div className="divide-y divide-gray-50">
+              <div className="space-y-0.5 p-1.5">
                 {roles.map(role => {
                   const isActive = selected === role.id
                   const permCount = (role.permissions ?? []).length
                   return (
                     <div
                       key={role.id}
-                      className={`group relative flex items-center gap-3 px-4 py-3.5 cursor-pointer transition-colors ${
-                        isActive ? 'bg-blue-50' : 'hover:bg-gray-50'
-                      }`}
+                      className={cn(
+                        'group relative flex cursor-pointer items-center gap-3 rounded-md px-2.5 py-2 transition-colors',
+                        isActive ? 'bg-gray-100' : 'hover:bg-gray-50'
+                      )}
                       onClick={() => setSelected(role.id)}
                     >
-                      {/* Color dot */}
                       <span
-                        className="w-2.5 h-2.5 rounded-full shrink-0 ring-2 ring-white"
+                        className="size-2.5 shrink-0 rounded-full"
                         style={{ background: role.color ?? '#6366f1' }}
                       />
-                      <div className="flex-1 min-w-0">
-                        <p className={`text-sm font-medium truncate ${isActive ? 'text-blue-700' : 'text-gray-700'}`}>
+                      <div className="min-w-0 flex-1">
+                        <p className={cn('truncate text-sm font-medium', isActive ? 'text-gray-900' : 'text-gray-700')}>
                           {role.title}
                         </p>
-                        <p className="text-xs text-gray-400 truncate">{role.department}</p>
+                        <p className="truncate text-xs text-muted-foreground">{role.department}</p>
                       </div>
-                      {/* Permission count badge */}
-                      <span className={`text-xs font-semibold px-1.5 py-0.5 rounded-md shrink-0 ${
-                        isActive ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-400'
-                      }`}>
+                      <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
                         {permCount}
                       </span>
                       {/* Hover actions */}
-                      <div className="absolute right-2 top-1/2 -translate-y-1/2 hidden group-hover:flex items-center gap-1 bg-white border border-gray-100 rounded-lg shadow-sm px-1 py-0.5">
-                        <button
+                      <div className="absolute right-1.5 top-1/2 hidden -translate-y-1/2 items-center gap-0.5 rounded-md border border-gray-200/80 bg-white p-0.5 shadow-xs group-hover:flex">
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
                           onClick={e => { e.stopPropagation(); setEditingRole(role); setModalOpen(true) }}
-                          className="p-1 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
                           title="Edit role"
                         >
-                          <Pencil className="w-3.5 h-3.5" />
-                        </button>
-                        <button
+                          <Pencil className="size-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
                           onClick={e => { e.stopPropagation(); handleDelete(role) }}
-                          className="p-1 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                          className="hover:bg-red-50 hover:text-red-600"
                           title="Delete role"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                          <Trash2 className="size-3.5" />
+                        </Button>
                       </div>
                     </div>
                   )
                 })}
               </div>
-            </div>
+            </Card>
           </div>
 
-          {/* ── Right: Permission Panel ─────────────────────────────────────── */}
+          {/* ── Right: Permission panel ─────────────────────────────────────── */}
           {activeRole && (
-            <div className="flex-1 min-w-0 space-y-4">
+            <div className="min-w-0 flex-1 space-y-4">
 
               {/* Role header */}
-              <div className="bg-white rounded-xl border border-gray-100 px-5 py-4 shadow-sm">
-                <div className="flex items-start justify-between gap-4 flex-wrap">
-                  <div className="flex items-center gap-3">
-                    <span className="w-8 h-8 rounded-full ring-4 ring-white shadow-sm shrink-0" style={{ background: activeRole.color ?? '#6366f1' }} />
-                    <div>
+              <Card className="p-5">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="size-3 shrink-0 rounded-full" style={{ background: activeRole.color ?? '#6366f1' }} />
+                    <div className="min-w-0">
                       <p className="text-base font-semibold text-gray-900">{activeRole.title}</p>
-                      <p className="text-xs text-gray-400 mt-0.5">
+                      <p className="mt-0.5 text-[13px] text-muted-foreground">
                         {activeRole.department}{activeRole.venture ? ` · ${activeRole.venture}` : ''}
                         {activeRole.description ? ` — ${activeRole.description}` : ''}
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      onClick={() => { setEditingRole(activeRole); setModalOpen(true) }}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-                    >
-                      <Pencil className="w-3 h-3" /> Edit
-                    </button>
-                    <button
-                      onClick={() => handleDelete(activeRole)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-500 border border-red-100 rounded-lg hover:bg-red-50 transition-colors"
-                    >
-                      <Trash2 className="w-3 h-3" /> Delete
-                    </button>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={() => { setEditingRole(activeRole); setModalOpen(true) }}>
+                      <Pencil /> Edit
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => handleDelete(activeRole)} className="text-red-600 hover:bg-red-50 hover:text-red-700">
+                      <Trash2 /> Delete
+                    </Button>
                   </div>
                 </div>
 
-                {/* Progress bar */}
-                <div className="mt-4">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-xs text-gray-500">
-                      {saving
-                        ? <span className="flex items-center gap-1.5 text-amber-600"><Loader2 className="w-3 h-3 animate-spin" /> Saving…</span>
-                        : <><span className="font-semibold text-gray-700">{totalEnabled}</span> of {ALL_PERMISSIONS.length} permissions enabled</>
-                      }
-                    </span>
-                    <span className="text-xs font-semibold text-gray-500">{pct}%</span>
+                {/* Progress */}
+                <div className="mt-5">
+                  <div className="mb-1.5 flex items-center justify-between text-xs text-muted-foreground">
+                    {saving
+                      ? <span className="flex items-center gap-1.5"><Loader2 className="size-3.5 animate-spin" /> Saving…</span>
+                      : <span><span className="font-medium text-gray-900 tabular-nums">{totalEnabled}</span> of {ALL_PERMISSIONS.length} permissions enabled</span>
+                    }
+                    <span className="tabular-nums">{pct}%</span>
                   </div>
-                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-blue-500 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
+                  <div className="h-1.5 overflow-hidden rounded-full bg-gray-100">
+                    <div className="h-full rounded-full bg-gray-900 transition-all duration-500" style={{ width: `${pct}%` }} />
                   </div>
                 </div>
 
-                {/* Presets + Search row */}
-                <div className="mt-4 flex flex-wrap items-center gap-2">
-                  <span className="text-xs text-gray-400 font-medium">Quick apply:</span>
+                {/* Presets + search */}
+                <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-gray-100 pt-4">
+                  <span className="mr-1 text-xs text-muted-foreground">Presets</span>
                   {PRESETS.map(p => (
-                    <button
+                    <Button
                       key={p.key}
-                      type="button"
+                      variant="outline"
+                      size="xs"
                       disabled={saving}
                       onClick={() => handlePreset(p.key)}
-                      className={`text-xs px-2.5 py-1 rounded-md border font-medium transition-colors disabled:opacity-50 ${p.color}`}
+                      className={p.danger ? 'text-red-600 hover:bg-red-50 hover:text-red-700' : ''}
                     >
                       {p.label}
-                    </button>
+                    </Button>
                   ))}
-                  <div className="ml-auto relative">
-                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
-                    <input
-                      value={search}
-                      onChange={e => setSearch(e.target.value)}
-                      placeholder="Search permissions…"
-                      className="pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent w-48"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Module cards */}
-              <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">
-                {PERMISSION_MODULES.map(module => (
-                  <ModuleCard
-                    key={module.key}
-                    module={module}
-                    activePerms={activePerms}
-                    onToggle={handleToggle}
-                    onToggleAll={handleToggleAll}
-                    saving={saving}
-                    searchQuery={search}
+                  <SearchInput
+                    value={search}
+                    onChange={setSearch}
+                    placeholder="Search permissions…"
+                    debounceMs={0}
+                    className="w-full sm:ml-auto sm:w-56"
                   />
-                ))}
-              </div>
+                </div>
+              </Card>
+
+              {/* Permission matrix */}
+              <Card className="overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Permission</TableHead>
+                      <TableHead className="hidden sm:table-cell">Key</TableHead>
+                      <TableHead className="w-16 text-right">Access</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  {PERMISSION_MODULES.map(module => (
+                    <ModuleRows
+                      key={module.key}
+                      module={module}
+                      activePerms={activePerms}
+                      onToggle={handleToggle}
+                      onToggleAll={handleToggleAll}
+                      saving={saving}
+                      searchQuery={search}
+                    />
+                  ))}
+                </Table>
+              </Card>
             </div>
           )}
         </div>

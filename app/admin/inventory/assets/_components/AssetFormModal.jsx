@@ -7,14 +7,16 @@ import Modal, { ModalFooter } from '@/components/ui/Modal'
 import DatePicker from '@/components/ui/DatePicker'
 import FileUpload from '@/components/ui/FileUpload'
 import PeoplePicker from '@/components/ui/PeoplePicker'
-import { cn } from '@/lib/utils'
+import Button from '@/components/ui/Button'
+import Badge from '@/components/ui/Badge'
+import { Input, Textarea, NativeSelect, Label } from '@/components/ui/Input'
 import { addDays } from '@/lib/finance/fiscal'
 import { TAX_DEPRECIATION_CLASSES } from '@/lib/tax/catalog'
 import {
   CONDITION_OPTIONS, DEPRECIATION_METHOD_OPTIONS, computeAssetCost, round2,
 } from '@/lib/inventory/constants'
 import {
-  Field, inputCls, btnPrimary, btnSecondary, tk, dayKeyOf, apiJson, useAssetOptions, refId,
+  Field, tk, dayKeyOf, apiJson, useAssetOptions, refId,
 } from './shared'
 
 const TAX_CLASS_OPTIONS = Object.entries(TAX_DEPRECIATION_CLASSES).map(([value, c]) => ({
@@ -68,15 +70,16 @@ function formFromAsset(a) {
 
 function Toggle({ open, onToggle, title, subtitle, children }) {
   return (
-    <div className="border border-gray-100 rounded-xl">
-      <button type="button" onClick={onToggle} className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left">
+    <div className="rounded-lg border border-gray-200/80">
+      <button type="button" onClick={onToggle} aria-expanded={open}
+        className="flex w-full items-center justify-between gap-3 rounded-lg px-4 py-3 text-left transition-colors hover:bg-gray-50/70">
         <span className="min-w-0">
-          <span className="block text-sm font-semibold text-gray-900">{title}</span>
-          {subtitle && <span className="block text-xs text-gray-500 mt-0.5">{subtitle}</span>}
+          <span className="block text-sm font-medium text-gray-900">{title}</span>
+          {subtitle && <span className="mt-0.5 block truncate text-xs text-muted-foreground">{subtitle}</span>}
         </span>
-        {open ? <ChevronDown className="w-4 h-4 text-gray-400 shrink-0" /> : <ChevronRight className="w-4 h-4 text-gray-400 shrink-0" />}
+        {open ? <ChevronDown className="size-4 shrink-0 text-gray-400" /> : <ChevronRight className="size-4 shrink-0 text-gray-400" />}
       </button>
-      {open && <div className="px-4 pb-4 space-y-3">{children}</div>}
+      {open && <div className="space-y-4 px-4 pb-4 pt-1">{children}</div>}
     </div>
   )
 }
@@ -287,130 +290,130 @@ export default function AssetFormModal({ open, onOpenChange, mode = 'create', as
       size="xl"
       title={isEdit ? `Edit ${asset?.assetTag ?? 'asset'}` : 'Add existing asset'}
       description={isEdit
-        ? 'Status, custody and location change through the asset actions.'
-        : 'For equipment you already own (opening register, gifts, items bought outside a purchase bill). New purchases go through Purchases so the payment and VAT are recorded.'}
+        ? 'Status, custody and location change via asset actions.'
+        : 'For equipment you already own. Record new buys under Purchases.'}
     >
       {optLoading && !categories.length ? (
-        <div className="flex items-center justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
+        <div className="flex items-center justify-center py-16"><Loader2 className="size-5 animate-spin text-gray-400" /></div>
       ) : optError && !categories.length ? (
         <div className="py-10 text-center text-sm text-red-600">{optError}</div>
       ) : (
         <div className="space-y-5">
           {ro && (
-            <p className="flex items-start gap-2 text-xs text-amber-800 bg-amber-50 rounded-lg px-3 py-2">
-              <Lock className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-              This asset has been disposed of — only the specifications, description, photo, documents, warranty notes and notes can be changed.
+            <p className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
+              <Lock className="mt-0.5 size-4 shrink-0" />
+              Disposed — only specs, description, photo, documents, warranty notes and notes can change.
             </p>
           )}
           {/* Identity */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field label="Asset name" required error={errors.name} className="sm:col-span-2">
-              <input className={inputCls} disabled={ro} value={form.name} onChange={e => set({ name: e.target.value })} placeholder="e.g. MacBook Pro 14-inch M3" maxLength={200} />
+              <Input disabled={ro} value={form.name} onChange={e => set({ name: e.target.value })} placeholder="e.g. MacBook Pro 14-inch M3" maxLength={200} />
             </Field>
             <Field label="Category" required error={errors.categoryId}
-              hint={finLocked ? 'Locked — depreciation has been posted' : category ? `Tag series ${settings?.tagPrefix ?? 'EN'}-${category.code}-… · ${TAX_DEPRECIATION_CLASSES[category.taxClass]?.label ?? category.taxClass}` : null}>
-              <select className={inputCls} value={form.categoryId} disabled={finLocked} onChange={e => set({ categoryId: e.target.value })}>
+              hint={finLocked ? 'Locked — depreciation posted' : category ? `Tags ${settings?.tagPrefix ?? 'EN'}-${category.code}-… · ${TAX_DEPRECIATION_CLASSES[category.taxClass]?.label ?? category.taxClass}` : null}>
+              <NativeSelect value={form.categoryId} disabled={finLocked} onChange={e => set({ categoryId: e.target.value })}>
                 <option value="">Select category</option>
                 {categories.map(c => <option key={c.id} value={c.id}>{c.name} ({c.code})</option>)}
-              </select>
+              </NativeSelect>
             </Field>
             <Field label="Condition">
-              <select className={inputCls} disabled={ro} value={form.condition} onChange={e => set({ condition: e.target.value })}>
+              <NativeSelect disabled={ro} value={form.condition} onChange={e => set({ condition: e.target.value })}>
                 {CONDITION_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
+              </NativeSelect>
             </Field>
-            <Field label="Brand"><input className={inputCls} disabled={ro} value={form.brand} onChange={e => set({ brand: e.target.value })} maxLength={100} /></Field>
-            <Field label="Model"><input className={inputCls} disabled={ro} value={form.model} onChange={e => set({ model: e.target.value })} maxLength={100} /></Field>
+            <Field label="Brand"><Input disabled={ro} value={form.brand} onChange={e => set({ brand: e.target.value })} maxLength={100} /></Field>
+            <Field label="Model"><Input disabled={ro} value={form.model} onChange={e => set({ model: e.target.value })} maxLength={100} /></Field>
             {!isEdit && (
-              <Field label="Quantity" error={errors.quantity} hint="Each unit gets its own tag and history">
-                <input type="number" min={1} max={500} className={inputCls} value={form.quantity} onChange={e => set({ quantity: e.target.value })} />
+              <Field label="Quantity" error={errors.quantity} hint="Each unit gets its own tag">
+                <Input type="number" min={1} max={500} value={form.quantity} onChange={e => set({ quantity: e.target.value })} />
               </Field>
             )}
             {!isEdit && qty > 1 ? (
-              <Field label="Serial numbers" error={errors.serialText} hint={`One per line — ${serials.length} of ${qty} entered (optional)`} className="sm:col-span-2">
-                <textarea rows={3} className={cn(inputCls, 'font-mono')} value={form.serialText} onChange={e => set({ serialText: e.target.value })} placeholder={'C02XK1ABCD\nC02XK1ABCE'} />
+              <Field label="Serial numbers" error={errors.serialText} hint={`One per line · ${serials.length} of ${qty}`} className="sm:col-span-2">
+                <Textarea rows={3} className="font-mono" value={form.serialText} onChange={e => set({ serialText: e.target.value })} placeholder={'C02XK1ABCD\nC02XK1ABCE'} />
               </Field>
             ) : (
               <Field label="Serial number" error={errors.serialNumber}>
-                <input className={cn(inputCls, 'font-mono')} disabled={ro} value={form.serialNumber} onChange={e => set({ serialNumber: e.target.value })} maxLength={120} />
+                <Input className="font-mono" disabled={ro} value={form.serialNumber} onChange={e => set({ serialNumber: e.target.value })} maxLength={120} />
               </Field>
             )}
             {!isEdit && (
               <Field label="Location">
-                <select className={inputCls} value={form.locationId} onChange={e => set({ locationId: e.target.value })}>
+                <NativeSelect value={form.locationId} onChange={e => set({ locationId: e.target.value })}>
                   <option value="">No location</option>
                   {locations.map(l => <option key={l.id} value={l.id}>{l.name}{l.code ? ` (${l.code})` : ''}</option>)}
-                </select>
+                </NativeSelect>
               </Field>
             )}
           </div>
 
           {/* Purchase & cost */}
-          <div className="border border-gray-100 rounded-xl p-4 space-y-3">
+          <div className="space-y-4 rounded-lg border border-gray-200/80 p-4">
             <div className="flex items-center justify-between gap-2">
-              <h3 className="text-sm font-semibold text-gray-900">Purchase &amp; cost (per unit)</h3>
+              <h3 className="text-sm font-medium text-gray-900">Purchase &amp; cost (per unit)</h3>
               {costLocked && (
-                <span className="inline-flex items-center gap-1 text-xs text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md">
-                  <Lock className="w-3 h-3" /> {financials?.billLocked && !finLocked ? `From bill ${financials.billNo ?? ''}` : openingValuesLocked && !finLocked ? 'Opening balances locked' : 'Locked'}
-                </span>
+                <Badge variant="warning">
+                  <Lock className="size-3" /> {financials?.billLocked && !finLocked ? `From bill ${financials.billNo ?? ''}` : openingValuesLocked && !finLocked ? 'Opening balances locked' : 'Locked'}
+                </Badge>
               )}
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <Field label="Vendor">
-                <select className={inputCls} value={form.vendorId} disabled={costLocked} onChange={e => set({ vendorId: e.target.value })}>
-                  <option value="">{vendors.length ? 'Other / not listed' : 'Type the name →'}</option>
+                <NativeSelect value={form.vendorId} disabled={costLocked} onChange={e => set({ vendorId: e.target.value })}>
+                  <option value="">{vendors.length ? 'Other / not listed' : 'Type the name'}</option>
                   {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-                </select>
+                </NativeSelect>
               </Field>
               {!form.vendorId && (
                 <Field label="Vendor name">
-                  <input className={inputCls} value={form.vendorName} disabled={costLocked} onChange={e => set({ vendorName: e.target.value })} placeholder="e.g. Star Tech" />
+                  <Input value={form.vendorName} disabled={costLocked} onChange={e => set({ vendorName: e.target.value })} placeholder="e.g. Star Tech" />
                 </Field>
               )}
               <Field label="Invoice / challan ref">
-                <input className={inputCls} disabled={ro} value={form.invoiceRef} onChange={e => set({ invoiceRef: e.target.value })} />
+                <Input disabled={ro} value={form.invoiceRef} onChange={e => set({ invoiceRef: e.target.value })} />
               </Field>
               <Field label="Mushak-6.3 no.">
-                <input className={inputCls} disabled={ro} value={form.mushakNo} onChange={e => set({ mushakNo: e.target.value })} />
+                <Input disabled={ro} value={form.mushakNo} onChange={e => set({ mushakNo: e.target.value })} />
               </Field>
               <Field label="Purchase date" error={errors.purchaseDate}>
                 <DatePicker value={form.purchaseDate} onChange={v => set({ purchaseDate: v })} disabled={costLocked} />
               </Field>
               <Field label="Unit cost (excl. VAT)" error={errors.unitCost}>
-                <input type="number" min={0} step="0.01" inputMode="decimal" className={inputCls} value={form.unitCost} disabled={costLocked} onChange={e => set({ unitCost: e.target.value })} />
+                <Input type="number" min={0} step="0.01" inputMode="decimal" value={form.unitCost} disabled={costLocked} onChange={e => set({ unitCost: e.target.value })} />
               </Field>
               <Field label="VAT paid" error={errors.vatAmount}>
-                <input type="number" min={0} step="0.01" inputMode="decimal" className={inputCls} value={form.vatAmount} disabled={costLocked} onChange={e => set({ vatAmount: e.target.value })} />
+                <Input type="number" min={0} step="0.01" inputMode="decimal" value={form.vatAmount} disabled={costLocked} onChange={e => set({ vatAmount: e.target.value })} />
               </Field>
-              <Field label="Other costs" error={errors.otherCosts} hint="Delivery, installation…">
-                <input type="number" min={0} step="0.01" inputMode="decimal" className={inputCls} value={form.otherCosts} disabled={costLocked} onChange={e => set({ otherCosts: e.target.value })} />
+              <Field label="Other costs" error={errors.otherCosts}>
+                <Input type="number" min={0} step="0.01" inputMode="decimal" value={form.otherCosts} disabled={costLocked} onChange={e => set({ otherCosts: e.target.value })} />
               </Field>
-              <div className="sm:col-span-2 flex items-start gap-2 pt-1">
-                <input id="vatcap" type="checkbox" className="mt-0.5 rounded border-gray-300" checked={form.vatCapitalized} disabled={costLocked} onChange={e => set({ vatCapitalized: e.target.checked })} />
-                <label htmlFor="vatcap" className="text-xs text-gray-600">
-                  Add the VAT to the cost <span className="text-gray-400">— VAT on office equipment, furniture and vehicles cannot be claimed as input tax (VAT Act s.46), so it is part of the cost.</span>
+              <div className="flex items-center gap-2 sm:col-span-2" title="VAT on office equipment, furniture and vehicles can't be claimed as input tax (VAT Act s.46), so it is part of the cost.">
+                <input id="vatcap" type="checkbox" className="rounded border-gray-300" checked={form.vatCapitalized} disabled={costLocked} onChange={e => set({ vatCapitalized: e.target.checked })} />
+                <label htmlFor="vatcap" className="text-sm text-gray-700">
+                  Add VAT to cost <span className="text-muted-foreground">(not claimable — VAT Act s.46)</span>
                 </label>
               </div>
             </div>
-            <div className="flex flex-wrap items-center justify-between gap-3 bg-gray-50 rounded-lg px-3 py-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-gray-50 px-3 py-2.5">
               <div className="text-sm">
-                <span className="text-gray-500">Cost per unit </span>
-                <span className="font-semibold text-gray-900">{tk(unitCostTotal)}</span>
-                {!isEdit && qty > 1 && <span className="text-gray-500"> · total {tk(round2(unitCostTotal * qty))}</span>}
+                <span className="text-muted-foreground">Cost per unit </span>
+                <span className="font-semibold tabular-nums text-gray-900">{tk(unitCostTotal)}</span>
+                {!isEdit && qty > 1 && <span className="text-muted-foreground"> · total {tk(round2(unitCostTotal * qty))}</span>}
               </div>
               <div className="flex items-center gap-2">
-                <label className="text-xs text-gray-500">Capitalize</label>
-                <select className={cn(inputCls, 'w-auto py-1.5')} value={form.capMode} disabled={finLocked || openingValuesLocked} onChange={e => set({ capMode: e.target.value })}>
+                <label htmlFor="capmode" className="text-[13px] text-muted-foreground">Capitalize</label>
+                <NativeSelect id="capmode" className="h-8 w-auto" value={form.capMode} disabled={finLocked || openingValuesLocked} onChange={e => set({ capMode: e.target.value })}>
                   {!isEdit && <option value="AUTO">Auto ({autoCapitalize === null ? 'pick a category' : autoCapitalize ? 'yes' : 'no'})</option>}
                   <option value="YES">Yes — depreciate</option>
                   <option value="NO">No — expensed, tracked only</option>
-                </select>
+                </NativeSelect>
               </div>
             </div>
             {willCapitalize === false && (
-              <p className="text-xs text-gray-500 flex items-start gap-1.5">
-                <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                {category?.capitalize === false ? `${category.name} is set to be expensed.` : `Below the capitalization threshold of ${tk(threshold)}.`} The item is tagged and tracked but not depreciated.
+              <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                <Info className="mt-px size-3.5 shrink-0" />
+                {category?.capitalize === false ? `${category.name} is set to be expensed.` : `Below the ${tk(threshold)} capitalization threshold.`} Tracked, not depreciated.
               </p>
             )}
           </div>
@@ -418,33 +421,33 @@ export default function AssetFormModal({ open, onOpenChange, mode = 'create', as
           {/* Depreciation */}
           <Toggle open={sections.depreciation} onToggle={() => setSections(s => ({ ...s, depreciation: !s.depreciation }))}
             title="Depreciation & tax class"
-            subtitle={finLocked ? 'Locked — depreciation has been posted' : `Book: ${form.method ? DEPRECIATION_METHOD_OPTIONS.find(o => o.value === form.method)?.label : (category?.depreciationMethod === 'DECLINING_BALANCE' ? 'Declining balance' : 'Straight-line')} over ${form.usefulLifeMonths || lifeDefault || '—'} months · Tax: ${taxCls?.label ?? '—'} ${taxCls?.rate ?? ''}%`}>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            subtitle={finLocked ? 'Locked — depreciation posted' : `Book: ${form.method ? DEPRECIATION_METHOD_OPTIONS.find(o => o.value === form.method)?.label : (category?.depreciationMethod === 'DECLINING_BALANCE' ? 'Declining balance' : 'Straight-line')} over ${form.usefulLifeMonths || lifeDefault || '—'} months · Tax: ${taxCls?.label ?? '—'} ${taxCls?.rate ?? ''}%`}>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <Field label="Book method">
-                <select className={inputCls} value={form.method} disabled={finLocked} onChange={e => set({ method: e.target.value })}>
+                <NativeSelect value={form.method} disabled={finLocked} onChange={e => set({ method: e.target.value })}>
                   <option value="">Category default</option>
                   {DEPRECIATION_METHOD_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
+                </NativeSelect>
               </Field>
               <Field label="Useful life (months)" error={errors.usefulLifeMonths}>
-                <input type="number" min={1} max={1200} className={inputCls} value={form.usefulLifeMonths} disabled={finLocked} placeholder={lifeDefault ? String(lifeDefault) : ''} onChange={e => set({ usefulLifeMonths: e.target.value })} />
+                <Input type="number" min={1} max={1200} value={form.usefulLifeMonths} disabled={finLocked} placeholder={lifeDefault ? String(lifeDefault) : ''} onChange={e => set({ usefulLifeMonths: e.target.value })} />
               </Field>
               <Field label="Residual value" error={errors.residualValue}>
-                <input type="number" min={0} step="0.01" className={inputCls} value={form.residualValue} disabled={finLocked} placeholder={category?.residualPct ? `${category.residualPct}% of cost` : '0'} onChange={e => set({ residualValue: e.target.value })} />
+                <Input type="number" min={0} step="0.01" value={form.residualValue} disabled={finLocked} placeholder={category?.residualPct ? `${category.residualPct}% of cost` : '0'} onChange={e => set({ residualValue: e.target.value })} />
               </Field>
               {(form.method || category?.depreciationMethod) === 'DECLINING_BALANCE' && (
-                <Field label="Declining rate % / year">
-                  <input type="number" min={0} max={100} step="0.01" className={inputCls} value={form.decliningRatePct} disabled={finLocked} onChange={e => set({ decliningRatePct: e.target.value })} />
+                <Field label="Declining rate (% / year)">
+                  <Input type="number" min={0} max={100} step="0.01" value={form.decliningRatePct} disabled={finLocked} onChange={e => set({ decliningRatePct: e.target.value })} />
                 </Field>
               )}
-              <Field label="Available for use" hint="Depreciation starts here (default: purchase date)">
+              <Field label="Available for use" hint="Depreciation start; defaults to purchase date">
                 <DatePicker value={form.availableForUseDate} onChange={v => set({ availableForUseDate: v })} disabled={finLocked} />
               </Field>
-              <Field label="Tax class (Third Schedule)" className="sm:col-span-2" hint="Income Tax Act 2023 rate used for the tax WDV schedule">
-                <select className={inputCls} disabled={ro} value={form.taxClass} onChange={e => set({ taxClass: e.target.value })}>
+              <Field label="Tax class (Third Schedule)" className="sm:col-span-2">
+                <NativeSelect disabled={ro} value={form.taxClass} onChange={e => set({ taxClass: e.target.value })}>
                   <option value="">Category default ({TAX_DEPRECIATION_CLASSES[category?.taxClass]?.label ?? '—'})</option>
                   {TAX_CLASS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
+                </NativeSelect>
               </Field>
             </div>
           </Toggle>
@@ -452,32 +455,33 @@ export default function AssetFormModal({ open, onOpenChange, mode = 'create', as
           {/* Opening register */}
           <Toggle open={sections.opening} onToggle={() => setSections(s => ({ ...s, opening: !s.opening }))}
             title="Owned before go-live (opening register)"
-            subtitle={form.isExisting ? `Accumulated depreciation ${tk(num(form.openingAccumulated) ?? 0)} carried in` : 'Bring in depreciation already charged in earlier books'}>
+            subtitle={form.isExisting ? `Accumulated depreciation ${tk(num(form.openingAccumulated) ?? 0)} carried in` : 'Optional'}>
             {settings?.openingLocked || finLocked ? (
-              <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
-                {settings?.openingLocked ? 'Opening balances are locked — opening values can no longer be changed.' : 'Locked — depreciation has been posted.'}
+              <p className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
+                <Lock className="mt-0.5 size-4 shrink-0" />
+                {settings?.openingLocked ? 'Opening balances are locked.' : 'Locked — depreciation posted.'}
               </p>
             ) : null}
             <label className="flex items-start gap-2 text-sm text-gray-700">
               <input type="checkbox" className="mt-0.5 rounded border-gray-300" checked={form.isExisting}
                 disabled={finLocked || Boolean(settings?.openingLocked)}
                 onChange={e => set({ isExisting: e.target.checked })} />
-              <span>This asset was owned before the system go-live{settings?.goLiveDate ? ` (${settings.goLiveDate})` : ''}</span>
+              <span>Owned before go-live{settings?.goLiveDate ? ` (${settings.goLiveDate})` : ''}</span>
             </label>
             {form.isExisting && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <Field label="Values as of" error={errors.asOfDate}
-                  hint={`Last day covered by the accumulated depreciation — before go-live (default: ${defaultAsOf ?? 'the day before go-live'})`}>
+                  hint={`Before go-live · default ${defaultAsOf ?? 'day before go-live'}`}>
                   <DatePicker value={form.asOfDate} onChange={v => set({ asOfDate: v })} disabled={finLocked || Boolean(settings?.openingLocked)} placeholder={defaultAsOf ?? undefined} />
                 </Field>
-                <Field label="Accumulated depreciation (book)" error={errors.openingAccumulated} hint="From the fixed-asset schedule of the last audited accounts">
-                  <input type="number" min={0} step="0.01" className={inputCls} value={form.openingAccumulated} disabled={finLocked || Boolean(settings?.openingLocked)} onChange={e => set({ openingAccumulated: e.target.value })} />
+                <Field label="Accumulated depreciation (book)" error={errors.openingAccumulated} hint="From the last audited fixed-asset schedule">
+                  <Input type="number" min={0} step="0.01" value={form.openingAccumulated} disabled={finLocked || Boolean(settings?.openingLocked)} onChange={e => set({ openingAccumulated: e.target.value })} />
                 </Field>
-                <Field label="Tax written-down value" error={errors.taxWdv} hint="WDV brought forward at the start of the income year below">
-                  <input type="number" min={0} step="0.01" className={inputCls} value={form.taxWdv} disabled={finLocked || Boolean(settings?.openingLocked)} onChange={e => set({ taxWdv: e.target.value })} />
+                <Field label="Tax written-down value" error={errors.taxWdv} hint="Brought forward at start of income year">
+                  <Input type="number" min={0} step="0.01" value={form.taxWdv} disabled={finLocked || Boolean(settings?.openingLocked)} onChange={e => set({ taxWdv: e.target.value })} />
                 </Field>
-                <Field label="Income year of that WDV" error={errors.taxWdvFiscalYear} hint="e.g. 2026-27">
-                  <input className={inputCls} value={form.taxWdvFiscalYear} disabled={finLocked || Boolean(settings?.openingLocked)} placeholder="2026-27" onChange={e => set({ taxWdvFiscalYear: e.target.value })} />
+                <Field label="Income year of that WDV" error={errors.taxWdvFiscalYear}>
+                  <Input value={form.taxWdvFiscalYear} disabled={finLocked || Boolean(settings?.openingLocked)} placeholder="2026-27" onChange={e => set({ taxWdvFiscalYear: e.target.value })} />
                 </Field>
               </div>
             )}
@@ -486,8 +490,8 @@ export default function AssetFormModal({ open, onOpenChange, mode = 'create', as
           {/* Assign now (create) */}
           {!isEdit && (
             <Toggle open={sections.assign} onToggle={() => setSections(s => ({ ...s, assign: !s.assign }))}
-              title="Assign now (optional)" subtitle={form.employee ? `To ${form.employee.name}` : 'Hand it straight to an employee'}>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              title="Assign now" subtitle={form.employee ? `To ${form.employee.name}` : 'Optional'}>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <Field label="Employee">
                   <PeoplePicker types={['EMPLOYEE']} value={form.employee} onChange={p => set({ employee: p })} placeholder="Search employees…" typeFilter={false} />
                 </Field>
@@ -495,7 +499,7 @@ export default function AssetFormModal({ open, onOpenChange, mode = 'create', as
                   <DatePicker value={form.expectedReturnDate} onChange={v => set({ expectedReturnDate: v })} />
                 </Field>
               </div>
-              {form.isExisting && form.employee && <p className="text-xs text-gray-500">Opening assets are recorded as already handed over (no acknowledgement request).</p>}
+              {form.isExisting && form.employee && <p className="text-xs text-muted-foreground">Recorded as already handed over — no acknowledgement request.</p>}
             </Toggle>
           )}
           {isEdit && asset?.status === 'ASSIGNED' && (
@@ -507,55 +511,54 @@ export default function AssetFormModal({ open, onOpenChange, mode = 'create', as
           {/* Warranty & insurance */}
           <Toggle open={sections.warranty} onToggle={() => setSections(s => ({ ...s, warranty: !s.warranty }))}
             title="Warranty & insurance" subtitle={form.warrantyExpiry ? `Warranty until ${form.warrantyExpiry}` : 'Optional'}>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field label="Warranty expiry"><DatePicker value={form.warrantyExpiry} onChange={v => set({ warrantyExpiry: v })} disabled={ro} /></Field>
-              <Field label="Warranty notes"><input className={inputCls} value={form.warrantyNotes} onChange={e => set({ warrantyNotes: e.target.value })} placeholder="e.g. 3-year onsite, call 096…" /></Field>
-              <Field label="Insurer"><input className={inputCls} disabled={ro} value={form.insProvider} onChange={e => set({ insProvider: e.target.value })} /></Field>
-              <Field label="Policy no."><input className={inputCls} disabled={ro} value={form.insPolicyNo} onChange={e => set({ insPolicyNo: e.target.value })} /></Field>
+              <Field label="Warranty notes"><Input value={form.warrantyNotes} onChange={e => set({ warrantyNotes: e.target.value })} placeholder="e.g. 3-year onsite, call 096…" /></Field>
+              <Field label="Insurer"><Input disabled={ro} value={form.insProvider} onChange={e => set({ insProvider: e.target.value })} /></Field>
+              <Field label="Policy no."><Input disabled={ro} value={form.insPolicyNo} onChange={e => set({ insPolicyNo: e.target.value })} /></Field>
               <Field label="Policy expiry"><DatePicker value={form.insExpiry} onChange={v => set({ insExpiry: v })} disabled={ro} /></Field>
-              <Field label="Insured value" error={errors.insValue}><input type="number" min={0} step="0.01" className={inputCls} disabled={ro} value={form.insValue} onChange={e => set({ insValue: e.target.value })} /></Field>
+              <Field label="Insured value" error={errors.insValue}><Input type="number" min={0} step="0.01" disabled={ro} value={form.insValue} onChange={e => set({ insValue: e.target.value })} /></Field>
             </div>
           </Toggle>
 
           {/* Description, photo, documents */}
           <Toggle open={sections.more} onToggle={() => setSections(s => ({ ...s, more: !s.more }))}
             title="Description, photo & documents" subtitle={`${form.documents.length} document${form.documents.length === 1 ? '' : 's'}${form.imageUrl ? ' · photo' : ''}`}>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field label="Specifications / accessories" className="sm:col-span-2">
-                <textarea rows={2} className={inputCls} value={form.specs} onChange={e => set({ specs: e.target.value })} placeholder="16 GB RAM, 512 GB SSD, charger, sleeve" />
+                <Textarea rows={2} value={form.specs} onChange={e => set({ specs: e.target.value })} placeholder="16 GB RAM, 512 GB SSD, charger, sleeve" />
               </Field>
               <Field label="Description" className="sm:col-span-2">
-                <textarea rows={2} className={inputCls} value={form.description} onChange={e => set({ description: e.target.value })} />
+                <Textarea rows={2} value={form.description} onChange={e => set({ description: e.target.value })} />
               </Field>
               <div><FileUpload label="Photo" value={form.imageUrl} onUploaded={url => set({ imageUrl: url })} accept="image/*" bucket="assets" /></div>
               <div className="space-y-2">
-                <span className="block text-sm font-medium text-gray-700">Documents</span>
+                <Label className="mb-0">Documents</Label>
                 {form.documents.map((d, i) => (
-                  <div key={`${d.url}-${i}`} className="flex items-center gap-2 text-xs bg-gray-50 rounded-lg px-2 py-1.5">
+                  <div key={`${d.url}-${i}`} className="flex items-center gap-2 rounded-lg bg-gray-50 py-1 pl-2.5 pr-1 text-xs">
                     <span className="flex-1 truncate">{d.label || d.url.split('/').pop()}</span>
-                    <button type="button" className="text-gray-400 hover:text-red-500" onClick={() => set({ documents: form.documents.filter((_, j) => j !== i) })}><X className="w-3.5 h-3.5" /></button>
+                    <Button variant="ghost" size="icon-xs" className="text-gray-400 hover:text-red-600" aria-label="Remove document" onClick={() => set({ documents: form.documents.filter((_, j) => j !== i) })}><X className="size-3.5" /></Button>
                   </div>
                 ))}
-                <input className={inputCls} placeholder="Label (e.g. Invoice, Warranty card)" value={newDoc.label} onChange={e => setNewDoc(d => ({ ...d, label: e.target.value }))} />
+                <Input placeholder="Label, e.g. Invoice" value={newDoc.label} onChange={e => setNewDoc(d => ({ ...d, label: e.target.value }))} />
                 <FileUpload label={null} value={newDoc.url} onUploaded={url => setNewDoc(d => ({ ...d, url }))} bucket="assets" />
                 {newDoc.url && (
-                  <button type="button" className={btnSecondary} onClick={addDoc}><Plus className="w-4 h-4" /> Add document</button>
+                  <Button variant="outline" size="sm" onClick={addDoc}><Plus /> Add document</Button>
                 )}
               </div>
             </div>
           </Toggle>
 
           <Field label="Notes">
-            <textarea rows={2} className={inputCls} value={form.notes} onChange={e => set({ notes: e.target.value })} />
+            <Textarea rows={2} value={form.notes} onChange={e => set({ notes: e.target.value })} />
           </Field>
         </div>
       )}
-      <ModalFooter className="-mx-4 sm:-mx-6 -mb-4 mt-5 sticky bottom-0 z-10">
-        <button type="button" className={btnSecondary} onClick={() => onOpenChange(false)} disabled={saving}>Cancel</button>
-        <button type="button" className={btnPrimary} onClick={submit} disabled={saving || optLoading}>
-          {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+      <ModalFooter className="sticky bottom-0 z-10">
+        <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
+        <Button onClick={submit} loading={saving} disabled={optLoading}>
           {isEdit ? 'Save changes' : qty > 1 ? `Add ${qty} assets` : 'Add asset'}
-        </button>
+        </Button>
       </ModalFooter>
     </Modal>
   )

@@ -1,7 +1,9 @@
 'use client'
 
 import { Plus, Trash2 } from 'lucide-react'
-import { inputCls, labelCls, fmtAmount, toNum, round2 } from '../_lib/format'
+import Button from '@/components/ui/Button'
+import { Input, NativeSelect, Field } from '@/components/ui/Input'
+import { fmtAmount, toNum, round2 } from '../_lib/format'
 
 /** Challan heads: VAT ⇒ Mushak-9.1 note 58, SD (supplementary duty) ⇒ note 59. */
 export const CHALLAN_HEADS = [
@@ -94,68 +96,63 @@ export default function ChallansEditor({ rows, onChange, defaultAccountCode = ''
   return (
     <div className="space-y-3">
       {rows.length === 0 && (
-        <p className="text-sm text-gray-500">No challans entered here. Deposits already recorded in the tax ledger are counted automatically.</p>
+        <p className="rounded-lg border border-dashed border-gray-200 px-3 py-4 text-center text-[13px] text-muted-foreground">
+          No challans added. Ledger deposits count automatically.
+        </p>
       )}
       {rows.map((r, i) => (
-        <div key={i} className="border border-gray-100 rounded-lg p-3 bg-gray-50/60">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-xs font-semibold text-gray-700">Challan {i + 1}{headOf(r) === 'SD' ? ' · supplementary duty' : ''}</p>
+        <div key={i} className="rounded-lg border border-gray-200/80 p-3">
+          <div className="mb-3 flex items-center justify-between">
+            <p className="text-[13px] font-medium text-gray-900">Challan {i + 1}{headOf(r) === 'SD' ? ' · supplementary duty' : ''}</p>
             {!disabled && (
-              <button type="button" onClick={() => remove(i)} className="p-1 text-gray-400 hover:text-red-600" aria-label={`Remove challan ${i + 1}`}>
-                <Trash2 className="w-4 h-4" />
-              </button>
+              <Button variant="ghost" size="icon-xs" onClick={() => remove(i)} className="text-gray-400 hover:text-red-600" aria-label={`Remove challan ${i + 1}`}>
+                <Trash2 />
+              </Button>
             )}
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-            <div>
-              <label className={labelCls}>Paid for</label>
-              <select className={inputCls} value={headOf(r)} disabled={disabled} onChange={e => setHead(i, e.target.value)}>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <Field label="Paid for">
+              <NativeSelect value={headOf(r)} disabled={disabled} onChange={e => setHead(i, e.target.value)}>
                 {CHALLAN_HEADS.map(h => <option key={h.value} value={h.value}>{h.label}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className={labelCls}>Challan / token no.</label>
-              <input className={inputCls} value={r.challanNo} disabled={disabled} maxLength={60}
+              </NativeSelect>
+            </Field>
+            <Field label="Challan / token no.">
+              <Input value={r.challanNo} disabled={disabled} maxLength={60}
                 onChange={e => update(i, { challanNo: e.target.value })} placeholder="e.g. 2627-0012345678" />
-            </div>
-            <div>
-              <label className={labelCls}>Date</label>
-              <input type="date" className={inputCls} value={r.date} disabled={disabled}
+            </Field>
+            <Field label="Date">
+              <Input type="date" value={r.date} disabled={disabled}
                 onChange={e => update(i, { date: e.target.value })} />
-            </div>
-            <div>
-              <label className={labelCls}>Amount (Tk)</label>
-              <input type="number" min="0" step="0.01" inputMode="decimal" className={inputCls} value={r.amount} disabled={disabled}
-                onChange={e => update(i, { amount: e.target.value })} />
-            </div>
-            <div>
-              <label className={labelCls}>Bank / CGA</label>
-              <input className={inputCls} value={r.bank} disabled={disabled} maxLength={120}
+            </Field>
+            <Field label="Amount (Tk)">
+              <Input type="number" min="0" step="0.01" inputMode="decimal" value={r.amount} disabled={disabled}
+                onChange={e => update(i, { amount: e.target.value })} placeholder="0.00" />
+            </Field>
+            <Field label="Bank / CGA">
+              <Input value={r.bank} disabled={disabled} maxLength={120}
                 onChange={e => update(i, { bank: e.target.value })} placeholder="e.g. Sonali Bank" />
-            </div>
-            <div>
-              <label className={labelCls}>Branch</label>
-              <input className={inputCls} value={r.branch} disabled={disabled} maxLength={120}
+            </Field>
+            <Field label="Branch">
+              <Input value={r.branch} disabled={disabled} maxLength={120}
                 onChange={e => update(i, { branch: e.target.value })} />
-            </div>
-            <div className="sm:col-span-3">
-              <label className={labelCls}>Account code</label>
-              <input className={inputCls} value={r.accountCode} disabled={disabled} maxLength={60}
+            </Field>
+            <Field label="Account code" className="sm:col-span-3">
+              <Input value={r.accountCode} disabled={disabled} maxLength={60}
                 onChange={e => update(i, { accountCode: e.target.value })}
                 placeholder={headOf(r) === 'SD' ? (sdAccountCode || '1/1133/0010/0721') : (defaultAccountCode || '1/1133/0010/0311')} />
-            </div>
+            </Field>
           </div>
         </div>
       ))}
       {!disabled && (
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <button type="button" onClick={add} className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-700 hover:text-gray-900">
-            <Plus className="w-4 h-4" /> Add challan
-          </button>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Button variant="outline" size="sm" onClick={add}>
+            <Plus /> Add challan
+          </Button>
           {rows.length > 0 && (
-            <p className="text-xs text-gray-500">
-              Entered here: <span className="font-semibold text-gray-800">VAT Tk {fmtAmount(totals.VAT)}</span>
-              {totals.SD > 0 && <> · <span className="font-semibold text-gray-800">SD Tk {fmtAmount(totals.SD)}</span></>}
+            <p className="text-xs text-muted-foreground">
+              Entered here: <span className="font-semibold tabular-nums text-gray-900">VAT Tk {fmtAmount(totals.VAT)}</span>
+              {totals.SD > 0 && <> · <span className="font-semibold tabular-nums text-gray-900">SD Tk {fmtAmount(totals.SD)}</span></>}
             </p>
           )}
         </div>

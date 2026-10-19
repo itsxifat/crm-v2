@@ -2,9 +2,14 @@
 
 import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Plus, Loader2, ArrowLeft, Save } from 'lucide-react'
+import { Plus, Save } from 'lucide-react'
 import toast from 'react-hot-toast'
-import Link from 'next/link'
+import Button from '@/components/ui/Button'
+import { Card, CardHeader, CardTitle, CardDescription, CardAction, CardContent } from '@/components/ui/Card'
+import PageHeader from '@/components/ui/PageHeader'
+import Tabs from '@/components/ui/Tabs'
+import { PageLoader } from '@/components/ui/LoadingSpinner'
+import { Field, Input, Textarea, NativeSelect } from '@/components/ui/Input'
 import { useConfig } from '@/lib/useConfig'
 import { computeQuotation, previewQuotation, uniformVatRate } from '@/lib/quotation'
 import QuotationVatCard from '../_components/QuotationVatCard'
@@ -17,9 +22,6 @@ import { emptyItem, buildItemsPayload, fetchJson, QUOTATION_CURRENCIES } from '.
 const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dhaka' }).format(new Date())
 // Masked PII placeholders (from /api/leads, /api/clients) must never be copied into the snapshot
 const unmasked = (v) => (typeof v === 'string' && v.includes('••') ? '' : (v || ''))
-
-const inputCls = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-gray-900'
-const labelCls = 'block text-xs font-medium text-gray-600 mb-1'
 
 function NewQuotationForm() {
   const router       = useRouter()
@@ -181,150 +183,148 @@ function NewQuotationForm() {
   }
 
   return (
-    <form onSubmit={save} className="space-y-6 max-w-6xl" data-component="new-quotation-form">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <Link href="/admin/quotations" aria-label="Back to quotations" className="p-2 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-700 transition-colors">
-            <ArrowLeft className="w-4 h-4" />
-          </Link>
-          <div>
-            <h1 className="text-xl font-semibold text-gray-900">New Quotation</h1>
-            <p className="text-sm text-gray-500 mt-0.5">Auto-numbered on save</p>
-          </div>
-        </div>
-        <button type="submit" disabled={saving}
-          className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 disabled:opacity-50 transition-colors">
-          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-          Save Quotation
-        </button>
-      </div>
+    <form onSubmit={save} className="space-y-6" data-component="new-quotation-form">
+      <PageHeader
+        back="/admin/quotations"
+        backLabel="Quotations"
+        title="New quotation"
+        actions={
+          <Button type="submit" loading={saving}>
+            {!saving && <Save />}
+            Save quotation
+          </Button>
+        }
+      />
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Left column: Source + Recipient + VAT + Items */}
-        <div className="lg:col-span-2 space-y-6 min-w-0">
+        <div className="min-w-0 space-y-6 lg:col-span-2">
 
           {/* Source selector */}
-          <div className="bg-white border border-gray-100 rounded-xl p-5 space-y-4">
-            <h2 className="text-sm font-semibold text-gray-700">Source</h2>
-            <div className="flex gap-3">
-              {['LEAD', 'CLIENT'].map(t => (
-                <button type="button" key={t}
-                  onClick={() => { setSourceType(t); setLeadId(''); setClientId('') }}
-                  className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${sourceType === t ? 'bg-gray-900 text-white border-gray-900' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
-                  {t[0] + t.slice(1).toLowerCase()}
-                </button>
-              ))}
-            </div>
-            {sourceType === 'LEAD' ? (
-              <select value={leadId} onChange={e => setLeadId(e.target.value)} required className={inputCls}>
-                <option value="">{sourcesLoading ? 'Loading leads…' : leads.length ? '— Select Lead —' : 'No leads found'}</option>
-                {leads.map(l => (
-                  <option key={l.id || l._id} value={l.id || l._id}>{l.name}{l.company ? ` (${l.company})` : ''}</option>
-                ))}
-              </select>
-            ) : (
-              <select value={clientId} onChange={e => setClientId(e.target.value)} required className={inputCls}>
-                <option value="">{sourcesLoading ? 'Loading clients…' : clients.length ? '— Select Client —' : 'No clients found'}</option>
-                {clients.map(c => (
-                  <option key={c.id || c._id} value={c.id || c._id}>{c.company}{c.contactPerson ? ` — ${c.contactPerson}` : ''}</option>
-                ))}
-              </select>
-            )}
-          </div>
+          <Card>
+            <CardHeader>
+              <CardTitle>Source</CardTitle>
+              <CardAction>
+                <Tabs
+                  size="sm"
+                  value={sourceType}
+                  onChange={t => { setSourceType(t); setLeadId(''); setClientId('') }}
+                  tabs={['LEAD', 'CLIENT'].map(t => ({ value: t, label: t[0] + t.slice(1).toLowerCase() }))}
+                />
+              </CardAction>
+            </CardHeader>
+            <CardContent>
+              {sourceType === 'LEAD' ? (
+                <NativeSelect value={leadId} onChange={e => setLeadId(e.target.value)} required aria-label="Lead">
+                  <option value="">{sourcesLoading ? 'Loading leads…' : leads.length ? 'Select lead…' : 'No leads found'}</option>
+                  {leads.map(l => (
+                    <option key={l.id || l._id} value={l.id || l._id}>{l.name}{l.company ? ` (${l.company})` : ''}</option>
+                  ))}
+                </NativeSelect>
+              ) : (
+                <NativeSelect value={clientId} onChange={e => setClientId(e.target.value)} required aria-label="Client">
+                  <option value="">{sourcesLoading ? 'Loading clients…' : clients.length ? 'Select client…' : 'No clients found'}</option>
+                  {clients.map(c => (
+                    <option key={c.id || c._id} value={c.id || c._id}>{c.company}{c.contactPerson ? ` — ${c.contactPerson}` : ''}</option>
+                  ))}
+                </NativeSelect>
+              )}
+            </CardContent>
+          </Card>
 
           {/* Recipient info */}
-          <div className="bg-white border border-gray-100 rounded-xl p-5 space-y-4">
-            <h2 className="text-sm font-semibold text-gray-700">Recipient Details <span className="font-normal text-gray-400">(snapshot — edit freely; blank fields are filled from the {sourceType === 'LEAD' ? 'lead' : 'client'} on save)</span></h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Card>
+            <CardHeader>
               <div>
-                <label className={labelCls}>Name</label>
-                <input value={recipientName} onChange={e => setRecipientName(e.target.value)} maxLength={200} className={inputCls} />
+                <CardTitle>Recipient</CardTitle>
+                <CardDescription>Blank fields are filled from the {sourceType === 'LEAD' ? 'lead' : 'client'} on save</CardDescription>
               </div>
-              <div>
-                <label className={labelCls}>Company</label>
-                <input value={recipientCompany} onChange={e => setRecipientCompany(e.target.value)} maxLength={200} className={inputCls} />
-              </div>
-              <div>
-                <label className={labelCls}>Email</label>
-                <input type="email" value={recipientEmail} onChange={e => setRecipientEmail(e.target.value)} maxLength={200} className={inputCls} />
-              </div>
-              <div>
-                <label className={labelCls}>Phone</label>
-                <input value={recipientPhone} onChange={e => setRecipientPhone(e.target.value)} maxLength={50} className={inputCls} />
-              </div>
-              <div className="sm:col-span-2">
-                <label className={labelCls}>Address</label>
-                <input value={recipientAddress} onChange={e => setRecipientAddress(e.target.value)} maxLength={500} className={inputCls} />
-              </div>
-            </div>
-          </div>
+            </CardHeader>
+            <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field label="Name">
+                <Input value={recipientName} onChange={e => setRecipientName(e.target.value)} maxLength={200} />
+              </Field>
+              <Field label="Company">
+                <Input value={recipientCompany} onChange={e => setRecipientCompany(e.target.value)} maxLength={200} />
+              </Field>
+              <Field label="Email">
+                <Input type="email" value={recipientEmail} onChange={e => setRecipientEmail(e.target.value)} maxLength={200} />
+              </Field>
+              <Field label="Phone">
+                <Input value={recipientPhone} onChange={e => setRecipientPhone(e.target.value)} maxLength={50} />
+              </Field>
+              <Field label="Address" className="sm:col-span-2">
+                <Input value={recipientAddress} onChange={e => setRecipientAddress(e.target.value)} maxLength={500} />
+              </Field>
+            </CardContent>
+          </Card>
 
           {/* VAT */}
           <QuotationVatCard vat={vat} setItems={setItems} sourceType={sourceType} currency={currency} />
 
           {/* Line items */}
-          <div className="bg-white border border-gray-100 rounded-xl p-5 space-y-3">
-            <h2 className="text-sm font-semibold text-gray-700">Items</h2>
-            {items.map((item, idx) => (
-              <QuotationItemCard key={idx} item={item} idx={idx} onChange={updateItem} onRemove={removeItem}
-                ventures={ventures} ventureCategories={ventureCategories} currency={currency}
-                line={preview.items[idx]} isVat={vat.isVat}
-                showVatRate={vat.perLineVat && vat.ratesOn} defaultVatRate={vat.defaultVatRate}
-                vatTreatment={vat.effectiveTreatment} />
-            ))}
-            <button type="button" onClick={addItem}
-              className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800 font-medium pt-1">
-              <Plus className="w-4 h-4" /> Add Item
-            </button>
-          </div>
+          <Card>
+            <CardHeader><CardTitle>Items</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              {items.map((item, idx) => (
+                <QuotationItemCard key={idx} item={item} idx={idx} onChange={updateItem} onRemove={removeItem}
+                  ventures={ventures} ventureCategories={ventureCategories} currency={currency}
+                  line={preview.items[idx]} isVat={vat.isVat}
+                  showVatRate={vat.perLineVat && vat.ratesOn} defaultVatRate={vat.defaultVatRate}
+                  vatTreatment={vat.effectiveTreatment} />
+              ))}
+              <Button variant="outline" size="sm" onClick={addItem}>
+                <Plus /> Add item
+              </Button>
+            </CardContent>
+          </Card>
 
           {/* Notes & Terms */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="bg-white border border-gray-100 rounded-xl p-4">
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Notes</label>
-              <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={4} maxLength={5000}
-                placeholder="Any notes for the client…"
-                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-gray-900 resize-none" />
-            </div>
-            <div className="bg-white border border-gray-100 rounded-xl p-4">
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Terms & Conditions</label>
-              <textarea value={terms} onChange={e => setTerms(e.target.value)} rows={4} maxLength={5000}
-                placeholder="Payment terms, validity, etc…"
-                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-gray-900 resize-none" />
-            </div>
-          </div>
+          <Card>
+            <CardHeader><CardTitle>Notes & terms</CardTitle></CardHeader>
+            <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field label="Notes">
+                <Textarea value={notes} onChange={e => setNotes(e.target.value)} rows={4} maxLength={5000}
+                  placeholder="Notes for the client…" className="resize-none" />
+              </Field>
+              <Field label="Terms & conditions">
+                <Textarea value={terms} onChange={e => setTerms(e.target.value)} rows={4} maxLength={5000}
+                  placeholder="Payment terms, validity…" className="resize-none" />
+              </Field>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Right column: Dates, Financials */}
-        <div className="space-y-4">
-          <div className="bg-white border border-gray-100 rounded-xl p-5 space-y-3">
-            <h2 className="text-sm font-semibold text-gray-700">Dates</h2>
-            <div>
-              <label className={labelCls}>Issue Date</label>
-              <input type="date" value={issueDate} onChange={e => setIssueDate(e.target.value)} className={inputCls} />
-            </div>
-            <div>
-              <label className={labelCls}>Valid Until</label>
-              <input type="date" value={validUntil} min={issueDate || undefined} onChange={e => setValidUntil(e.target.value)} className={inputCls} />
-            </div>
-            <div>
-              <label className={labelCls}>Currency</label>
-              <select value={currency} onChange={e => setCurrency(e.target.value)} className={inputCls}>
-                {QUOTATION_CURRENCIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-              </select>
-            </div>
-          </div>
+        <div className="space-y-6">
+          <Card>
+            <CardHeader><CardTitle>Details</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+              <Field label="Issue date">
+                <Input type="date" value={issueDate} onChange={e => setIssueDate(e.target.value)} />
+              </Field>
+              <Field label="Valid until">
+                <Input type="date" value={validUntil} min={issueDate || undefined} onChange={e => setValidUntil(e.target.value)} />
+              </Field>
+              <Field label="Currency">
+                <NativeSelect value={currency} onChange={e => setCurrency(e.target.value)}>
+                  {QUOTATION_CURRENCIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                </NativeSelect>
+              </Field>
+            </CardContent>
+          </Card>
 
-          <div className="bg-white border border-gray-100 rounded-xl p-5 space-y-3 lg:sticky lg:top-4">
-            <h2 className="text-sm font-semibold text-gray-700">Summary</h2>
-            <QuotationTotals
-              preview={preview} currency={currency} isVat={vat.isVat} vatRowLabel={vatRowLabel}
-              taxRate={taxRate} onTaxRate={setTaxRate} discount={discount} onDiscount={setDiscount}
-              itemPriceOnly={itemPriceOnly} onItemPriceOnly={setItemPriceOnly}
-              pendingDefault={!vat.vatTreatment && vat.vatInfoState !== 'loading'}
-            />
-          </div>
+          <Card className="lg:sticky lg:top-4">
+            <CardHeader><CardTitle>Summary</CardTitle></CardHeader>
+            <CardContent>
+              <QuotationTotals
+                preview={preview} currency={currency} isVat={vat.isVat} vatRowLabel={vatRowLabel}
+                taxRate={taxRate} onTaxRate={setTaxRate} discount={discount} onDiscount={setDiscount}
+                itemPriceOnly={itemPriceOnly} onItemPriceOnly={setItemPriceOnly}
+                pendingDefault={!vat.vatTreatment && vat.vatInfoState !== 'loading'}
+              />
+            </CardContent>
+          </Card>
         </div>
       </div>
     </form>
@@ -333,7 +333,7 @@ function NewQuotationForm() {
 
 export default function NewQuotationPage() {
   return (
-    <Suspense fallback={<div className="flex items-center justify-center min-h-[60vh]"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>}>
+    <Suspense fallback={<PageLoader />}>
       <NewQuotationForm />
     </Suspense>
   )

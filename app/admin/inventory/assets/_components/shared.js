@@ -7,14 +7,17 @@ import {
 } from 'lucide-react'
 import { cn, formatCurrency } from '@/lib/utils'
 import { dhakaDayKey } from '@/lib/dhakaTime'
+import { buttonVariants } from '@/components/ui/Button'
+import { Field as UiField, inputClass } from '@/components/ui/Input'
 
 // ── style tokens (house style) ───────────────────────────────────────────────
-export const inputCls = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900 disabled:bg-gray-50 disabled:text-gray-400'
-export const labelCls = 'block text-xs font-medium text-gray-600 mb-1'
-export const btnPrimary = 'inline-flex items-center justify-center gap-2 bg-gray-900 text-white hover:bg-gray-800 rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors'
-export const btnSecondary = 'inline-flex items-center justify-center gap-2 border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 rounded-lg px-3.5 py-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors'
-export const btnDanger = 'inline-flex items-center justify-center gap-2 bg-red-600 text-white hover:bg-red-700 rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors'
-export const cardCls = 'bg-white border border-gray-100 rounded-xl'
+/** Works on <input>, <select> and <textarea> (no fixed height). */
+export const inputCls = cn(inputClass, 'h-auto min-h-9 py-1.5')
+export const labelCls = 'mb-2 block text-sm font-medium leading-none text-gray-900'
+export const btnPrimary = buttonVariants({ variant: 'default' })
+export const btnSecondary = buttonVariants({ variant: 'outline' })
+export const btnDanger = buttonVariants({ variant: 'destructive' })
+export const cardCls = 'rounded-xl border border-gray-200/80 bg-white shadow-xs'
 
 export const ACTION_ICONS = {
   UserCheck, Repeat, Undo2, ArrowLeftRight, Wrench, CircleCheckBig, TriangleAlert, HandCoins, SearchX, ShieldAlert,
@@ -23,31 +26,26 @@ export const ACTION_ICONS = {
 
 export function Field({ label, hint, error, required, className, children }) {
   return (
-    <div className={className}>
-      {label && (
-        <label className={labelCls}>
-          {label}{required && <span className="text-red-500"> *</span>}
-        </label>
-      )}
+    <UiField label={label} hint={hint} error={error} required={required} className={className}>
       {children}
-      {error ? <p className="mt-1 text-xs text-red-600">{error}</p> : hint ? <p className="mt-1 text-xs text-gray-400">{hint}</p> : null}
-    </div>
+    </UiField>
   )
 }
 
 export function Section({ title, description, actions, className, bodyClassName, children }) {
+  const hasHeader = Boolean(title || actions)
   return (
     <section className={cn(cardCls, className)}>
-      {(title || actions) && (
-        <div className="flex items-start justify-between gap-3 px-4 sm:px-5 pt-4 pb-3 border-b border-gray-50">
+      {hasHeader && (
+        <div className="flex items-start justify-between gap-3 px-5 pt-5 pb-3">
           <div className="min-w-0">
-            {title && <h2 className="text-sm font-semibold text-gray-900">{title}</h2>}
-            {description && <p className="text-xs text-gray-500 mt-0.5">{description}</p>}
+            {title && <h2 className="text-sm font-semibold leading-5 tracking-tight text-gray-900">{title}</h2>}
+            {description && <p className="mt-0.5 text-[13px] text-muted-foreground">{description}</p>}
           </div>
-          {actions && <div className="flex items-center gap-2 shrink-0">{actions}</div>}
+          {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
         </div>
       )}
-      <div className={cn('px-4 sm:px-5 py-4', bodyClassName)}>{children}</div>
+      <div className={cn('px-5 pb-5', !hasHeader && 'pt-5', bodyClassName)}>{children}</div>
     </section>
   )
 }
@@ -57,8 +55,8 @@ export function InfoRow({ label, children, mono }) {
   const empty = children === null || children === undefined || children === '' || children === false
   return (
     <div className="flex items-start justify-between gap-4 py-1.5 text-sm">
-      <span className="text-gray-500 shrink-0">{label}</span>
-      <span className={cn('text-right text-gray-900 min-w-0 break-words', mono && 'font-mono text-xs', empty && 'text-gray-300')}>
+      <span className="shrink-0 text-muted-foreground">{label}</span>
+      <span className={cn('min-w-0 break-words text-right text-gray-900', mono && 'font-mono text-xs', empty && 'text-gray-300')}>
         {empty ? '—' : children}
       </span>
     </div>

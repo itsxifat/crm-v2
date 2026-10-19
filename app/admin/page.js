@@ -4,23 +4,35 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useSession } from 'next-auth/react'
 import {
-  TrendingUp, Briefcase, Users, FileText, AlertTriangle,
-  ArrowUpRight, ArrowDownRight, ChevronLeft, BarChart2, Plus, X,
-  CheckCircle2, Wallet, UserCheck, FolderPlus, UserPlus, ReceiptText,
-  Flag, Circle, Target, Layers, Activity, ShieldAlert, Zap, Clock,
+  TrendingUp, Briefcase, AlertTriangle,
+  ArrowUpRight, ArrowDownRight, ChevronLeft, Plus, X,
+  CheckCircle2, Wallet, Flag, Circle, Activity, ShieldAlert, Zap,
+  FolderKanban, ListTodo, Users,
 } from 'lucide-react'
 import {
   ComposedChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Line,
 } from 'recharts'
+import { cn } from '@/lib/utils'
+import Button, { buttonVariants } from '@/components/ui/Button'
+import { Card, CardHeader, CardTitle, CardDescription, CardAction, CardContent } from '@/components/ui/Card'
+import PageHeader from '@/components/ui/PageHeader'
+import StatsCard from '@/components/ui/StatsCard'
+import Badge from '@/components/ui/Badge'
+import Tabs from '@/components/ui/Tabs'
+import EmptyState from '@/components/ui/EmptyState'
+import LoadingSpinner, { PageLoader } from '@/components/ui/LoadingSpinner'
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const fmt  = (n) => n == null ? '—' : `৳\u202f${Number(n).toLocaleString('en-BD', { maximumFractionDigits: 0 })}`
+const fmt  = (n) => n == null ? '—' : `৳ ${Number(n).toLocaleString('en-BD', { maximumFractionDigits: 0 })}`
 // Full number with thousands separators (no K/M abbreviation — its rounding hid small changes like a 100 expense)
 const fmtK = (n) => n == null ? '—' : `৳ ${Number(n).toLocaleString('en-BD', { maximumFractionDigits: 0 })}`
 const fmtDate  = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '—'
 const daysLeft = (d) => d ? Math.ceil((new Date(d) - new Date()) / 86400000) : null
+// "IN_PROGRESS" → "In progress" (display only)
+const humanize = (s) => s ? (s.charAt(0) + s.slice(1).toLowerCase()).replace(/_/g, ' ') : ''
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const getMonthLabel = (offset = 0) => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - offset); return `${MONTHS[d.getMonth()]} ${d.getFullYear()}` }
@@ -31,16 +43,26 @@ function greeting() {
   return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'
 }
 
+// Chart palette (zinc + brand)
+const C = {
+  brand:  '#2157E0',
+  ink:    '#18181b', // zinc-900
+  muted:  '#a1a1aa', // zinc-400
+  grid:   '#f4f4f5', // zinc-100
+  axis:   '#71717a', // zinc-500
+  cursor: '#e4e4e7', // zinc-200
+}
+
 // ─── Trend badge ──────────────────────────────────────────────────────────────
 
 function Trend({ change, invert = false }) {
   if (change == null) return null
   const up  = invert ? change < 0 : change > 0
   const neu = change === 0
-  if (neu) return <span className="text-xs text-gray-400">No change</span>
+  if (neu) return <span className="text-xs text-muted-foreground">No change</span>
   return (
-    <span className={`inline-flex items-center gap-0.5 text-xs font-medium ${up ? 'text-emerald-600' : 'text-rose-500'}`}>
-      {up ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+    <span className={cn('inline-flex items-center gap-0.5 text-xs font-medium tabular-nums', up ? 'text-emerald-600' : 'text-red-600')}>
+      {up ? <ArrowUpRight className="size-3.5" /> : <ArrowDownRight className="size-3.5" />}
       {Math.abs(change)}%
     </span>
   )
@@ -48,25 +70,22 @@ function Trend({ change, invert = false }) {
 
 // ─── KPI Card ─────────────────────────────────────────────────────────────────
 
-function KpiCard({ title, value, sub, change, invert, icon: Icon, iconBg, iconColor, href }) {
-  const inner = (
-    <div className={`bg-white border border-gray-100 rounded-xl p-5 flex items-center gap-4 transition-shadow duration-150 ${href ? 'hover:shadow-sm cursor-pointer' : ''}`}>
-      <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${iconBg}`}>
-        <Icon className={`w-5 h-5 ${iconColor}`} />
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="text-xl font-bold text-gray-900 leading-none tracking-tight">{value}</p>
-        <p className="text-xs text-gray-500 mt-1 font-medium">{title}</p>
-        {(sub || change != null) && (
-          <div className="flex items-center gap-2 mt-1.5">
-            {change != null && <Trend change={change} invert={invert} />}
-            {sub && <span className="text-xs text-gray-400 truncate">{sub}</span>}
-          </div>
-        )}
-      </div>
-    </div>
+function KpiCard({ title, value, sub, change, invert, icon, color, href }) {
+  const hasChange = change != null && change !== 0
+  const positive  = invert ? change < 0 : change > 0
+  const label     = change === 0 ? (sub ? `No change · ${sub}` : 'No change') : sub
+  return (
+    <StatsCard
+      title={title}
+      value={value}
+      icon={icon}
+      color={color}
+      href={href}
+      change={hasChange ? `${Math.abs(change)}%` : undefined}
+      positive={positive}
+      changeLabel={label}
+    />
   )
-  return href ? <Link href={href}>{inner}</Link> : inner
 }
 
 // ─── Custom chart tooltip ─────────────────────────────────────────────────────
@@ -74,18 +93,41 @@ function KpiCard({ title, value, sub, change, invert, icon: Icon, iconBg, iconCo
 function ChartTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null
   return (
-    <div className="bg-white border border-gray-100 rounded-lg shadow-md px-3 py-2.5 text-xs min-w-[130px]">
-      <p className="font-semibold text-gray-700 mb-2">{label}</p>
+    <div className="min-w-[150px] rounded-lg border border-gray-200/80 bg-white px-3 py-2 text-xs shadow-lg">
+      <p className="mb-1.5 font-medium text-gray-900">{label}</p>
       {payload.map(p => (
-        <div key={p.dataKey} className="flex items-center justify-between gap-4 mb-1 last:mb-0">
+        <div key={p.dataKey} className="flex items-center justify-between gap-4 py-0.5">
           <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: p.color }} />
-            <span className="text-gray-500">{p.name}</span>
+            <span className="size-2 shrink-0 rounded-[2px]" style={{ backgroundColor: p.color }} />
+            <span className="text-muted-foreground">{p.name}</span>
           </div>
-          <span className="font-semibold text-gray-800">{fmtK(p.value)}</span>
+          <span className="font-medium tabular-nums text-gray-900">{fmtK(p.value)}</span>
         </div>
       ))}
     </div>
+  )
+}
+
+// ─── Card section wrapper ─────────────────────────────────────────────────────
+
+function Section({ title, meta, href, action, children, contentClassName }) {
+  return (
+    <Card>
+      <CardHeader>
+        <div className="min-w-0">
+          <CardTitle>{title}</CardTitle>
+          {meta && <CardDescription>{meta}</CardDescription>}
+        </div>
+        {href && (
+          <CardAction>
+            <Link href={href} className={cn(buttonVariants({ variant: 'ghost', size: 'xs' }), '-mr-1.5 -mt-1 text-muted-foreground')}>
+              {action ?? 'View all'} <ArrowUpRight className="size-3.5" />
+            </Link>
+          </CardAction>
+        )}
+      </CardHeader>
+      <CardContent className={contentClassName}>{children}</CardContent>
+    </Card>
   )
 }
 
@@ -113,65 +155,64 @@ function CalendarDrillDown({ drillKey, onClose }) {
   const expense = data?.reduce((s, r) => s + r.expense, 0) ?? 0
 
   return (
-    <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+    <Card className="overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 px-5 py-3">
         <div className="flex items-center gap-2">
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors">
-            <ChevronLeft className="w-4 h-4 text-gray-500" />
-          </button>
-          <span className="text-sm font-semibold text-gray-800">{label} — Daily View</span>
+          <Button variant="ghost" size="icon-sm" onClick={onClose} className="-ml-1.5" aria-label="Close daily view">
+            <ChevronLeft />
+          </Button>
+          <span className="text-sm font-semibold text-gray-900">{label}</span>
+          <span className="text-[13px] text-muted-foreground">Daily</span>
         </div>
-        <div className="flex items-center gap-4 text-xs">
-          <span className="text-gray-400">Income: <span className="text-emerald-600 font-semibold">{fmt(income)}</span></span>
-          <span className="text-gray-400">Expense: <span className="text-red-500 font-semibold">{fmt(expense)}</span></span>
-          <span className="text-gray-400">Net: <span className={`font-semibold ${income - expense >= 0 ? 'text-blue-600' : 'text-red-500'}`}>{fmt(income - expense)}</span></span>
+        <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
+          <span>Income <span className="ml-1 font-medium tabular-nums text-emerald-600">{fmt(income)}</span></span>
+          <span>Expense <span className="ml-1 font-medium tabular-nums text-red-600">{fmt(expense)}</span></span>
+          <span>Net <span className={cn('ml-1 font-medium tabular-nums', income - expense >= 0 ? 'text-gray-900' : 'text-red-600')}>{fmt(income - expense)}</span></span>
         </div>
       </div>
       {loading ? (
         <div className="flex justify-center py-10">
-          <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+          <LoadingSpinner size="sm" />
         </div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs min-w-[520px]">
-            <thead>
-              <tr className="bg-gray-50 border-b border-gray-100">
-                {['Day', 'Income', 'Expense', 'Net', 'Tx'].map(h => (
-                  <th key={h} className={`px-5 py-2.5 text-xs font-medium text-gray-400 uppercase tracking-wide ${h === 'Day' ? 'text-left' : 'text-right'}`}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {(data ?? []).map(row => (
-                <tr key={row.day} className={`transition-colors ${row.txCount > 0 ? 'hover:bg-gray-50/60' : 'opacity-40'}`}>
-                  <td className="px-5 py-2.5 font-medium text-gray-700">{String(row.day).padStart(2, '0')} {MONTHS[mo - 1].slice(0, 3)}</td>
-                  <td className="px-5 py-2.5 text-right text-emerald-600 font-medium">{row.income > 0 ? fmt(row.income) : '—'}</td>
-                  <td className="px-5 py-2.5 text-right text-red-500">{row.expense > 0 ? fmt(row.expense) : '—'}</td>
-                  <td className={`px-5 py-2.5 text-right font-medium ${row.profit > 0 ? 'text-gray-900' : row.profit < 0 ? 'text-red-500' : 'text-gray-300'}`}>
-                    {row.txCount > 0 ? fmt(row.profit) : '—'}
-                  </td>
-                  <td className="px-5 py-2.5 text-right text-gray-400">{row.txCount > 0 ? row.txCount : '—'}</td>
-                </tr>
+        <Table className="min-w-[520px]">
+          <TableHeader>
+            <TableRow>
+              {['Day', 'Income', 'Expense', 'Net', 'Tx'].map(h => (
+                <TableHead key={h} className={h === 'Day' ? 'px-5' : 'px-5 text-right'}>{h}</TableHead>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {(data ?? []).map(row => (
+              <TableRow key={row.day} className={row.txCount > 0 ? '' : 'opacity-40 hover:bg-transparent'}>
+                <TableCell className="px-5 py-2 font-medium text-gray-900">{String(row.day).padStart(2, '0')} {MONTHS[mo - 1].slice(0, 3)}</TableCell>
+                <TableCell className="px-5 py-2 text-right tabular-nums text-emerald-600">{row.income > 0 ? fmt(row.income) : '—'}</TableCell>
+                <TableCell className="px-5 py-2 text-right tabular-nums text-red-600">{row.expense > 0 ? fmt(row.expense) : '—'}</TableCell>
+                <TableCell className={cn('px-5 py-2 text-right font-medium tabular-nums', row.profit > 0 ? 'text-gray-900' : row.profit < 0 ? 'text-red-600' : 'text-gray-300')}>
+                  {row.txCount > 0 ? fmt(row.profit) : '—'}
+                </TableCell>
+                <TableCell className="px-5 py-2 text-right tabular-nums text-muted-foreground">{row.txCount > 0 ? row.txCount : '—'}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       )}
-    </div>
+    </Card>
   )
 }
 
 // ─── Status configs ───────────────────────────────────────────────────────────
 
-const STATUS_BADGE = {
-  PENDING:     'bg-gray-100 text-gray-600',
-  IN_PROGRESS: 'bg-blue-50 text-blue-700',
-  IN_REVIEW:   'bg-violet-50 text-violet-700',
-  REVISION:    'bg-amber-50 text-amber-700',
-  ACTIVE:      'bg-green-50 text-green-700',
-  ON_HOLD:     'bg-yellow-50 text-yellow-700',
-  CANCELLED:   'bg-red-50 text-red-600',
+const STATUS_VARIANT = {
+  PENDING:     'default',
+  IN_PROGRESS: 'primary',
+  IN_REVIEW:   'purple',
+  REVISION:    'warning',
+  ACTIVE:      'success',
+  ON_HOLD:     'warning',
+  CANCELLED:   'danger',
 }
 
 const PRIORITY_DOT = {
@@ -195,24 +236,6 @@ const LEAD_LABEL = {
   NEGOTIATION: 'Negotiation', WON: 'Won', LOST: 'Lost',
 }
 
-// ─── Section header ───────────────────────────────────────────────────────────
-
-function SectionHeader({ title, href, action, meta }) {
-  return (
-    <div className="flex items-center justify-between mb-4">
-      <div className="flex items-center gap-2">
-        <h3 className="text-sm font-semibold text-gray-800">{title}</h3>
-        {meta && <span className="text-xs text-gray-400">{meta}</span>}
-      </div>
-      {href && (
-        <Link href={href} className="text-xs text-gray-400 hover:text-gray-700 flex items-center gap-0.5 transition-colors">
-          {action ?? 'View all'} <ArrowUpRight className="w-3 h-3" />
-        </Link>
-      )}
-    </div>
-  )
-}
-
 // ─── Smart alerts ─────────────────────────────────────────────────────────────
 
 function SmartAlerts({ items }) {
@@ -221,9 +244,9 @@ function SmartAlerts({ items }) {
   if (!visible.length) return null
 
   const STYLE = {
-    error:   'bg-red-50 border-red-200 text-red-700',
-    warning: 'bg-amber-50 border-amber-200 text-amber-700',
-    info:    'bg-blue-50 border-blue-200 text-blue-700',
+    error:   'border-red-200 bg-red-50 text-red-800',
+    warning: 'border-amber-200 bg-amber-50 text-amber-800',
+    info:    'border-blue-200 bg-blue-50 text-blue-800',
   }
   const ICON = { error: ShieldAlert, warning: AlertTriangle, info: Zap }
 
@@ -233,16 +256,21 @@ function SmartAlerts({ items }) {
         const realIdx = items.indexOf(ins)
         const Icon    = ICON[ins.type] ?? Zap
         return (
-          <div key={vi} className={`flex items-center gap-3 px-4 py-2.5 rounded-lg border text-sm ${STYLE[ins.type] ?? STYLE.info}`}>
-            <Icon className="w-4 h-4 shrink-0" />
-            <span className="flex-1 text-sm">{ins.message}</span>
+          <div key={vi} className={cn('flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-sm', STYLE[ins.type] ?? STYLE.info)}>
+            <Icon className="size-4 shrink-0" />
+            <span className="flex-1">{ins.message}</span>
             {ins.link && (
-              <Link href={ins.link} className="text-xs font-medium underline underline-offset-2 opacity-70 hover:opacity-100 shrink-0 transition-opacity">
+              <Link href={ins.link} className="shrink-0 text-[13px] font-medium underline-offset-4 hover:underline">
                 View
               </Link>
             )}
-            <button onClick={() => setDismissed(d => [...d, realIdx])} className="p-0.5 opacity-50 hover:opacity-100 transition-opacity shrink-0">
-              <X className="w-3.5 h-3.5" />
+            <button
+              type="button"
+              onClick={() => setDismissed(d => [...d, realIdx])}
+              className="-mr-1 shrink-0 rounded-md p-1 opacity-60 transition-opacity hover:opacity-100"
+              aria-label="Dismiss"
+            >
+              <X className="size-3.5" />
             </button>
           </div>
         )
@@ -253,40 +281,46 @@ function SmartAlerts({ items }) {
 
 // ─── Revenue chart ────────────────────────────────────────────────────────────
 
+const SERIES = [
+  { key: 'revenue', label: 'Revenue',    color: C.brand },
+  { key: 'expense', label: 'Expense',    color: C.muted },
+  { key: 'profit',  label: 'Net profit', color: C.ink, dashed: true },
+]
+
 function RevenueChart({ data, onDrill }) {
   return (
-    <div>
-      <ResponsiveContainer width="100%" height={200}>
+    <div title="Click a month for the daily breakdown">
+      <ResponsiveContainer width="100%" height={240}>
         <ComposedChart data={data} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}
           onClick={s => { const key = s?.activePayload?.[0]?.payload?.key; if (key) onDrill?.(key) }}
           className="cursor-pointer">
           <defs>
             <linearGradient id="gRev" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%"   stopColor="#3b82f6" stopOpacity={0.12} />
-              <stop offset="100%" stopColor="#3b82f6" stopOpacity={0} />
+              <stop offset="0%"   stopColor={C.brand} stopOpacity={0.14} />
+              <stop offset="100%" stopColor={C.brand} stopOpacity={0} />
             </linearGradient>
             <linearGradient id="gExp" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%"   stopColor="#ef4444" stopOpacity={0.08} />
-              <stop offset="100%" stopColor="#ef4444" stopOpacity={0} />
+              <stop offset="0%"   stopColor={C.muted} stopOpacity={0.14} />
+              <stop offset="100%" stopColor={C.muted} stopOpacity={0} />
             </linearGradient>
           </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-          <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-          <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={v => Number(v).toLocaleString('en-BD')} width={64} />
-          <Tooltip content={<ChartTooltip />} />
-          <Area dataKey="revenue" name="Revenue" type="monotone" stroke="#3b82f6" strokeWidth={1.5}
-            fill="url(#gRev)" dot={false} activeDot={{ r: 3, fill: '#3b82f6' }} />
-          <Area dataKey="expense" name="Expense" type="monotone" stroke="#ef4444" strokeWidth={1.5}
-            fill="url(#gExp)" dot={false} activeDot={{ r: 3, fill: '#ef4444' }} />
-          <Line dataKey="profit" name="Net Profit" type="monotone" stroke="#10b981" strokeWidth={1.5}
-            dot={false} activeDot={{ r: 3, fill: '#10b981' }} strokeDasharray="4 2" />
+          <CartesianGrid stroke={C.grid} vertical={false} />
+          <XAxis dataKey="month" tick={{ fontSize: 11, fill: C.axis }} axisLine={false} tickLine={false} tickMargin={8} />
+          <YAxis tick={{ fontSize: 11, fill: C.axis }} axisLine={false} tickLine={false} tickFormatter={v => Number(v).toLocaleString('en-BD')} width={64} />
+          <Tooltip content={<ChartTooltip />} cursor={{ stroke: C.cursor, strokeWidth: 1 }} />
+          <Area dataKey="revenue" name="Revenue" type="monotone" stroke={C.brand} strokeWidth={2}
+            fill="url(#gRev)" dot={false} activeDot={{ r: 3.5, fill: C.brand, strokeWidth: 0 }} />
+          <Area dataKey="expense" name="Expense" type="monotone" stroke={C.muted} strokeWidth={1.75}
+            fill="url(#gExp)" dot={false} activeDot={{ r: 3.5, fill: C.muted, strokeWidth: 0 }} />
+          <Line dataKey="profit" name="Net profit" type="monotone" stroke={C.ink} strokeWidth={1.5}
+            dot={false} activeDot={{ r: 3.5, fill: C.ink, strokeWidth: 0 }} strokeDasharray="4 3" />
         </ComposedChart>
       </ResponsiveContainer>
-      <div className="flex items-center gap-4 mt-2 justify-end">
-        {[['#3b82f6','Revenue'], ['#ef4444','Expense'], ['#10b981','Net Profit']].map(([c, l]) => (
-          <div key={l} className="flex items-center gap-1.5 text-xs text-gray-400">
-            <span className="w-2.5 h-0.5 rounded-full inline-block" style={{ backgroundColor: c }} />
-            {l}
+      <div className="mt-3 flex flex-wrap items-center justify-end gap-4">
+        {SERIES.map(s => (
+          <div key={s.key} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span className="size-2 rounded-[2px]" style={{ backgroundColor: s.color }} />
+            {s.label}
           </div>
         ))}
       </div>
@@ -299,26 +333,25 @@ function RevenueChart({ data, onDrill }) {
 function LeadPipeline({ pipeline }) {
   const statuses  = ['NEW','CONTACTED','PROPOSAL_SENT','NEGOTIATION','WON','LOST']
   const maxCount  = Math.max(1, ...statuses.map(s => pipeline[s]?.count ?? 0))
-  const dotColors = { NEW:'bg-gray-400', CONTACTED:'bg-blue-500', PROPOSAL_SENT:'bg-violet-500', NEGOTIATION:'bg-amber-500', WON:'bg-emerald-500', LOST:'bg-red-400' }
   return (
-    <div className="space-y-3">
+    <div className="space-y-3.5">
       {statuses.map(s => {
         const d   = pipeline[s] ?? { count: 0, value: 0 }
         const pct = Math.round((d.count / maxCount) * 100)
         return (
           <div key={s}>
-            <div className="flex items-center justify-between text-xs mb-1.5">
+            <div className="mb-1.5 flex items-center justify-between text-[13px]">
               <div className="flex items-center gap-2">
-                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColors[s]}`} />
-                <span className="text-gray-600 font-medium">{LEAD_LABEL[s]}</span>
+                <span className={cn('size-1.5 shrink-0 rounded-full', LEAD_DOT[s])} />
+                <span className="text-gray-700">{LEAD_LABEL[s]}</span>
               </div>
-              <div className="flex items-center gap-2.5 text-gray-400">
-                <span className="font-semibold text-gray-700">{d.count}</span>
-                {d.value > 0 && <span>{fmtK(d.value)}</span>}
+              <div className="flex items-center gap-2.5 tabular-nums">
+                {d.value > 0 && <span className="text-xs text-muted-foreground">{fmtK(d.value)}</span>}
+                <span className="font-medium text-gray-900">{d.count}</span>
               </div>
             </div>
-            <div className="h-1 bg-gray-100 rounded-full overflow-hidden">
-              <div className={`h-full rounded-full transition-all ${dotColors[s]}`} style={{ width: `${pct}%` }} />
+            <div className="h-1.5 overflow-hidden rounded-full bg-gray-100">
+              <div className="h-full rounded-full bg-gray-900 transition-all" style={{ width: `${pct}%` }} />
             </div>
           </div>
         )
@@ -330,45 +363,39 @@ function LeadPipeline({ pipeline }) {
 // ─── Projects list ────────────────────────────────────────────────────────────
 
 function ProjectsList({ projects }) {
-  if (!projects?.length) return (
-    <div className="text-center py-8">
-      <p className="text-sm text-gray-400">No active projects</p>
-    </div>
-  )
+  if (!projects?.length) return <EmptyState icon={FolderKanban} title="No active projects" className="py-8" />
   return (
-    <div className="divide-y divide-gray-50">
+    <div className="-my-2 divide-y divide-gray-100">
       {projects.map(p => {
         const budget     = p.budget ?? 0
         const paid       = p.paidAmount ?? 0
         const pct        = budget > 0 ? Math.min(100, Math.round((paid / budget) * 100)) : 0
         const dl         = daysLeft(p.deadline ?? p.currentPeriodEnd)
         const dlLabel    = dl == null ? null : dl < 0 ? `${Math.abs(dl)}d overdue` : dl === 0 ? 'Due today' : `${dl}d left`
-        const dlColor    = dl == null ? '' : dl < 0 ? 'text-red-500' : dl <= 3 ? 'text-amber-500' : 'text-gray-400'
+        const dlColor    = dl == null ? '' : dl < 0 ? 'text-red-600' : dl <= 3 ? 'text-amber-600' : 'text-muted-foreground'
         const clientName = p.clientId?.userId?.name ?? '—'
         const dotColor   = p.venture === 'ENSTUDIO' ? 'bg-violet-500' : p.venture === 'ENTECH' ? 'bg-blue-500' : 'bg-emerald-500'
         return (
           <Link key={p._id} href={`/admin/projects/${p._id}`}
-            className="flex items-start gap-3 py-3.5 hover:bg-gray-50/60 transition-colors -mx-1 px-1 rounded-lg group">
-            <span className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${dotColor}`} />
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-0.5">
-                <p className="text-sm font-medium text-gray-800 truncate">{p.name}</p>
-                <span className={`text-xs px-1.5 py-0.5 rounded font-medium shrink-0 ${STATUS_BADGE[p.status] ?? 'bg-gray-100 text-gray-600'}`}>
-                  {p.status?.replace(/_/g,' ')}
-                </span>
+            className="group -mx-2 flex items-start gap-3 rounded-lg px-2 py-3 transition-colors hover:bg-gray-50/70">
+            <span className={cn('mt-[7px] size-1.5 shrink-0 rounded-full', dotColor)} title={p.venture} />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <p className="truncate text-sm font-medium text-gray-900">{p.name}</p>
+                {p.status && <Badge variant={STATUS_VARIANT[p.status] ?? 'default'} className="shrink-0">{humanize(p.status)}</Badge>}
               </div>
-              <p className="text-xs text-gray-400 truncate">{clientName}{p.projectCode && ` · ${p.projectCode}`}</p>
+              <p className="mt-0.5 truncate text-xs text-muted-foreground">{clientName}{p.projectCode && ` · ${p.projectCode}`}</p>
               {budget > 0 && (
-                <div className="flex items-center gap-2 mt-1.5">
-                  <div className="flex-1 h-1 bg-gray-100 rounded-full overflow-hidden">
-                    <div className={`h-full rounded-full transition-all ${pct >= 100 ? 'bg-emerald-500' : pct >= 60 ? 'bg-blue-500' : 'bg-gray-300'}`}
+                <div className="mt-2 flex items-center gap-2">
+                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-100">
+                    <div className={cn('h-full rounded-full transition-all', pct >= 100 ? 'bg-emerald-500' : pct >= 60 ? 'bg-gray-900' : 'bg-gray-400')}
                       style={{ width: `${pct}%` }} />
                   </div>
-                  <span className="text-xs text-gray-400 shrink-0 font-medium">{pct}%</span>
+                  <span className="w-8 shrink-0 text-right text-xs tabular-nums text-muted-foreground">{pct}%</span>
                 </div>
               )}
             </div>
-            {dlLabel && <span className={`text-xs font-medium shrink-0 mt-0.5 ${dlColor}`}>{dlLabel}</span>}
+            {dlLabel && <span className={cn('mt-0.5 shrink-0 text-xs font-medium', dlColor)}>{dlLabel}</span>}
           </Link>
         )
       })}
@@ -379,30 +406,26 @@ function ProjectsList({ projects }) {
 // ─── Tasks list ───────────────────────────────────────────────────────────────
 
 function TasksList({ tasks }) {
-  if (!tasks?.length) return (
-    <div className="text-center py-8">
-      <p className="text-sm text-gray-400">No upcoming tasks</p>
-    </div>
-  )
+  if (!tasks?.length) return <EmptyState icon={ListTodo} title="No upcoming tasks" className="py-8" />
   return (
-    <div className="divide-y divide-gray-50">
+    <div className="-my-2 divide-y divide-gray-100">
       {tasks.map(t => {
         const dl      = daysLeft(t.dueDate)
         const dlLabel = dl == null ? '—' : dl < 0 ? `${Math.abs(dl)}d late` : dl === 0 ? 'Today' : fmtDate(t.dueDate)
-        const dlColor = dl == null ? 'text-gray-300' : dl < 0 ? 'text-red-500' : dl === 0 ? 'text-amber-500' : 'text-gray-400'
+        const dlColor = dl == null ? 'text-gray-300' : dl < 0 ? 'text-red-600' : dl === 0 ? 'text-amber-600' : 'text-muted-foreground'
         return (
           <div key={t._id} className="flex items-center gap-3 py-3">
-            <Circle className="w-3.5 h-3.5 text-gray-300 shrink-0" />
-            <div className="flex-1 min-w-0">
-              <p className="text-sm text-gray-800 truncate font-medium">{t.title}</p>
-              <p className="text-xs text-gray-400 truncate">{t.projectId?.name ?? 'No project'}</p>
+            <Circle className="size-4 shrink-0 text-gray-300" />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-gray-900">{t.title}</p>
+              <p className="truncate text-xs text-muted-foreground">{t.projectId?.name ?? 'No project'}</p>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <div className="flex items-center gap-1">
-                <span className={`w-1.5 h-1.5 rounded-full ${PRIORITY_DOT[t.priority] ?? 'bg-gray-400'}`} />
-                <span className="text-xs text-gray-500">{t.priority}</span>
+            <div className="flex shrink-0 items-center gap-3">
+              <div className="flex items-center gap-1.5">
+                <span className={cn('size-1.5 rounded-full', PRIORITY_DOT[t.priority] ?? 'bg-gray-400')} />
+                <span className="text-xs text-gray-600">{humanize(t.priority)}</span>
               </div>
-              <span className={`text-xs font-medium ${dlColor}`}>{dlLabel}</span>
+              <span className={cn('w-16 text-right text-xs font-medium tabular-nums', dlColor)}>{dlLabel}</span>
             </div>
           </div>
         )
@@ -421,15 +444,15 @@ function FinanceSummary({ financials, invoices, pendingWithdrawals }) {
       {/* Monthly */}
       <div className="space-y-2.5">
         {[
-          { label: 'Revenue',  value: fmt(f.income?.value),  color: 'text-gray-900', change: f.income?.change },
-          { label: 'Expense',  value: fmt(f.expense?.value), color: 'text-gray-900', change: f.expense?.change, invert: true },
-          { label: 'Net Profit', value: fmt(f.profit?.value), color: (f.profit?.value ?? 0) >= 0 ? 'text-emerald-600' : 'text-red-500', change: f.profit?.change },
+          { label: 'Revenue',    value: fmt(f.income?.value),  color: 'text-gray-900', change: f.income?.change },
+          { label: 'Expense',    value: fmt(f.expense?.value), color: 'text-gray-900', change: f.expense?.change, invert: true },
+          { label: 'Net profit', value: fmt(f.profit?.value),  color: (f.profit?.value ?? 0) >= 0 ? 'text-emerald-600' : 'text-red-600', change: f.profit?.change },
         ].map(r => (
           <div key={r.label} className="flex items-center justify-between">
-            <span className="text-xs text-gray-500">{r.label}</span>
+            <span className="text-[13px] text-muted-foreground">{r.label}</span>
             <div className="flex items-center gap-2">
               <Trend change={r.change} invert={r.invert} />
-              <span className={`text-sm font-semibold ${r.color}`}>{r.value}</span>
+              <span className={cn('text-sm font-semibold tabular-nums', r.color)}>{r.value}</span>
             </div>
           </div>
         ))}
@@ -439,20 +462,20 @@ function FinanceSummary({ financials, invoices, pendingWithdrawals }) {
 
       {/* Invoices */}
       <div>
-        <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2.5">Invoices</p>
+        <p className="mb-2.5 text-xs font-medium text-muted-foreground">Invoices</p>
         <div className="space-y-2">
           {[
-            { label: 'Paid',    key: 'PAID',    dot: 'bg-emerald-500' },
-            { label: 'Sent',    key: 'SENT',    dot: 'bg-blue-500',   due: true },
-            { label: 'Partially Paid', key: 'PARTIALLY_PAID', dot: 'bg-amber-500', due: true },
-            { label: 'Overdue', key: 'OVERDUE', dot: 'bg-red-500',    due: true },
-            { label: 'Draft',   key: 'DRAFT',   dot: 'bg-gray-400' },
+            { label: 'Paid',           key: 'PAID',           dot: 'bg-emerald-500' },
+            { label: 'Sent',           key: 'SENT',           dot: 'bg-blue-500',   due: true },
+            { label: 'Partially paid', key: 'PARTIALLY_PAID', dot: 'bg-amber-500',  due: true },
+            { label: 'Overdue',        key: 'OVERDUE',        dot: 'bg-red-500',    due: true },
+            { label: 'Draft',          key: 'DRAFT',          dot: 'bg-gray-400' },
           ].map(r => (
-            <div key={r.key} className="flex items-center gap-2">
-              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${r.dot}`} />
-              <span className="text-xs text-gray-500 flex-1">{r.label}</span>
-              <span className="text-xs font-medium text-gray-700">{inv[r.key]?.count ?? 0}</span>
-              <span className="text-xs text-gray-400 w-16 text-right" title={r.due ? 'Outstanding' : undefined}>{fmtK((r.due ? inv[r.key]?.due : inv[r.key]?.total) ?? 0)}</span>
+            <div key={r.key} className="flex items-center gap-2 text-[13px]">
+              <span className={cn('size-1.5 shrink-0 rounded-full', r.dot)} />
+              <span className="flex-1 text-gray-700">{r.label}</span>
+              <span className="font-medium tabular-nums text-gray-900">{inv[r.key]?.count ?? 0}</span>
+              <span className="w-24 text-right text-xs tabular-nums text-muted-foreground" title={r.due ? 'Outstanding' : undefined}>{fmtK((r.due ? inv[r.key]?.due : inv[r.key]?.total) ?? 0)}</span>
             </div>
           ))}
         </div>
@@ -461,11 +484,9 @@ function FinanceSummary({ financials, invoices, pendingWithdrawals }) {
       {pendingWithdrawals > 0 && (
         <>
           <div className="h-px bg-gray-100" />
-          <Link href="/admin/accounts" className="flex items-center justify-between group">
-            <span className="text-xs text-gray-500">Payouts Awaiting Approval</span>
-            <span className="text-xs font-semibold text-amber-600 group-hover:text-amber-700 transition-colors">
-              {pendingWithdrawals} pending
-            </span>
+          <Link href="/admin/accounts" className="group flex items-center justify-between text-[13px]">
+            <span className="text-muted-foreground group-hover:text-gray-900">Payouts awaiting approval</span>
+            <Badge variant="warning">{pendingWithdrawals} pending</Badge>
           </Link>
         </>
       )}
@@ -478,20 +499,17 @@ function FinanceSummary({ financials, invoices, pendingWithdrawals }) {
 function TeamSummary({ hr }) {
   if (!hr) return null
   const rows = [
-    { label: 'Total Employees', value: hr.total,             icon: Users,        color: 'text-gray-400' },
-    { label: 'Active',          value: hr.active,            icon: UserCheck,    color: 'text-emerald-500' },
-    { label: 'Present Today',   value: hr.todayAttendance,   icon: CheckCircle2, color: 'text-blue-500' },
-    { label: 'Pending Leaves',  value: hr.pendingLeaves,     icon: Clock,        color: hr.pendingLeaves > 0 ? 'text-amber-500' : 'text-gray-300' },
+    { label: 'Total employees', value: hr.total },
+    { label: 'Active',          value: hr.active },
+    { label: 'Present today',   value: hr.todayAttendance },
+    { label: 'Pending leaves',  value: hr.pendingLeaves, warn: hr.pendingLeaves > 0 },
   ]
   return (
     <div className="space-y-2.5">
-      {rows.map(({ label, value, icon: Icon, color }) => (
+      {rows.map(({ label, value, warn }) => (
         <div key={label} className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Icon className={`w-3.5 h-3.5 shrink-0 ${color}`} />
-            <span className="text-xs text-gray-500">{label}</span>
-          </div>
-          <span className="text-sm font-semibold text-gray-800">{value ?? '—'}</span>
+          <span className="text-[13px] text-muted-foreground">{label}</span>
+          <span className={cn('text-sm font-semibold tabular-nums', warn ? 'text-amber-600' : 'text-gray-900')}>{value ?? '—'}</span>
         </div>
       ))}
     </div>
@@ -502,20 +520,19 @@ function TeamSummary({ hr }) {
 
 function VenturesPanel({ byVenture, total }) {
   if (!byVenture || !Object.keys(byVenture).length) return null
-  const colors = { ENSTUDIO: 'bg-violet-500', ENTECH: 'bg-blue-500', ENMARK: 'bg-emerald-500' }
-  const text   = { ENSTUDIO: 'text-violet-700 bg-violet-50', ENTECH: 'text-blue-700 bg-blue-50', ENMARK: 'text-emerald-700 bg-emerald-50' }
+  const variant = { ENSTUDIO: 'purple', ENTECH: 'primary', ENMARK: 'success' }
   return (
-    <div className="space-y-3">
+    <div className="space-y-3.5">
       {Object.entries(byVenture).map(([venture, count]) => {
         const pct = Math.round((count / (total || 1)) * 100)
         return (
           <div key={venture}>
-            <div className="flex items-center justify-between text-xs mb-1.5">
-              <span className={`font-medium px-2 py-0.5 rounded text-xs ${text[venture] ?? 'bg-gray-100 text-gray-600'}`}>{venture}</span>
-              <span className="text-gray-500 font-semibold">{count} <span className="text-gray-400 font-normal">({pct}%)</span></span>
+            <div className="mb-1.5 flex items-center justify-between text-[13px]">
+              <Badge variant={variant[venture] ?? 'default'}>{venture}</Badge>
+              <span className="font-medium tabular-nums text-gray-900">{count} <span className="font-normal text-muted-foreground">({pct}%)</span></span>
             </div>
-            <div className="h-1 bg-gray-100 rounded-full overflow-hidden">
-              <div className={`h-full rounded-full transition-all ${colors[venture] ?? 'bg-gray-400'}`} style={{ width: `${pct}%` }} />
+            <div className="h-1.5 overflow-hidden rounded-full bg-gray-100">
+              <div className="h-full rounded-full bg-gray-900 transition-all" style={{ width: `${pct}%` }} />
             </div>
           </div>
         )
@@ -527,19 +544,19 @@ function VenturesPanel({ byVenture, total }) {
 // ─── Recent leads ─────────────────────────────────────────────────────────────
 
 function RecentLeads({ leads }) {
-  if (!leads?.length) return <p className="text-sm text-gray-400 py-4 text-center">No leads</p>
+  if (!leads?.length) return <EmptyState icon={Users} title="No leads yet" className="py-8" />
   return (
-    <div className="divide-y divide-gray-50">
+    <div className="-my-2 divide-y divide-gray-100">
       {leads.map(l => (
-        <Link key={l._id} href="/admin/leads" className="flex items-center gap-3 py-3 hover:bg-gray-50/60 transition-colors -mx-1 px-1 rounded-lg">
-          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${LEAD_DOT[l.status] ?? 'bg-gray-400'}`} />
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-gray-800 truncate">{l.name}</p>
-            <p className="text-xs text-gray-400 truncate">{l.company || l.source || '—'}</p>
+        <Link key={l._id} href="/admin/leads" className="-mx-2 flex items-center gap-3 rounded-lg px-2 py-3 transition-colors hover:bg-gray-50/70">
+          <span className={cn('size-1.5 shrink-0 rounded-full', LEAD_DOT[l.status] ?? 'bg-gray-400')} />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium text-gray-900">{l.name}</p>
+            <p className="truncate text-xs text-muted-foreground">{l.company || l.source || '—'}</p>
           </div>
-          <div className="text-right shrink-0">
-            {l.value > 0 && <p className="text-xs font-semibold text-gray-700">{fmtK(l.value)}</p>}
-            <p className="text-xs text-gray-400">{LEAD_LABEL[l.status] ?? l.status}</p>
+          <div className="shrink-0 text-right">
+            {l.value > 0 && <p className="text-sm font-medium tabular-nums text-gray-900">{fmtK(l.value)}</p>}
+            <p className="text-xs text-muted-foreground">{LEAD_LABEL[l.status] ?? l.status}</p>
           </div>
         </Link>
       ))}
@@ -550,26 +567,24 @@ function RecentLeads({ leads }) {
 // ─── Pending invoices ─────────────────────────────────────────────────────────
 
 function PendingInvoices({ invoices }) {
-  if (!invoices?.length) return (
-    <p className="text-sm text-gray-400 py-4 text-center">All invoices collected</p>
-  )
+  if (!invoices?.length) return <EmptyState icon={CheckCircle2} title="All invoices collected" className="py-8" />
   return (
-    <div className="divide-y divide-gray-50">
+    <div className="-my-2 divide-y divide-gray-100">
       {invoices.map(inv => {
         const dl        = daysLeft(inv.dueDate)
         const isOverdue = dl != null && dl < 0
         const clientName = inv.clientId?.userId?.name ?? '—'
         return (
           <Link key={inv._id} href={`/admin/invoices/${inv._id}`}
-            className="flex items-center gap-3 py-3 hover:bg-gray-50/60 transition-colors -mx-1 px-1 rounded-lg">
-            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isOverdue ? 'bg-red-500' : 'bg-amber-400'}`} />
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-gray-800 font-mono">{inv.invoiceNumber ?? '—'}</p>
-              <p className="text-xs text-gray-400 truncate">{clientName}</p>
+            className="-mx-2 flex items-center gap-3 rounded-lg px-2 py-3 transition-colors hover:bg-gray-50/70">
+            <span className={cn('size-1.5 shrink-0 rounded-full', isOverdue ? 'bg-red-500' : 'bg-amber-400')} />
+            <div className="min-w-0 flex-1">
+              <p className="font-mono text-[13px] font-medium text-gray-900">{inv.invoiceNumber ?? '—'}</p>
+              <p className="truncate text-xs text-muted-foreground">{clientName}</p>
             </div>
-            <div className="text-right shrink-0">
-              <p className="text-sm font-semibold text-gray-800">{fmtK(inv.due ?? inv.total)}</p>
-              <p className={`text-xs ${isOverdue ? 'text-red-500 font-medium' : 'text-gray-400'}`}>
+            <div className="shrink-0 text-right">
+              <p className="text-sm font-medium tabular-nums text-gray-900">{fmtK(inv.due ?? inv.total)}</p>
+              <p className={cn('text-xs', isOverdue ? 'font-medium text-red-600' : 'text-muted-foreground')}>
                 {dl == null ? '—' : dl < 0 ? `${Math.abs(dl)}d overdue` : dl === 0 ? 'Due today' : `Due ${fmtDate(inv.dueDate)}`}
               </p>
             </div>
@@ -602,17 +617,10 @@ export default function DashboardPage() {
       .finally(() => setLoading(false))
   }, [])
 
-  if (loading) return (
-    <div className="flex items-center justify-center min-h-[400px]">
-      <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-    </div>
-  )
+  if (loading) return <PageLoader />
 
   if (error) return (
-    <div className="flex flex-col items-center justify-center min-h-[400px] text-center">
-      <AlertTriangle className="w-6 h-6 text-red-400 mb-2" />
-      <p className="text-sm text-gray-600">{error}</p>
-    </div>
+    <EmptyState icon={AlertTriangle} title={error} className="min-h-[400px]" />
   )
 
   // Blocks the viewer lacks permission for come back as null — hide them.
@@ -629,7 +637,6 @@ export default function DashboardPage() {
   const f       = stats?.financials ?? {}
   const inv     = stats?.invoices   ?? {}
   const proj    = stats?.projects   ?? {}
-  const clients = stats?.clients    ?? {}
   const tasks   = stats?.tasks      ?? {}
   const leads   = stats?.leads      ?? {}
   const hr      = stats?.hr         ?? {}
@@ -646,7 +653,7 @@ export default function DashboardPage() {
     alerts.push({ type: 'info',    message: `${stats.pendingWithdrawals} freelancer payment${stats.pendingWithdrawals !== 1 ? 's' : ''} awaiting approval`, link: '/admin/accounts' })
   const critProj = proj.dueSoon ?? 0
   if (critProj > 0)
-    alerts.push({ type: 'warning', message: `${critProj} project${critProj !== 1 ? 's' : ''} deadline within 3 days`, link: '/admin/projects' })
+    alerts.push({ type: 'warning', message: `${critProj} project${critProj !== 1 ? 's' : ''} due within 3 days`, link: '/admin/projects' })
 
   // KPI data
   const paidInvCount = inv.PAID?.count ?? 0
@@ -657,42 +664,40 @@ export default function DashboardPage() {
 
   const kpis = [
     {
-      title: 'Monthly Revenue', value: fmtK(f.income?.value),
+      title: 'Monthly revenue', value: fmtK(f.income?.value),
       sub: `vs ${fmtK(f.income?.prevValue)} last mo`, change: f.income?.change,
-      icon: TrendingUp, iconBg: 'bg-blue-50', iconColor: 'text-blue-600',
+      icon: TrendingUp, color: 'gray',
       href: '/admin/accounts?tab=income', show: show.finance,
     },
     {
-      title: 'Net Profit', value: fmtK(f.profit?.value),
+      title: 'Net profit', value: fmtK(f.profit?.value),
       sub: `Margin ${f.grossMargin?.value ?? 0}%`, change: f.profit?.change,
-      icon: Wallet, iconBg: 'bg-green-50', iconColor: 'text-green-600',
+      icon: Wallet, color: 'gray',
       href: '/admin/accounts', show: show.finance,
     },
     {
-      title: 'Paid Invoices', value: paidInvCount,
+      title: 'Paid invoices', value: paidInvCount,
       sub: `${fmtK(paidInvTotal)} collected`,
-      icon: CheckCircle2, iconBg: 'bg-emerald-50', iconColor: 'text-emerald-600',
+      icon: CheckCircle2, color: 'gray',
       href: '/admin/invoices?status=PAID', show: show.invoices,
     },
     {
-      title: 'Pending / Overdue', value: sentCount,
+      title: 'Pending / overdue', value: sentCount,
       sub: `${fmtK(sentTotal)} outstanding`,
-      icon: AlertTriangle, iconBg: overdueCount > 0 ? 'bg-red-50' : 'bg-amber-50',
-      iconColor: overdueCount > 0 ? 'text-red-500' : 'text-amber-500',
+      icon: AlertTriangle, color: overdueCount > 0 ? 'red' : 'gray',
       href: '/admin/invoices', show: show.invoices,
     },
     {
-      title: 'Active Projects', value: proj.active ?? 0,
+      title: 'Active projects', value: proj.active ?? 0,
       sub: `${proj.total ?? 0} total`,
-      icon: Briefcase, iconBg: 'bg-blue-50', iconColor: 'text-blue-600',
+      icon: Briefcase, color: 'gray',
       href: '/admin/projects', show: show.projects,
     },
     {
-      title: 'Open Tasks', value: tasks.open ?? 0,
+      title: 'Open tasks', value: tasks.open ?? 0,
       sub: tasks.overdue > 0 ? `${tasks.overdue} overdue` : `${tasks.completedThisMonth ?? 0} done this mo`,
       icon: tasks.overdue > 0 ? Flag : Activity,
-      iconBg: tasks.overdue > 0 ? 'bg-red-50' : 'bg-violet-50',
-      iconColor: tasks.overdue > 0 ? 'text-red-500' : 'text-violet-600',
+      color: tasks.overdue > 0 ? 'red' : 'gray',
       href: '/admin/tasks', show: show.tasks,
     },
   ].filter(k => k.show)
@@ -703,150 +708,148 @@ export default function DashboardPage() {
     expense: stats?.expenseTrend?.[i]?.expense ?? 0,
   }))
 
+  const firstName = session?.user?.name ? session.user.name.split(' ')[0] : ''
+  const today     = new Date().toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+
   return (
-    <div className="space-y-5 pb-10">
+    <div className="space-y-6">
 
       {/* ── Header ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-gray-900">
-            {greeting()}{session?.user?.name ? `, ${session.user.name.split(' ')[0]}` : ''}
-          </h1>
-          <p className="text-sm text-gray-400 mt-0.5">
-            {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-          </p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          {[
-            { label: 'New Client',  href: '/admin/clients',       icon: UserPlus },
-            { label: 'New Project', href: '/admin/projects/new',  icon: FolderPlus },
-            { label: 'New Invoice', href: '/admin/invoices/new',  icon: ReceiptText },
-            { label: 'New Lead',    href: '/admin/leads',         icon: Target },
-          ].map(({ label, href, icon: Icon }) => (
-            <Link key={label} href={href}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-600 border border-gray-200 bg-white rounded-lg hover:bg-gray-900 hover:text-white hover:border-gray-900 transition-all duration-150">
-              <Plus className="w-3.5 h-3.5" />
-              {label}
-            </Link>
-          ))}
-        </div>
-      </div>
+      <PageHeader
+        title="Dashboard"
+        description={`${greeting()}${firstName ? `, ${firstName}` : ''} · ${today}`}
+        actions={
+          <>
+            {[
+              { label: 'New client',  href: '/admin/clients' },
+              { label: 'New project', href: '/admin/projects/new' },
+              { label: 'New invoice', href: '/admin/invoices/new' },
+              { label: 'New lead',    href: '/admin/leads' },
+            ].map(({ label, href }) => (
+              <Link key={label} href={href} className={buttonVariants({ variant: 'outline', size: 'sm' })}>
+                <Plus /> {label}
+              </Link>
+            ))}
+          </>
+        }
+      />
 
       {/* ── Alerts ── */}
       <SmartAlerts items={alerts} />
 
       {/* ── KPI grid ── */}
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
-        {kpis.map(k => <KpiCard key={k.title} {...k} />)}
-      </div>
+      {kpis.length > 0 && (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {kpis.map(k => <KpiCard key={k.title} {...k} />)}
+        </div>
+      )}
 
       {/* ── Period chips ── */}
-      {show.finance && <div className="flex items-center gap-1.5 flex-wrap">
-        <span className="text-xs text-gray-400 mr-1">Daily breakdown:</span>
-        {monthOptions.map(m => (
-          <button key={m.key} onClick={() => setDrillKey(prev => prev === m.key ? null : m.key)}
-            className={`px-3 py-1.5 text-xs rounded-lg font-medium transition-colors duration-150 ${
-              drillKey === m.key
-                ? 'bg-gray-900 text-white'
-                : 'bg-white border border-gray-200 text-gray-500 hover:bg-gray-50'
-            }`}>
-            {m.label}
-          </button>
-        ))}
-      </div>}
+      {show.finance && (
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-[13px] text-muted-foreground">Daily breakdown</span>
+          <Tabs
+            size="sm"
+            value={drillKey}
+            onChange={key => setDrillKey(prev => prev === key ? null : key)}
+            tabs={monthOptions.map(m => ({ value: m.key, label: m.label }))}
+          />
+        </div>
+      )}
 
       {/* ── Drill-down ── */}
       {show.finance && drillKey && <CalendarDrillDown drillKey={drillKey} onClose={() => setDrillKey(null)} />}
 
       {/* ── Main grid ── */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
 
         {/* Left — 2/3 */}
-        <div className="xl:col-span-2 space-y-5">
+        <div className="space-y-4 xl:col-span-2">
 
           {/* Revenue chart */}
-          {show.finance && <div className="bg-white border border-gray-100 rounded-xl p-5">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="text-sm font-semibold text-gray-800">Revenue & Profit</h3>
-                <p className="text-xs text-gray-400 mt-0.5">6-month trend · click revenue to drill down</p>
-              </div>
-              <Link href="/admin/accounts" className="text-xs text-gray-400 hover:text-gray-700 flex items-center gap-0.5 transition-colors">
-                Accounts <ArrowUpRight className="w-3 h-3" />
-              </Link>
-            </div>
-            <RevenueChart data={chartData} onDrill={key => setDrillKey(prev => prev === key ? null : key)} />
-          </div>}
+          {show.finance && (
+            <Section title="Revenue & profit" meta="Last 6 months" href="/admin/accounts" action="Accounts">
+              <RevenueChart data={chartData} onDrill={key => setDrillKey(prev => prev === key ? null : key)} />
+            </Section>
+          )}
 
           {/* Active projects */}
-          {show.projects && <div className="bg-white border border-gray-100 rounded-xl p-5">
-            <SectionHeader title="Active Projects" meta={`${proj.active ?? 0} in progress`} href="/admin/projects" />
-            <ProjectsList projects={stats?.recentProjects ?? []} />
-          </div>}
+          {show.projects && (
+            <Section title="Active projects" meta={`${proj.active ?? 0} in progress`} href="/admin/projects">
+              <ProjectsList projects={stats?.recentProjects ?? []} />
+            </Section>
+          )}
 
           {/* Tasks */}
-          {show.tasks && <div className="bg-white border border-gray-100 rounded-xl p-5">
-            <SectionHeader
-              title="Upcoming Tasks"
+          {show.tasks && (
+            <Section
+              title="Upcoming tasks"
               meta={tasks.overdue > 0 ? `${tasks.overdue} overdue` : undefined}
               href="/admin/tasks"
-            />
-            <TasksList tasks={stats?.upcomingTasks ?? []} />
-          </div>}
+            >
+              <TasksList tasks={stats?.upcomingTasks ?? []} />
+            </Section>
+          )}
 
         </div>
 
         {/* Right — 1/3 */}
-        <div className="space-y-5">
+        <div className="space-y-4">
 
           {/* Lead pipeline */}
-          {show.leads && <div className="bg-white border border-gray-100 rounded-xl p-5">
-            <SectionHeader title="Lead Pipeline" meta={`${leads.total ?? 0} total`} href="/admin/leads" />
-            <LeadPipeline pipeline={leads.pipeline ?? {}} />
-            {(leads.newThisMonth ?? 0) > 0 && (
-              <p className="text-xs text-emerald-600 font-medium mt-3">
-                +{leads.newThisMonth} new this month
-              </p>
-            )}
-          </div>}
+          {show.leads && (
+            <Section title="Lead pipeline" meta={`${leads.total ?? 0} total`} href="/admin/leads">
+              <LeadPipeline pipeline={leads.pipeline ?? {}} />
+              {(leads.newThisMonth ?? 0) > 0 && (
+                <p className="mt-4 text-xs font-medium text-emerald-600">
+                  +{leads.newThisMonth} new this month
+                </p>
+              )}
+            </Section>
+          )}
 
           {/* Finance summary */}
-          {show.finance && <div className="bg-white border border-gray-100 rounded-xl p-5">
-            <SectionHeader title="Finance" href="/admin/accounts" />
-            <FinanceSummary financials={f} invoices={inv} pendingWithdrawals={stats?.pendingWithdrawals} />
-          </div>}
+          {show.finance && (
+            <Section title="Finance" meta="This month" href="/admin/accounts">
+              <FinanceSummary financials={f} invoices={inv} pendingWithdrawals={stats?.pendingWithdrawals} />
+            </Section>
+          )}
 
           {/* Team */}
-          {show.hr && <div className="bg-white border border-gray-100 rounded-xl p-5">
-            <SectionHeader title="Team" href="/admin/employees" />
-            <TeamSummary hr={hr} />
-          </div>}
+          {show.hr && (
+            <Section title="Team" href="/admin/employees">
+              <TeamSummary hr={hr} />
+            </Section>
+          )}
 
           {/* Ventures */}
           {proj.byVenture && Object.keys(proj.byVenture).length > 0 && (
-            <div className="bg-white border border-gray-100 rounded-xl p-5">
-              <SectionHeader title="Projects by Venture" />
+            <Section title="Projects by venture">
               <VenturesPanel byVenture={proj.byVenture} total={proj.total} />
-            </div>
+            </Section>
           )}
 
         </div>
       </div>
 
       {/* ── Bottom row ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+      {(show.leads || show.invoiceList) && (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
 
-        {show.leads && <div className="bg-white border border-gray-100 rounded-xl p-5">
-          <SectionHeader title="Recent Leads" meta={leads.newThisMonth > 0 ? `${leads.newThisMonth} this month` : undefined} href="/admin/leads" />
-          <RecentLeads leads={stats?.recentLeads ?? []} />
-        </div>}
+          {show.leads && (
+            <Section title="Recent leads" meta={leads.newThisMonth > 0 ? `${leads.newThisMonth} this month` : undefined} href="/admin/leads">
+              <RecentLeads leads={stats?.recentLeads ?? []} />
+            </Section>
+          )}
 
-        {show.invoiceList && <div className="bg-white border border-gray-100 rounded-xl p-5">
-          <SectionHeader title="Pending Invoices" meta="Sent, partially paid & overdue" href="/admin/invoices" />
-          <PendingInvoices invoices={stats?.recentInvoices ?? []} />
-        </div>}
+          {show.invoiceList && (
+            <Section title="Pending invoices" meta="Sent, partially paid & overdue" href="/admin/invoices">
+              <PendingInvoices invoices={stats?.recentInvoices ?? []} />
+            </Section>
+          )}
 
-      </div>
+        </div>
+      )}
     </div>
   )
 }

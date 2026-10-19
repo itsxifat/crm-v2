@@ -1,8 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
-import { Plus, Search, MoreHorizontal, Eye, Pencil, Trash2 } from 'lucide-react'
-import Link from 'next/link'
+import { Fragment, useState, useEffect, useCallback, useRef } from 'react'
+import { Plus, Search, Eye, Pencil, Trash2, ChevronDown, Check, FolderKanban } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import toast from 'react-hot-toast'
 import { STATUS_META } from '@/lib/ventures'
@@ -10,6 +9,17 @@ import { useConfig } from '@/lib/useConfig'
 import TkAmt from '@/components/ui/TkAmt'
 import Select from '@/components/ui/Select'
 import DatePicker from '@/components/ui/DatePicker'
+import Button from '@/components/ui/Button'
+import { Card } from '@/components/ui/Card'
+import { inputClass } from '@/components/ui/Input'
+import PageHeader from '@/components/ui/PageHeader'
+import Tabs from '@/components/ui/Tabs'
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table'
+import ActionMenu from '@/components/ui/ActionMenu'
+import EmptyState from '@/components/ui/EmptyState'
+import LoadingSpinner from '@/components/ui/LoadingSpinner'
+import Pagination from '@/components/ui/Pagination'
+import { cn } from '@/lib/utils'
 import { Can, usePermission } from '@/components/auth/Can'
 import { allowedStatusTransitions, canRenewProject } from '@/lib/projectStatus'
 import { dhakaDayKey } from '@/lib/dhakaTime'
@@ -45,8 +55,8 @@ const STATUS_DOT = {
 const STATUS_OVERVIEW = [
   { key: '',            label: 'All',         filterKey: '' },
   { key: 'PENDING',     label: 'Pending',     filterKey: 'PENDING' },
-  { key: 'IN_PROGRESS', label: 'In Progress', filterKey: 'IN_PROGRESS' },
-  { key: 'ON_HOLD',     label: 'On Hold',     filterKey: 'ON_HOLD' },
+  { key: 'IN_PROGRESS', label: 'In progress', filterKey: 'IN_PROGRESS' },
+  { key: 'ON_HOLD',     label: 'On hold',     filterKey: 'ON_HOLD' },
   { key: 'FEEDBACK',    label: 'Feedback',    filterKey: 'FEEDBACK' },
   { key: 'SUBMITTED',   label: 'Submitted',   filterKey: 'SUBMITTED' },
   { key: 'DELIVERED',   label: 'Delivered',   filterKey: 'DELIVERED' },
@@ -98,7 +108,7 @@ function StatusDropdown({ project, onUpdated }) {
         const json = await res.json()
         if (!res.ok) throw new Error(json.error ?? 'Renewal failed')
         onUpdated(project.id, 'RENEWED')
-        toast.success(`Renewed! New project created: ${json.newProject.projectCode}`, { duration: 6000 })
+        toast.success(`Renewed — new project ${json.newProject.projectCode}`, { duration: 6000 })
         router.push(`/admin/projects/${json.newProject.id}`)
       } else {
         let note
@@ -128,39 +138,38 @@ function StatusDropdown({ project, onUpdated }) {
       <button
         onClick={handleOpen}
         disabled={saving}
-        className="inline-flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-900 px-2 py-1 rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-50 group"
+        className="group inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-900 disabled:opacity-50"
       >
         {saving
-          ? <span className="w-1.5 h-1.5 rounded-full bg-gray-300 animate-pulse" />
-          : <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_DOT[project.status] ?? 'bg-gray-400'}`} />
+          ? <span className="size-1.5 rounded-full bg-gray-300 animate-pulse" />
+          : <span className={`size-1.5 rounded-full shrink-0 ${STATUS_DOT[project.status] ?? 'bg-gray-400'}`} />
         }
         {STATUS_META[project.status]?.label ?? project.status}
-        {canChange && (
-          <svg className="w-3 h-3 text-gray-400 group-hover:text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
-        )}
+        {canChange && <ChevronDown className="size-3.5 text-gray-400 group-hover:text-gray-600" />}
       </button>
 
       {open && canChange && (
         <div
           onClick={e => e.stopPropagation()}
           style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 9999 }}
-          className="w-44 bg-white border border-gray-200 rounded-xl shadow-lg py-1 overflow-hidden"
+          className="w-48 rounded-xl border border-gray-200/80 bg-white p-1 shadow-lg"
         >
           {statuses.map(({ key, label, special }) => (
-            <button
-              key={key}
-              onClick={e => handleSelect(e, key)}
-              className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs transition-colors
-                ${key === project.status ? 'font-semibold text-gray-900 bg-gray-50' : 'text-gray-600 hover:bg-gray-50'}
-                ${special ? 'border-t border-gray-100 text-blue-600 hover:bg-blue-50' : ''}`}
-            >
-              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_DOT[key] ?? 'bg-gray-400'}`} />
-              {label}
-              {special && <span className="ml-auto text-blue-400 text-[10px]">new project</span>}
-              {!special && key === project.status && <span className="ml-auto text-gray-400">✓</span>}
-            </button>
+            <Fragment key={key}>
+              {special && <div className="-mx-1 my-1 h-px bg-gray-100" />}
+              <button
+                onClick={e => handleSelect(e, key)}
+                className={cn(
+                  'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[13px] transition-colors',
+                  key === project.status ? 'font-medium text-gray-900 bg-gray-100' : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
+                )}
+              >
+                <span className={`size-1.5 rounded-full shrink-0 ${STATUS_DOT[key] ?? 'bg-gray-400'}`} />
+                {label}
+                {special && <span className="ml-auto text-[11px] text-gray-400">New project</span>}
+                {!special && key === project.status && <Check className="ml-auto size-4 text-gray-500" />}
+              </button>
+            </Fragment>
           ))}
         </div>
       )}
@@ -175,26 +184,9 @@ function RowMenu({ project, onDeleted }) {
   const { can, role } = usePermission()
   // DELETE /api/projects/:id is SUPER_ADMIN-only.
   const canDelete = role === 'SUPER_ADMIN' && can('projects.delete')
-  const [open, setOpen] = useState(false)
-  const [pos,  setPos]  = useState({ top: 0, right: 0 })
-  const btnRef = useRef(null)
-
-  useEffect(() => {
-    function h(e) { if (btnRef.current && !btnRef.current.contains(e.target)) setOpen(false) }
-    document.addEventListener('mousedown', h)
-    return () => document.removeEventListener('mousedown', h)
-  }, [])
-
-  function handleOpen(e) {
-    e.stopPropagation()
-    const rect = btnRef.current.getBoundingClientRect()
-    setPos({ top: rect.bottom + window.scrollY + 4, right: window.innerWidth - rect.right })
-    setOpen(o => !o)
-  }
 
   async function handleDelete() {
-    setOpen(false)
-    if (!confirm(`Delete "${project.name}"? This cannot be undone.`)) return
+    if (!confirm(`Delete "${project.name}"? This can't be undone.`)) return
     try {
       const res = await fetch(`/api/projects/${project.id}`, { method: 'DELETE' })
       if (!res.ok) throw new Error((await res.json()).error)
@@ -206,34 +198,11 @@ function RowMenu({ project, onDeleted }) {
   }
 
   return (
-    <div ref={btnRef} className="inline-block">
-      <button onClick={handleOpen}
-        className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
-        <MoreHorizontal className="w-4 h-4" />
-      </button>
-      {open && (
-        <div style={{ position: 'fixed', top: pos.top, right: pos.right, zIndex: 9999 }}
-          className="w-44 bg-white rounded-xl shadow-lg border border-gray-100 py-1 text-sm">
-          <button onClick={() => { setOpen(false); router.push(`/admin/projects/${project.id}`) }}
-            className="w-full flex items-center gap-2.5 px-4 py-2 text-gray-700 hover:bg-gray-50">
-            <Eye className="w-3.5 h-3.5 text-gray-400" /> View Details
-          </button>
-          {can('projects.update') && (
-            <button onClick={() => { setOpen(false); router.push(`/admin/projects/${project.id}/edit`) }}
-              className="w-full flex items-center gap-2.5 px-4 py-2 text-gray-700 hover:bg-gray-50">
-              <Pencil className="w-3.5 h-3.5 text-gray-400" /> Edit Project
-            </button>
-          )}
-          {canDelete && (<>
-            <div className="border-t border-gray-100 my-1" />
-            <button onClick={handleDelete}
-              className="w-full flex items-center gap-2.5 px-4 py-2 text-red-600 hover:bg-red-50">
-              <Trash2 className="w-3.5 h-3.5" /> Delete
-            </button>
-          </>)}
-        </div>
-      )}
-    </div>
+    <ActionMenu items={[
+      { label: 'View', icon: Eye, onClick: () => router.push(`/admin/projects/${project.id}`) },
+      can('projects.update') && { label: 'Edit', icon: Pencil, onClick: () => router.push(`/admin/projects/${project.id}/edit`) },
+      canDelete && { label: 'Delete', icon: Trash2, danger: true, onClick: handleDelete },
+    ]} />
   )
 }
 
@@ -319,221 +288,180 @@ export default function ProjectsPage() {
   }
 
   return (
-    <div className="space-y-5">
-
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold text-gray-900">Projects</h1>
-        <Can perm="projects.create">
-          <Link href="/admin/projects/new"
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors">
-            <Plus className="w-4 h-4" /> New Project
-          </Link>
-        </Can>
-      </div>
-
-      {/* Status overview chips */}
-      <div className="flex flex-wrap gap-2">
-        {STATUS_OVERVIEW.map(({ key, label, filterKey }) => (
-          <button
-            key={key}
-            onClick={() => filterByStatus(filterKey)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
-              status === filterKey && (filterKey !== '' || status === '')
-                ? 'bg-gray-900 text-white border-gray-900'
-                : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400 hover:text-gray-800'
-            }`}
-          >
-            {filterKey && <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT[filterKey] ?? 'bg-gray-400'}`} />}
-            {label}
-            {stats && (
-              <span className={`ml-0.5 ${
-                status === filterKey && (filterKey !== '' || status === '') ? 'text-gray-300' : 'text-gray-400'
-              }`}>
-                {statusCountMap[filterKey] ?? 0}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Projects"
+        actions={
+          <Can perm="projects.create">
+            <Button href="/admin/projects/new"><Plus /> New project</Button>
+          </Can>
+        }
+      />
 
       {/* Venture tabs */}
-      <div className="flex items-center gap-6 border-b border-gray-100 overflow-x-auto scrollbar-none">
-        {[['', 'All Ventures'], ...ventures.map(v => [v.id, v.label])].map(([v, l]) => (
-          <button
-            key={v}
-            onClick={() => { setVenture(v); setPage(1) }}
-            className={`pb-2.5 text-sm transition-colors border-b-2 ${
-              venture === v
-                ? 'border-blue-600 text-blue-600 font-medium'
-                : 'border-transparent text-gray-400 hover:text-gray-600'
-            }`}
-          >
-            {l}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        variant="underline"
+        value={venture}
+        onChange={v => { setVenture(v); setPage(1) }}
+        tabs={[['', 'All ventures'], ...ventures.map(v => [v.id, v.label])].map(([v, l]) => ({ value: v, label: l }))}
+      />
+
+      {/* Status filter */}
+      <Tabs
+        size="sm"
+        value={status}
+        onChange={filterByStatus}
+        tabs={STATUS_OVERVIEW.map(({ label, filterKey }) => ({
+          value: filterKey,
+          label,
+          count: stats ? (statusCountMap[filterKey] ?? 0) : undefined,
+        }))}
+      />
 
       {/* Filters row */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="relative w-full sm:flex-1 sm:min-w-52 sm:max-w-xs">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative w-full sm:w-64">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-gray-400" />
           <input
             value={search}
             onChange={e => { setSearch(e.target.value); setPage(1) }}
-            placeholder="Search projects…"
-            className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 placeholder-gray-400"
+            placeholder="Search…"
+            className={cn(inputClass, 'pl-9')}
           />
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <Select value={type} onChange={v => { setType(v ?? ''); setPage(1) }}
-            options={[
-              { value: 'FIXED',   label: 'Fixed' },
-              { value: 'MONTHLY', label: 'Monthly' },
-            ]}
-            placeholder="All Types"
-            size="sm"
-            className="w-36"
-          />
-          {/* Date range */}
-          <div className="flex items-center gap-1.5">
-            <DatePicker value={startDate || null} onChange={v => { setStartDate(v ?? ''); setPage(1) }} />
-            <span className="text-xs text-gray-400">—</span>
-            <DatePicker value={endDate || null} onChange={v => { setEndDate(v ?? ''); setPage(1) }} />
-          </div>
-          {hasFilters && (
-            <button
-              onClick={() => { setSearch(''); setVenture(''); setType(''); setStatus(''); setStartDate(''); setEndDate(''); setPage(1) }}
-              className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1.5 rounded hover:bg-gray-100 transition-colors">
-              Clear
-            </button>
-          )}
+        <Select value={type} onChange={v => { setType(v ?? ''); setPage(1) }}
+          options={[
+            { value: 'FIXED',   label: 'Fixed' },
+            { value: 'MONTHLY', label: 'Monthly' },
+          ]}
+          placeholder="All types"
+          className="w-36"
+        />
+        <div className="flex items-center gap-1.5">
+          <DatePicker value={startDate || null} onChange={v => { setStartDate(v ?? ''); setPage(1) }} placeholder="From" />
+          <span className="text-xs text-gray-400">–</span>
+          <DatePicker value={endDate || null} onChange={v => { setEndDate(v ?? ''); setPage(1) }} placeholder="To" />
         </div>
-        <span className="text-xs text-gray-400 sm:ml-auto">{meta.total} project{meta.total !== 1 ? 's' : ''}</span>
+        {hasFilters && (
+          <Button variant="ghost" size="sm"
+            onClick={() => { setSearch(''); setVenture(''); setType(''); setStatus(''); setStartDate(''); setEndDate(''); setPage(1) }}>
+            Clear
+          </Button>
+        )}
+        <span className="text-[13px] text-muted-foreground tabular-nums sm:ml-auto">{meta.total} project{meta.total !== 1 ? 's' : ''}</span>
       </div>
 
       {/* Table */}
-      <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+      <Card className="overflow-hidden">
         {loading ? (
           <div className="flex justify-center py-20">
-            <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+            <LoadingSpinner />
           </div>
         ) : projects.length === 0 ? (
-          <div className="text-center py-20">
-            <p className="text-sm text-gray-500 font-medium">No projects found</p>
-            {hasFilters && <p className="text-xs text-gray-400 mt-1">Try adjusting your filters</p>}
-          </div>
+          <EmptyState
+            icon={FolderKanban}
+            title={hasFilters ? 'No results' : 'No projects yet'}
+            description={hasFilters ? 'Try adjusting your filters.' : undefined}
+          />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1100px]">
-              <thead>
-                <tr className="border-b border-gray-100 bg-gray-50/60">
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide whitespace-nowrap">Project ID</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">Venture</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">Project Name</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">Client</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">Type</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wide">Net Value</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wide">Paid</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wide">Due</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wide">Expense</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wide">Profit</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide whitespace-nowrap">Due / Period</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">Status</th>
-                  <th className="px-4 py-3 w-10" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {projects.map(p => {
-                  const vm      = ventures.find(v => v.id === p.venture) ?? {}
-                  const due     = p.projectType === 'FIXED' ? p.deadline : p.currentPeriodEnd
-                  // Overdue once the due day (Asia/Dhaka) has passed; renewed retainers are never overdue.
-                  const isOverd = due && dhakaDayKey(due) < dhakaDayKey() && !['DELIVERED','CANCELLED','APPROVED','RENEWED'].includes(p.status)
+          <Table className="min-w-[1100px]">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Project ID</TableHead>
+                <TableHead>Venture</TableHead>
+                <TableHead>Project</TableHead>
+                <TableHead>Client</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead className="text-right">Net value</TableHead>
+                <TableHead className="text-right">Paid</TableHead>
+                <TableHead className="text-right">Due</TableHead>
+                <TableHead className="text-right">Expense</TableHead>
+                <TableHead className="text-right">Profit</TableHead>
+                <TableHead>Due / period</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="w-10" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {projects.map(p => {
+                const vm      = ventures.find(v => v.id === p.venture) ?? {}
+                const due     = p.projectType === 'FIXED' ? p.deadline : p.currentPeriodEnd
+                // Overdue once the due day (Asia/Dhaka) has passed; renewed retainers are never overdue.
+                const isOverd = due && dhakaDayKey(due) < dhakaDayKey() && !['DELIVERED','CANCELLED','APPROVED','RENEWED'].includes(p.status)
 
-                  // Financials — profit is cash basis: what client paid minus what was spent
-                  const netBudget = Number(p.budget       ?? 0)   // budget IS the project value
-                  const paid      = Number(p.paidAmount   ?? 0)
-                  const expense   = Number(p.approvedExpenses ?? 0)
-                  const profit    = paid - expense
-                  const dueBal    = Math.max(0, netBudget - paid)
+                // Financials — profit is cash basis: what client paid minus what was spent
+                const netBudget = Number(p.budget       ?? 0)   // budget IS the project value
+                const paid      = Number(p.paidAmount   ?? 0)
+                const expense   = Number(p.approvedExpenses ?? 0)
+                const profit    = paid - expense
+                const dueBal    = Math.max(0, netBudget - paid)
 
-                  return (
-                    <tr key={p.id}
-                      onClick={() => router.push(`/admin/projects/${p.id}`)}
-                      className="hover:bg-gray-50/60 cursor-pointer transition-colors">
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <span className="text-sm font-mono font-medium text-gray-800">{p.projectCode ?? '—'}</span>
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
-                        {vm.label ?? p.venture}
-                      </td>
-                      <td className="px-4 py-3 min-w-44">
-                        <p className="text-sm font-medium text-gray-900 truncate max-w-48">{p.name}</p>
-                        <p className="text-xs text-gray-400 mt-0.5 truncate max-w-48">
-                          {p.category}{p.subcategory ? ` › ${p.subcategory}` : ''}
-                        </p>
-                      </td>
-                      <td className="px-4 py-3">
-                        <p className="text-sm text-gray-700 truncate max-w-28">{p.clientId?.userId?.name ?? '—'}</p>
-                        {p.clientId?.company && (
-                          <p className="text-xs text-gray-400 truncate max-w-28">{p.clientId.company}</p>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <span className="text-xs text-gray-500">{p.projectType === 'MONTHLY' ? 'Monthly' : 'Fixed'}</span>
-                      </td>
-                      <td className="px-4 py-3 text-right whitespace-nowrap">
-                        <TkAmt value={netBudget} className="text-sm text-gray-700" />
-                      </td>
-                      <td className="px-4 py-3 text-right whitespace-nowrap">
-                        <TkAmt value={paid} className="text-sm text-green-600" />
-                      </td>
-                      <td className="px-4 py-3 text-right whitespace-nowrap">
-                        <TkAmt value={dueBal} className={`text-sm ${dueBal > 0 ? 'text-amber-600' : 'text-gray-400'}`} />
-                      </td>
-                      <td className="px-4 py-3 text-right whitespace-nowrap">
-                        <TkAmt value={expense} className="text-sm text-red-500" />
-                      </td>
-                      <td className="px-4 py-3 text-right whitespace-nowrap">
-                        <TkAmt value={profit} className={`text-sm font-medium ${profit >= 0 ? 'text-gray-800' : 'text-red-500'}`} />
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        {isOverd ? (
-                          <span className="text-xs text-red-500">Overdue · {fmtDate(due)}</span>
-                        ) : (
-                          <span className="text-xs text-gray-500">{fmtDate(due)}</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap" onClick={e => e.stopPropagation()}>
-                        <StatusDropdown project={p} onUpdated={handleStatusUpdated} />
-                      </td>
-                      <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
-                        <RowMenu project={p} onDeleted={handleDeleted} />
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+                return (
+                  <TableRow key={p.id}
+                    onClick={() => router.push(`/admin/projects/${p.id}`)}
+                    className="cursor-pointer">
+                    <TableCell className="whitespace-nowrap">
+                      <span className="font-mono text-[13px] font-medium text-gray-900">{p.projectCode ?? '—'}</span>
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-gray-600">
+                      {vm.label ?? p.venture}
+                    </TableCell>
+                    <TableCell className="min-w-44">
+                      <p className="max-w-48 truncate font-medium text-gray-900">{p.name}</p>
+                      <p className="mt-0.5 max-w-48 truncate text-xs text-muted-foreground">
+                        {p.category}{p.subcategory ? ` › ${p.subcategory}` : ''}
+                      </p>
+                    </TableCell>
+                    <TableCell>
+                      <p className="max-w-28 truncate text-gray-700">{p.clientId?.userId?.name ?? '—'}</p>
+                      {p.clientId?.company && (
+                        <p className="max-w-28 truncate text-xs text-muted-foreground">{p.clientId.company}</p>
+                      )}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-gray-600">
+                      {p.projectType === 'MONTHLY' ? 'Monthly' : 'Fixed'}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-right tabular-nums">
+                      <TkAmt value={netBudget} className="text-gray-900" />
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-right tabular-nums">
+                      <TkAmt value={paid} className="text-emerald-600" />
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-right tabular-nums">
+                      <TkAmt value={dueBal} className={dueBal > 0 ? 'text-amber-600' : 'text-gray-400'} />
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-right tabular-nums">
+                      <TkAmt value={expense} className="text-gray-600" />
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-right tabular-nums">
+                      <TkAmt value={profit} className={`font-medium ${profit >= 0 ? 'text-gray-900' : 'text-red-600'}`} />
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      {isOverd ? (
+                        <span className="text-xs font-medium text-red-600">Overdue · {fmtDate(due)}</span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">{fmtDate(due)}</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap py-2" onClick={e => e.stopPropagation()}>
+                      <StatusDropdown project={p} onUpdated={handleStatusUpdated} />
+                    </TableCell>
+                    <TableCell className="py-2 text-right" onClick={e => e.stopPropagation()}>
+                      <RowMenu project={p} onDeleted={handleDeleted} />
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
         )}
 
         {meta.pages > 1 && (
-          <div className="px-4 py-3 border-t border-gray-100 flex items-center justify-between">
-            <p className="text-xs text-gray-400">Page {meta.page} of {meta.pages}</p>
-            <div className="flex gap-2">
-              <button disabled={page <= 1} onClick={() => setPage(p => p - 1)}
-                className="px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-lg disabled:opacity-30 hover:bg-gray-50 transition-colors">
-                Prev
-              </button>
-              <button disabled={page >= meta.pages} onClick={() => setPage(p => p + 1)}
-                className="px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-lg disabled:opacity-30 hover:bg-gray-50 transition-colors">
-                Next
-              </button>
-            </div>
+          <div className="border-t border-gray-100 px-4 py-3">
+            <Pagination page={meta.page} pages={meta.pages} onPageChange={setPage} />
           </div>
         )}
-      </div>
+      </Card>
     </div>
   )
 }

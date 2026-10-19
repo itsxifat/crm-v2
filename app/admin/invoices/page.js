@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
-  Plus, FileText, Eye, Pencil, Trash2, MoreHorizontal, Search, X,
+  Plus, FileText, Eye, Pencil, Trash2, Search, X,
   ArrowUp, ArrowDown, ArrowUpDown, Layers, List, FolderTree, ChevronRight,
   Wallet, TrendingUp, AlertTriangle, Receipt,
 } from 'lucide-react'
@@ -12,19 +12,32 @@ import toast from 'react-hot-toast'
 import TkAmt from '@/components/ui/TkAmt'
 import DatePicker from '@/components/ui/DatePicker'
 import Select from '@/components/ui/Select'
+import Button from '@/components/ui/Button'
+import { Card } from '@/components/ui/Card'
+import PageHeader from '@/components/ui/PageHeader'
+import Tabs from '@/components/ui/Tabs'
+import Badge from '@/components/ui/Badge'
+import StatsCard from '@/components/ui/StatsCard'
+import ActionMenu from '@/components/ui/ActionMenu'
+import EmptyState from '@/components/ui/EmptyState'
+import Pagination from '@/components/ui/Pagination'
+import LoadingSpinner from '@/components/ui/LoadingSpinner'
+import { inputClass } from '@/components/ui/Input'
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table'
 import { Can, usePermission } from '@/components/auth/Can'
 import { useConfig } from '@/lib/useConfig'
 import { dhakaDayStart } from '@/lib/dhakaTime'
+import { cn } from '@/lib/utils'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const STATUS_META = {
-  DRAFT:          { dot: 'bg-gray-400',   label: 'Draft',     ring: 'border-gray-200 bg-gray-50  text-gray-600'   },
-  SENT:           { dot: 'bg-blue-500',   label: 'Sent',      ring: 'border-blue-200 bg-blue-50  text-blue-700'   },
-  PARTIALLY_PAID: { dot: 'bg-yellow-400', label: 'Partial',   ring: 'border-yellow-200 bg-yellow-50 text-yellow-700' },
-  PAID:           { dot: 'bg-green-500',  label: 'Paid',      ring: 'border-green-200 bg-green-50  text-green-700'  },
-  OVERDUE:        { dot: 'bg-red-500',    label: 'Overdue',   ring: 'border-red-200   bg-red-50    text-red-700'    },
-  CANCELLED:      { dot: 'bg-gray-300',   label: 'Cancelled', ring: 'border-gray-200 bg-gray-50  text-gray-400'   },
+  DRAFT:          { label: 'Draft',     variant: 'default' },
+  SENT:           { label: 'Sent',      variant: 'primary' },
+  PARTIALLY_PAID: { label: 'Partial',   variant: 'warning' },
+  PAID:           { label: 'Paid',      variant: 'success' },
+  OVERDUE:        { label: 'Overdue',   variant: 'danger'  },
+  CANCELLED:      { label: 'Cancelled', variant: 'outline' },
 }
 
 const STATUS_TABS = [
@@ -50,22 +63,17 @@ const DATE_FIELDS = [
 
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 
-// ─── Row 3-dot Menu ───────────────────────────────────────────────────────────
+function StatusBadge({ status }) {
+  const s = STATUS_META[status] ?? STATUS_META.DRAFT
+  return <Badge variant={s.variant} dot>{s.label}</Badge>
+}
+
+// ─── Row menu ─────────────────────────────────────────────────────────────────
 
 function RowMenu({ inv, onDeleted }) {
-  const router = useRouter()
   const { can } = usePermission()
-  const [open, setOpen] = useState(false)
-  const ref = useRef(null)
-
-  useEffect(() => {
-    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
-    document.addEventListener('mousedown', h)
-    return () => document.removeEventListener('mousedown', h)
-  }, [])
 
   async function handleDelete() {
-    setOpen(false)
     if (!confirm(`Delete invoice ${inv.invoiceNumber}?`)) return
     try {
       const res = await fetch(`/api/invoices/${inv.id}`, { method: 'DELETE' })
@@ -78,41 +86,14 @@ function RowMenu({ inv, onDeleted }) {
   }
 
   return (
-    <div ref={ref} className="relative">
-      <button onClick={(e) => { e.stopPropagation(); setOpen(o => !o) }}
-        className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
-        <MoreHorizontal className="w-4 h-4" />
-      </button>
-      {open && (
-        <div className="absolute right-0 top-8 z-20 w-52 bg-white rounded-xl shadow-lg border border-gray-100 py-1 text-sm">
-          <button onClick={() => { setOpen(false); router.push(`/admin/invoices/${inv.id}`) }}
-            className="w-full flex items-center gap-2.5 px-4 py-2 text-gray-700 hover:bg-gray-50">
-            <Eye className="w-3.5 h-3.5 text-gray-400" /> View Invoice
-          </button>
-          {inv.combined && (
-            <button onClick={() => { setOpen(false); router.push(`/admin/invoices/combined/${inv.combined.id}`) }}
-              className="w-full flex items-center gap-2.5 px-4 py-2 text-gray-700 hover:bg-gray-50">
-              <Layers className="w-3.5 h-3.5 text-blue-500" /> Combined Invoice
-            </button>
-          )}
-          {inv.status === 'DRAFT' && can('sales.invoices.update') && (
-            <button onClick={() => { setOpen(false); router.push(`/admin/invoices/${inv.id}/edit`) }}
-              className="w-full flex items-center gap-2.5 px-4 py-2 text-gray-700 hover:bg-gray-50">
-              <Pencil className="w-3.5 h-3.5 text-gray-400" /> Edit
-            </button>
-          )}
-          {inv.status === 'DRAFT' && can('sales.invoices.delete') && (
-            <>
-              <div className="border-t border-gray-100 my-1" />
-              <button onClick={handleDelete}
-                className="w-full flex items-center gap-2.5 px-4 py-2 text-red-600 hover:bg-red-50">
-                <Trash2 className="w-3.5 h-3.5" /> Delete
-              </button>
-            </>
-          )}
-        </div>
-      )}
-    </div>
+    <ActionMenu
+      items={[
+        { label: 'View', icon: Eye, href: `/admin/invoices/${inv.id}` },
+        inv.combined && { label: 'Combined invoice', icon: Layers, href: `/admin/invoices/combined/${inv.combined.id}` },
+        inv.status === 'DRAFT' && can('sales.invoices.update') && { label: 'Edit', icon: Pencil, href: `/admin/invoices/${inv.id}/edit` },
+        inv.status === 'DRAFT' && can('sales.invoices.delete') && { label: 'Delete', icon: Trash2, danger: true, onClick: handleDelete },
+      ]}
+    />
   )
 }
 
@@ -121,37 +102,30 @@ function RowMenu({ inv, onDeleted }) {
 
 function MetricCards({ stats, loading }) {
   const cards = [
-    { key: 'billed',      label: 'Total Billed',   icon: Receipt,       color: 'text-gray-900',  bg: 'bg-gray-100',   iconColor: 'text-gray-500',
+    { key: 'billed',      label: 'Total billed', icon: Receipt,       color: 'gray',
       value: stats?.billed,      sub: `${stats?.invoiceCount ?? 0} invoice${stats?.invoiceCount === 1 ? '' : 's'}` },
-    { key: 'collected',   label: 'Collected',      icon: TrendingUp,    color: 'text-green-600', bg: 'bg-green-50',   iconColor: 'text-green-600',
+    { key: 'collected',   label: 'Collected',    icon: TrendingUp,    color: 'emerald',
       value: stats?.collected,   sub: `${stats?.collectedPct ?? 0}% of billed` },
-    { key: 'outstanding', label: 'Outstanding',    icon: Wallet,        color: 'text-amber-600', bg: 'bg-amber-50',   iconColor: 'text-amber-600',
+    { key: 'outstanding', label: 'Outstanding',  icon: Wallet,        color: 'yellow',
       value: stats?.outstanding, sub: 'Issued & unpaid' },
-    { key: 'overdue',     label: 'Overdue',        icon: AlertTriangle, color: 'text-red-500',   bg: 'bg-red-50',     iconColor: 'text-red-500',
+    { key: 'overdue',     label: 'Overdue',      icon: AlertTriangle, color: 'red',
       value: stats?.overdue,     sub: `${stats?.byStatus?.OVERDUE?.count ?? 0} invoice${stats?.byStatus?.OVERDUE?.count === 1 ? '' : 's'}` },
   ]
 
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-      {cards.map(c => {
-        const Icon = c.icon
-        return (
-          <div key={c.key} className="bg-white border border-gray-100 rounded-xl p-4">
-            <div className="flex items-center gap-2.5 mb-2">
-              <div className={`w-8 h-8 ${c.bg} rounded-lg flex items-center justify-center shrink-0`}>
-                <Icon className={`w-4 h-4 ${c.iconColor}`} />
-              </div>
-              <p className="text-xs text-gray-500 font-medium">{c.label}</p>
-            </div>
-            {loading ? (
-              <div className="h-6 w-24 bg-gray-100 rounded animate-pulse" />
-            ) : (
-              <p className={`text-lg font-bold ${c.color}`}><TkAmt value={c.value} decimals={0} /></p>
-            )}
-            <p className="text-xs text-gray-400 mt-0.5">{c.sub}</p>
-          </div>
-        )
-      })}
+    <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      {cards.map(c => (
+        <StatsCard
+          key={c.key}
+          title={c.label}
+          icon={c.icon}
+          color={c.color}
+          value={loading
+            ? <span className="inline-block h-7 w-24 animate-pulse rounded-md bg-gray-100 align-middle" />
+            : <TkAmt value={c.value} decimals={0} />}
+          changeLabel={c.sub}
+        />
+      ))}
     </div>
   )
 }
@@ -159,37 +133,36 @@ function MetricCards({ stats, loading }) {
 function StatusBreakdown({ stats }) {
   const byStatus = stats?.byStatus ?? {}
   const rows = [
-    { key: 'PAID',           label: 'Paid',      color: 'bg-green-500'  },
-    { key: 'PARTIALLY_PAID', label: 'Partial',   color: 'bg-yellow-400' },
-    { key: 'OVERDUE',        label: 'Overdue',   color: 'bg-red-500'    },
-    { key: 'SENT',           label: 'Sent',      color: 'bg-blue-500'   },
-    { key: 'DRAFT',          label: 'Draft',     color: 'bg-gray-300'   },
-    { key: 'CANCELLED',      label: 'Cancelled', color: 'bg-gray-200'   },
+    { key: 'PAID',           label: 'Paid',      color: 'bg-emerald-500' },
+    { key: 'PARTIALLY_PAID', label: 'Partial',   color: 'bg-amber-400'   },
+    { key: 'OVERDUE',        label: 'Overdue',   color: 'bg-red-500'     },
+    { key: 'SENT',           label: 'Sent',      color: 'bg-blue-500'    },
+    { key: 'DRAFT',          label: 'Draft',     color: 'bg-gray-400'    },
+    { key: 'CANCELLED',      label: 'Cancelled', color: 'bg-gray-200'    },
   ].map(r => ({ ...r, count: byStatus[r.key]?.count ?? 0, amount: byStatus[r.key]?.total ?? 0 }))
 
   const total = rows.reduce((s, r) => s + r.count, 0) || 1
 
   return (
-    <div className="bg-white border border-gray-100 rounded-xl p-5">
-      <div className="flex h-2 rounded-full overflow-hidden gap-px mb-4">
+    <Card className="p-5">
+      <div className="mb-4 flex h-1.5 gap-px overflow-hidden rounded-full bg-gray-100">
         {rows.filter(r => r.count > 0).map(r => (
           <div key={r.key} className={r.color} style={{ width: `${(r.count / total) * 100}%` }} title={`${r.label}: ${r.count}`} />
         ))}
-        {rows.every(r => r.count === 0) && <div className="bg-gray-100 w-full" />}
       </div>
-      <div className="grid grid-cols-3 sm:grid-cols-6 gap-4">
+      <div className="grid grid-cols-3 gap-4 sm:grid-cols-6">
         {rows.map(r => (
           <div key={r.key}>
-            <div className="flex items-center gap-1.5 mb-1">
-              <span className={`w-2 h-2 rounded-full ${r.color}`} />
-              <span className="text-xs text-gray-500">{r.label}</span>
+            <div className="mb-1 flex items-center gap-1.5">
+              <span className={cn('size-2 rounded-full', r.color)} />
+              <span className="text-xs text-muted-foreground">{r.label}</span>
             </div>
-            <p className="text-base font-bold text-gray-900">{r.count}</p>
-            <p className="text-xs text-gray-400 mt-0.5"><TkAmt value={r.amount} decimals={0} /></p>
+            <p className="text-base font-semibold tabular-nums text-gray-900">{r.count}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground"><TkAmt value={r.amount} decimals={0} /></p>
           </div>
         ))}
       </div>
-    </div>
+    </Card>
   )
 }
 
@@ -199,14 +172,14 @@ function SortTh({ label, field, sort, dir, onSort, align = 'left' }) {
   const active = sort === field
   const Icon   = !active ? ArrowUpDown : dir === 'asc' ? ArrowUp : ArrowDown
   return (
-    <th className={`px-5 py-3 text-xs font-medium uppercase tracking-wide ${align === 'right' ? 'text-right' : 'text-left'}`}>
+    <TableHead className={align === 'right' ? 'text-right' : 'text-left'}>
       <button onClick={() => onSort(field)}
-        className={`inline-flex items-center gap-1 transition-colors ${active ? 'text-gray-900' : 'text-gray-400 hover:text-gray-600'}`}>
-        {align === 'right' && <Icon className={`w-3 h-3 ${active ? '' : 'opacity-40'}`} />}
+        className={cn('inline-flex items-center gap-1 transition-colors', active ? 'text-gray-900' : 'hover:text-gray-900')}>
+        {align === 'right' && <Icon className={cn('size-3', !active && 'opacity-40')} />}
         {label}
-        {align !== 'right' && <Icon className={`w-3 h-3 ${active ? '' : 'opacity-40'}`} />}
+        {align !== 'right' && <Icon className={cn('size-3', !active && 'opacity-40')} />}
       </button>
-    </th>
+    </TableHead>
   )
 }
 
@@ -310,156 +283,130 @@ export default function InvoicesPage() {
 
   const hasFilters = !!(status || debounced || venture || startDate || endDate)
 
+  const statusTabs = STATUS_TABS.map(([v, l]) => ({
+    value: v,
+    label: l,
+    // statusCounts ignore the active tab, so every tab keeps its own count
+    count: v
+      ? (stats?.statusCounts?.[v] ?? stats?.byStatus?.[v]?.count)
+      : (stats?.allCount ?? stats?.invoiceCount),
+  }))
+
   return (
-    <div className="space-y-5">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-gray-900">Invoices</h1>
-          <p className="text-sm text-gray-400 mt-0.5">Manage client invoices, billing and collections</p>
-        </div>
-        <div className="flex items-center gap-2">
-          {/* View switch */}
-          <div className="flex items-center gap-0.5 p-0.5 bg-gray-100 rounded-lg">
-            {[
-              ['list',    'All Invoices', List],
-              ['project', 'By Project',   FolderTree],
-            ].map(([v, label, Icon]) => (
-              <button key={v} onClick={() => { setView(v); setPage(1); setExpanded(null) }}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                  view === v ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-                }`}>
-                <Icon className="w-3.5 h-3.5" /> {label}
-              </button>
-            ))}
-          </div>
-          <Can perm="sales.invoices.create">
-            <Link href="/admin/invoices/new"
-              className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors">
-              <Plus className="w-4 h-4" /> New Invoice
-            </Link>
-          </Can>
-        </div>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Invoices"
+        actions={
+          <>
+            <Tabs
+              value={view}
+              onChange={v => { setView(v); setPage(1); setExpanded(null) }}
+              tabs={[
+                { value: 'list',    label: 'All',        icon: List },
+                { value: 'project', label: 'By project', icon: FolderTree },
+              ]}
+            />
+            <Can perm="sales.invoices.create">
+              <Button href="/admin/invoices/new"><Plus /> New invoice</Button>
+            </Can>
+          </>
+        }
+      />
 
       {/* Metrics */}
       <MetricCards stats={stats} loading={loading && !stats} />
       <StatusBreakdown stats={stats} />
 
-      {/* Filter bar */}
-      <div className="bg-white border border-gray-100 rounded-xl p-4 space-y-3">
+      {/* Filters */}
+      <div className="space-y-3">
+        <Tabs value={status} onChange={v => { setStatus(v); setPage(1) }} tabs={statusTabs} />
+
         <div className="flex flex-wrap items-center gap-2">
-          <div className="relative flex-1 min-w-[220px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <div className="relative w-full sm:w-64">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-gray-400" />
             <input
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Search invoice no, client or project…"
-              className="w-full pl-9 pr-8 py-2 border border-gray-200 rounded-lg text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
+              placeholder="Search…"
+              className={cn(inputClass, 'pl-9 pr-8')}
             />
             {search && (
-              <button onClick={() => setSearch('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-gray-400 hover:text-gray-600">
-                <X className="w-3.5 h-3.5" />
+              <button onClick={() => setSearch('')} aria-label="Clear search"
+                className="absolute right-2 top-1/2 inline-flex size-5 -translate-y-1/2 items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-700">
+                <X className="size-3.5" />
               </button>
             )}
           </div>
 
           <Select value={venture} onChange={v => { setVenture(v ?? ''); setPage(1) }}
             options={ventureOptions ?? []}
-            placeholder="All ventures" size="sm" className="min-w-[150px]" />
+            placeholder="All ventures" className="w-auto min-w-[150px]" />
 
           <Select value={dateField} onChange={v => setDateField(v ?? 'issueDate')}
-            options={DATE_FIELDS} size="sm" className="min-w-[120px]" />
+            options={DATE_FIELDS} className="w-auto min-w-[120px]" />
 
-          <DatePicker value={startDate || null} onChange={v => { setStartDate(v ?? ''); setPage(1) }} />
-          <span className="text-xs text-gray-400">to</span>
-          <DatePicker value={endDate || null} onChange={v => { setEndDate(v ?? ''); setPage(1) }} />
+          <div className="flex items-center gap-2">
+            <DatePicker value={startDate || null} onChange={v => { setStartDate(v ?? ''); setPage(1) }} />
+            <span className="text-xs text-muted-foreground">to</span>
+            <DatePicker value={endDate || null} onChange={v => { setEndDate(v ?? ''); setPage(1) }} />
+          </div>
 
-          <Select value={String(limit)} onChange={v => { setLimit(Number(v ?? 20)); setPage(1) }}
-            options={PAGE_SIZES} size="sm" className="min-w-[110px]" />
-
-          {hasFilters && (
-            <button onClick={clearFilters}
-              className="text-xs text-gray-500 hover:text-gray-800 px-2.5 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50">
-              Clear all
-            </button>
-          )}
-        </div>
-
-        {/* Status tabs */}
-        <div className="flex gap-5 border-t border-gray-100 pt-2 overflow-x-auto scrollbar-none">
-          {STATUS_TABS.map(([v, l]) => {
-            // statusCounts ignore the active tab, so every tab keeps its own count
-            const count = v
-              ? (stats?.statusCounts?.[v] ?? stats?.byStatus?.[v]?.count)
-              : (stats?.allCount ?? stats?.invoiceCount)
-            return (
-              <button key={v} onClick={() => { setStatus(v); setPage(1) }}
-                className={`pb-1.5 text-sm transition-colors whitespace-nowrap ${
-                  status === v
-                    ? 'text-gray-900 border-b-2 border-gray-900 font-medium'
-                    : 'text-gray-400 hover:text-gray-600'
-                }`}>
-                {l}
-                {count != null && <span className="ml-1.5 text-xs text-gray-300">{count}</span>}
-              </button>
-            )
-          })}
+          <div className="flex items-center gap-2 sm:ml-auto">
+            {hasFilters && (
+              <Button variant="ghost" onClick={clearFilters}>
+                <X /> Clear
+              </Button>
+            )}
+            <Select value={String(limit)} onChange={v => { setLimit(Number(v ?? 20)); setPage(1) }}
+              options={PAGE_SIZES} className="w-auto min-w-[110px]" />
+          </div>
         </div>
       </div>
 
       {/* ── PROJECT-WISE VIEW ── */}
       {view === 'project' ? (
-        <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+        <Card className="overflow-hidden">
           {loading ? (
-            <div className="flex justify-center py-20">
-              <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-            </div>
+            <LoadingSpinner className="py-20" />
           ) : groups.length === 0 ? (
-            <div className="text-center py-20">
-              <FolderTree className="w-10 h-10 text-gray-200 mx-auto mb-3" />
-              <p className="text-sm text-gray-500">No invoiced projects match these filters</p>
-            </div>
+            <EmptyState icon={FolderTree} title="No results" description="No invoiced projects match these filters." />
           ) : (
-            <div className="divide-y divide-gray-50">
+            <div className="divide-y divide-gray-100">
               {groups.map(g => {
                 const key    = g.projectId ?? `__none__:${g.client?.id ?? ''}`
                 const isOpen = expanded === key
                 return (
                   <div key={key}>
                     <button onClick={() => setExpanded(isOpen ? null : key)}
-                      className="w-full px-5 py-4 flex items-center gap-4 hover:bg-gray-50/70 transition-colors text-left">
-                      <ChevronRight className={`w-4 h-4 text-gray-300 shrink-0 transition-transform ${isOpen ? 'rotate-90' : ''}`} />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-xs font-mono text-gray-400">{g.project?.projectCode ?? '—'}</span>
-                          <span className="text-sm font-medium text-gray-900 truncate">{g.project?.name ?? 'No project (standalone)'}</span>
+                      className="flex w-full items-center gap-4 px-4 py-3.5 text-left transition-colors hover:bg-gray-50/70">
+                      <ChevronRight className={cn('size-4 shrink-0 text-gray-400 transition-transform', isOpen && 'rotate-90')} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-mono text-xs text-muted-foreground">{g.project?.projectCode ?? '—'}</span>
+                          <span className="truncate text-sm font-medium text-gray-900">{g.project?.name ?? 'No project (standalone)'}</span>
                           {g.combined && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-blue-50 text-blue-600 border border-blue-100">
-                              <Layers className="w-3 h-3" /> {g.combined.combinedNumber}
-                            </span>
+                            <Badge variant="outline"><Layers className="size-3" /> {g.combined.combinedNumber}</Badge>
                           )}
                         </div>
-                        <p className="text-xs text-gray-400 mt-0.5">
+                        <p className="mt-0.5 text-xs text-muted-foreground">
                           {g.client?.company || g.client?.name || '—'}
                           {' · '}{g.invoiceCount} invoice{g.invoiceCount === 1 ? '' : 's'}
                           {g.draftCount   > 0 && ` · ${g.draftCount} draft`}
-                          {g.overdueCount > 0 && <span className="text-red-500"> · {g.overdueCount} overdue</span>}
+                          {g.overdueCount > 0 && <span className="text-red-600"> · {g.overdueCount} overdue</span>}
                         </p>
                       </div>
-                      <div className="hidden sm:grid grid-cols-3 gap-6 shrink-0 text-right">
+                      <div className="hidden shrink-0 grid-cols-3 gap-6 text-right sm:grid">
                         <div>
-                          <p className="text-xs text-gray-400">Billed</p>
+                          <p className="text-xs text-muted-foreground">Billed</p>
                           <p className="text-sm font-semibold text-gray-900"><TkAmt value={g.total} decimals={2} /></p>
                         </div>
                         <div>
-                          <p className="text-xs text-gray-400">Paid</p>
-                          <p className="text-sm font-semibold text-green-600"><TkAmt value={g.paid} decimals={2} /></p>
+                          <p className="text-xs text-muted-foreground">Paid</p>
+                          <p className="text-sm font-semibold text-emerald-600"><TkAmt value={g.paid} decimals={2} /></p>
                         </div>
                         <div>
-                          <p className="text-xs text-gray-400">Due</p>
-                          <p className={`text-sm font-semibold ${g.due > 0.01 ? 'text-red-500' : 'text-green-600'}`}>
+                          <p className="text-xs text-muted-foreground">Due</p>
+                          <p className={cn('text-sm font-semibold', g.due > 0.01 ? 'text-red-600' : 'text-emerald-600')}>
                             <TkAmt value={g.due} decimals={2} />
                           </p>
                         </div>
@@ -475,110 +422,97 @@ export default function InvoicesPage() {
             </div>
           )}
 
-          {meta.pages > 1 && (
-            <Pager meta={meta} page={page} setPage={setPage} unit="projects" />
-          )}
-        </div>
+          {meta.pages > 1 && <Pager meta={meta} setPage={setPage} />}
+        </Card>
       ) : (
         /* ── FLAT LIST VIEW ── */
-        <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+        <Card className="overflow-hidden">
           {loading ? (
-            <div className="flex justify-center py-20">
-              <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-            </div>
+            <LoadingSpinner className="py-20" />
           ) : invoices.length === 0 ? (
-            <div className="text-center py-20">
-              <FileText className="w-10 h-10 text-gray-200 mx-auto mb-3" />
-              <p className="text-sm text-gray-500">No invoices found</p>
-              {hasFilters ? (
-                <button onClick={clearFilters} className="text-blue-600 text-sm mt-2 inline-block hover:underline">Clear filters</button>
+            <EmptyState
+              icon={FileText}
+              title={hasFilters ? 'No results' : 'No invoices yet'}
+              action={hasFilters ? (
+                <Button variant="outline" size="sm" onClick={clearFilters}>Clear filters</Button>
               ) : (
-                <Link href="/admin/invoices/new" className="text-blue-600 text-sm mt-2 inline-block hover:underline">
-                  Create your first invoice
-                </Link>
+                <Button variant="outline" size="sm" href="/admin/invoices/new"><Plus /> New invoice</Button>
               )}
-            </div>
+            />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[900px]">
-                <thead>
-                  <tr className="bg-gray-50/60 border-b border-gray-100">
-                    <SortTh label="Invoice No" field="invoiceNumber" sort={sort} dir={dir} onSort={handleSort} />
-                    <th className="px-5 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">Client</th>
-                    <th className="px-5 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">Project</th>
-                    <SortTh label="Issued"  field="issueDate"  sort={sort} dir={dir} onSort={handleSort} />
-                    <SortTh label="Due Date" field="dueDate"   sort={sort} dir={dir} onSort={handleSort} />
-                    <SortTh label="Amount"  field="total"      sort={sort} dir={dir} onSort={handleSort} align="right" />
-                    <SortTh label="Paid"    field="paidAmount" sort={sort} dir={dir} onSort={handleSort} align="right" />
-                    <SortTh label="Due"     field="due"        sort={sort} dir={dir} onSort={handleSort} align="right" />
-                    <SortTh label="Status"  field="status"     sort={sort} dir={dir} onSort={handleSort} />
-                    <th className="px-5 py-3 w-12" />
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {invoices.map(inv => {
-                    const s = STATUS_META[inv.status] ?? STATUS_META.DRAFT
-                    const project = inv.projectId ?? inv.projectIds?.[0]
-                    // Due date is a calendar day: overdue only from the next Dhaka day
-                    const overdue = inv.dueDate && new Date(inv.dueDate) < dhakaDayStart() && !['PAID', 'CANCELLED'].includes(inv.status)
+            <Table className="min-w-[900px]">
+              <TableHeader>
+                <TableRow>
+                  <SortTh label="Invoice no." field="invoiceNumber" sort={sort} dir={dir} onSort={handleSort} />
+                  <TableHead>Client</TableHead>
+                  <TableHead>Project</TableHead>
+                  <SortTh label="Issued"   field="issueDate"  sort={sort} dir={dir} onSort={handleSort} />
+                  <SortTh label="Due date" field="dueDate"    sort={sort} dir={dir} onSort={handleSort} />
+                  <SortTh label="Amount"   field="total"      sort={sort} dir={dir} onSort={handleSort} align="right" />
+                  <SortTh label="Paid"     field="paidAmount" sort={sort} dir={dir} onSort={handleSort} align="right" />
+                  <SortTh label="Due"      field="due"        sort={sort} dir={dir} onSort={handleSort} align="right" />
+                  <SortTh label="Status"   field="status"     sort={sort} dir={dir} onSort={handleSort} />
+                  <TableHead className="w-12" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {invoices.map(inv => {
+                  const project = inv.projectId ?? inv.projectIds?.[0]
+                  // Due date is a calendar day: overdue only from the next Dhaka day
+                  const overdue = inv.dueDate && new Date(inv.dueDate) < dhakaDayStart() && !['PAID', 'CANCELLED'].includes(inv.status)
 
-                    return (
-                      <tr key={inv.id} onClick={() => router.push(`/admin/invoices/${inv.id}`)}
-                        className="hover:bg-gray-50/70 cursor-pointer transition-colors">
-                        <td className="px-5 py-3 whitespace-nowrap">
-                          <span className="text-sm font-mono font-medium text-gray-800">{inv.invoiceNumber}</span>
-                          {inv.combined && (
-                            <Link href={`/admin/invoices/combined/${inv.combined.id}`} onClick={e => e.stopPropagation()}
-                              title={`Part of combined invoice ${inv.combined.combinedNumber}`}
-                              className="ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-600 border border-blue-100 hover:bg-blue-100">
-                              <Layers className="w-2.5 h-2.5" /> Combined
-                            </Link>
-                          )}
-                        </td>
-                        <td className="px-5 py-3">
-                          <p className="text-sm font-medium text-gray-900 leading-tight">{inv.clientId?.userId?.name ?? '—'}</p>
-                          {inv.clientId?.company && <p className="text-xs text-gray-400">{inv.clientId.company}</p>}
-                        </td>
-                        <td className="px-5 py-3">
-                          {project ? (
-                            <div>
-                              <p className="text-xs font-mono text-gray-500">{project.projectCode}</p>
-                              <p className="text-sm text-gray-700 truncate max-w-[160px]">{project.name}</p>
-                            </div>
-                          ) : <span className="text-xs text-gray-300">—</span>}
-                        </td>
-                        <td className="px-5 py-3 whitespace-nowrap text-sm text-gray-600">{fmtDate(inv.issueDate)}</td>
-                        <td className="px-5 py-3 whitespace-nowrap">
-                          <span className={`text-sm ${overdue ? 'text-red-500 font-medium' : 'text-gray-600'}`}>{fmtDate(inv.dueDate)}</span>
-                        </td>
-                        <td className="px-5 py-3 text-right whitespace-nowrap text-sm font-semibold text-gray-900">
-                          <TkAmt value={inv.total} decimals={2} />
-                        </td>
-                        <td className="px-5 py-3 text-right whitespace-nowrap text-sm text-green-600">
-                          <TkAmt value={inv.paidAmount ?? 0} decimals={2} />
-                        </td>
-                        <td className={`px-5 py-3 text-right whitespace-nowrap text-sm font-semibold ${inv.due > 0.01 ? 'text-red-500' : 'text-green-600'}`}>
-                          <TkAmt value={inv.due} decimals={2} />
-                        </td>
-                        <td className="px-5 py-3">
-                          <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full border ${s.ring}`}>
-                            <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${s.dot}`} />
-                            {s.label}
-                          </span>
-                        </td>
-                        <td className="px-5 py-3 text-right" onClick={e => e.stopPropagation()}>
-                          <RowMenu inv={inv} onDeleted={handleDeleted} />
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
+                  return (
+                    <TableRow key={inv.id} onClick={() => router.push(`/admin/invoices/${inv.id}`)} className="cursor-pointer">
+                      <TableCell className="whitespace-nowrap">
+                        <span className="font-mono text-[13px] font-medium text-gray-900">{inv.invoiceNumber}</span>
+                        {inv.combined && (
+                          <Link href={`/admin/invoices/combined/${inv.combined.id}`} onClick={e => e.stopPropagation()}
+                            title={`Part of combined invoice ${inv.combined.combinedNumber}`}
+                            className="ml-2 inline-flex items-center gap-1 rounded-full bg-white px-1.5 py-0.5 text-[11px] font-medium text-gray-700 ring-1 ring-inset ring-gray-200 hover:bg-gray-50">
+                            <Layers className="size-3" /> Combined
+                          </Link>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <p className="font-medium leading-tight text-gray-900">{inv.clientId?.userId?.name ?? '—'}</p>
+                        {inv.clientId?.company && <p className="text-xs text-muted-foreground">{inv.clientId.company}</p>}
+                      </TableCell>
+                      <TableCell>
+                        {project ? (
+                          <div>
+                            <p className="font-mono text-xs text-muted-foreground">{project.projectCode}</p>
+                            <p className="max-w-[160px] truncate">{project.name}</p>
+                          </div>
+                        ) : <span className="text-gray-300">—</span>}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">{fmtDate(inv.issueDate)}</TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        <span className={overdue ? 'font-medium text-red-600' : undefined}>{fmtDate(inv.dueDate)}</span>
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-right font-medium text-gray-900">
+                        <TkAmt value={inv.total} decimals={2} />
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-right text-emerald-600">
+                        <TkAmt value={inv.paidAmount ?? 0} decimals={2} />
+                      </TableCell>
+                      <TableCell className={cn('whitespace-nowrap text-right font-medium', inv.due > 0.01 ? 'text-red-600' : 'text-emerald-600')}>
+                        <TkAmt value={inv.due} decimals={2} />
+                      </TableCell>
+                      <TableCell>
+                        <StatusBadge status={inv.status} />
+                      </TableCell>
+                      <TableCell className="text-right" onClick={e => e.stopPropagation()}>
+                        <RowMenu inv={inv} onDeleted={handleDeleted} />
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
           )}
 
-          {meta.pages > 1 && <Pager meta={meta} page={page} setPage={setPage} unit="invoices" />}
-        </div>
+          {meta.pages > 1 && <Pager meta={meta} setPage={setPage} />}
+        </Card>
       )}
     </div>
   )
@@ -604,53 +538,42 @@ function ProjectInvoiceRows({ group, onOpen }) {
       .finally(() => setLoading(false))
   }, [group.projectId, group.client?.id])
 
-  if (loading) return (
-    <div className="px-14 py-6 flex justify-center">
-      <div className="w-5 h-5 border-2 border-gray-200 border-t-gray-500 rounded-full animate-spin" />
-    </div>
-  )
+  if (loading) return <LoadingSpinner size="sm" className="py-6" />
 
-  if (!rows?.length) return <div className="px-14 py-6 text-sm text-gray-400">No invoices to show.</div>
+  if (!rows?.length) return <div className="px-12 py-5 text-sm text-muted-foreground">No invoices</div>
 
   return (
-    <div className="bg-gray-50/50 px-5 pb-4">
-      <div className="rounded-lg border border-gray-100 bg-white overflow-x-auto">
-        <table className="w-full min-w-[620px]">
-          <thead>
-            <tr className="border-b border-gray-100">
-              {['Invoice No', 'Issued', 'Due Date', 'Status', 'Amount', 'Paid', 'Due'].map((h, i) => (
-                <th key={h} className={`px-4 py-2.5 text-xs font-medium text-gray-400 uppercase tracking-wide ${i >= 4 ? 'text-right' : 'text-left'}`}>{h}</th>
+    <div className="bg-gray-50/60 px-4 pb-4 pt-1">
+      <div className="overflow-hidden rounded-lg border border-gray-200/80 bg-white">
+        <Table className="min-w-[620px]">
+          <TableHeader>
+            <TableRow>
+              {['Invoice no.', 'Issued', 'Due date', 'Status', 'Amount', 'Paid', 'Due'].map((h, i) => (
+                <TableHead key={h} className={cn('h-9', i >= 4 ? 'text-right' : 'text-left')}>{h}</TableHead>
               ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-50">
-            {rows.map(inv => {
-              const s = STATUS_META[inv.status] ?? STATUS_META.DRAFT
-              return (
-                <tr key={inv.id} onClick={() => onOpen(inv.id)} className="hover:bg-gray-50 cursor-pointer">
-                  <td className="px-4 py-2.5 text-sm font-mono text-gray-800 whitespace-nowrap">{inv.invoiceNumber}</td>
-                  <td className="px-4 py-2.5 text-sm text-gray-500 whitespace-nowrap">{fmtDate(inv.issueDate)}</td>
-                  <td className="px-4 py-2.5 text-sm text-gray-500 whitespace-nowrap">{fmtDate(inv.dueDate)}</td>
-                  <td className="px-4 py-2.5">
-                    <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full border ${s.ring}`}>
-                      <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} /> {s.label}
-                    </span>
-                  </td>
-                  <td className="px-4 py-2.5 text-right text-sm font-medium text-gray-900 whitespace-nowrap"><TkAmt value={inv.total} decimals={2} /></td>
-                  <td className="px-4 py-2.5 text-right text-sm text-green-600 whitespace-nowrap"><TkAmt value={inv.paidAmount ?? 0} decimals={2} /></td>
-                  <td className={`px-4 py-2.5 text-right text-sm font-medium whitespace-nowrap ${inv.due > 0.01 ? 'text-red-500' : 'text-green-600'}`}>
-                    <TkAmt value={inv.due} decimals={2} />
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map(inv => (
+              <TableRow key={inv.id} onClick={() => onOpen(inv.id)} className="cursor-pointer">
+                <TableCell className="whitespace-nowrap py-2.5 font-mono text-[13px] text-gray-900">{inv.invoiceNumber}</TableCell>
+                <TableCell className="whitespace-nowrap py-2.5">{fmtDate(inv.issueDate)}</TableCell>
+                <TableCell className="whitespace-nowrap py-2.5">{fmtDate(inv.dueDate)}</TableCell>
+                <TableCell className="py-2.5"><StatusBadge status={inv.status} /></TableCell>
+                <TableCell className="whitespace-nowrap py-2.5 text-right font-medium text-gray-900"><TkAmt value={inv.total} decimals={2} /></TableCell>
+                <TableCell className="whitespace-nowrap py-2.5 text-right text-emerald-600"><TkAmt value={inv.paidAmount ?? 0} decimals={2} /></TableCell>
+                <TableCell className={cn('whitespace-nowrap py-2.5 text-right font-medium', inv.due > 0.01 ? 'text-red-600' : 'text-emerald-600')}>
+                  <TkAmt value={inv.due} decimals={2} />
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       </div>
       {group.combined && (
         <Link href={`/admin/invoices/combined/${group.combined.id}`}
-          className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700">
-          <Layers className="w-3.5 h-3.5" /> Open combined invoice {group.combined.combinedNumber}
+          className="mt-3 inline-flex items-center gap-1.5 text-[13px] font-medium text-gray-900 underline-offset-4 hover:underline">
+          <Layers className="size-4 text-gray-500" /> Open combined invoice {group.combined.combinedNumber}
         </Link>
       )}
     </div>
@@ -659,20 +582,10 @@ function ProjectInvoiceRows({ group, onOpen }) {
 
 // ─── Pagination ───────────────────────────────────────────────────────────────
 
-function Pager({ meta, page, setPage, unit }) {
+function Pager({ meta, setPage }) {
   return (
-    <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between">
-      <p className="text-sm text-gray-400">Page {page} of {meta.pages} · {meta.total} {unit}</p>
-      <div className="flex gap-2">
-        <button disabled={page <= 1} onClick={() => setPage(p => p - 1)}
-          className="px-3 py-1.5 text-sm text-gray-500 disabled:opacity-40 hover:text-gray-700 transition-colors">
-          Prev
-        </button>
-        <button disabled={page >= meta.pages} onClick={() => setPage(p => p + 1)}
-          className="px-3 py-1.5 text-sm text-gray-500 disabled:opacity-40 hover:text-gray-700 transition-colors">
-          Next
-        </button>
-      </div>
+    <div className="border-t border-gray-100 px-4 py-3">
+      <Pagination meta={meta} onPageChange={setPage} />
     </div>
   )
 }

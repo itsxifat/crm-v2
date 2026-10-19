@@ -2,25 +2,37 @@
 
 import { useState, useEffect } from 'react'
 import { toast } from 'react-hot-toast'
-import { Loader2, FolderOpen } from 'lucide-react'
+import { FolderOpen, Activity, PackageCheck } from 'lucide-react'
+import PageHeader from '@/components/ui/PageHeader'
+import StatsCard from '@/components/ui/StatsCard'
+import Badge from '@/components/ui/Badge'
+import EmptyState from '@/components/ui/EmptyState'
+import { PageLoader } from '@/components/ui/LoadingSpinner'
+import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table'
 
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 
-const STATUS_COLORS = {
-  PENDING:     'bg-gray-100 text-gray-600',
-  IN_PROGRESS: 'bg-blue-100 text-blue-700',
-  IN_REVIEW:   'bg-purple-100 text-purple-700',
-  REVISION:    'bg-yellow-100 text-yellow-700',
-  APPROVED:    'bg-teal-100 text-teal-700',
-  DELIVERED:   'bg-green-100 text-green-700',
-  ON_HOLD:     'bg-yellow-100 text-yellow-700',
-  CANCELLED:   'bg-red-100 text-red-600',
+const STATUS_VARIANT = {
+  PENDING:     'default',
+  IN_PROGRESS: 'primary',
+  IN_REVIEW:   'purple',
+  REVISION:    'warning',
+  APPROVED:    'teal',
+  DELIVERED:   'success',
+  ON_HOLD:     'warning',
+  CANCELLED:   'danger',
 }
 
-const VENTURE_COLORS = {
-  ENSTUDIO: 'bg-purple-100 text-purple-700',
-  ENTECH:   'bg-blue-100 text-blue-700',
-  ENMARK:   'bg-green-100 text-green-700',
+const VENTURE_VARIANT = {
+  ENSTUDIO: 'purple',
+  ENTECH:   'primary',
+  ENMARK:   'success',
+}
+
+const humanize = (s) => {
+  const t = String(s).replace(/_/g, ' ').toLowerCase()
+  return t.charAt(0).toUpperCase() + t.slice(1)
 }
 
 export default function VendorDashboard() {
@@ -35,100 +47,62 @@ export default function VendorDashboard() {
       .finally(() => setLoading(false))
   }, [])
 
-  if (loading) return (
-    <div className="flex justify-center py-20">
-      <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
-    </div>
-  )
+  if (loading) return <PageLoader />
 
   return (
-    <div className="space-y-6 max-w-5xl">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Vendor Dashboard</h1>
-        <p className="text-sm text-gray-400 mt-0.5">View projects you are associated with</p>
-      </div>
+    <div className="space-y-6">
+      <PageHeader title="Dashboard" />
 
       {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-white rounded-2xl border border-gray-100 p-5 flex items-center gap-4">
-          <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center shrink-0">
-            <FolderOpen className="w-5 h-5 text-blue-600" />
-          </div>
-          <div>
-            <p className="text-lg font-semibold text-gray-900">{projects.length}</p>
-            <p className="text-xs text-gray-400">Total Projects</p>
-          </div>
-        </div>
-        <div className="bg-white rounded-2xl border border-gray-100 p-5 flex items-center gap-4">
-          <div className="w-10 h-10 bg-green-50 rounded-xl flex items-center justify-center shrink-0">
-            <FolderOpen className="w-5 h-5 text-green-600" />
-          </div>
-          <div>
-            <p className="text-lg font-semibold text-gray-900">
-              {projects.filter(p => p.status === 'IN_PROGRESS').length}
-            </p>
-            <p className="text-xs text-gray-400">Active Projects</p>
-          </div>
-        </div>
-        <div className="bg-white rounded-2xl border border-gray-100 p-5 flex items-center gap-4">
-          <div className="w-10 h-10 bg-teal-50 rounded-xl flex items-center justify-center shrink-0">
-            <FolderOpen className="w-5 h-5 text-teal-600" />
-          </div>
-          <div>
-            <p className="text-lg font-semibold text-gray-900">
-              {projects.filter(p => p.status === 'DELIVERED').length}
-            </p>
-            <p className="text-xs text-gray-400">Delivered</p>
-          </div>
-        </div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <StatsCard title="Total projects" value={projects.length} icon={FolderOpen} />
+        <StatsCard title="Active" value={projects.filter(p => p.status === 'IN_PROGRESS').length} icon={Activity} />
+        <StatsCard title="Delivered" value={projects.filter(p => p.status === 'DELIVERED').length} icon={PackageCheck} />
       </div>
 
       {/* Projects table */}
-      <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-100">
-          <h2 className="text-sm font-semibold text-gray-900">Projects</h2>
-        </div>
+      <Card className="overflow-hidden">
+        <CardHeader className="border-b border-gray-100 pb-4">
+          <CardTitle>Projects</CardTitle>
+        </CardHeader>
 
         {projects.length === 0 ? (
-          <div className="py-16 text-center text-gray-400 text-sm">No projects found</div>
+          <EmptyState icon={FolderOpen} title="No projects yet" />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[600px]">
-              <thead>
-                <tr className="border-b border-gray-100 bg-gray-50/50">
-                  {['Project Code', 'Project Name', 'Venture', 'Status', 'Start Date', 'Deadline'].map(h => (
-                    <th key={h} className="px-5 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {projects.map(p => (
-                  <tr key={p.id ?? p._id} className="hover:bg-gray-50/50 transition-colors">
-                    <td className="px-5 py-3.5 text-xs font-mono text-gray-400">{p.projectCode ?? '—'}</td>
-                    <td className="px-5 py-3.5">
-                      <p className="text-sm font-medium text-gray-900">{p.name}</p>
-                    </td>
-                    <td className="px-5 py-3.5">
-                      {p.venture ? (
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${VENTURE_COLORS[p.venture] ?? 'bg-gray-100 text-gray-600'}`}>
-                          {p.venture}
-                        </span>
-                      ) : '—'}
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[p.status] ?? 'bg-gray-100 text-gray-600'}`}>
-                        {p.status?.replace('_', ' ') ?? '—'}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3.5 text-sm text-gray-500">{fmtDate(p.startDate)}</td>
-                    <td className="px-5 py-3.5 text-sm text-gray-500">{fmtDate(p.deadline)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <Table className="min-w-[600px]">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Code</TableHead>
+                <TableHead>Project</TableHead>
+                <TableHead>Venture</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Start date</TableHead>
+                <TableHead>Deadline</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {projects.map(p => (
+                <TableRow key={p.id ?? p._id}>
+                  <TableCell className="font-mono text-xs text-muted-foreground">{p.projectCode ?? '—'}</TableCell>
+                  <TableCell className="font-medium text-gray-900">{p.name}</TableCell>
+                  <TableCell>
+                    {p.venture
+                      ? <Badge variant={VENTURE_VARIANT[p.venture] ?? 'default'}>{p.venture}</Badge>
+                      : <span className="text-gray-300">—</span>}
+                  </TableCell>
+                  <TableCell>
+                    {p.status
+                      ? <Badge variant={STATUS_VARIANT[p.status] ?? 'default'}>{humanize(p.status)}</Badge>
+                      : '—'}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-muted-foreground">{fmtDate(p.startDate)}</TableCell>
+                  <TableCell className="whitespace-nowrap text-muted-foreground">{fmtDate(p.deadline)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         )}
-      </div>
+      </Card>
     </div>
   )
 }

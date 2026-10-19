@@ -138,8 +138,7 @@ export default function DatePicker({
   const parsed   = value ? parse(value, 'yyyy-MM-dd', new Date()) : null
   const hasValue = parsed && isValid(parsed)
   const days     = buildCalendarDays(month)
-  const py       = size === 'sm' ? 'py-1.5' : 'py-2'
-  const textSize = size === 'sm' ? 'text-xs'  : 'text-sm'
+  const textSize = size === 'sm' ? 'text-[13px]' : 'text-sm'
 
   // ── Calendar body (shared between mobile/desktop) ──────────────────────────
   const calendarBody = (
@@ -149,9 +148,9 @@ export default function DatePicker({
         <button
           type="button"
           onClick={() => setMonth(m => subMonths(m, 1))}
-          className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+          className="inline-flex size-7 items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:text-gray-900 hover:bg-gray-50 transition-colors"
         >
-          <ChevronLeft className="w-4 h-4" />
+          <ChevronLeft className="size-4" />
         </button>
         <span className="text-sm font-semibold text-gray-900">
           {format(month, 'MMMM yyyy')}
@@ -159,16 +158,16 @@ export default function DatePicker({
         <button
           type="button"
           onClick={() => setMonth(m => addMonths(m, 1))}
-          className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+          className="inline-flex size-7 items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:text-gray-900 hover:bg-gray-50 transition-colors"
         >
-          <ChevronRight className="w-4 h-4" />
+          <ChevronRight className="size-4" />
         </button>
       </div>
 
       {/* Day headers */}
       <div className="grid grid-cols-7 mb-1">
         {DAYS.map(d => (
-          <div key={d} className="text-center text-[10px] font-semibold text-gray-400 py-1">
+          <div key={d} className="text-center text-[11px] font-medium text-gray-400 py-1">
             {d}
           </div>
         ))}
@@ -186,11 +185,11 @@ export default function DatePicker({
               type="button"
               onClick={() => selectDay(day)}
               className={cn(
-                'h-9 w-full rounded-lg text-xs font-medium transition-colors duration-100',
+                'h-9 w-full rounded-md text-[13px] font-normal tabular-nums transition-colors duration-100',
                 !inMonth && 'text-gray-300 hover:bg-gray-50',
-                inMonth && !selected && !today && 'text-gray-700 hover:bg-blue-50 hover:text-blue-700',
-                today && !selected && 'text-blue-600 ring-1 ring-blue-300 ring-inset',
-                selected && 'bg-blue-600 text-white shadow-sm',
+                inMonth && !selected && !today && 'text-gray-800 hover:bg-gray-100',
+                today && !selected && 'bg-gray-100 font-semibold text-gray-900',
+                selected && 'bg-gray-900 font-medium text-white shadow-sm',
               )}
             >
               {format(day, 'd')}
@@ -204,7 +203,7 @@ export default function DatePicker({
         <button
           type="button"
           onClick={() => selectDay(new Date())}
-          className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+          className="rounded-md px-2 py-1 text-xs font-medium text-gray-900 hover:bg-gray-100"
         >
           Today
         </button>
@@ -212,7 +211,7 @@ export default function DatePicker({
           <button
             type="button"
             onClick={() => { onChange?.(null); setOpen(false) }}
-            className="text-xs text-gray-400 hover:text-gray-600"
+            className="rounded-md px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-900"
           >
             Clear
           </button>
@@ -234,7 +233,7 @@ export default function DatePicker({
         <div
           ref={popoverRef}
           data-datepicker-popup=""
-          className="fixed bottom-0 left-0 right-0 z-[9999] bg-white rounded-t-2xl p-4 pb-8 shadow-[0_-4px_30px_rgba(0,0,0,0.12)]"
+          className="fixed bottom-0 left-0 right-0 z-[9999] bg-white rounded-t-2xl p-4 pb-8 shadow-2xl animate-in slide-in-from-bottom duration-200"
         >
           {/* Handle bar */}
           <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-4" />
@@ -247,7 +246,7 @@ export default function DatePicker({
         ref={popoverRef}
         data-datepicker-popup=""
         style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 9999, width: POPUP_W }}
-        className="bg-white border border-gray-100 rounded-2xl p-4 shadow-[0_8px_40px_rgba(0,0,0,0.12)]"
+        className="rounded-xl border border-gray-200/80 bg-white p-3 shadow-lg animate-in fade-in-0 zoom-in-95 duration-100"
       >
         {calendarBody}
       </div>
@@ -264,16 +263,16 @@ export default function DatePicker({
         onClick={openCalendar}
         disabled={disabled}
         className={cn(
-          'flex items-center gap-2 w-full px-3 border rounded-lg bg-white transition-all duration-150',
-          'border-gray-200 hover:border-gray-300 cursor-pointer',
-          'focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400',
-          'disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-gray-50',
-          py, textSize,
+          'flex items-center gap-2 w-full px-3 rounded-lg border border-input bg-white shadow-xs transition-[color,box-shadow,border-color]',
+          'hover:border-gray-300 cursor-pointer',
+          'outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30',
+          'disabled:opacity-60 disabled:cursor-not-allowed disabled:bg-gray-50',
+          size === 'sm' ? 'h-8' : 'h-9', textSize,
           className,
         )}
       >
-        <CalendarDays className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-        <span className={cn('flex-1 text-left truncate', hasValue ? 'text-gray-800' : 'text-gray-400')}>
+        <CalendarDays className="size-4 text-gray-400 shrink-0" />
+        <span className={cn('flex-1 text-left truncate', hasValue ? 'text-gray-900' : 'text-gray-400')}>
           {hasValue ? format(parsed, 'dd MMM yyyy') : placeholder}
         </span>
         {hasValue && clearable && (

@@ -3,9 +3,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import {
-  Plus, Search, X, Loader2, Pencil, Trash2,
-  Building2, Phone, Mail, Globe, MapPin, Tag, FileText, Settings2,
-  ShoppingCart, Receipt,
+  Plus, X, Loader2, Pencil, Trash2,
+  Building2, Phone, Mail, Globe, MapPin, User, FileText, Settings2, AlertTriangle,
 } from 'lucide-react'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
@@ -13,6 +12,16 @@ import { dhakaDayKey } from '@/lib/dhakaTime'
 import { usePermission } from '@/components/auth/Can'
 import TaxCodeSelect from '@/components/tax/TaxCodeSelect'
 import { BIN_REGEX, TIN_REGEX, normalizeBin } from '@/lib/tax/catalog'
+import Button, { buttonVariants } from '@/components/ui/Button'
+import { Card } from '@/components/ui/Card'
+import PageHeader from '@/components/ui/PageHeader'
+import Badge from '@/components/ui/Badge'
+import EmptyState from '@/components/ui/EmptyState'
+import SearchInput from '@/components/ui/SearchInput'
+import Pagination from '@/components/ui/Pagination'
+import LoadingSpinner from '@/components/ui/LoadingSpinner'
+import { Input, Textarea, NativeSelect, Field } from '@/components/ui/Input'
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table'
 
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 const fmt     = (n) => `৳ ${(Number(n) || 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })}`
@@ -37,15 +46,15 @@ const PAYEE_TYPES = [
 ]
 const PAYEE_LABELS = Object.fromEntries(PAYEE_TYPES.map(t => [t.value, t.label]))
 
-const BILL_STATUS_COLORS = {
-  DRAFT:     'bg-gray-100 text-gray-600',
-  RECEIVED:  'bg-green-100 text-green-700',
-  CANCELLED: 'bg-red-100 text-red-700',
+const BILL_STATUS_VARIANT = {
+  DRAFT:     'default',
+  RECEIVED:  'success',
+  CANCELLED: 'danger',
 }
-const BILL_PAYMENT_COLORS = {
-  UNPAID:    'bg-yellow-50 text-yellow-700',
-  REQUESTED: 'bg-blue-50 text-blue-700',
-  PAID:      'bg-green-50 text-green-700',
+const BILL_PAYMENT_VARIANT = {
+  UNPAID:    'warning',
+  REQUESTED: 'primary',
+  PAID:      'success',
 }
 
 // Masked placeholders from the API ('••••••••9012') are never validated or re-sent.
@@ -84,6 +93,46 @@ function useTaxCodeLabels(kind, enabled) {
   return labels ?? {}
 }
 
+// ─── Shared dialog shell (hand-built overlay, styled like <Modal>) ────────────
+
+function DialogShell({ title, description, onClose, footer, children, className = 'max-w-lg', z = 'z-50' }) {
+  return (
+    <div className={`fixed inset-0 ${z} flex items-center justify-center bg-black/40 p-4 backdrop-blur-[2px]`}>
+      <div className={`flex max-h-[90vh] w-full flex-col rounded-2xl border border-gray-200/80 bg-white shadow-2xl ${className}`}>
+        <div className="flex shrink-0 items-start justify-between gap-4 px-6 pt-5 pb-3">
+          <div className="min-w-0">
+            <h3 className="text-base font-semibold tracking-tight text-gray-900">{title}</h3>
+            {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
+          </div>
+          {onClose && (
+            <Button variant="ghost" size="icon-sm" onClick={onClose} className="-mr-1.5 -mt-0.5 text-gray-400" aria-label="Close">
+              <X />
+            </Button>
+          )}
+        </div>
+        <div className="flex-1 overflow-y-auto px-6 pt-1 pb-5">{children}</div>
+        {footer && (
+          <div className="flex shrink-0 flex-wrap justify-end gap-2 rounded-b-2xl border-t border-gray-100 bg-gray-50/60 px-6 py-3.5">
+            {footer}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function SectionTitle({ children, title, action }) {
+  return (
+    <div className="mb-3 flex items-center justify-between gap-2">
+      <h4 className="text-sm font-semibold text-gray-900" title={title}>{children}</h4>
+      {action}
+    </div>
+  )
+}
+
+const quietBox = 'rounded-lg bg-gray-50 py-4 text-center text-[13px] text-muted-foreground'
+const textLink = 'text-[13px] font-medium text-gray-900 hover:underline underline-offset-4'
+
 // ─── Service Types Manager Modal ──────────────────────────────────────────────
 
 function ServiceTypesModal({ types, onClose, onSaved }) {
@@ -118,50 +167,44 @@ function ServiceTypesModal({ types, onClose, onSaved }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-xl border border-gray-200 w-full max-w-sm p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-base font-semibold text-gray-900">Manage Service Types</h3>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100"><X className="w-4 h-4 text-gray-400" /></button>
-        </div>
-
+    <DialogShell
+      title="Service types"
+      onClose={onClose}
+      className="max-w-sm"
+      footer={<>
+        <Button variant="outline" onClick={onClose}>Cancel</Button>
+        <Button onClick={save} loading={saving}>Save</Button>
+      </>}
+    >
+      <div className="space-y-3">
         {/* Add new */}
         <div className="flex gap-2">
-          <input
+          <Input
             value={newType}
             onChange={e => setNewType(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && add()}
             placeholder="New service type…"
-            className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+            className="flex-1"
           />
-          <button onClick={add}
-            className="px-3 py-2 bg-gray-900 text-white text-sm rounded-lg hover:bg-gray-800 flex items-center gap-1">
-            <Plus className="w-4 h-4" />
-          </button>
+          <Button variant="outline" size="icon" onClick={add} aria-label="Add">
+            <Plus />
+          </Button>
         </div>
 
         {/* List */}
-        <div className="space-y-1.5 max-h-64 overflow-y-auto">
-          {list.length === 0 && <p className="text-xs text-gray-400 text-center py-4">No service types yet</p>}
+        <div className="max-h-64 space-y-1.5 overflow-y-auto">
+          {list.length === 0 && <p className="py-4 text-center text-[13px] text-muted-foreground">No service types yet</p>}
           {list.map((t, i) => (
-            <div key={i} className="flex items-center justify-between px-3 py-2 bg-gray-50 rounded-lg">
+            <div key={i} className="flex items-center justify-between rounded-lg bg-gray-50 py-1 pl-3 pr-1">
               <span className="text-sm text-gray-700">{t}</span>
-              <button onClick={() => remove(i)} className="p-1 text-gray-400 hover:text-red-500 transition-colors">
-                <X className="w-3.5 h-3.5" />
-              </button>
+              <Button variant="ghost" size="icon-xs" onClick={() => remove(i)} className="text-gray-400 hover:bg-red-50 hover:text-red-600" aria-label="Remove">
+                <X />
+              </Button>
             </div>
           ))}
         </div>
-
-        <div className="flex gap-2 justify-end pt-1">
-          <button onClick={onClose} className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
-          <button onClick={save} disabled={saving}
-            className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 disabled:opacity-40 flex items-center gap-2">
-            {saving && <Loader2 className="w-4 h-4 animate-spin" />} Save
-          </button>
-        </div>
       </div>
-    </div>
+    </DialogShell>
   )
 }
 
@@ -244,138 +287,110 @@ function VendorModal({ vendor, onClose, onSaved, serviceTypes = [] }) {
     finally { setSaving(false) }
   }
 
-  const ic = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900'
-  const lc = 'block text-xs font-medium text-gray-500 mb-1'
-  const hc = 'text-xs text-gray-400 mt-1'
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-xl border border-gray-200 w-full max-w-lg p-6 space-y-4 max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between">
-          <h3 className="text-base font-semibold text-gray-900">{isEdit ? 'Edit Vendor' : 'Add Vendor'}</h3>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100"><X className="w-4 h-4 text-gray-400" /></button>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <div className="col-span-2">
-            <label className="block text-xs font-medium text-gray-500 mb-1">Company Name *</label>
-            <input value={form.company} onChange={e => set('company', e.target.value)} placeholder="e.g. Acme Supplies Ltd." className={ic} />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Contact Person</label>
-            <input value={form.contactName} onChange={e => set('contactName', e.target.value)} placeholder="Full name" className={ic} />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Phone</label>
-            <input value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="+880…" className={ic} />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Email</label>
-            <input type="email" value={form.email} onChange={e => set('email', e.target.value)} placeholder="vendor@example.com" className={ic} />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Service Type</label>
-            <select value={form.serviceType} onChange={e => set('serviceType', e.target.value)} className={ic}>
+    <DialogShell
+      title={isEdit ? 'Edit vendor' : 'New vendor'}
+      onClose={onClose}
+      footer={<>
+        <Button variant="outline" onClick={onClose}>Cancel</Button>
+        <Button onClick={save} loading={saving}>
+          {isEdit ? 'Save changes' : 'Add vendor'}
+        </Button>
+      </>}
+    >
+      <div className="space-y-6">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Company name" required className="sm:col-span-2">
+            <Input value={form.company} onChange={e => set('company', e.target.value)} placeholder="e.g. Acme Supplies Ltd." />
+          </Field>
+          <Field label="Contact person">
+            <Input value={form.contactName} onChange={e => set('contactName', e.target.value)} placeholder="Full name" />
+          </Field>
+          <Field label="Phone">
+            <Input value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="+880…" />
+          </Field>
+          <Field label="Email">
+            <Input type="email" value={form.email} onChange={e => set('email', e.target.value)} placeholder="vendor@example.com" />
+          </Field>
+          <Field label="Service type">
+            <NativeSelect value={form.serviceType} onChange={e => set('serviceType', e.target.value)}>
               <option value="">Select…</option>
               {serviceTypes.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-          <div className="col-span-2">
-            <label className="block text-xs font-medium text-gray-500 mb-1">Website</label>
-            <input value={form.website} onChange={e => set('website', e.target.value)} placeholder="https://…" className={ic} />
-          </div>
-          <div className="col-span-2">
-            <label className="block text-xs font-medium text-gray-500 mb-1">Address</label>
-            <input value={form.address} onChange={e => set('address', e.target.value)} placeholder="Street, City, Country" className={ic} />
-          </div>
-          <div className="col-span-2">
-            <label className="block text-xs font-medium text-gray-500 mb-1">Notes</label>
-            <textarea value={form.notes} onChange={e => set('notes', e.target.value)} rows={3} placeholder="Payment terms, special instructions…" className={`${ic} resize-none`} />
-          </div>
+            </NativeSelect>
+          </Field>
+          <Field label="Website" className="sm:col-span-2">
+            <Input value={form.website} onChange={e => set('website', e.target.value)} placeholder="https://…" />
+          </Field>
+          <Field label="Address" className="sm:col-span-2">
+            <Input value={form.address} onChange={e => set('address', e.target.value)} placeholder="Street, city, country" />
+          </Field>
+          <Field label="Notes" className="sm:col-span-2">
+            <Textarea value={form.notes} onChange={e => set('notes', e.target.value)} rows={3} placeholder="e.g. Payment terms" className="resize-none" />
+          </Field>
         </div>
 
         {/* ── Tax identity ── */}
-        <div className="border-t border-gray-100 pt-4 space-y-3">
-          <div>
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Tax identity</p>
-            <p className="text-xs text-gray-400 mt-0.5">Used for input VAT credit, VDS (Mushak-6.6) and TDS when you pay this vendor.</p>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className={lc}>BIN</label>
-              <input value={form.bin} onChange={e => setBin(e.target.value)} inputMode="numeric"
-                placeholder="000123456-0101" className={`${ic} font-mono ${binInvalid ? 'border-red-300' : ''}`} />
-              <p className={binInvalid ? 'text-xs text-red-500 mt-1' : hc}>
-                {binInvalid ? 'BIN must be 9 or 13 digits' : '13 digits, e.g. 000123456-0101'}
-              </p>
-            </div>
-            <div>
-              <label className={lc}>TIN (e-TIN)</label>
-              <input value={form.tin} onChange={e => set('tin', e.target.value)} inputMode="numeric"
-                placeholder="12-digit e-TIN" className={`${ic} font-mono ${tinInvalid || tinMaskEdit ? 'border-red-300' : ''}`} />
-              <p className={tinInvalid || tinMaskEdit ? 'text-xs text-red-500 mt-1' : hc}>
-                {tinMaskEdit ? 'Clear the hidden TIN fully, then type the new one'
-                  : tinInvalid ? 'TIN must be 12 digits'
-                  : tinUntouched ? 'Hidden for privacy. Leave as is or replace it.'
-                  : 'Printed on the TDS certificate you issue'}
-              </p>
-            </div>
-            <div>
-              <label className={lc}>VAT status</label>
-              <select value={form.vatRegistrationType} onChange={e => set('vatRegistrationType', e.target.value)} className={ic}>
+        <div className="border-t border-gray-100 pt-5">
+          <SectionTitle title="Used for input VAT credit, VDS (Mushak-6.6) and TDS when you pay this vendor.">
+            Tax identity
+          </SectionTitle>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="BIN" error={binInvalid ? 'BIN must be 9 or 13 digits' : undefined} hint="13 digits">
+              <Input value={form.bin} onChange={e => setBin(e.target.value)} inputMode="numeric"
+                placeholder="000123456-0101" className="font-mono" invalid={binInvalid} />
+            </Field>
+            <Field
+              label="TIN (e-TIN)"
+              error={tinMaskEdit ? 'Clear the hidden TIN fully, then type the new one'
+                : tinInvalid ? 'TIN must be 12 digits' : undefined}
+              hint={tinUntouched ? 'Hidden. Leave as is or replace it.' : undefined}
+            >
+              <Input value={form.tin} onChange={e => set('tin', e.target.value)} inputMode="numeric"
+                placeholder="12-digit e-TIN" className="font-mono" invalid={tinInvalid || tinMaskEdit}
+                title="Printed on the TDS certificate you issue" />
+            </Field>
+            <Field label="VAT status" hint={form.vatRegistrationType === 'FOREIGN' ? 'No BIN or Mushak-6.3 from foreign suppliers' : undefined}>
+              <NativeSelect value={form.vatRegistrationType} onChange={e => set('vatRegistrationType', e.target.value)}>
                 <option value="">Not specified</option>
                 {VAT_REGISTRATION_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-              </select>
+              </NativeSelect>
               {['TURNOVER', 'UNREGISTERED'].includes(form.vatRegistrationType) && (
-                <p className="text-xs text-amber-600 mt-1">No input VAT credit and no VDS on purchases from this vendor.</p>
+                <p className="mt-1.5 text-xs text-amber-700">No input VAT credit or VDS on these purchases.</p>
               )}
-              {form.vatRegistrationType === 'FOREIGN' && (
-                <p className={hc}>No BIN or Mushak-6.3 from a foreign supplier.</p>
-              )}
-            </div>
-            <div>
-              <label className={lc}>Trade licence no.</label>
-              <input value={form.tradeLicense} onChange={e => set('tradeLicense', e.target.value)} placeholder="Optional" className={ic} />
-            </div>
-            <div>
-              <label className={lc}>Payee type (for TDS rate)</label>
-              <select value={form.payeeType} onChange={e => set('payeeType', e.target.value)} className={ic}>
+            </Field>
+            <Field label="Trade licence no.">
+              <Input value={form.tradeLicense} onChange={e => set('tradeLicense', e.target.value)} placeholder="Optional" />
+            </Field>
+            <Field label="Payee type">
+              <NativeSelect value={form.payeeType} onChange={e => set('payeeType', e.target.value)} title="Sets the TDS rate">
                 {PAYEE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-              </select>
-            </div>
+              </NativeSelect>
+            </Field>
             <div className="flex items-end">
-              <label className="flex items-start gap-2 cursor-pointer pb-1">
+              <label
+                className="flex cursor-pointer items-start gap-2.5 pb-1"
+                title="Proof of return submission. Without it TDS is 50% higher (ITA 2023 s.142)."
+              >
                 <input type="checkbox" checked={form.hasPsr} onChange={e => set('hasPsr', e.target.checked)}
-                  className="mt-0.5 w-4 h-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900" />
+                  className="mt-0.5 size-4 rounded border-gray-300" />
                 <span>
-                  <span className="block text-sm font-medium text-gray-800">PSR on file</span>
-                  <span className="block text-xs text-gray-400">Proof of return submission. Without it TDS is 50% higher (ITA 2023 s.142).</span>
+                  <span className="block text-sm font-medium text-gray-900">PSR on file</span>
+                  <span className="block text-xs text-muted-foreground">Without it, TDS is 50% higher</span>
                 </span>
               </label>
             </div>
-            <div>
-              <label className={lc}>Default TDS section</label>
+            <Field label="Default TDS section">
               <TaxCodeSelect kind="TDS_SECTION" value={form.defaultTdsSection || null}
-                onChange={code => set('defaultTdsSection', code ?? '')} placeholder="Select section…" className={ic} />
-            </div>
-            <div>
-              <label className={lc}>Default VAT service code</label>
+                onChange={code => set('defaultTdsSection', code ?? '')} placeholder="Select section…" />
+            </Field>
+            <Field label="Default VAT service code">
               <TaxCodeSelect kind="VAT_SERVICE" value={form.defaultVatServiceCode || null}
-                onChange={code => set('defaultVatServiceCode', code ?? '')} placeholder="Select service…" className={ic} />
-            </div>
+                onChange={code => set('defaultVatServiceCode', code ?? '')} placeholder="Select service…" />
+            </Field>
           </div>
         </div>
-
-        <div className="flex gap-2 justify-end pt-1">
-          <button onClick={onClose} className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
-          <button onClick={save} disabled={saving}
-            className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 disabled:opacity-40 flex items-center gap-2">
-            {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-            {isEdit ? 'Save Changes' : 'Add Vendor'}
-          </button>
-        </div>
       </div>
-    </div>
+    </DialogShell>
   )
 }
 
@@ -396,28 +411,27 @@ function DeleteConfirm({ vendor, onClose, onDeleted }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-xl border border-gray-200 w-full max-w-sm p-6 space-y-4">
-        <h3 className="text-base font-semibold text-gray-900">Delete Vendor</h3>
-        <p className="text-sm text-gray-500">Are you sure you want to delete <strong>{vendor.company}</strong>? This cannot be undone.</p>
-        <div className="flex gap-2 justify-end">
-          <button onClick={onClose} className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
-          <button onClick={confirm} disabled={deleting}
-            className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-40 flex items-center gap-2">
-            {deleting && <Loader2 className="w-4 h-4 animate-spin" />} Delete
-          </button>
-        </div>
-      </div>
-    </div>
+    <DialogShell
+      title="Delete vendor"
+      className="max-w-sm"
+      footer={<>
+        <Button variant="outline" onClick={onClose}>Cancel</Button>
+        <Button variant="destructive" onClick={confirm} loading={deleting}>Delete</Button>
+      </>}
+    >
+      <p className="text-sm text-muted-foreground">
+        Delete <strong className="font-medium text-gray-900">{vendor.company}</strong>? This can&apos;t be undone.
+      </p>
+    </DialogShell>
   )
 }
 
 // ─── Purchase Modal ───────────────────────────────────────────────────────────
 
-const STATUS_COLORS = {
-  pending:   'bg-yellow-100 text-yellow-700',
-  received:  'bg-green-100 text-green-700',
-  cancelled: 'bg-red-100 text-red-700',
+const STATUS_VARIANT = {
+  pending:   'warning',
+  received:  'success',
+  cancelled: 'danger',
 }
 
 function PurchaseModal({ vendorId, purchase, onClose, onSaved }) {
@@ -436,7 +450,6 @@ function PurchaseModal({ vendorId, purchase, onClose, onSaved }) {
     notes:       purchase?.notes       ?? '',
   })
   const [saving, setSaving] = useState(false)
-  const ic = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900'
 
   function set(k, v) { setForm(f => ({ ...f, [k]: v })) }
 
@@ -479,70 +492,54 @@ function PurchaseModal({ vendorId, purchase, onClose, onSaved }) {
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-xl border border-gray-200 w-full max-w-lg p-6 space-y-4 max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between">
-          <h3 className="text-base font-semibold text-gray-900">{isEdit ? 'Edit Purchase' : 'Add Purchase'}</h3>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100"><X className="w-4 h-4 text-gray-400" /></button>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <div className="col-span-2">
-            <label className="block text-xs font-medium text-gray-500 mb-1">Item / Product *</label>
-            <input value={form.item} onChange={e => set('item', e.target.value)} placeholder="e.g. Office Chair" className={ic} />
-          </div>
-          <div className="col-span-2">
-            <label className="block text-xs font-medium text-gray-500 mb-1">Description</label>
-            <input value={form.description} onChange={e => set('description', e.target.value)} placeholder="Optional details" className={ic} />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Quantity</label>
-            <input type="number" min="0" value={form.quantity} onChange={e => handleQty(e.target.value)} className={ic} />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Unit Price *</label>
-            <input type="number" min="0" step="0.01" value={form.unitPrice} onChange={e => handleUnit(e.target.value)} placeholder="0.00" className={ic} />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Total Amount</label>
-            <input type="number" min="0" step="0.01" value={form.totalAmount} onChange={e => set('totalAmount', e.target.value)} placeholder="0.00" className={ic} />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Date *</label>
-            <input type="date" value={form.date} onChange={e => set('date', e.target.value)} className={ic} />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Category</label>
-            <input value={form.category} onChange={e => set('category', e.target.value)} placeholder="e.g. Hardware" className={ic} />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
-            <select value={form.status} onChange={e => set('status', e.target.value)} className={ic}>
-              <option value="pending">Pending</option>
-              <option value="received">Received</option>
-              <option value="cancelled">Cancelled</option>
-            </select>
-          </div>
-          <div className="col-span-2">
-            <label className="block text-xs font-medium text-gray-500 mb-1">Invoice / Bill Ref</label>
-            <input value={form.invoiceRef} onChange={e => set('invoiceRef', e.target.value)} placeholder="INV-001" className={ic} />
-          </div>
-          <div className="col-span-2">
-            <label className="block text-xs font-medium text-gray-500 mb-1">Notes</label>
-            <textarea value={form.notes} onChange={e => set('notes', e.target.value)} rows={2} className={`${ic} resize-none`} />
-          </div>
-        </div>
-
-        <div className="flex gap-2 justify-end pt-1">
-          <button onClick={onClose} className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
-          <button onClick={save} disabled={saving}
-            className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 disabled:opacity-40 flex items-center gap-2">
-            {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-            {isEdit ? 'Save Changes' : 'Add Purchase'}
-          </button>
-        </div>
+    <DialogShell
+      title={isEdit ? 'Edit purchase' : 'New purchase'}
+      onClose={onClose}
+      z="z-[60]"
+      footer={<>
+        <Button variant="outline" onClick={onClose}>Cancel</Button>
+        <Button onClick={save} loading={saving}>
+          {isEdit ? 'Save changes' : 'Add purchase'}
+        </Button>
+      </>}
+    >
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Item / product" required className="sm:col-span-2">
+          <Input value={form.item} onChange={e => set('item', e.target.value)} placeholder="e.g. Office chair" />
+        </Field>
+        <Field label="Description" className="sm:col-span-2">
+          <Input value={form.description} onChange={e => set('description', e.target.value)} placeholder="Optional" />
+        </Field>
+        <Field label="Quantity">
+          <Input type="number" min="0" value={form.quantity} onChange={e => handleQty(e.target.value)} className="tabular-nums" />
+        </Field>
+        <Field label="Unit price" required>
+          <Input type="number" min="0" step="0.01" value={form.unitPrice} onChange={e => handleUnit(e.target.value)} placeholder="0.00" className="tabular-nums" />
+        </Field>
+        <Field label="Total amount">
+          <Input type="number" min="0" step="0.01" value={form.totalAmount} onChange={e => set('totalAmount', e.target.value)} placeholder="0.00" className="tabular-nums" />
+        </Field>
+        <Field label="Date" required>
+          <Input type="date" value={form.date} onChange={e => set('date', e.target.value)} />
+        </Field>
+        <Field label="Category">
+          <Input value={form.category} onChange={e => set('category', e.target.value)} placeholder="e.g. Hardware" />
+        </Field>
+        <Field label="Status">
+          <NativeSelect value={form.status} onChange={e => set('status', e.target.value)}>
+            <option value="pending">Pending</option>
+            <option value="received">Received</option>
+            <option value="cancelled">Cancelled</option>
+          </NativeSelect>
+        </Field>
+        <Field label="Invoice / bill ref" className="sm:col-span-2">
+          <Input value={form.invoiceRef} onChange={e => set('invoiceRef', e.target.value)} placeholder="INV-001" />
+        </Field>
+        <Field label="Notes" className="sm:col-span-2">
+          <Textarea value={form.notes} onChange={e => set('notes', e.target.value)} rows={2} className="resize-none" />
+        </Field>
       </div>
-    </div>
+    </DialogShell>
   )
 }
 
@@ -575,70 +572,65 @@ function VendorPurchaseBills({ vendorId }) {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-3 gap-2">
-        <h4 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
-          <ShoppingCart className="w-4 h-4 text-gray-400" /> Purchase bills
-        </h4>
-        <div className="flex items-center gap-3">
-          {state.status === 'ok' && state.total > state.rows.length && (
-            <Link href={`/admin/inventory/purchases?vendorId=${encodeURIComponent(vendorId)}`} className="text-xs text-blue-600 hover:underline">
-              View all {state.total}
-            </Link>
-          )}
-          {canCreate && state.status === 'ok' && (
-            <Link href={`/admin/inventory/purchases/new?vendorId=${encodeURIComponent(vendorId)}`}
-              className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-800">
-              <Plus className="w-3.5 h-3.5" /> New bill
-            </Link>
-          )}
-        </div>
-      </div>
+      <SectionTitle
+        action={
+          <div className="flex items-center gap-3">
+            {state.status === 'ok' && state.total > state.rows.length && (
+              <Link href={`/admin/inventory/purchases?vendorId=${encodeURIComponent(vendorId)}`} className={textLink}>
+                View all {state.total}
+              </Link>
+            )}
+            {canCreate && state.status === 'ok' && (
+              <Link href={`/admin/inventory/purchases/new?vendorId=${encodeURIComponent(vendorId)}`}
+                className={buttonVariants({ variant: 'outline', size: 'xs' })}>
+                <Plus /> New bill
+              </Link>
+            )}
+          </div>
+        }
+      >
+        Purchase bills
+      </SectionTitle>
 
       {state.loading ? (
-        <div className="flex justify-center py-4"><Loader2 className="w-4 h-4 animate-spin text-gray-400" /></div>
+        <LoadingSpinner size="sm" className="py-4" />
       ) : state.status === 'forbidden' ? (
-        <p className="text-xs text-gray-400 text-center py-4 border border-dashed border-gray-200 rounded-lg">
-          You don&apos;t have access to purchase bills (Inventory permission needed).
-        </p>
+        <p className={quietBox} title="Inventory permission needed">No access to purchase bills</p>
       ) : state.status === 'unavailable' ? (
-        <p className="text-xs text-gray-400 text-center py-4 border border-dashed border-gray-200 rounded-lg">
-          Purchase bills couldn&apos;t be loaded right now.
-        </p>
+        <p className={quietBox}>Couldn&apos;t load purchase bills</p>
       ) : state.rows.length === 0 ? (
-        <p className="text-xs text-gray-400 text-center py-4 border border-dashed border-gray-200 rounded-lg">
-          No purchase bills from this vendor yet. Record equipment and supply purchases in Inventory → Purchases.
-        </p>
+        <p className={quietBox} title="Record equipment and supply purchases in Inventory → Purchases.">No purchase bills yet</p>
       ) : (
-        <div className="divide-y divide-gray-50 border border-gray-100 rounded-lg overflow-hidden">
+        <div className="divide-y divide-gray-100 overflow-hidden rounded-lg border border-gray-200/80">
           {state.rows.map(b => {
             const id = b.id ?? b._id
             const payStatus = b.payment?.status
             return (
               <Link key={id} href={`/admin/inventory/purchases/${id}`}
-                className="flex items-start justify-between px-4 py-3 gap-3 hover:bg-gray-50 transition-colors">
+                className="flex items-start justify-between gap-3 px-4 py-3 transition-colors hover:bg-gray-50/70">
                 <div className="min-w-0">
-                  <p className="text-sm font-medium text-gray-800 truncate">
+                  <p className="truncate text-sm font-medium text-gray-900">
                     {b.billNo || 'Draft bill'}
-                    {b.supplierInvoiceNo ? <span className="text-gray-400 font-normal"> · {b.supplierInvoiceNo}</span> : null}
+                    {b.supplierInvoiceNo ? <span className="font-normal text-muted-foreground"> · {b.supplierInvoiceNo}</span> : null}
                   </p>
-                  <p className="text-xs text-gray-400">
+                  <p className="text-xs text-muted-foreground">
                     {fmtDate(b.billDate)}
                     {b.mushakNo ? ` · Mushak ${b.mushakNo}` : ''}
                     {Array.isArray(b.lines) ? ` · ${b.lines.length} line${b.lines.length !== 1 ? 's' : ''}` : ''}
                   </p>
                 </div>
-                <div className="flex flex-col items-end gap-1 shrink-0">
-                  <span className="text-sm font-semibold text-gray-800">{fmtCur(b.total, b.currency)}</span>
+                <div className="flex shrink-0 flex-col items-end gap-1">
+                  <span className="text-sm font-medium text-gray-900 tabular-nums">{fmtCur(b.total, b.currency)}</span>
                   <div className="flex items-center gap-1">
                     {b.status && (
-                      <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${BILL_STATUS_COLORS[b.status] ?? 'bg-gray-100 text-gray-600'}`}>
+                      <Badge variant={BILL_STATUS_VARIANT[b.status] ?? 'default'} className="capitalize">
                         {String(b.status).toLowerCase()}
-                      </span>
+                      </Badge>
                     )}
                     {payStatus && b.status === 'RECEIVED' && (
-                      <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${BILL_PAYMENT_COLORS[payStatus] ?? 'bg-gray-100 text-gray-600'}`}>
+                      <Badge variant={BILL_PAYMENT_VARIANT[payStatus] ?? 'default'} className="capitalize">
                         {String(payStatus).toLowerCase()}
-                      </span>
+                      </Badge>
                     )}
                   </div>
                 </div>
@@ -670,25 +662,29 @@ function VendorTaxIdentity({ vendor, onEdit }) {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-3">
-        <h4 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
-          <Receipt className="w-4 h-4 text-gray-400" /> Tax identity
-        </h4>
-        <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${vendor.hasPsr ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}`}>
-          {vendor.hasPsr ? 'PSR on file' : 'No PSR — TDS +50%'}
-        </span>
-      </div>
+      <SectionTitle
+        action={
+          <Badge variant={vendor.hasPsr ? 'success' : 'warning'}>
+            {vendor.hasPsr ? 'PSR on file' : 'No PSR — TDS +50%'}
+          </Badge>
+        }
+      >
+        Tax identity
+      </SectionTitle>
       {noIdentity && (
-        <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2 mb-3">
-          No BIN or TIN on file. Without the supplier&apos;s BIN you can&apos;t claim input VAT.{' '}
-          {onEdit && <button onClick={onEdit} className="font-medium underline">Add tax details</button>}
-        </p>
+        <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+          <p className="flex-1">
+            No BIN or TIN on file, so input VAT can&apos;t be claimed.{' '}
+            {onEdit && <button onClick={onEdit} className="font-medium underline underline-offset-4">Add tax details</button>}
+          </p>
+        </div>
       )}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 border border-gray-100 rounded-lg px-4 py-3">
+      <div className="grid grid-cols-1 gap-x-4 gap-y-3 rounded-lg border border-gray-200/80 px-4 py-3 sm:grid-cols-2">
         {items.map(([label, value, mono]) => (
           <div key={label} className="min-w-0">
-            <p className="text-[11px] text-gray-400">{label}</p>
-            <p className={`text-sm break-words ${value ? 'text-gray-800' : 'text-gray-300'} ${mono && value ? 'font-mono' : ''}`}>{value || '—'}</p>
+            <p className="text-xs text-muted-foreground">{label}</p>
+            <p className={`text-sm break-words ${value ? 'text-gray-900' : 'text-gray-300'} ${mono && value ? 'font-mono' : ''}`}>{value || '—'}</p>
           </div>
         ))}
       </div>
@@ -728,66 +724,71 @@ function VendorDetail({ vendor, onClose, onEdit }) {
     finally { setDeletingId(null) }
   }
 
+  const contactRow = 'flex min-w-0 items-center gap-2 text-sm text-gray-700'
+  const contactIcon = 'size-4 shrink-0 text-gray-400'
+
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-xl border border-gray-200 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 backdrop-blur-[2px] sm:items-center">
+      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-gray-200/80 bg-white shadow-2xl">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 sticky top-0 bg-white z-10">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center">
-              <Building2 className="w-5 h-5 text-gray-500" />
+        <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-gray-100 bg-white px-6 py-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-gray-200/80 bg-white shadow-xs">
+              <Building2 className="size-4 text-gray-600" />
             </div>
-            <div>
-              <h3 className="text-sm font-semibold text-gray-900">{vendor.company}</h3>
-              {vendor.serviceType && <p className="text-xs text-gray-400">{vendor.serviceType}</p>}
+            <div className="min-w-0">
+              <h3 className="truncate text-base font-semibold tracking-tight text-gray-900">{vendor.company}</h3>
+              {vendor.serviceType && <p className="text-xs text-muted-foreground">{vendor.serviceType}</p>}
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button onClick={onEdit} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 rounded-lg hover:bg-gray-50">
-              <Pencil className="w-3.5 h-3.5" /> Edit
-            </button>
-            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><X className="w-4 h-4 text-gray-400" /></button>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <Button variant="outline" size="sm" onClick={onEdit}>
+              <Pencil /> Edit
+            </Button>
+            <Button variant="ghost" size="icon-sm" onClick={onClose} className="text-gray-400" aria-label="Close">
+              <X />
+            </Button>
           </div>
         </div>
 
-        <div className="p-6 space-y-6">
+        <div className="space-y-6 p-6">
           {/* Contact info */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {vendor.contactName && (
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <Tag className="w-4 h-4 text-gray-400 shrink-0" />
+              <div className={contactRow}>
+                <User className={contactIcon} />
                 <span>{vendor.contactName}</span>
               </div>
             )}
             {vendor.phone && (
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <Phone className="w-4 h-4 text-gray-400 shrink-0" />
-                <span>{vendor.phone}</span>
+              <div className={contactRow}>
+                <Phone className={contactIcon} />
+                <span className="tabular-nums">{vendor.phone}</span>
               </div>
             )}
             {vendor.email && (
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <Mail className="w-4 h-4 text-gray-400 shrink-0" />
-                <a href={`mailto:${vendor.email}`} className="text-blue-600 hover:underline truncate">{vendor.email}</a>
+              <div className={contactRow}>
+                <Mail className={contactIcon} />
+                <a href={`mailto:${vendor.email}`} className="truncate font-medium text-gray-900 hover:underline underline-offset-4">{vendor.email}</a>
               </div>
             )}
             {vendor.website && (
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <Globe className="w-4 h-4 text-gray-400 shrink-0" />
-                <a href={vendor.website} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline truncate">{vendor.website}</a>
+              <div className={contactRow}>
+                <Globe className={contactIcon} />
+                <a href={vendor.website} target="_blank" rel="noreferrer" className="truncate font-medium text-gray-900 hover:underline underline-offset-4">{vendor.website}</a>
               </div>
             )}
             {vendor.address && (
-              <div className="flex items-center gap-2 text-sm text-gray-600 col-span-2">
-                <MapPin className="w-4 h-4 text-gray-400 shrink-0" />
+              <div className={`${contactRow} sm:col-span-2`}>
+                <MapPin className={contactIcon} />
                 <span>{vendor.address}</span>
               </div>
             )}
           </div>
 
           {vendor.notes && (
-            <div className="bg-gray-50 rounded-lg px-4 py-3 text-sm text-gray-600 border border-gray-100">
-              <p className="font-medium text-gray-700 mb-1 text-xs">Notes</p>
+            <div className="rounded-lg bg-gray-50 px-4 py-3 text-sm text-gray-600">
+              <p className="mb-1 text-xs font-medium text-gray-900">Notes</p>
               <p className="whitespace-pre-wrap">{vendor.notes}</p>
             </div>
           )}
@@ -796,59 +797,58 @@ function VendorDetail({ vendor, onClose, onEdit }) {
 
           <VendorPurchaseBills vendorId={vendor.id} />
 
-          {loading && (
-            <div className="flex justify-center py-8">
-              <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
-            </div>
-          )}
+          {loading && <LoadingSpinner className="py-8" />}
 
           {detail && (
             <>
               {/* Purchases */}
               <div>
-                <div className="flex items-center justify-between mb-3">
-                  <h4 className="text-sm font-semibold text-gray-800">Purchase records</h4>
-                  <div className="flex items-center gap-3">
-                    <span className="text-xs text-gray-400">Total: <strong>{fmt(detail.totalPurchased)}</strong></span>
-                    {canDelete && (
-                      <button onClick={() => setPurchaseModal(true)}
-                        className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-800">
-                        <Plus className="w-3.5 h-3.5" /> Add
-                      </button>
-                    )}
-                  </div>
-                </div>
+                <SectionTitle
+                  action={
+                    <div className="flex items-center gap-3">
+                      <span className="text-[13px] text-muted-foreground">
+                        Total <span className="font-medium text-gray-900 tabular-nums">{fmt(detail.totalPurchased)}</span>
+                      </span>
+                      {canDelete && (
+                        <Button variant="outline" size="xs" onClick={() => setPurchaseModal(true)}>
+                          <Plus /> Add
+                        </Button>
+                      )}
+                    </div>
+                  }
+                >
+                  Purchase records
+                </SectionTitle>
                 {detail.purchases?.length === 0 ? (
-                  <p className="text-xs text-gray-400 text-center py-4 border border-dashed border-gray-200 rounded-lg">No purchases recorded</p>
+                  <p className={quietBox}>No purchases yet</p>
                 ) : (
-                  <div className="divide-y divide-gray-50 border border-gray-100 rounded-lg overflow-hidden">
+                  <div className="divide-y divide-gray-100 overflow-hidden rounded-lg border border-gray-200/80">
                     {detail.purchases.map(p => (
-                      <div key={p._id ?? p.id} className="flex items-start justify-between px-4 py-3 gap-3">
+                      <div key={p._id ?? p.id} className="flex items-start justify-between gap-3 px-4 py-3">
                         <div className="min-w-0">
-                          <p className="text-sm font-medium text-gray-800 truncate">{p.item}</p>
-                          <p className="text-xs text-gray-400">
+                          <p className="truncate text-sm font-medium text-gray-900">{p.item}</p>
+                          <p className="text-xs text-muted-foreground">
                             {fmtDate(p.date)}
                             {p.category ? ` · ${p.category}` : ''}
                             {p.invoiceRef ? ` · ${p.invoiceRef}` : ''}
                           </p>
-                          <p className="text-xs text-gray-500 mt-0.5">
-                            {p.quantity} × {fmt(p.unitPrice)} = <strong>{fmt(p.totalAmount)}</strong>
+                          <p className="mt-0.5 text-xs text-gray-600 tabular-nums">
+                            {p.quantity} × {fmt(p.unitPrice)} = <span className="font-medium text-gray-900">{fmt(p.totalAmount)}</span>
                           </p>
                         </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${STATUS_COLORS[p.status] ?? 'bg-gray-100 text-gray-600'}`}>
+                        <div className="flex shrink-0 items-center gap-1">
+                          <Badge variant={STATUS_VARIANT[p.status] ?? 'default'} className="mr-1 capitalize">
                             {p.status}
-                          </span>
+                          </Badge>
                           {canDelete && (
                             <>
-                              <button onClick={() => setEditPurchase(p)}
-                                className="p-1 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100">
-                                <Pencil className="w-3 h-3" />
-                              </button>
-                              <button onClick={() => deletePurchase(p)} disabled={deletingId === (p._id ?? p.id)}
-                                className="p-1 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-40">
-                                {deletingId === (p._id ?? p.id) ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
-                              </button>
+                              <Button variant="ghost" size="icon-xs" onClick={() => setEditPurchase(p)} className="text-gray-400" aria-label="Edit purchase">
+                                <Pencil />
+                              </Button>
+                              <Button variant="ghost" size="icon-xs" onClick={() => deletePurchase(p)} disabled={deletingId === (p._id ?? p.id)}
+                                className="text-gray-400 hover:bg-red-50 hover:text-red-600" aria-label="Delete purchase">
+                                {deletingId === (p._id ?? p.id) ? <Loader2 className="animate-spin" /> : <Trash2 />}
+                              </Button>
                             </>
                           )}
                         </div>
@@ -861,20 +861,25 @@ function VendorDetail({ vendor, onClose, onEdit }) {
               {/* Payment history */}
               {detail.payments?.length > 0 && (
                 <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <h4 className="text-sm font-semibold text-gray-800">Payment History</h4>
-                    <span className="text-xs text-gray-400">Total paid: <strong>{fmt(detail.totalPaid)}</strong></span>
-                  </div>
-                  <div className="divide-y divide-gray-50 border border-gray-100 rounded-lg overflow-hidden">
+                  <SectionTitle
+                    action={
+                      <span className="text-[13px] text-muted-foreground">
+                        Total paid <span className="font-medium text-gray-900 tabular-nums">{fmt(detail.totalPaid)}</span>
+                      </span>
+                    }
+                  >
+                    Payment history
+                  </SectionTitle>
+                  <div className="divide-y divide-gray-100 overflow-hidden rounded-lg border border-gray-200/80">
                     {detail.payments.map(p => (
-                      <div key={p._id ?? p.id} className="flex items-center justify-between px-4 py-3">
-                        <div>
-                          <p className="text-sm font-medium text-gray-800">{fmt(p.amount)}</p>
-                          <p className="text-xs text-gray-400">{fmtDate(p.date)}{p.description ? ` · ${p.description}` : ''}</p>
+                      <div key={p._id ?? p.id} className="flex items-center justify-between gap-3 px-4 py-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-gray-900 tabular-nums">{fmt(p.amount)}</p>
+                          <p className="text-xs text-muted-foreground">{fmtDate(p.date)}{p.description ? ` · ${p.description}` : ''}</p>
                         </div>
-                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${p.status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                        <Badge variant={p.status === 'paid' ? 'success' : 'warning'} className="capitalize">
                           {p.status}
-                        </span>
+                        </Badge>
                       </div>
                     ))}
                   </div>
@@ -884,13 +889,13 @@ function VendorDetail({ vendor, onClose, onEdit }) {
               {/* Documents */}
               {detail.documents?.length > 0 && (
                 <div>
-                  <h4 className="text-sm font-semibold text-gray-800 mb-3">Documents</h4>
-                  <div className="space-y-2">
+                  <SectionTitle>Documents</SectionTitle>
+                  <div className="divide-y divide-gray-100 overflow-hidden rounded-lg border border-gray-200/80">
                     {detail.documents.map(doc => (
-                      <div key={doc._id ?? doc.id} className="flex items-center gap-3 px-4 py-2 border border-gray-100 rounded-lg">
-                        <FileText className="w-4 h-4 text-gray-400 shrink-0" />
-                        <a href={doc.fileUrl} target="_blank" rel="noreferrer" className="text-sm text-blue-600 hover:underline truncate">{doc.title ?? doc.fileName ?? 'Document'}</a>
-                        <span className="text-xs text-gray-400 ml-auto shrink-0">{fmtDate(doc.createdAt)}</span>
+                      <div key={doc._id ?? doc.id} className="flex items-center gap-3 px-4 py-2.5">
+                        <FileText className="size-4 shrink-0 text-gray-400" />
+                        <a href={doc.fileUrl} target="_blank" rel="noreferrer" className="truncate text-sm font-medium text-gray-900 hover:underline underline-offset-4">{doc.title ?? doc.fileName ?? 'Document'}</a>
+                        <span className="ml-auto shrink-0 text-xs text-muted-foreground">{fmtDate(doc.createdAt)}</span>
                       </div>
                     ))}
                   </div>
@@ -963,130 +968,112 @@ export default function VendorsPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-gray-900">Vendors</h1>
-          <p className="text-sm text-gray-400 mt-0.5">{total} vendor{total !== 1 ? 's' : ''}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button onClick={() => setStModal(true)}
-            className="flex items-center gap-2 px-3 py-2 border border-gray-200 text-gray-600 text-sm font-medium rounded-xl hover:bg-gray-50 transition-colors">
-            <Settings2 className="w-4 h-4" /> Service Types
-          </button>
-          <button onClick={() => setAddModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-xl hover:bg-gray-800 transition-colors">
-            <Plus className="w-4 h-4" /> Add Vendor
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title="Vendors"
+        description={`${total} vendor${total !== 1 ? 's' : ''}`}
+        actions={<>
+          <Button variant="outline" onClick={() => setStModal(true)}>
+            <Settings2 /> Service types
+          </Button>
+          <Button onClick={() => setAddModal(true)}>
+            <Plus /> New vendor
+          </Button>
+        </>}
+      />
 
       {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-        <input
+      <div className="flex flex-wrap items-center gap-2">
+        <SearchInput
           value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="Search by company, contact, email or BIN…"
-          className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+          onChange={setSearch}
+          placeholder="Search vendors or BIN…"
+          className="w-full sm:w-72"
         />
-        {search && (
-          <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2">
-            <X className="w-4 h-4 text-gray-400 hover:text-gray-600" />
-          </button>
-        )}
       </div>
 
       {/* Table */}
-      <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+      <Card className="overflow-hidden">
         {loading ? (
-          <div className="flex justify-center py-16">
-            <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
-          </div>
+          <LoadingSpinner className="py-16" />
         ) : vendors.length === 0 ? (
-          <div className="text-center py-16 text-gray-400">
-            <Building2 className="w-10 h-10 mx-auto mb-3 opacity-30" />
-            <p className="text-sm">{search ? 'No vendors match your search' : 'No vendors yet'}</p>
-            {!search && <button onClick={() => setAddModal(true)} className="mt-3 text-sm text-blue-600 hover:underline">Add your first vendor</button>}
-          </div>
+          <EmptyState
+            icon={Building2}
+            title={search ? 'No results' : 'No vendors yet'}
+            action={!search && (
+              <Button variant="outline" size="sm" onClick={() => setAddModal(true)}>
+                <Plus /> New vendor
+              </Button>
+            )}
+          />
         ) : (
           <>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[700px]">
-                <thead>
-                  <tr className="border-b border-gray-100 bg-gray-50">
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Company</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Contact</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Service Type</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Purchases</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Total Purchased</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Added</th>
-                    <th className="px-4 py-3" />
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {vendors.map(v => {
-                    return (
-                      <tr key={v.id} className="hover:bg-gray-50 transition-colors">
-                        <td className="px-4 py-3">
-                          <button onClick={() => setDetail(v)} className="text-left">
-                            <p className="text-sm font-medium text-gray-900 hover:text-blue-600 transition-colors">{v.company}</p>
-                            {v.email && <p className="text-xs text-gray-400 mt-0.5">{v.email}</p>}
-                            {v.bin
-                              ? <p className="text-[11px] text-gray-400 font-mono mt-0.5">BIN {v.bin}</p>
-                              : ['TURNOVER', 'UNREGISTERED', 'FOREIGN'].includes(v.vatRegistrationType)
-                                ? <p className="text-[11px] text-gray-400 mt-0.5">{VAT_REG_LABELS[v.vatRegistrationType]}</p>
-                                : null}
-                          </button>
-                        </td>
-                        <td className="px-4 py-3">
-                          <p className="text-sm text-gray-700">{v.contactName || '—'}</p>
-                          {v.phone && <p className="text-xs text-gray-400">{v.phone}</p>}
-                        </td>
-                        <td className="px-4 py-3">
-                          {v.serviceType
-                            ? <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700">{v.serviceType}</span>
-                            : <span className="text-xs text-gray-400">—</span>}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-600">{v.purchaseCount ?? 0}</td>
-                        <td className="px-4 py-3 text-sm font-medium text-gray-800">{v.totalPurchaseAmount > 0 ? fmt(v.totalPurchaseAmount) : '—'}</td>
-                        <td className="px-4 py-3 text-xs text-gray-400">{fmtDate(v.createdAt)}</td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-1 justify-end">
-                            <button onClick={() => setEditModal(v)}
-                              className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors">
-                              <Pencil className="w-3.5 h-3.5" />
-                            </button>
-                            {canDelete && (
-                              <button onClick={() => setDelModal(v)}
-                                className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors">
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <Table className="min-w-[700px]">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Company</TableHead>
+                  <TableHead>Contact</TableHead>
+                  <TableHead>Service type</TableHead>
+                  <TableHead className="text-right">Purchases</TableHead>
+                  <TableHead className="text-right">Total purchased</TableHead>
+                  <TableHead>Added</TableHead>
+                  <TableHead />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {vendors.map(v => {
+                  return (
+                    <TableRow key={v.id}>
+                      <TableCell>
+                        <button onClick={() => setDetail(v)} className="text-left">
+                          <p className="font-medium text-gray-900 hover:underline underline-offset-4">{v.company}</p>
+                          {v.email && <p className="mt-0.5 text-xs text-muted-foreground">{v.email}</p>}
+                          {v.bin
+                            ? <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">BIN {v.bin}</p>
+                            : ['TURNOVER', 'UNREGISTERED', 'FOREIGN'].includes(v.vatRegistrationType)
+                              ? <p className="mt-0.5 text-[11px] text-muted-foreground">{VAT_REG_LABELS[v.vatRegistrationType]}</p>
+                              : null}
+                        </button>
+                      </TableCell>
+                      <TableCell>
+                        <p className="text-gray-700">{v.contactName || '—'}</p>
+                        {v.phone && <p className="text-xs text-muted-foreground tabular-nums">{v.phone}</p>}
+                      </TableCell>
+                      <TableCell>
+                        {v.serviceType
+                          ? <Badge>{v.serviceType}</Badge>
+                          : <span className="text-xs text-gray-400">—</span>}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">{v.purchaseCount ?? 0}</TableCell>
+                      <TableCell className="text-right font-medium text-gray-900 tabular-nums">{v.totalPurchaseAmount > 0 ? fmt(v.totalPurchaseAmount) : '—'}</TableCell>
+                      <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{fmtDate(v.createdAt)}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center justify-end gap-1">
+                          <Button variant="ghost" size="icon-sm" onClick={() => setEditModal(v)} className="text-gray-400" aria-label="Edit vendor">
+                            <Pencil />
+                          </Button>
+                          {canDelete && (
+                            <Button variant="ghost" size="icon-sm" onClick={() => setDelModal(v)}
+                              className="text-gray-400 hover:bg-red-50 hover:text-red-600" aria-label="Delete vendor">
+                              <Trash2 />
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
 
             {/* Pagination */}
             {pages > 1 && (
-              <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
-                <p className="text-xs text-gray-400">Page {page} of {pages} · {total} total</p>
-                <div className="flex gap-2">
-                  <button disabled={page <= 1} onClick={() => setPage(p => p - 1)}
-                    className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-50">Previous</button>
-                  <button disabled={page >= pages} onClick={() => setPage(p => p + 1)}
-                    className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-50">Next</button>
-                </div>
+              <div className="border-t border-gray-100 px-4 py-3">
+                <Pagination page={page} pages={pages} total={total} limit={limit} onChange={setPage} />
               </div>
             )}
           </>
         )}
-      </div>
+      </Card>
 
       {/* Modals */}
       {addModal  && <VendorModal serviceTypes={serviceTypes} onClose={() => setAddModal(false)} onSaved={load} />}

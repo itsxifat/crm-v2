@@ -50,6 +50,7 @@
     "recharts": "^2.13.3",
     "tailwind-merge": "^2.5.4",
     "tailwindcss": "^3.4.14",
+    "tailwindcss-animate": "^1.0.7",
     "uuid": "^11.0.3",
     "zod": "^3.23.8"
   },

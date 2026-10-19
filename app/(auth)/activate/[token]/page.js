@@ -4,9 +4,19 @@ import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { signIn } from 'next-auth/react'
 import Image from 'next/image'
-import Link from 'next/link'
 import { ShieldCheck, Loader2, Mail, KeyRound, AlertCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
+import Button from '@/components/ui/Button'
+import { Card } from '@/components/ui/Card'
+import { Input } from '@/components/ui/Input'
+
+function StateIcon({ icon: Icon, className = 'text-gray-600' }) {
+  return (
+    <div className="mx-auto mb-4 flex size-10 items-center justify-center rounded-lg border border-gray-200/80 bg-white shadow-xs">
+      <Icon className={`size-5 ${className}`} />
+    </div>
+  )
+}
 
 export default function ActivateAccountPage() {
   const { token } = useParams()
@@ -60,75 +70,64 @@ export default function ActivateAccountPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-6">
-          <Image src="/en-logo.png" alt="Enfinito" width={120} height={32} className="h-8 w-auto object-contain mx-auto" />
+    <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4 sm:p-6">
+      <div className="w-full max-w-sm">
+        <div className="mb-6 flex justify-center">
+          <Image src="/en-logo.png" alt="Enfinito" width={120} height={28} className="h-7 w-auto object-contain" priority />
         </div>
 
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-7">
+        <Card className="p-6">
           {phase === 'loading' && (
-            <div className="flex items-center justify-center py-10 text-gray-400"><Loader2 className="w-6 h-6 animate-spin" /></div>
+            <div className="flex items-center justify-center py-10 text-gray-400"><Loader2 className="size-5 animate-spin" /></div>
           )}
 
           {phase === 'invalid' && (
-            <div className="text-center py-6">
-              <AlertCircle className="w-10 h-10 text-red-400 mx-auto mb-3" />
-              <p className="font-semibold text-gray-800">Activation link invalid</p>
-              <p className="text-sm text-gray-500 mt-1">This link is invalid or has expired. Please contact us to get a new one.</p>
-              <Link href="/login" className="inline-block mt-4 text-sm font-medium text-blue-600 hover:text-blue-700">Back to sign in</Link>
+            <div className="text-center">
+              <StateIcon icon={AlertCircle} className="text-red-500" />
+              <h1 className="text-xl font-semibold tracking-tight text-gray-900">Activation link invalid</h1>
+              <p className="mt-2 text-sm text-muted-foreground">This link is invalid or has expired. Contact us for a new one.</p>
+              <Button href="/login" variant="outline" className="mt-6 w-full">Back to sign in</Button>
             </div>
           )}
 
           {phase === 'ready' && (
             <div className="text-center">
-              <div className="w-11 h-11 rounded-xl bg-blue-50 flex items-center justify-center mx-auto mb-3">
-                <ShieldCheck className="w-6 h-6 text-blue-600" />
-              </div>
-              <h1 className="text-lg font-semibold text-gray-900">Activate your account</h1>
-              <p className="text-sm text-gray-500 mt-1">
-                We'll email a one-time login code to<br /><span className="font-medium text-gray-700">{email}</span>
+              <StateIcon icon={ShieldCheck} />
+              <h1 className="text-xl font-semibold tracking-tight text-gray-900">Activate your account</h1>
+              <p className="mt-1 text-sm text-muted-foreground">
+                We&apos;ll email a one-time code to<br /><span className="font-medium text-gray-900">{email}</span>
               </p>
-              <button
-                onClick={sendCode}
-                disabled={sending}
-                className="mt-5 w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 disabled:opacity-60 transition-colors"
-              >
-                {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+              <Button onClick={sendCode} loading={sending} className="mt-6 w-full">
+                {!sending && <Mail />}
                 Email me my login code
-              </button>
+              </Button>
             </div>
           )}
 
           {phase === 'code' && (
             <form onSubmit={verify} className="text-center">
-              <div className="w-11 h-11 rounded-xl bg-blue-50 flex items-center justify-center mx-auto mb-3">
-                <KeyRound className="w-6 h-6 text-blue-600" />
-              </div>
-              <h1 className="text-lg font-semibold text-gray-900">Enter your code</h1>
-              <p className="text-sm text-gray-500 mt-1">Check {email} for a 6-digit code (valid 10 minutes).</p>
-              <input
+              <StateIcon icon={KeyRound} />
+              <h1 className="text-xl font-semibold tracking-tight text-gray-900">Enter your code</h1>
+              <p className="mt-1 text-sm text-muted-foreground">Check {email} for a 6-digit code (valid 10 minutes).</p>
+              <Input
                 value={code}
                 onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                 inputMode="numeric"
                 autoFocus
                 placeholder="••••••"
-                className="mt-5 w-full text-center tracking-[0.5em] text-2xl font-semibold border border-gray-200 rounded-xl px-3 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                aria-label="Login code"
+                className="mt-6 h-12 text-center text-xl font-semibold tracking-[0.5em]"
               />
-              <button
-                type="submit"
-                disabled={verifying}
-                className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 disabled:opacity-60 transition-colors"
-              >
-                {verifying && <Loader2 className="w-4 h-4 animate-spin" />}
+              <Button type="submit" loading={verifying} className="mt-4 w-full">
                 Verify &amp; continue
-              </button>
-              <button type="button" onClick={sendCode} disabled={sending} className="mt-3 text-xs text-gray-400 hover:text-gray-600">
-                Didn't get it? Resend code
+              </Button>
+              <button type="button" onClick={sendCode} disabled={sending}
+                className="mt-4 text-[13px] text-muted-foreground underline-offset-4 hover:text-gray-900 hover:underline disabled:opacity-50">
+                Didn&apos;t get it? Resend code
               </button>
             </form>
           )}
-        </div>
+        </Card>
       </div>
     </div>
   )

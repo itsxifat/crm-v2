@@ -1,10 +1,12 @@
 'use client'
 
 import { Suspense, useEffect, useState } from 'react'
-import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { AlertCircle, ArrowLeft, Lock } from 'lucide-react'
+import { AlertCircle, Lock } from 'lucide-react'
 import EmptyState from '@/components/ui/EmptyState'
+import Button from '@/components/ui/Button'
+import { Card } from '@/components/ui/Card'
+import PageHeader from '@/components/ui/PageHeader'
 import { PageLoader } from '@/components/ui/LoadingSpinner'
 import { usePermission } from '@/components/auth/Can'
 import PurchaseBillForm from '../_components/PurchaseBillForm'
@@ -38,33 +40,25 @@ function NewPurchaseBill() {
 
   if (!can('inventory.purchase')) {
     return (
-      <div className="bg-white border border-gray-100 rounded-xl">
-        <EmptyState icon={Lock} title="You cannot record purchase bills"
-          description="Ask an administrator for the “Record purchase bills” permission." />
-      </div>
+      <Card>
+        <EmptyState icon={Lock} title="You can't record purchase bills"
+          description="Needs the “Record purchase bills” permission." />
+      </Card>
     )
   }
 
   if (error || !options) {
     return (
-      <div className="bg-white border border-gray-100 rounded-xl">
-        <EmptyState icon={AlertCircle} title="Could not load the form" description={error ?? 'Please try again.'}
-          action={<button type="button" onClick={reload} className="text-sm font-medium text-gray-900 underline">Try again</button>} />
-      </div>
+      <Card>
+        <EmptyState icon={AlertCircle} title="Couldn't load the form" description={error ?? 'Please try again.'}
+          action={<Button variant="outline" size="sm" onClick={reload}>Try again</Button>} />
+      </Card>
     )
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-start gap-3">
-        <Link href="/admin/inventory/purchases" className="p-2 -ml-2 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-white" aria-label="Back to purchases">
-          <ArrowLeft className="w-5 h-5" />
-        </Link>
-        <div>
-          <h1 className="text-xl font-semibold text-gray-900">New purchase bill</h1>
-          <p className="text-sm text-gray-500">Enter the supplier&apos;s bill as printed on the Mushak-6.3. Totals, VAT credit and withholding update as you type.</p>
-        </div>
-      </div>
+    <div className="space-y-6">
+      <PageHeader title="New purchase bill" back="/admin/inventory/purchases" backLabel="Purchases" />
       <PurchaseBillForm
         options={options}
         presetVendor={vendor}

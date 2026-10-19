@@ -5,11 +5,17 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
 import {
-  ArrowLeft, Mail, Phone, Clock, Pencil, Ban, RotateCcw, Loader2,
-  CheckCircle2, Send, CalendarClock, ShieldCheck, BadgeCheck, FileText, XCircle, Receipt,
+  ArrowLeft, Mail, Phone, Clock, Pencil, Ban, RotateCcw,
+  CheckCircle2, Send, BadgeCheck, FileText, XCircle, Briefcase, Wallet,
 } from 'lucide-react'
 import Avatar from '@/components/ui/Avatar'
 import Badge from '@/components/ui/Badge'
+import Button, { buttonVariants } from '@/components/ui/Button'
+import { Card, CardHeader, CardTitle, CardDescription, CardAction } from '@/components/ui/Card'
+import Tabs from '@/components/ui/Tabs'
+import EmptyState from '@/components/ui/EmptyState'
+import { PageLoader } from '@/components/ui/LoadingSpinner'
+import { Table, TableHeader, TableBody, TableFooter, TableRow, TableHead, TableCell } from '@/components/ui/Table'
 import FreelancerModal from '@/components/admin/freelancers/FreelancerModal'
 import { formatCurrency } from '@/lib/utils'
 
@@ -20,25 +26,23 @@ function moneyByCurrency(totals) {
   return totals.map(t => formatCurrency(t.total, t.currency)).join('  ·  ')
 }
 
-const ASSIGN_COLORS = {
-  ASSIGNED: 'bg-blue-50 text-blue-700', ACCEPTED: 'bg-teal-50 text-teal-700',
-  IN_PROGRESS: 'bg-violet-50 text-violet-700', COMPLETED: 'bg-emerald-50 text-emerald-700',
-  CANCELLED: 'bg-rose-50 text-rose-600',
+const ASSIGN_VARIANT = {
+  ASSIGNED: 'primary', ACCEPTED: 'teal', IN_PROGRESS: 'purple', COMPLETED: 'success', CANCELLED: 'danger',
 }
 const PAY_LABEL = {
-  PENDING: { label: 'Not requested', cls: 'bg-gray-50 text-gray-500' },
-  PAYMENT_REQUESTED: { label: 'Awaiting payment', cls: 'bg-amber-50 text-amber-700' },
-  PAID: { label: 'Paid', cls: 'bg-emerald-50 text-emerald-700' },
-  NOT_REQUIRED: { label: 'Salary', cls: 'bg-indigo-50 text-indigo-700' },
+  PENDING: { label: 'Not requested', variant: 'default' },
+  PAYMENT_REQUESTED: { label: 'Awaiting payment', variant: 'warning' },
+  PAID: { label: 'Paid', variant: 'success' },
+  NOT_REQUIRED: { label: 'Salary', variant: 'indigo' },
 }
 
-function StatBox({ label, value, hint, color }) {
+function StatBox({ label, value, hint }) {
   return (
-    <div className="rounded-2xl border border-gray-100 bg-white p-4 sm:p-5 shadow-sm">
-      <p className={`text-xs font-medium uppercase tracking-wide ${color}`}>{label}</p>
-      <p className="text-lg sm:text-xl font-bold text-gray-900 mt-1.5 break-words">{value}</p>
-      {hint && <p className="text-xs text-gray-400 mt-1">{hint}</p>}
-    </div>
+    <Card className="p-5">
+      <p className="text-[13px] font-medium text-muted-foreground">{label}</p>
+      <p className="mt-2 break-words text-xl font-semibold tracking-tight tabular-nums text-gray-900">{value}</p>
+      {hint && <p className="mt-1 text-xs text-muted-foreground">{hint}</p>}
+    </Card>
   )
 }
 
@@ -69,35 +73,33 @@ function TaxIdentity({ data, onEdit }) {
     { label: 'Payee type',  value: PAYEE_LABELS[payee] ?? payee },
   ]
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide flex items-center gap-2">
-          <Receipt className="w-4 h-4 text-gray-400" /> Tax identity
-        </h3>
-        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${data.hasPsr ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}`}>
+        <h3 className="text-sm font-semibold text-gray-900">Tax identity</h3>
+        <Badge variant={data.hasPsr ? 'success' : 'warning'}>
           {data.hasPsr ? 'PSR on file' : 'No PSR — TDS +50%'}
-        </span>
+        </Badge>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         {rows.map(r => (
           <div key={r.label} className="min-w-0">
-            <p className="text-xs text-gray-400">{r.label}</p>
-            <p className={`text-sm font-medium break-words ${r.value ? 'text-gray-900' : 'text-gray-300'} ${r.mono && r.value ? 'font-mono' : ''}`}>
+            <p className="text-xs text-muted-foreground">{r.label}</p>
+            <p className={`mt-0.5 break-words text-sm font-medium ${r.value ? 'text-gray-900' : 'text-gray-300'} ${r.mono && r.value ? 'font-mono' : ''}`}>
               {r.value || '—'}
             </p>
           </div>
         ))}
       </div>
       {isAgency && payee === 'INDIVIDUAL' && (
-        <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
-          This agency is set up as an individual payee. Firms and companies are usually “Company / firm” for TDS.{' '}
-          <button type="button" onClick={onEdit} className="font-medium underline">Edit</button>
-        </p>
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
+          Set as an individual payee — firms are usually “Company / firm” for TDS.{' '}
+          <button type="button" onClick={onEdit} className="font-medium underline underline-offset-4">Edit</button>
+        </div>
       )}
       {!data.tin && !data.bin && (
-        <p className="text-xs text-gray-400">
-          No TIN or BIN on file. Add them so TDS certificates show the payee&apos;s e-TIN.{' '}
-          <button type="button" onClick={onEdit} className="font-medium text-blue-600 hover:underline">Add tax details</button>
+        <p className="text-sm text-muted-foreground">
+          No TIN or BIN on file.{' '}
+          <button type="button" onClick={onEdit} className="font-medium text-gray-900 underline-offset-4 hover:underline">Add tax details</button>
         </p>
       )}
     </div>
@@ -105,10 +107,10 @@ function TaxIdentity({ data, onEdit }) {
 }
 
 const VERIFY_META = {
-  CREATED:          { label: 'Not Started',  cls: 'bg-gray-100 text-gray-600' },
-  INCOMPLETE:       { label: 'Incomplete',   cls: 'bg-amber-50 text-amber-700' },
-  PENDING_APPROVAL: { label: 'Pending Review', cls: 'bg-blue-50 text-blue-700' },
-  APPROVED:         { label: 'Verified',     cls: 'bg-green-50 text-green-700' },
+  CREATED:          { label: 'Not started',    variant: 'default' },
+  INCOMPLETE:       { label: 'Incomplete',     variant: 'warning' },
+  PENDING_APPROVAL: { label: 'Pending review', variant: 'primary' },
+  APPROVED:         { label: 'Verified',       variant: 'success' },
 }
 
 function VerificationCard({ data, acting, onAction }) {
@@ -121,91 +123,88 @@ function VerificationCard({ data, acting, onAction }) {
 
   const rows = isAgency
     ? [
-        { label: 'Agency Name', value: data.agencyInfo?.agencyName },
-        { label: 'Agency Type', value: data.agencyInfo?.type },
-        { label: 'Contact Person', value: data.contactPerson?.name },
-        { label: 'Contact Phone', value: data.contactPerson?.phone },
-        { label: 'Contact Email', value: data.contactPerson?.email },
+        { label: 'Agency name', value: data.agencyInfo?.agencyName },
+        { label: 'Agency type', value: data.agencyInfo?.type },
+        { label: 'Contact person', value: data.contactPerson?.name },
+        { label: 'Contact phone', value: data.contactPerson?.phone },
+        { label: 'Contact email', value: data.contactPerson?.email },
         { label: 'Address', value: data.address },
       ]
     : [
-        { label: 'NID Number', value: data.nidNumber },
+        { label: 'NID number', value: data.nidNumber },
         { label: 'Passport', value: data.passportNumber },
         { label: 'Address', value: data.address },
         { label: 'Skills', value: data.skills },
       ]
 
   return (
-    <div className="rounded-2xl border border-gray-100 bg-white p-5 sm:p-6 shadow-sm">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-2">
-          <ShieldCheck className="w-5 h-5 text-gray-500" />
-          <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">KYC / Verification</h3>
-        </div>
-        <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium ${meta.cls}`}>
-          {meta.label} · {pct}%
-        </span>
+    <Card>
+      <CardHeader className="items-center">
+        <CardTitle>KYC verification</CardTitle>
+        <CardAction>
+          <Badge variant={meta.variant}>{meta.label} · {pct}%</Badge>
+        </CardAction>
+      </CardHeader>
+
+      <div className="space-y-4 px-5 pb-5">
+        {status === 'CREATED' || status === 'INCOMPLETE' ? (
+          <p className="text-sm text-muted-foreground">
+            KYC not submitted yet ({pct}% complete).
+          </p>
+        ) : (
+          <>
+            <div className="grid gap-x-8 gap-y-3 sm:grid-cols-2">
+              {rows.filter(r => r.value).map(r => (
+                <div key={r.label}>
+                  <p className="text-xs text-muted-foreground">{r.label}</p>
+                  <p className="mt-0.5 break-words text-sm font-medium text-gray-900">{r.value}</p>
+                </div>
+              ))}
+            </div>
+
+            <div>
+              <p className="mb-1.5 text-xs text-muted-foreground">Documents</p>
+              {docs.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No documents uploaded</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {docs.map((d, i) => (
+                    <a key={i} href={d.url} target="_blank" rel="noreferrer"
+                      className={buttonVariants({ variant: 'outline', size: 'sm' })}>
+                      <FileText /> {d.name || d.type}
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        {data.reviewNotes && status === 'INCOMPLETE' && (
+          <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-800">
+            <XCircle className="mt-0.5 size-4 shrink-0" />
+            <div><span className="font-medium">Sent back: </span>{data.reviewNotes}</div>
+          </div>
+        )}
+
+        {status === 'APPROVED' && (
+          <p className="inline-flex items-center gap-1.5 text-sm font-medium text-emerald-700">
+            <BadgeCheck className="size-4" /> Verified{data.verifiedAt ? ` on ${fmtDate(data.verifiedAt)}` : ''} · full portal access
+          </p>
+        )}
       </div>
 
-      {status === 'CREATED' || status === 'INCOMPLETE' ? (
-        <p className="text-sm text-gray-500 mt-4">
-          {isAgency ? 'This agency' : 'This freelancer'} hasn’t submitted their KYC yet ({pct}% complete). You can review and approve once they submit.
-        </p>
-      ) : (
-        <>
-          <div className="grid sm:grid-cols-2 gap-x-8 gap-y-3 mt-4">
-            {rows.filter(r => r.value).map(r => (
-              <div key={r.label}>
-                <p className="text-xs text-gray-400">{r.label}</p>
-                <p className="text-sm font-medium text-gray-800 break-words">{r.value}</p>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-4">
-            <p className="text-xs text-gray-400 mb-1.5">Documents</p>
-            {docs.length === 0 ? (
-              <p className="text-sm text-gray-400">No documents uploaded.</p>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {docs.map((d, i) => (
-                  <a key={i} href={d.url} target="_blank" rel="noreferrer"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 hover:text-blue-600 transition-colors">
-                    <FileText className="w-3.5 h-3.5" /> {d.name || d.type}
-                  </a>
-                ))}
-              </div>
-            )}
-          </div>
-        </>
-      )}
-
-      {data.reviewNotes && status === 'INCOMPLETE' && (
-        <div className="mt-4 flex items-start gap-2 p-3 bg-red-50 border border-red-100 rounded-xl text-sm text-red-700">
-          <XCircle className="w-4 h-4 shrink-0 mt-0.5" />
-          <div><span className="font-medium">Sent back: </span>{data.reviewNotes}</div>
-        </div>
-      )}
-
       {status === 'PENDING_APPROVAL' && (
-        <div className="flex items-center gap-2 mt-5 pt-4 border-t border-gray-100">
-          <button onClick={() => onAction('approve')} disabled={busy}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors">
-            {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <BadgeCheck className="w-4 h-4" />} Approve
-          </button>
-          <button onClick={() => onAction('reject')} disabled={busy}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-rose-600 text-sm font-medium rounded-lg hover:bg-rose-50 disabled:opacity-50 transition-colors">
-            <XCircle className="w-4 h-4" /> Reject
-          </button>
+        <div className="flex flex-wrap items-center gap-2 border-t border-gray-100 px-5 py-3">
+          <Button onClick={() => onAction('approve')} loading={busy}>
+            {!busy && <BadgeCheck />} Approve
+          </Button>
+          <Button variant="outline" onClick={() => onAction('reject')} disabled={busy} className="text-red-600 hover:text-red-700">
+            <XCircle /> Reject
+          </Button>
         </div>
       )}
-
-      {status === 'APPROVED' && (
-        <p className="text-xs text-green-600 mt-4 font-medium inline-flex items-center gap-1.5">
-          <BadgeCheck className="w-4 h-4" /> Verified{data.verifiedAt ? ` on ${fmtDate(data.verifiedAt)}` : ''} — full portal access granted.
-        </p>
-      )}
-    </div>
+    </Card>
   )
 }
 
@@ -266,7 +265,7 @@ export default function FreelancerDetailPage() {
   // Salary is approved & paid from the unified Expenses queue; this only cancels a pending payout.
   async function payoutAction(p, action) {
     // Cancelling is irreversible: the period can't be regenerated by the salary cron.
-    const note = prompt(`Cancel the ${p.period ?? ''} salary payout? This cannot be undone and the month will not be regenerated.\n\nOptional reason:`)
+    const note = prompt(`Cancel the ${p.period ?? ''} salary payout? This can't be undone; the month won't be regenerated.\n\nReason (optional):`)
     if (note === null) return
     try {
       const res  = await fetch(`/api/admin/salary-payouts/${p.id ?? p._id}`, {
@@ -332,19 +331,13 @@ export default function FreelancerDetailPage() {
     } finally { setActing(null) }
   }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-      </div>
-    )
-  }
+  if (loading) return <PageLoader />
   if (!data) {
     return (
-      <div className="text-center py-20">
-        <p className="text-gray-500">Freelancer not found.</p>
-        <Link href="/admin/freelancers" className="text-blue-600 text-sm mt-2 inline-block hover:underline">Back to Freelancers</Link>
-      </div>
+      <EmptyState
+        title="Freelancer not found"
+        action={<Button variant="outline" href="/admin/freelancers">Back to freelancers</Button>}
+      />
     )
   }
 
@@ -357,303 +350,296 @@ export default function FreelancerDetailPage() {
   const paidHistory = assignments.filter(a => a.paymentStatus === 'PAID')
 
   return (
-    <div className="space-y-6 mx-auto w-full max-w-6xl">
+    <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <button onClick={() => router.back()} className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-500">
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <Avatar name={user?.name} src={user?.avatar} size="lg" />
-          <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-xl font-bold text-gray-900">{user?.name}</h1>
-              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${disabled ? 'bg-rose-100 text-rose-700' : 'bg-green-100 text-green-700'}`}>
-                {disabled ? 'Disabled' : 'Active'}
-              </span>
-              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${isSalary ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-600'}`}>
-                {isSalary ? 'Salary' : 'Project'} · {data.paymentCurrency ?? 'BDT'}
-              </span>
+      <div>
+        <button type="button" onClick={() => router.back()}
+          className="mb-2 inline-flex items-center gap-1.5 text-[13px] font-medium text-muted-foreground hover:text-gray-900">
+          <ArrowLeft className="size-3.5" /> Back
+        </button>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-center gap-3">
+            <Avatar name={user?.name} src={user?.avatar} size="lg" />
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="truncate text-2xl font-semibold tracking-tight text-gray-900">{user?.name}</h1>
+                <Badge variant={disabled ? 'danger' : 'success'} dot>{disabled ? 'Disabled' : 'Active'}</Badge>
+                <Badge variant={isSalary ? 'indigo' : 'default'}>
+                  {isSalary ? 'Salary' : 'Project'} · {data.paymentCurrency ?? 'BDT'}
+                </Badge>
+              </div>
+              {data.skills && <p className="mt-1 text-sm text-muted-foreground">{data.skills}</p>}
             </div>
-            {data.skills && <p className="text-sm text-gray-500 mt-0.5">{data.skills}</p>}
           </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <button onClick={() => setEditOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors">
-            <Pencil className="w-4 h-4" /> Edit
-          </button>
-          {disabled ? (
-            <button onClick={() => toggleDisable(false)}
-              className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-emerald-700 text-sm font-medium rounded-lg hover:bg-emerald-50 transition-colors">
-              <RotateCcw className="w-4 h-4" /> Reactivate
-            </button>
-          ) : (
-            <button onClick={() => toggleDisable(true)} disabled={finance.hasUnpaid}
-              title={finance.hasUnpaid ? 'Settle outstanding dues first' : ''}
-              className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-rose-600 text-sm font-medium rounded-lg hover:bg-rose-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-              <Ban className="w-4 h-4" /> Disable
-            </button>
-          )}
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <Button variant="outline" onClick={() => setEditOpen(true)}>
+              <Pencil /> Edit
+            </Button>
+            {disabled ? (
+              <Button variant="outline" onClick={() => toggleDisable(false)}>
+                <RotateCcw /> Reactivate
+              </Button>
+            ) : (
+              <Button variant="outline" onClick={() => toggleDisable(true)} disabled={finance.hasUnpaid}
+                title={finance.hasUnpaid ? 'Settle outstanding dues first' : ''}
+                className="text-red-600 hover:text-red-700">
+                <Ban /> Disable
+              </Button>
+            )}
+          </div>
         </div>
       </div>
 
       {/* Money buckets */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <StatBox label="In progress" value={moneyByCurrency(finance.accepted)} hint="Accepted, not delivered" color="text-violet-600" />
-        <StatBox label="Owed" value={moneyByCurrency(finance.owed)} hint="Delivered / requested, unpaid" color="text-amber-600" />
-        <StatBox label="Total paid" value={moneyByCurrency(finance.paid)} hint="Settled to date" color="text-emerald-600" />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <StatBox label="In progress" value={moneyByCurrency(finance.accepted)} hint="Accepted, not delivered" />
+        <StatBox label="Owed" value={moneyByCurrency(finance.owed)} hint="Delivered, unpaid" />
+        <StatBox label="Total paid" value={moneyByCurrency(finance.paid)} />
       </div>
 
       {/* KYC / Verification */}
       <VerificationCard data={data} acting={acting} onAction={verifyAction} />
 
       {/* Tabs */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className="flex border-b border-gray-100 overflow-x-auto">
-          {[...TABS, ...(isSalary ? ['Salary'] : [])].map((t) => (
-            <button key={t} onClick={() => setTab(t)}
-              className={`px-5 py-3.5 text-sm font-medium whitespace-nowrap transition-colors relative ${
-                tab === t ? 'text-blue-600 border-b-2 border-blue-600 -mb-px' : 'text-gray-500 hover:text-gray-700'
-              }`}>
-              {t}
-            </button>
-          ))}
-        </div>
+      <div className="space-y-4">
+        <Tabs
+          variant="underline"
+          value={tab}
+          onChange={setTab}
+          tabs={[...TABS, ...(isSalary ? ['Salary'] : [])].map(t => ({ value: t, label: t }))}
+        />
 
-        <div className="p-5 sm:p-6">
-          {/* OVERVIEW */}
-          {tab === 'Overview' && (
-            <div className="grid lg:grid-cols-2 gap-8">
+        {/* OVERVIEW */}
+        {tab === 'Overview' && (
+          <Card className="p-5">
+            <div className="grid gap-8 lg:grid-cols-2">
               <div className="space-y-4">
-                <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Contact</h3>
+                <h3 className="text-sm font-semibold text-gray-900">Contact</h3>
                 {[
                   { icon: Mail,  label: 'Email', value: user?.email },
                   { icon: Phone, label: 'Phone', value: user?.phone },
                 ].map(({ icon: Icon, label, value }) => value ? (
                   <div key={label} className="flex items-center gap-3">
-                    <Icon className="w-4 h-4 text-gray-400 shrink-0" />
+                    <Icon className="size-4 shrink-0 text-gray-400" />
                     <div>
-                      <p className="text-xs text-gray-400">{label}</p>
+                      <p className="text-xs text-muted-foreground">{label}</p>
                       <p className="text-sm font-medium text-gray-900">{value}</p>
                     </div>
                   </div>
                 ) : null)}
                 {data.bio && (
                   <div>
-                    <p className="text-xs text-gray-400 mb-1">Bio</p>
-                    <p className="text-sm text-gray-600">{data.bio}</p>
+                    <p className="mb-1 text-xs text-muted-foreground">Bio</p>
+                    <p className="text-sm text-gray-700">{data.bio}</p>
                   </div>
                 )}
                 {disabled && data.disabledReason && (
-                  <div className="rounded-lg bg-rose-50 border border-rose-100 p-3">
-                    <p className="text-xs text-rose-600 font-medium">Disabled</p>
-                    <p className="text-sm text-rose-700 mt-0.5">{data.disabledReason}</p>
+                  <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5">
+                    <p className="text-xs font-medium text-red-700">Disabled</p>
+                    <p className="mt-0.5 text-sm text-red-800">{data.disabledReason}</p>
                   </div>
                 )}
               </div>
               <div className="space-y-4">
-                <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Engagement</h3>
+                <h3 className="text-sm font-semibold text-gray-900">Engagement</h3>
                 <div>
-                  <p className="text-xs text-gray-400">Mode</p>
-                  <p className="text-sm font-medium text-gray-900 mt-0.5">{isSalary ? 'Monthly salary' : 'Per project / task'}</p>
+                  <p className="text-xs text-muted-foreground">Mode</p>
+                  <p className="mt-0.5 text-sm font-medium text-gray-900">{isSalary ? 'Monthly salary' : 'Per project / task'}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-gray-400">Default payment currency</p>
-                  <p className="text-sm font-medium text-gray-900 mt-0.5">{data.paymentCurrency ?? 'BDT'}</p>
+                  <p className="text-xs text-muted-foreground">Default payment currency</p>
+                  <p className="mt-0.5 text-sm font-medium text-gray-900">{data.paymentCurrency ?? 'BDT'}</p>
                 </div>
                 {isSalary && (
-                  <div className="rounded-xl bg-indigo-50/60 border border-indigo-100 p-4 space-y-1.5">
-                    <p className="text-sm font-semibold text-gray-900">{fmtMoney(data.salaryAmount, data.salaryCurrency)} / month</p>
-                    <p className="text-xs text-gray-500">Pays on day {data.salaryDay ?? '—'} of each month</p>
-                    <p className="text-xs text-gray-400">
+                  <div className="space-y-1 rounded-lg bg-gray-50 p-4">
+                    <p className="text-sm font-semibold tabular-nums text-gray-900">{fmtMoney(data.salaryAmount, data.salaryCurrency)} / month</p>
+                    <p className="text-xs text-gray-600">Pays on day {data.salaryDay ?? '—'} of each month</p>
+                    <p className="text-xs text-muted-foreground">
                       {fmtDate(data.salaryStartDate)} → {data.salaryEndDate ? fmtDate(data.salaryEndDate) : 'ongoing'}
                       {' · '}{data.salaryActive ? 'Active' : 'Paused'}
                     </p>
                   </div>
                 )}
               </div>
-              <div className="lg:col-span-2 pt-5 border-t border-gray-100">
+              <div className="border-t border-gray-100 pt-5 lg:col-span-2">
                 <TaxIdentity data={data} onEdit={() => setEditOpen(true)} />
               </div>
             </div>
-          )}
+          </Card>
+        )}
 
-          {/* ENGAGEMENTS */}
-          {tab === 'Engagements' && (
-            assignments.length === 0 ? (
-              <div className="text-center py-12"><p className="text-gray-400">No engagements yet</p></div>
+        {/* ENGAGEMENTS */}
+        {tab === 'Engagements' && (
+          <Card className="overflow-hidden">
+            {assignments.length === 0 ? (
+              <EmptyState icon={Briefcase} title="No engagements yet" />
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[640px]">
-                  <thead>
-                    <tr className="border-b border-gray-100">
-                      {['Project', 'Amount', 'Stage', 'Payment', 'Date', 'Action'].map(h => (
-                        <th key={h} className="pb-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wide">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
-                    {assignments.map(a => {
-                      const aid = a.id ?? a._id
-                      const pay = PAY_LABEL[a.paymentStatus] ?? PAY_LABEL.PENDING
-                      return (
-                        <tr key={aid} className="hover:bg-gray-50 transition-colors">
-                          <td className="py-3 pr-4">
-                            <p className="text-sm font-medium text-gray-900">{a.projectId?.name ?? '—'}</p>
-                            {a.projectId?.projectCode && <p className="text-xs text-gray-400 font-mono">{a.projectId.projectCode}</p>}
-                          </td>
-                          <td className="py-3 pr-4 text-sm font-medium text-gray-900">
-                            {a.paymentAmount ? formatCurrency(a.paymentAmount, a.currency) : '—'}
-                          </td>
-                          <td className="py-3 pr-4">
-                            <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${ASSIGN_COLORS[a.status] ?? 'bg-gray-50 text-gray-600'}`}>
-                              {a.status?.replace('_', ' ')}
-                            </span>
-                          </td>
-                          <td className="py-3 pr-4">
-                            <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${pay.cls}`}>{pay.label}</span>
-                          </td>
-                          <td className="py-3 pr-4 text-sm text-gray-400">{fmtDate(a.createdAt)}</td>
-                          <td className="py-3">
-                            {['ACCEPTED', 'IN_PROGRESS'].includes(a.status) && (
-                              <button onClick={() => assignmentAction(aid, 'complete', 'Marked delivered')}
-                                disabled={acting === aid + 'complete'}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 text-gray-700 text-xs font-medium rounded-lg hover:bg-gray-50 disabled:opacity-50">
-                                {acting === aid + 'complete' && <Loader2 className="w-3 h-3 animate-spin" />}
-                                <CheckCircle2 className="w-3.5 h-3.5" /> Mark done
-                              </button>
-                            )}
-                            {a.status === 'COMPLETED' && a.paymentStatus === 'PENDING' && a.paymentAmount > 0 && (
-                              <button onClick={() => assignmentAction(aid, 'request_payment', 'Sent to payment')}
-                                disabled={acting === aid + 'request_payment'}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50">
-                                {acting === aid + 'request_payment' && <Loader2 className="w-3 h-3 animate-spin" />}
-                                <Send className="w-3.5 h-3.5" /> Send to payment
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )
-          )}
+              <Table className="min-w-[640px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Project</TableHead>
+                    <TableHead className="text-right">Amount</TableHead>
+                    <TableHead>Stage</TableHead>
+                    <TableHead>Payment</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {assignments.map(a => {
+                    const aid = a.id ?? a._id
+                    const pay = PAY_LABEL[a.paymentStatus] ?? PAY_LABEL.PENDING
+                    return (
+                      <TableRow key={aid}>
+                        <TableCell>
+                          <p className="font-medium text-gray-900">{a.projectId?.name ?? '—'}</p>
+                          {a.projectId?.projectCode && <p className="font-mono text-xs text-muted-foreground">{a.projectId.projectCode}</p>}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-right font-medium tabular-nums text-gray-900">
+                          {a.paymentAmount ? formatCurrency(a.paymentAmount, a.currency) : '—'}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={ASSIGN_VARIANT[a.status] ?? 'default'}>{a.status?.replace('_', ' ')}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={pay.variant}>{pay.label}</Badge>
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-muted-foreground">{fmtDate(a.createdAt)}</TableCell>
+                        <TableCell>
+                          {['ACCEPTED', 'IN_PROGRESS'].includes(a.status) && (
+                            <Button variant="outline" size="xs"
+                              onClick={() => assignmentAction(aid, 'complete', 'Marked delivered')}
+                              loading={acting === aid + 'complete'}>
+                              <CheckCircle2 /> Mark done
+                            </Button>
+                          )}
+                          {a.status === 'COMPLETED' && a.paymentStatus === 'PENDING' && a.paymentAmount > 0 && (
+                            <Button variant="outline" size="xs"
+                              onClick={() => assignmentAction(aid, 'request_payment', 'Sent to payment')}
+                              loading={acting === aid + 'request_payment'}>
+                              <Send /> Send to payment
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
+            )}
+          </Card>
+        )}
 
-          {/* PAYMENTS */}
-          {tab === 'Payments' && (
-            paidHistory.length === 0 && salaryPayouts.filter(p => p.status === 'PAID').length === 0 ? (
-              <div className="text-center py-12"><p className="text-gray-400">No payments yet</p></div>
+        {/* PAYMENTS */}
+        {tab === 'Payments' && (
+          <Card className="overflow-hidden">
+            {paidHistory.length === 0 && salaryPayouts.filter(p => p.status === 'PAID').length === 0 ? (
+              <EmptyState icon={Wallet} title="No payments yet" />
             ) : (
-              <div className="space-y-2">
+              <div className="divide-y divide-gray-100">
                 {paidHistory.map(a => (
-                  <div key={a.id ?? a._id} className="flex items-center justify-between gap-4 p-4 rounded-xl border border-gray-100">
+                  <div key={a.id ?? a._id} className="flex items-center justify-between gap-4 px-5 py-3.5">
                     <div className="min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">{a.projectId?.name ?? 'Project'}</p>
-                      <p className="text-xs text-gray-400">Paid · {fmtDate(a.approvedAt ?? a.updatedAt)}</p>
+                      <p className="truncate text-sm font-medium text-gray-900">{a.projectId?.name ?? 'Project'}</p>
+                      <p className="text-xs text-muted-foreground">Paid · {fmtDate(a.approvedAt ?? a.updatedAt)}</p>
                     </div>
-                    <p className="text-sm font-semibold text-emerald-600 shrink-0">{formatCurrency(a.paymentAmount, a.currency)}</p>
+                    <p className="shrink-0 text-sm font-semibold tabular-nums text-emerald-600">{formatCurrency(a.paymentAmount, a.currency)}</p>
                   </div>
                 ))}
                 {salaryPayouts.filter(p => p.status === 'PAID').map(p => (
-                  <div key={p.id ?? p._id} className="flex items-center justify-between gap-4 p-4 rounded-xl border border-gray-100">
+                  <div key={p.id ?? p._id} className="flex items-center justify-between gap-4 px-5 py-3.5">
                     <div>
                       <p className="text-sm font-medium text-gray-900">Salary · {p.period}</p>
-                      <p className="text-xs text-gray-400">Paid · {fmtDate(p.approvedAt)}</p>
+                      <p className="text-xs text-muted-foreground">Paid · {fmtDate(p.approvedAt)}</p>
                     </div>
-                    <p className="text-sm font-semibold text-emerald-600 shrink-0">{fmtMoney(p.amount, p.currency)}</p>
+                    <p className="shrink-0 text-sm font-semibold tabular-nums text-emerald-600">{fmtMoney(p.amount, p.currency)}</p>
                   </div>
                 ))}
               </div>
-            )
-          )}
+            )}
+          </Card>
+        )}
 
-          {/* TIMESHEETS */}
-          {tab === 'Timesheets' && (
-            timesheets.length === 0 ? (
-              <div className="text-center py-12">
-                <Clock className="w-10 h-10 text-gray-200 mx-auto mb-3" />
-                <p className="text-gray-400">No timesheets logged</p>
-              </div>
+        {/* TIMESHEETS */}
+        {tab === 'Timesheets' && (
+          <Card className="overflow-hidden">
+            {timesheets.length === 0 ? (
+              <EmptyState icon={Clock} title="No timesheets yet" />
             ) : (
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-gray-100">
-                    <th className="pb-3 text-left text-xs font-semibold text-gray-500 uppercase">Date</th>
-                    <th className="pb-3 text-left text-xs font-semibold text-gray-500 uppercase">Task</th>
-                    <th className="pb-3 text-right text-xs font-semibold text-gray-500 uppercase">Hours</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Task</TableHead>
+                    <TableHead className="text-right">Hours</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {timesheets.map((ts) => (
-                    <tr key={ts.id ?? ts._id} className="hover:bg-gray-50">
-                      <td className="py-3 text-sm text-gray-500">{fmtDate(ts.date)}</td>
-                      <td className="py-3">
-                        <p className="text-sm text-gray-900">{ts.taskId?.title ?? '—'}</p>
-                        {ts.taskId?.projectId?.name && <p className="text-xs text-gray-400">{ts.taskId.projectId.name}</p>}
-                      </td>
-                      <td className="py-3 text-sm font-semibold text-gray-900 text-right">{ts.hours}h</td>
-                    </tr>
+                    <TableRow key={ts.id ?? ts._id}>
+                      <TableCell className="whitespace-nowrap text-muted-foreground">{fmtDate(ts.date)}</TableCell>
+                      <TableCell>
+                        <p className="text-gray-900">{ts.taskId?.title ?? '—'}</p>
+                        {ts.taskId?.projectId?.name && <p className="text-xs text-muted-foreground">{ts.taskId.projectId.name}</p>}
+                      </TableCell>
+                      <TableCell className="text-right font-medium tabular-nums text-gray-900">{ts.hours}h</TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-                <tfoot>
-                  <tr className="border-t-2 border-gray-200">
-                    <td colSpan={2} className="py-3 text-sm font-semibold text-gray-700">Total</td>
-                    <td className="py-3 text-sm font-bold text-gray-900 text-right">{totalHours.toFixed(1)}h</td>
-                  </tr>
-                </tfoot>
-              </table>
-            )
-          )}
+                </TableBody>
+                <TableFooter>
+                  <TableRow className="hover:bg-transparent">
+                    <TableCell colSpan={2} className="font-semibold text-gray-900">Total</TableCell>
+                    <TableCell className="text-right font-semibold tabular-nums text-gray-900">{totalHours.toFixed(1)}h</TableCell>
+                  </TableRow>
+                </TableFooter>
+              </Table>
+            )}
+          </Card>
+        )}
 
-          {/* SALARY */}
-          {tab === 'Salary' && isSalary && (
-            <div className="space-y-5">
-              <div className="flex items-center justify-between gap-2 flex-wrap">
-                <div className="flex items-center gap-2">
-                  <CalendarClock className="w-4 h-4 text-indigo-500" />
-                  <h3 className="text-sm font-semibold text-gray-700">Salary Payouts</h3>
-                </div>
-                <button onClick={generateSalary}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 text-gray-700 text-xs font-medium rounded-lg hover:bg-gray-50">
-                  <RotateCcw className="w-3.5 h-3.5" /> Generate due payouts
-                </button>
+        {/* SALARY */}
+        {tab === 'Salary' && isSalary && (
+          <Card>
+            <CardHeader>
+              <div>
+                <CardTitle>Salary payouts</CardTitle>
+                <CardDescription>Auto-generated on day {data.salaryDay ?? '—'} monthly</CardDescription>
               </div>
-              <p className="text-xs text-gray-400">
-                Payouts are created automatically on day {data.salaryDay ?? '—'} each month. Use “Generate due payouts” to run it now.
-              </p>
-              {salaryPayouts.length === 0 ? (
-                <p className="text-gray-400 text-sm">No payouts yet.</p>
-              ) : (
-                <div className="space-y-2">
-                  {salaryPayouts.map(p => (
-                    <div key={p.id ?? p._id} className="flex items-center justify-between gap-4 p-4 rounded-xl border border-gray-100">
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">{p.period}</p>
-                        <p className="text-xs text-gray-400">{p.status === 'PAID' ? `Paid · ${fmtDate(p.approvedAt)}` : p.status}</p>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <p className="text-sm font-semibold text-gray-900">{fmtMoney(p.amount, p.currency)}</p>
-                        {p.status === 'PENDING' ? (
-                          <div className="flex items-center gap-2">
-                            <Link href="/admin/accounts?tab=requests"
-                              className="px-2.5 py-1 bg-white border border-gray-200 text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-50">Approve in Expenses →</Link>
-                            <button onClick={() => payoutAction(p, 'cancel')}
-                              className="px-2.5 py-1 bg-white border border-gray-200 text-rose-600 text-xs font-medium rounded-lg hover:bg-rose-50">Cancel</button>
-                          </div>
-                        ) : (
-                          <Badge status={p.status} />
-                        )}
-                      </div>
+              <CardAction>
+                <Button variant="outline" size="sm" onClick={generateSalary}>
+                  <RotateCcw /> Generate due payouts
+                </Button>
+              </CardAction>
+            </CardHeader>
+            {salaryPayouts.length === 0 ? (
+              <p className="px-5 pb-5 text-sm text-muted-foreground">No payouts yet</p>
+            ) : (
+              <div className="divide-y divide-gray-100 border-t border-gray-100">
+                {salaryPayouts.map(p => (
+                  <div key={p.id ?? p._id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">{p.period}</p>
+                      <p className="text-xs text-muted-foreground">{p.status === 'PAID' ? `Paid · ${fmtDate(p.approvedAt)}` : p.status}</p>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+                    <div className="flex items-center gap-3">
+                      <p className="text-sm font-semibold tabular-nums text-gray-900">{fmtMoney(p.amount, p.currency)}</p>
+                      {p.status === 'PENDING' ? (
+                        <div className="flex items-center gap-2">
+                          <Link href="/admin/accounts?tab=requests"
+                            className={buttonVariants({ variant: 'outline', size: 'xs' })}>Approve in expenses</Link>
+                          <Button variant="outline" size="xs" onClick={() => payoutAction(p, 'cancel')}
+                            className="text-red-600 hover:text-red-700">Cancel</Button>
+                        </div>
+                      ) : (
+                        <Badge status={p.status} />
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        )}
       </div>
 
       <FreelancerModal

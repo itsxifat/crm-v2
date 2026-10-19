@@ -5,14 +5,22 @@ import { useSearchParams, useRouter } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import Link from 'next/link'
 import {
-  Mail, Plus, Trash2, Pencil, Save, X, Check, Loader2,
+  Mail, Plus, Trash2, Pencil, Save, X, Check,
   Eye, EyeOff, Send, ChevronDown, ChevronUp, ShieldCheck,
-  MessageCircle, ExternalLink, Building2, ShieldAlert, Users, UserCheck,
-  CreditCard, GripVertical, ChevronRight, Settings2, AlertTriangle, Receipt,
+  MessageCircle, ExternalLink, Building2, Users,
+  CreditCard, ChevronRight, AlertTriangle, Layers, Target,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/utils'
 import { invalidateConfigCache, normalizeCategories } from '@/lib/useConfig'
+import Button from '@/components/ui/Button'
+import { Card, CardHeader, CardTitle, CardDescription, CardAction, CardContent, CardFooter } from '@/components/ui/Card'
+import { inputClass } from '@/components/ui/Input'
+import PageHeader from '@/components/ui/PageHeader'
+import Tabs from '@/components/ui/Tabs'
+import Badge from '@/components/ui/Badge'
+import EmptyState from '@/components/ui/EmptyState'
+import LoadingSpinner from '@/components/ui/LoadingSpinner'
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -34,46 +42,50 @@ function uniqueId(label, taken, { upper = false } = {}) {
 const PURPOSES = [
   { id: 'general',      label: 'General',            description: 'Default fallback for all emails' },
   { id: 'invoice',      label: 'Invoices',           description: 'Invoice delivery to clients' },
-  { id: 'client',       label: 'Client Welcome',     description: 'New client account credentials' },
-  { id: 'freelancer',   label: 'Freelancer Invites', description: 'Freelancer/agency panel invites' },
+  { id: 'client',       label: 'Client welcome',     description: 'New client account credentials' },
+  { id: 'freelancer',   label: 'Freelancer invites', description: 'Freelancer/agency panel invites' },
   { id: 'notification', label: 'Notifications',      description: 'System alerts and reminders' },
 ]
 
 const WA_PURPOSES = [
   { id: 'general',      label: 'General',            description: 'Default fallback for all messages' },
-  { id: 'client',       label: 'Client Welcome',     description: 'New client account credentials' },
-  { id: 'freelancer',   label: 'Freelancer Invites', description: 'Freelancer/agency panel invites' },
+  { id: 'client',       label: 'Client welcome',     description: 'New client account credentials' },
+  { id: 'freelancer',   label: 'Freelancer invites', description: 'Freelancer/agency panel invites' },
   { id: 'onboarding',   label: 'Onboarding',         description: 'Employee onboarding invitations' },
   { id: 'notification', label: 'Notifications',      description: 'System alerts and reminders' },
 ]
 
 // ── Shared design tokens ───────────────────────────────────────────────────────
 
-const ic  = 'w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:bg-white focus:border-gray-400 transition-colors'
-const lc  = 'block text-xs font-medium text-gray-500 mb-1.5'
-const btn = 'flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold rounded-xl transition-all duration-150 disabled:opacity-50'
-const btnPrimary  = `${btn} bg-gray-900 hover:bg-gray-800 text-white`
-const btnGhost    = `${btn} border border-gray-200 hover:bg-gray-50 text-gray-600`
-const btnDanger   = `${btn} bg-red-500 hover:bg-red-600 text-white`
+const ic = inputClass
+const lc = 'mb-2 block text-sm font-medium leading-none text-gray-900'
+
+function Req() {
+  return <span className="ml-0.5 text-red-500">*</span>
+}
+
+// Small on/off switch (presentational).
+function Switch({ on }) {
+  return (
+    <span className={cn('relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors', on ? 'bg-gray-900' : 'bg-gray-200')}>
+      <span className={cn('absolute left-0.5 top-0.5 size-4 rounded-full bg-white shadow-sm transition-transform', on ? 'translate-x-4' : 'translate-x-0')} />
+    </span>
+  )
+}
 
 // ── ConfirmModal ───────────────────────────────────────────────────────────────
 
 function ConfirmModal({ title, message, confirmLabel = 'Remove', onConfirm, onCancel, danger = true }) {
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-2xl border border-gray-100 w-full max-w-sm p-6 shadow-2xl space-y-5">
-        <div className="flex items-start gap-3.5">
-          <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${danger ? 'bg-red-50' : 'bg-amber-50'}`}>
-            <AlertTriangle className={`w-5 h-5 ${danger ? 'text-red-500' : 'text-amber-500'}`} />
-          </div>
-          <div className="pt-0.5">
-            <p className="text-sm font-semibold text-gray-900">{title ?? 'Are you sure?'}</p>
-            <p className="text-xs text-gray-500 mt-1 leading-relaxed">{message}</p>
-          </div>
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4 backdrop-blur-[2px]">
+      <div className="w-full max-w-sm rounded-2xl border border-gray-200/80 bg-white shadow-2xl">
+        <div className="px-6 pb-4 pt-5">
+          <p className="text-base font-semibold text-gray-900">{title ?? 'Are you sure?'}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{message}</p>
         </div>
-        <div className="flex gap-2 justify-end">
-          <button onClick={onCancel} className={btnGhost + ' text-sm py-2'}>Cancel</button>
-          <button onClick={onConfirm} className={danger ? btnDanger + ' py-2' : btnPrimary + ' py-2'}>{confirmLabel}</button>
+        <div className="flex justify-end gap-2 rounded-b-2xl border-t border-gray-100 bg-gray-50/60 px-6 py-3.5">
+          <Button variant="outline" onClick={onCancel}>Cancel</Button>
+          <Button variant={danger ? 'destructive' : 'default'} onClick={onConfirm}>{confirmLabel}</Button>
         </div>
       </div>
     </div>
@@ -86,15 +98,19 @@ function emptyAccount() {
   return { id: crypto.randomUUID(), label: '', fromName: '', host: '', port: '587', secure: false, user: '', password: '', purposes: [] }
 }
 
-function PurposeBadge({ id, selected, onClick }) {
-  const p = PURPOSES.find(x => x.id === id)
+function PurposeChip({ label, title, selected, onClick }) {
   return (
-    <button type="button" onClick={() => onClick(id)} title={p?.description}
-      className={cn('px-2.5 py-1 rounded-lg text-xs font-medium transition-colors',
-        selected ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')}>
-      {p?.label ?? id}
+    <button type="button" onClick={onClick} title={title}
+      className={cn('rounded-md border px-2.5 py-1 text-xs font-medium transition-colors',
+        selected ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50')}>
+      {label}
     </button>
   )
+}
+
+function PurposeBadge({ id, selected, onClick }) {
+  const p = PURPOSES.find(x => x.id === id)
+  return <PurposeChip label={p?.label ?? id} title={p?.description} selected={selected} onClick={() => onClick(id)} />
 }
 
 function AccountForm({ initial, onSave, onCancel, isSaving }) {
@@ -129,20 +145,20 @@ function AccountForm({ initial, onSave, onCancel, isSaving }) {
     return true
   }
   return (
-    <div className="bg-white border border-gray-100 rounded-2xl p-6 space-y-5 shadow-sm">
-      <div className="grid grid-cols-2 gap-4">
+    <Card className="space-y-5 p-5">
+      <div className="grid gap-4 sm:grid-cols-2">
         <div>
-          <label className={lc}>Account Label <span className="text-red-400">*</span></label>
-          <input value={form.label} onChange={e => set('label', e.target.value)} placeholder="e.g. Invoice Mailer" className={ic} />
+          <label className={lc}>Account label<Req /></label>
+          <input value={form.label} onChange={e => set('label', e.target.value)} placeholder="e.g. Invoice mailer" className={ic} />
         </div>
         <div>
-          <label className={lc}>Sender Display Name</label>
+          <label className={lc}>Sender name</label>
           <input value={form.fromName} onChange={e => set('fromName', e.target.value)} placeholder="e.g. Enfinito" className={ic} />
         </div>
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-3 gap-4">
         <div className="col-span-2">
-          <label className={lc}>SMTP Host <span className="text-red-400">*</span></label>
+          <label className={lc}>SMTP host<Req /></label>
           <input value={form.host} onChange={e => set('host', e.target.value)} placeholder="smtp.gmail.com" className={ic} />
         </div>
         <div>
@@ -150,77 +166,81 @@ function AccountForm({ initial, onSave, onCancel, isSaving }) {
           <input value={form.port} onChange={e => set('port', e.target.value)} placeholder="587" className={ic} />
         </div>
       </div>
-      <label className="flex items-center gap-2.5 cursor-pointer w-fit">
-        <div onClick={() => set('secure', !form.secure)} className={cn('w-9 h-5 rounded-full transition-colors relative cursor-pointer', form.secure ? 'bg-gray-900' : 'bg-gray-200')}>
-          <span className={cn('absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform', form.secure ? 'translate-x-4' : 'translate-x-0')} />
+      <label className="flex w-fit cursor-pointer items-center gap-2.5">
+        <div onClick={() => set('secure', !form.secure)} className="cursor-pointer">
+          <Switch on={form.secure} />
         </div>
-        <span className="text-xs text-gray-600">Use SSL/TLS (port 465)</span>
+        <span className="text-sm text-gray-700">Use SSL/TLS (port 465)</span>
       </label>
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid gap-4 sm:grid-cols-2">
         <div>
-          <label className={lc}>Username / Email <span className="text-red-400">*</span></label>
+          <label className={lc}>Username / email<Req /></label>
           <input value={form.user} onChange={e => set('user', e.target.value)} placeholder="invoices@yourdomain.com" className={ic} />
         </div>
         <div>
-          <label className={lc}>Password / App Password <span className="text-red-400">*</span></label>
+          <label className={lc}>Password / app password<Req /></label>
           <div className="relative">
-            <input type={showPass ? 'text' : 'password'} value={form.password} onChange={e => set('password', e.target.value)} placeholder="App password or SMTP password" className={`${ic} pr-10`} />
-            <button type="button" onClick={() => setShowPass(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-              {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            <input type={showPass ? 'text' : 'password'} value={form.password} onChange={e => set('password', e.target.value)} placeholder="••••••••" className={`${ic} pr-10`} />
+            <button type="button" onClick={() => setShowPass(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600" aria-label={showPass ? 'Hide password' : 'Show password'}>
+              {showPass ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
             </button>
           </div>
         </div>
       </div>
       <div>
-        <label className={lc}>Used For <span className="text-red-400">*</span> <span className="text-gray-400 font-normal">— which emails go through this account</span></label>
-        <div className="flex flex-wrap gap-2 mt-1">{PURPOSES.map(p => <PurposeBadge key={p.id} id={p.id} selected={form.purposes.includes(p.id)} onClick={togglePurpose} />)}</div>
+        <label className={lc} title="Which emails go through this account">Used for<Req /></label>
+        <div className="flex flex-wrap gap-2">{PURPOSES.map(p => <PurposeBadge key={p.id} id={p.id} selected={form.purposes.includes(p.id)} onClick={togglePurpose} />)}</div>
       </div>
       <div className="border-t border-gray-100 pt-4">
-        <button type="button" onClick={() => setShowTest(v => !v)} className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-800 transition-colors mb-2">
-          <Send className="w-3.5 h-3.5" /> Test connection {showTest ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+        <button type="button" onClick={() => setShowTest(v => !v)} className="mb-2 flex items-center gap-1.5 text-[13px] font-medium text-gray-600 transition-colors hover:text-gray-900">
+          <Send className="size-3.5" /> Test connection {showTest ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
         </button>
         {showTest && (
           <div className="flex items-center gap-2">
-            <input value={testTo} onChange={e => setTestTo(e.target.value)} placeholder="Send test email to… (leave blank for your account)" className="flex-1 text-xs bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:border-gray-400" />
-            <button type="button" onClick={testConnection} disabled={testing} className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-xs font-medium rounded-xl hover:bg-gray-200 disabled:opacity-50 transition-colors">
-              {testing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />} Send Test
-            </button>
+            <input value={testTo} onChange={e => setTestTo(e.target.value)} placeholder="Send test to (optional)" className={cn(ic, 'flex-1')} />
+            <Button variant="outline" onClick={testConnection} loading={testing}>
+              {!testing && <Send />} Send test
+            </Button>
           </div>
         )}
       </div>
       <div className="flex items-center justify-end gap-2">
-        <button type="button" onClick={onCancel} className={btnGhost}>Cancel</button>
-        <button type="button" onClick={() => validate() && onSave(form)} disabled={isSaving} className={btnPrimary}>
-          {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} Save Account
-        </button>
+        <Button variant="outline" onClick={onCancel}>Cancel</Button>
+        <Button onClick={() => validate() && onSave(form)} loading={isSaving}>
+          {!isSaving && <Check />} Save account
+        </Button>
       </div>
+    </Card>
+  )
+}
+
+function AccountRowActions({ account, onEdit, onDelete }) {
+  return (
+    <div className="flex shrink-0 items-center gap-1">
+      <Button variant="ghost" size="icon-sm" onClick={() => onEdit(account)} title="Edit" aria-label="Edit"><Pencil /></Button>
+      <Button variant="ghost" size="icon-sm" onClick={() => onDelete(account.id)} title="Remove" aria-label="Remove" className="hover:bg-red-50 hover:text-red-600"><Trash2 /></Button>
     </div>
   )
 }
 
 function AccountCard({ account, onEdit, onDelete }) {
   return (
-    <div className="bg-white border border-gray-100 rounded-2xl p-4 flex items-start gap-4 shadow-sm">
-      <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center shrink-0">
-        <Mail className="w-5 h-5 text-gray-600" />
+    <Card className="flex items-start gap-4 p-4">
+      <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-gray-200/80 bg-white shadow-xs">
+        <Mail className="size-4 text-gray-600" />
       </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-0.5">
+      <div className="min-w-0 flex-1">
+        <div className="mb-0.5 flex flex-wrap items-center gap-2">
           <p className="text-sm font-semibold text-gray-900">{account.label}</p>
-          {account.purposes.includes('general') && (
-            <span className="flex items-center gap-1 text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-full px-2 py-0.5"><ShieldCheck className="w-3 h-3" /> Default</span>
-          )}
+          {account.purposes.includes('general') && <Badge variant="success">Default</Badge>}
         </div>
-        <p className="text-xs text-gray-400 mb-2">{account.user} · {account.host}:{account.port}</p>
+        <p className="mb-2 truncate text-xs text-muted-foreground">{account.user} · {account.host}:{account.port}</p>
         <div className="flex flex-wrap gap-1.5">
-          {account.purposes.map(pid => { const p = PURPOSES.find(x => x.id === pid); return <span key={pid} className="px-2 py-0.5 bg-gray-100 text-gray-700 text-xs rounded-lg font-medium">{p?.label ?? pid}</span> })}
+          {account.purposes.map(pid => { const p = PURPOSES.find(x => x.id === pid); return <Badge key={pid} variant="default">{p?.label ?? pid}</Badge> })}
         </div>
       </div>
-      <div className="flex items-center gap-1 shrink-0">
-        <button onClick={() => onEdit(account)} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"><Pencil className="w-4 h-4" /></button>
-        <button onClick={() => onDelete(account.id)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"><Trash2 className="w-4 h-4" /></button>
-      </div>
-    </div>
+      <AccountRowActions account={account} onEdit={onEdit} onDelete={onDelete} />
+    </Card>
   )
 }
 
@@ -232,13 +252,7 @@ function emptyWAAccount() {
 
 function WAPurposeBadge({ id, selected, onClick }) {
   const p = WA_PURPOSES.find(x => x.id === id)
-  return (
-    <button type="button" onClick={() => onClick(id)} title={p?.description}
-      className={cn('px-2.5 py-1 rounded-lg text-xs font-medium transition-colors',
-        selected ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')}>
-      {p?.label ?? id}
-    </button>
-  )
+  return <PurposeChip label={p?.label ?? id} title={p?.description} selected={selected} onClick={() => onClick(id)} />
 }
 
 function WAAccountForm({ initial, onSave, onCancel, isSaving }) {
@@ -272,70 +286,65 @@ function WAAccountForm({ initial, onSave, onCancel, isSaving }) {
     return true
   }
   return (
-    <div className="bg-white border border-gray-100 rounded-2xl p-6 space-y-5 shadow-sm">
+    <Card className="space-y-5 p-5">
       <div>
-        <label className={lc}>Account Label <span className="text-red-400">*</span></label>
+        <label className={lc}>Account label<Req /></label>
         <input value={form.label} onChange={e => set('label', e.target.value)} placeholder="e.g. Main WhatsApp" className={ic} />
       </div>
       <div>
-        <label className={lc}>API Key <span className="text-red-400">*</span></label>
+        <label className={lc}>API key<Req /></label>
         <div className="relative">
-          <input type={showKey ? 'text' : 'password'} value={form.apiKey} onChange={e => set('apiKey', e.target.value)} placeholder="enf_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" className={`${ic} pr-10 font-mono`} />
-          <button type="button" onClick={() => setShowKey(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-            {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+          <input type={showKey ? 'text' : 'password'} value={form.apiKey} onChange={e => set('apiKey', e.target.value)} placeholder="enf_live_…" className={`${ic} pr-10 font-mono`} />
+          <button type="button" onClick={() => setShowKey(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600" aria-label={showKey ? 'Hide key' : 'Show key'}>
+            {showKey ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
           </button>
         </div>
       </div>
       <div>
-        <label className={lc}>Used For <span className="text-red-400">*</span> <span className="text-gray-400 font-normal">— which notifications go through this account</span></label>
-        <div className="flex flex-wrap gap-2 mt-1">{WA_PURPOSES.map(p => <WAPurposeBadge key={p.id} id={p.id} selected={form.purposes.includes(p.id)} onClick={togglePurpose} />)}</div>
+        <label className={lc} title="Which notifications go through this account">Used for<Req /></label>
+        <div className="flex flex-wrap gap-2">{WA_PURPOSES.map(p => <WAPurposeBadge key={p.id} id={p.id} selected={form.purposes.includes(p.id)} onClick={togglePurpose} />)}</div>
       </div>
       <div className="border-t border-gray-100 pt-4">
-        <button type="button" onClick={() => setShowTest(v => !v)} className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-800 transition-colors mb-2">
-          <Send className="w-3.5 h-3.5" /> Send test message {showTest ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+        <button type="button" onClick={() => setShowTest(v => !v)} className="mb-2 flex items-center gap-1.5 text-[13px] font-medium text-gray-600 transition-colors hover:text-gray-900">
+          <Send className="size-3.5" /> Send test message {showTest ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
         </button>
         {showTest && (
           <div className="flex items-center gap-2">
-            <input value={testTo} onChange={e => setTestTo(e.target.value)} placeholder="+8801XXXXXXXXX" className="flex-1 text-xs bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:border-gray-400" />
-            <button type="button" onClick={testConnection} disabled={testing} className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-xs font-medium rounded-xl hover:bg-gray-200 disabled:opacity-50 transition-colors">
-              {testing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />} Send Test
-            </button>
+            <input value={testTo} onChange={e => setTestTo(e.target.value)} placeholder="+8801XXXXXXXXX" className={cn(ic, 'flex-1')} />
+            <Button variant="outline" onClick={testConnection} loading={testing}>
+              {!testing && <Send />} Send test
+            </Button>
           </div>
         )}
       </div>
       <div className="flex items-center justify-end gap-2">
-        <button type="button" onClick={onCancel} className={btnGhost}>Cancel</button>
-        <button type="button" onClick={() => validate() && onSave(form)} disabled={isSaving} className={btnPrimary}>
-          {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} Save Account
-        </button>
+        <Button variant="outline" onClick={onCancel}>Cancel</Button>
+        <Button onClick={() => validate() && onSave(form)} loading={isSaving}>
+          {!isSaving && <Check />} Save account
+        </Button>
       </div>
-    </div>
+    </Card>
   )
 }
 
 function WAAccountCard({ account, onEdit, onDelete }) {
   return (
-    <div className="bg-white border border-gray-100 rounded-2xl p-4 flex items-start gap-4 shadow-sm">
-      <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center shrink-0">
-        <MessageCircle className="w-5 h-5 text-gray-600" />
+    <Card className="flex items-start gap-4 p-4">
+      <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-gray-200/80 bg-white shadow-xs">
+        <MessageCircle className="size-4 text-gray-600" />
       </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-0.5">
+      <div className="min-w-0 flex-1">
+        <div className="mb-0.5 flex flex-wrap items-center gap-2">
           <p className="text-sm font-semibold text-gray-900">{account.label}</p>
-          {account.purposes.includes('general') && (
-            <span className="flex items-center gap-1 text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-full px-2 py-0.5"><ShieldCheck className="w-3 h-3" /> Default</span>
-          )}
+          {account.purposes.includes('general') && <Badge variant="success">Default</Badge>}
         </div>
-        <p className="text-xs text-gray-400 mb-2 font-mono">{account.apiKey ? `${account.apiKey.slice(0, 12)}••••••••` : 'No key'}</p>
+        <p className="mb-2 font-mono text-xs text-muted-foreground">{account.apiKey ? `${account.apiKey.slice(0, 12)}••••••••` : 'No key'}</p>
         <div className="flex flex-wrap gap-1.5">
-          {account.purposes.map(pid => { const p = WA_PURPOSES.find(x => x.id === pid); return <span key={pid} className="px-2 py-0.5 bg-gray-100 text-gray-700 text-xs rounded-lg font-medium">{p?.label ?? pid}</span> })}
+          {account.purposes.map(pid => { const p = WA_PURPOSES.find(x => x.id === pid); return <Badge key={pid} variant="default">{p?.label ?? pid}</Badge> })}
         </div>
       </div>
-      <div className="flex items-center gap-1 shrink-0">
-        <button onClick={() => onEdit(account)} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"><Pencil className="w-4 h-4" /></button>
-        <button onClick={() => onDelete(account.id)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"><Trash2 className="w-4 h-4" /></button>
-      </div>
-    </div>
+      <AccountRowActions account={account} onEdit={onEdit} onDelete={onDelete} />
+    </Card>
   )
 }
 
@@ -359,17 +368,20 @@ function CfgTag({ label, onDelete, onRename }) {
   }
   if (editing) {
     return (
-      <span className="inline-flex items-center gap-1 bg-gray-900 rounded-lg px-2 py-1">
+      <span className="inline-flex items-center rounded-md border border-ring bg-white px-2 py-0.5 ring-[3px] ring-ring/30">
         <input autoFocus value={val} onChange={e => setVal(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') { setVal(label); setEditing(false) } }}
-          onBlur={commit} className="text-xs bg-transparent outline-none text-white w-28" />
+          onBlur={commit} className="w-28 bg-transparent text-xs text-gray-900 outline-none" />
       </span>
     )
   }
   return (
-    <span className="inline-flex items-center gap-1 bg-gray-100 text-gray-700 rounded-lg px-2.5 py-1 text-xs group/tag">
-      <span className="cursor-pointer hover:text-gray-900" onClick={() => setEditing(true)}>{label}</span>
-      <button onClick={() => onDelete(label)} className="text-gray-300 hover:text-red-500 transition-colors ml-0.5 opacity-0 group-hover/tag:opacity-100"><X className="w-3 h-3" /></button>
+    <span className="group/tag inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-0.5 text-xs text-gray-700">
+      <span className="cursor-pointer hover:text-gray-900" onClick={() => setEditing(true)} title="Click to rename">{label}</span>
+      <button type="button" onClick={() => onDelete(label)} aria-label={`Remove ${label}`}
+        className="ml-0.5 text-gray-400 transition-colors hover:text-red-600 sm:opacity-0 sm:group-hover/tag:opacity-100">
+        <X className="size-3" />
+      </button>
     </span>
   )
 }
@@ -378,10 +390,10 @@ function AddInput({ placeholder, onAdd }) {
   const [val, setVal] = useState('')
   function submit() { const t = val.trim(); if (!t) return; onAdd(t); setVal('') }
   return (
-    <div className="flex items-center gap-1.5 mt-2">
+    <div className="mt-2 flex items-center gap-1.5">
       <input value={val} onChange={e => setVal(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') submit() }}
-        placeholder={placeholder} className="flex-1 text-xs bg-white border border-dashed border-gray-300 rounded-xl px-3 py-2 focus:outline-none focus:border-gray-400 placeholder-gray-400" />
-      <button onClick={submit} className="p-2 rounded-xl bg-gray-100 text-gray-600 hover:bg-gray-900 hover:text-white transition-colors"><Plus className="w-3.5 h-3.5" /></button>
+        placeholder={placeholder} className={cn(ic, 'h-8 flex-1 text-[13px]')} />
+      <Button variant="outline" size="icon-sm" onClick={submit} aria-label="Add"><Plus /></Button>
     </div>
   )
 }
@@ -412,16 +424,16 @@ function ServiceSection({ service, onUpdate, onDelete, noun = 'service' }) {
       {confirmDel && (
         <ConfirmModal
           title={`Delete ${noun}?`}
-          message={`"${service.label}" and all its subcategories will be removed. This cannot be undone.`}
+          message={`"${service.label}" and its subcategories will be removed. This can't be undone.`}
           confirmLabel="Delete"
           onConfirm={() => { setConfirmDel(false); onDelete(service.id) }}
           onCancel={() => setConfirmDel(false)}
         />
       )}
-      <div className="border border-gray-100 rounded-xl overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 bg-gray-50/60 cursor-pointer hover:bg-gray-100/60 transition-colors" onClick={() => !renaming && setExpanded(e => !e)}>
-          <div className="flex items-center gap-2 flex-1 min-w-0">
-            <ChevronRight className={`w-4 h-4 text-gray-400 transition-transform shrink-0 ${expanded ? 'rotate-90' : ''}`} />
+      <div className="overflow-hidden rounded-lg border border-gray-200/80">
+        <div className="flex cursor-pointer items-center justify-between px-3 py-2 transition-colors hover:bg-gray-50" onClick={() => !renaming && setExpanded(e => !e)}>
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <ChevronRight className={`size-4 shrink-0 text-gray-400 transition-transform ${expanded ? 'rotate-90' : ''}`} />
             {renaming ? (
               <input
                 ref={renameRef}
@@ -430,23 +442,23 @@ function ServiceSection({ service, onUpdate, onDelete, noun = 'service' }) {
                 onKeyDown={e => { if (e.key === 'Enter') commitRename(); if (e.key === 'Escape') setRenaming(false) }}
                 onBlur={commitRename}
                 onClick={e => e.stopPropagation()}
-                className="flex-1 text-sm bg-white border border-gray-300 rounded-lg px-2.5 py-0.5 focus:outline-none focus:border-gray-900 min-w-0"
+                className={cn(ic, 'h-7 min-w-0 flex-1 px-2.5')}
               />
             ) : (
-              <span className="text-sm font-medium text-gray-800 truncate">{service.label}</span>
+              <span className="truncate text-sm font-medium text-gray-900">{service.label}</span>
             )}
-            <span className="text-xs text-gray-400 bg-gray-200 rounded-full px-2 py-0.5 shrink-0">{subs.length}</span>
+            <span className="shrink-0 rounded-full bg-gray-100 px-2 text-xs leading-5 tabular-nums text-gray-600">{subs.length}</span>
           </div>
-          <div className="flex items-center gap-1 ml-2 shrink-0" onClick={e => e.stopPropagation()}>
-            <button onClick={startRename} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-white transition-colors" title="Rename"><Pencil className="w-3.5 h-3.5" /></button>
-            <button onClick={() => setConfirmDel(true)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-white transition-colors" title="Delete"><Trash2 className="w-3.5 h-3.5" /></button>
+          <div className="ml-2 flex shrink-0 items-center gap-0.5" onClick={e => e.stopPropagation()}>
+            <Button variant="ghost" size="icon-xs" onClick={startRename} title="Rename" aria-label="Rename" className="text-gray-400"><Pencil className="size-3.5" /></Button>
+            <Button variant="ghost" size="icon-xs" onClick={() => setConfirmDel(true)} title="Delete" aria-label="Delete" className="text-gray-400 hover:bg-red-50 hover:text-red-600"><Trash2 className="size-3.5" /></Button>
           </div>
         </div>
         {expanded && (
-          <div className="px-4 py-3 space-y-2">
+          <div className="space-y-2 border-t border-gray-100 px-3 py-3">
             <div className="flex flex-wrap gap-1.5">
               {subs.map(sub => <CfgTag key={sub} label={sub} onDelete={deleteSubcat} onRename={renameSubcat} />)}
-              {subs.length === 0 && <p className="text-xs text-gray-400 italic">No subcategories yet</p>}
+              {subs.length === 0 && <p className="text-xs text-muted-foreground">No subcategories yet</p>}
             </div>
             <AddInput placeholder="Add subcategory…" onAdd={addSubcat} />
           </div>
@@ -467,9 +479,9 @@ function CategoryGroupManager({ items, onChange }) {
   function updateCategory(updated) { onChange(list.map(c => c.id === updated.id ? updated : c)) }
   function deleteCategory(id)      { onChange(list.filter(c => c.id !== id)) }
   return (
-    <div className="space-y-2.5">
+    <div className="space-y-2">
       {list.map(c => <ServiceSection key={c.id} service={c} onUpdate={updateCategory} onDelete={deleteCategory} noun="category" />)}
-      {list.length === 0 && <p className="text-xs text-gray-400 italic py-2">No categories yet — add one below.</p>}
+      {list.length === 0 && <p className="py-2 text-xs text-muted-foreground">No categories yet</p>}
       <div className="pt-1"><AddInput placeholder="Add category…" onAdd={addCategory} /></div>
     </div>
   )
@@ -485,11 +497,13 @@ function VenturePanel({ ventureId, services, config, onChange }) {
   function updateService(updated) { onChange(services.map(s => s.id === updated.id ? updated : s)) }
   function deleteService(id)      { onChange(services.filter(s => s.id !== id)) }
   return (
-    <div className="space-y-2.5">
-      <p className="text-xs text-gray-400 mb-3">Services &amp; subcategories for <span className="font-medium text-gray-600">{venture?.label ?? ventureId}</span> — linked to "Add New Project" form</p>
+    <div className="space-y-2">
+      <h4 className="mb-3 text-sm font-semibold text-gray-900" title={`Services & subcategories for ${venture?.label ?? ventureId}, used by the new project form`}>
+        Services
+      </h4>
       {services.map(svc => <ServiceSection key={svc.id} service={svc} onUpdate={updateService} onDelete={deleteService} />)}
-      {services.length === 0 && <p className="text-xs text-gray-400 italic py-2">No services yet — add one below.</p>}
-      <div className="pt-1"><AddInput placeholder="Add new service / category…" onAdd={addService} /></div>
+      {services.length === 0 && <p className="py-2 text-xs text-muted-foreground">No services yet</p>}
+      <div className="pt-1"><AddInput placeholder="Add service…" onAdd={addService} /></div>
     </div>
   )
 }
@@ -499,15 +513,17 @@ function LeadOptionList({ label, description, items, onChange }) {
   function remove(val) { onChange(items.filter(i => i !== val)) }
   function rename(old, next) { onChange(items.map(i => i === old ? next : i)) }
   return (
-    <div className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm">
-      <p className="text-sm font-semibold text-gray-900 mb-0.5">{label}</p>
-      <p className="text-xs text-gray-400 mb-3">{description}</p>
-      {items.length === 0
-        ? <p className="text-xs text-gray-400 italic mb-2">No options yet — add one below</p>
-        : <div className="flex flex-wrap gap-1.5 mb-1">{items.map(item => <CfgTag key={item} label={item} onDelete={remove} onRename={rename} />)}</div>
-      }
-      <AddInput placeholder={`Add ${label.toLowerCase()}…`} onAdd={add} />
-    </div>
+    <Card className="p-5">
+      <p className="text-sm font-semibold text-gray-900">{label}</p>
+      {description && <p className="mt-0.5 text-[13px] text-muted-foreground">{description}</p>}
+      <div className="mt-3">
+        {items.length === 0
+          ? <p className="mb-2 text-xs text-muted-foreground">No options yet</p>
+          : <div className="mb-1 flex flex-wrap gap-1.5">{items.map(item => <CfgTag key={item} label={item} onDelete={remove} onRename={rename} />)}</div>
+        }
+        <AddInput placeholder={`Add ${label.toLowerCase()}…`} onAdd={add} />
+      </div>
+    </Card>
   )
 }
 
@@ -569,68 +585,78 @@ function DepartmentsSection() {
       {confirmDel && (
         <ConfirmModal
           title="Deactivate department?"
-          message={`"${confirmDel.name}" will be deactivated. Existing employees will keep their current department code.`}
+          message={`"${confirmDel.name}" will be deactivated. Employees keep their current code.`}
           confirmLabel="Deactivate"
           onConfirm={confirmDelete}
           onCancel={() => setConfirmDel(null)}
           danger={false}
         />
       )}
-      <div className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm space-y-5">
-        <form onSubmit={handleSave} className="space-y-3">
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">{editing ? `Editing: ${editing.name}` : 'Add Department'}</p>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="sm:col-span-1">
-              <label className={lc}>Department Name <span className="text-red-400">*</span></label>
-              <input required value={form.name} onChange={e => handleNameChange(e.target.value)} placeholder="e.g. Human Resources" className={ic} />
-            </div>
+      <div className="space-y-4">
+        <Card as="form" onSubmit={handleSave}>
+          <CardHeader>
             <div>
-              <label className={lc}>Short Code <span className="text-red-400">*</span></label>
-              <input required value={form.shortCode} onChange={e => handleCodeChange(e.target.value)} placeholder="e.g. HR" maxLength={6} className={`${ic} font-mono uppercase tracking-widest`} />
-              <p className="text-[10px] text-gray-400 mt-1">Auto-generated · you can edit</p>
+              <CardTitle>{editing ? `Edit ${editing.name}` : 'New department'}</CardTitle>
+              <CardDescription>Short codes appear in employee IDs</CardDescription>
             </div>
-            <div>
-              <label className={lc}>Description</label>
-              <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Optional" className={ic} />
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div>
+                <label className={lc}>Department name<Req /></label>
+                <input required value={form.name} onChange={e => handleNameChange(e.target.value)} placeholder="e.g. Human Resources" className={ic} />
+              </div>
+              <div>
+                <label className={lc}>Short code<Req /></label>
+                <input required value={form.shortCode} onChange={e => handleCodeChange(e.target.value)} placeholder="e.g. HR" maxLength={6} className={`${ic} font-mono uppercase tracking-widest`} />
+                <p className="mt-1.5 text-xs text-muted-foreground">Auto-generated, editable</p>
+              </div>
+              <div>
+                <label className={lc}>Description</label>
+                <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Optional" className={ic} />
+              </div>
             </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button type="submit" disabled={saving} className={btnPrimary}>
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : editing ? <Check className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-              {saving ? 'Saving…' : editing ? 'Save Changes' : 'Add Department'}
-            </button>
-            {editing && <button type="button" onClick={cancelEdit} className={btnGhost}>Cancel</button>}
-          </div>
-        </form>
+            <div className="flex items-center gap-2">
+              <Button type="submit" loading={saving}>
+                {!saving && (editing ? <Check /> : <Plus />)}
+                {editing ? 'Save' : 'Add department'}
+              </Button>
+              {editing && <Button variant="outline" onClick={cancelEdit}>Cancel</Button>}
+            </div>
+          </CardContent>
+        </Card>
 
-        <div>
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">Active Departments</p>
+        <Card className="overflow-hidden">
+          <CardHeader className="pb-3">
+            <CardTitle>Active departments</CardTitle>
+          </CardHeader>
           {loading ? (
-            <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-gray-300" /></div>
+            <LoadingSpinner className="py-8" />
           ) : departments.length === 0 ? (
-            <p className="text-xs text-gray-400 italic py-4 text-center">No departments yet — add one above.</p>
+            <EmptyState icon={Users} title="No departments yet" className="py-8" />
           ) : (
-            <div className="divide-y divide-gray-50 border border-gray-100 rounded-xl overflow-hidden">
+            <div className="divide-y divide-gray-100 border-t border-gray-100">
               {departments.map(dept => (
-                <div key={dept.id} className={`flex items-center justify-between px-4 py-3 transition-colors ${editing?.id === dept.id ? 'bg-gray-50' : 'bg-white hover:bg-gray-50/60'}`}>
-                  <div className="flex items-center gap-3 min-w-0">
-                    <span className="font-mono text-xs font-bold text-gray-600 bg-gray-100 border border-gray-200 px-2 py-0.5 rounded-lg shrink-0 min-w-[40px] text-center">{dept.shortCode}</span>
+                <div key={dept.id} className={`flex items-center justify-between px-5 py-3 transition-colors ${editing?.id === dept.id ? 'bg-gray-50' : 'hover:bg-gray-50/70'}`}>
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="min-w-[40px] shrink-0 rounded-md bg-gray-100 px-2 py-0.5 text-center font-mono text-xs font-medium text-gray-700">{dept.shortCode}</span>
                     <div className="min-w-0">
-                      <p className="text-sm font-medium text-gray-800">{dept.name}</p>
-                      {dept.description && <p className="text-xs text-gray-400 truncate">{dept.description}</p>}
+                      <p className="text-sm font-medium text-gray-900">{dept.name}</p>
+                      {dept.description && <p className="truncate text-xs text-muted-foreground">{dept.description}</p>}
                     </div>
                   </div>
-                  <div className="flex items-center gap-1 shrink-0 ml-3">
-                    <button onClick={() => startEdit(dept)} className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"><Pencil className="w-3.5 h-3.5" /></button>
-                    <button onClick={() => setConfirmDel({ id: dept.id, name: dept.name })} disabled={deleting === dept.id} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-40">
-                      {deleting === dept.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-                    </button>
+                  <div className="ml-3 flex shrink-0 items-center gap-0.5">
+                    <Button variant="ghost" size="icon-sm" onClick={() => startEdit(dept)} title="Edit" aria-label="Edit" className="text-gray-400"><Pencil className="size-3.5" /></Button>
+                    <Button variant="ghost" size="icon-sm" onClick={() => setConfirmDel({ id: dept.id, name: dept.name })} loading={deleting === dept.id}
+                      title="Deactivate" aria-label="Deactivate" className="text-gray-400 hover:bg-red-50 hover:text-red-600">
+                      {deleting !== dept.id && <Trash2 className="size-3.5" />}
+                    </Button>
                   </div>
                 </div>
               ))}
             </div>
           )}
-        </div>
+        </Card>
       </div>
     </>
   )
@@ -639,14 +665,14 @@ function DepartmentsSection() {
 // ── Tab definitions ────────────────────────────────────────────────────────────
 
 const TABS = [
-  { id: 'ventures',     label: 'Ventures & Services' },
-  { id: 'leads',        label: 'Lead Options' },
-  { id: 'departments',  label: 'Departments' },
-  { id: 'company',      label: 'Company Info' },
-  { id: 'verification', label: 'Verification' },
-  { id: 'payment',      label: 'Finance' },
-  { id: 'email',        label: 'Email' },
-  { id: 'whatsapp',     label: 'WhatsApp' },
+  { id: 'ventures',     label: 'Ventures & services', icon: Layers },
+  { id: 'leads',        label: 'Lead options',        icon: Target },
+  { id: 'departments',  label: 'Departments',         icon: Users },
+  { id: 'company',      label: 'Company info',        icon: Building2 },
+  { id: 'verification', label: 'Verification',        icon: ShieldCheck },
+  { id: 'payment',      label: 'Finance',             icon: CreditCard },
+  { id: 'email',        label: 'Email',               icon: Mail },
+  { id: 'whatsapp',     label: 'WhatsApp',            icon: MessageCircle },
 ]
 
 const DEFAULT_PM = [
@@ -702,32 +728,29 @@ function VentureModal({ mode, initial, existingIds, onSubmit, onClose }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-2xl border border-gray-100 w-full max-w-md p-6 shadow-2xl space-y-5">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-[2px]">
+      <div className="w-full max-w-md rounded-2xl border border-gray-200/80 bg-white shadow-2xl">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-base font-bold text-gray-900">{isAdd ? 'Add Venture' : `Edit ${initial?.label}`}</h3>
-            <p className="text-xs text-gray-400 mt-0.5">{isAdd ? 'Create a new venture with a unique project ID prefix' : 'Update venture label, prefix and description'}</p>
-          </div>
-          <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-gray-100 transition-colors"><X className="w-4 h-4 text-gray-400" /></button>
+        <div className="flex items-start justify-between gap-4 px-6 pb-3 pt-5">
+          <h3 className="text-base font-semibold text-gray-900">{isAdd ? 'New venture' : `Edit ${initial?.label}`}</h3>
+          <Button variant="ghost" size="icon-sm" onClick={onClose} className="-mr-1.5 -mt-0.5 text-gray-400" aria-label="Close"><X /></Button>
         </div>
 
         {/* Fields */}
-        <div className="space-y-3.5">
+        <div className="space-y-4 px-6 pb-5">
           <div>
-            <label className={lc}>Display Label <span className="text-red-400">*</span></label>
+            <label className={lc}>Display label<Req /></label>
             <input autoFocus value={form.label} onChange={e => onLabelChange(e.target.value)}
               placeholder="e.g. Enfinito Studio"
               className={ic} />
           </div>
 
-          <div className={`grid gap-3 ${isAdd ? 'grid-cols-2' : 'grid-cols-1'}`}>
+          <div className={`grid gap-4 ${isAdd ? 'grid-cols-2' : 'grid-cols-1'}`}>
             {isAdd && (
               <div>
                 <label className={lc}>
-                  Venture ID <span className="text-red-400">*</span>
-                  {!idManual && <span className="text-gray-300 font-normal ml-1">· auto</span>}
+                  Venture ID<Req />
+                  {!idManual && <span className="ml-1 font-normal text-gray-400">· auto</span>}
                 </label>
                 <input value={form.id}
                   onChange={e => { setIdManual(true); setForm(f => ({ ...f, id: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12) })) }}
@@ -737,8 +760,8 @@ function VentureModal({ mode, initial, existingIds, onSubmit, onClose }) {
             )}
             <div>
               <label className={lc}>
-                Project Prefix <span className="text-red-400">*</span>
-                {!pfxManual && <span className="text-gray-300 font-normal ml-1">· auto</span>}
+                Project prefix<Req />
+                {!pfxManual && <span className="ml-1 font-normal text-gray-400">· auto</span>}
               </label>
               <input value={form.prefix}
                 onChange={e => { setPfxManual(true); setForm(f => ({ ...f, prefix: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4) })) }}
@@ -749,9 +772,9 @@ function VentureModal({ mode, initial, existingIds, onSubmit, onClose }) {
           </div>
 
           {form.prefix && (
-            <div className="flex items-center gap-2 bg-gray-50 border border-gray-100 rounded-xl px-4 py-3">
-              <span className="text-xs text-gray-500">Project IDs will look like:</span>
-              <span className="font-mono text-sm font-bold text-gray-900 tracking-wider">{form.prefix}P-2604A01</span>
+            <div className="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-2.5">
+              <span className="text-xs text-muted-foreground">Project IDs look like</span>
+              <span className="font-mono text-sm font-semibold text-gray-900">{form.prefix}P-2604A01</span>
             </div>
           )}
 
@@ -759,18 +782,18 @@ function VentureModal({ mode, initial, existingIds, onSubmit, onClose }) {
             <label className={lc}>Description</label>
             <input value={form.description}
               onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-              placeholder="Short description of this venture…"
+              placeholder="Short description…"
               className={ic} />
           </div>
         </div>
 
         {/* Footer */}
-        <div className="flex gap-2 justify-end pt-1 border-t border-gray-50">
-          <button onClick={onClose} className={btnGhost}>Cancel</button>
-          <button onClick={handleSubmit} className={btnPrimary}>
-            {isAdd ? <Plus className="w-4 h-4" /> : <Check className="w-4 h-4" />}
-            {isAdd ? 'Add Venture' : 'Save Changes'}
-          </button>
+        <div className="flex justify-end gap-2 rounded-b-2xl border-t border-gray-100 bg-gray-50/60 px-6 py-3.5">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleSubmit}>
+            {isAdd ? <Plus /> : <Check />}
+            {isAdd ? 'Add venture' : 'Save'}
+          </Button>
         </div>
       </div>
     </div>
@@ -1057,19 +1080,23 @@ function ConfigContent() {
 
   function renderLoadError(section, label) {
     return (
-      <div className="text-center py-14 border-2 border-dashed border-red-100 rounded-2xl">
-        <AlertTriangle className="w-8 h-8 text-red-300 mx-auto mb-3" />
-        <p className="text-sm text-gray-700 font-semibold">Could not load {label}</p>
-        <p className="text-xs text-gray-400 mt-1 mb-5">{loadErrors[section]}</p>
-        <button onClick={() => retryLoad(section)} className={btnPrimary + ' mx-auto'}>Retry</button>
-      </div>
+      <Card>
+        <EmptyState
+          icon={AlertTriangle}
+          title={`Couldn't load ${label}`}
+          description={loadErrors[section]}
+          action={<Button variant="outline" onClick={() => retryLoad(section)}>Retry</Button>}
+        />
+      </Card>
     )
   }
+
+  const spinner = <LoadingSpinner className="py-20" />
 
   // ── Render ────────────────────────────────────────────────────────────────────
 
   return (
-    <div className="space-y-6 max-w-4xl">
+    <div className="max-w-4xl space-y-6">
 
       {/* Shared confirm modal */}
       {confirmState && (
@@ -1094,307 +1121,283 @@ function ConfigContent() {
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900 tracking-tight">Configuration</h1>
-          <p className="text-sm text-gray-400 mt-0.5">Manage ventures, services, and system settings</p>
-        </div>
-        {(activeTab === 'ventures' || activeTab === 'leads' || activeTab === 'payment') && (
-          <div className="flex items-center gap-2">
-            {dirty && <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-xl px-2.5 py-1.5">Unsaved changes</span>}
-            <button onClick={saveConfig} disabled={saving || !dirty} className={btnPrimary}>
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save Changes
-            </button>
-          </div>
-        )}
-      </div>
+      <PageHeader
+        title="Configuration"
+        actions={(activeTab === 'ventures' || activeTab === 'leads' || activeTab === 'payment') ? (
+          <>
+            {dirty && <Badge variant="warning" dot>Unsaved changes</Badge>}
+            <Button onClick={saveConfig} loading={saving} disabled={!dirty}>
+              {!saving && <Save />} Save changes
+            </Button>
+          </>
+        ) : null}
+      />
 
       {/* Tab bar */}
-      <div className="flex items-center gap-0.5 border-b border-gray-100 overflow-x-auto">
-        {visibleTabs.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)}
-            className={cn(
-              'px-4 py-2.5 text-sm whitespace-nowrap transition-colors border-b-2 -mb-px',
-              activeTab === t.id ? 'border-gray-900 text-gray-900 font-semibold' : 'border-transparent text-gray-400 hover:text-gray-700'
-            )}>
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        variant="underline"
+        value={activeTab}
+        onChange={setTab}
+        tabs={visibleTabs.map(t => ({ value: t.id, label: t.label, icon: t.icon }))}
+      />
 
       {['ventures', 'leads', 'verification', 'payment'].includes(activeTab) && loadErrors.config &&
         renderLoadError('config', 'configuration')}
 
       {/* Loading */}
-      {configNeedsLoad && (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 className="w-6 h-6 animate-spin text-gray-300" />
-        </div>
-      )}
+      {configNeedsLoad && spinner}
 
       {/* ── Ventures tab ────────────────────────────────────────────────────── */}
       {activeTab === 'ventures' && config && (
-        <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
-          {/* Venture tab strip */}
-          <div className="flex items-center border-b border-gray-100 px-2 pt-2 gap-1 flex-wrap">
-            {(config.ventures ?? []).map(v => (
-              <button key={v.id} onClick={() => setVentureTab(v.id)}
-                className={`flex items-center gap-2 px-3.5 py-2 text-sm rounded-t-xl transition-all -mb-px ${
-                  ventureTab === v.id
-                    ? 'bg-white border border-b-white border-gray-100 font-semibold text-gray-900 shadow-sm'
-                    : 'text-gray-400 hover:text-gray-700 hover:bg-gray-50'
-                }`}>
-                {v.label}
-                {v.prefix && (
-                  <span className="font-mono text-[10px] bg-gray-900 text-white px-1.5 py-0.5 rounded-md leading-none">{v.prefix}P</span>
-                )}
-              </button>
-            ))}
-            <button onClick={openAddVenture}
-              className="ml-auto mr-2 mb-1.5 flex items-center gap-1 text-xs text-gray-400 hover:text-gray-900 hover:bg-gray-100 px-2.5 py-1.5 rounded-xl transition-colors font-medium">
-              <Plus className="w-3.5 h-3.5" /> Add Venture
-            </button>
+        <Card className="overflow-hidden">
+          {/* Venture switcher */}
+          <div className="flex flex-wrap items-center gap-2 border-b border-gray-100 p-3">
+            {(config.ventures ?? []).length > 0 && (
+              <Tabs
+                size="sm"
+                value={ventureTab}
+                onChange={setVentureTab}
+                tabs={(config.ventures ?? []).map(v => ({
+                  value: v.id,
+                  label: (
+                    <>
+                      {v.label}
+                      {v.prefix && <span className="font-mono text-[11px] text-muted-foreground">{v.prefix}P</span>}
+                    </>
+                  ),
+                }))}
+              />
+            )}
+            <Button variant="ghost" size="sm" onClick={openAddVenture} className="ml-auto">
+              <Plus /> Add venture
+            </Button>
           </div>
 
           {/* Active venture panel */}
-          <div className="p-6">
+          <div className="p-5">
             {(config.ventures ?? []).length === 0 && (
-              <div className="text-center py-12">
-                <Building2 className="w-8 h-8 text-gray-200 mx-auto mb-3" />
-                <p className="text-sm text-gray-500 font-medium">No ventures yet</p>
-                <p className="text-xs text-gray-400 mt-1 mb-4">Add your first venture to start creating projects</p>
-                <button onClick={openAddVenture} className={btnPrimary + ' mx-auto'}><Plus className="w-4 h-4" /> Add First Venture</button>
-              </div>
+              <EmptyState
+                icon={Building2}
+                title="No ventures yet"
+                action={<Button variant="outline" onClick={openAddVenture}><Plus /> Add venture</Button>}
+              />
             )}
             {(config.ventures ?? []).map(v => {
               if (v.id !== ventureTab) return null
               return (
                 <div key={v.id}>
-                  {/* Venture info card */}
-                  <div className="flex items-start gap-4 mb-6 p-4 bg-gray-50 rounded-2xl">
-                    <div className="w-10 h-10 bg-gray-900 rounded-xl flex items-center justify-center shrink-0">
-                      <Settings2 className="w-5 h-5 text-white" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-sm font-bold text-gray-900">{v.label}</p>
-                        <span className="font-mono text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded-lg">{v.id}</span>
+                  {/* Venture info */}
+                  <div className="mb-6 flex items-start gap-4 rounded-lg bg-gray-50 p-4">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-semibold text-gray-900">{v.label}</p>
+                        <Badge variant="outline" className="font-mono">{v.id}</Badge>
                         {v.prefix ? (
-                          <span className="font-mono text-xs bg-gray-900 text-white px-2 py-0.5 rounded-lg">{v.prefix}P-YYMM</span>
+                          <Badge variant="outline" className="font-mono">{v.prefix}P-YYMM</Badge>
                         ) : (
-                          <span className="text-xs text-amber-500 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-lg">No prefix — using fallback</span>
+                          <Badge variant="warning">No prefix — using fallback</Badge>
                         )}
                       </div>
-                      <p className="text-xs text-gray-500 mt-1">{v.description || <span className="italic text-gray-400">No description</span>}</p>
+                      <p className="mt-1 text-[13px] text-muted-foreground">{v.description || 'No description'}</p>
                     </div>
-                    <button onClick={() => openEditVenture(v)}
-                      className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-900 bg-white border border-gray-200 hover:border-gray-400 px-3 py-1.5 rounded-xl transition-all shrink-0 font-medium">
-                      <Pencil className="w-3.5 h-3.5" /> Edit
-                    </button>
+                    <Button variant="outline" size="sm" onClick={() => openEditVenture(v)}>
+                      <Pencil /> Edit
+                    </Button>
                   </div>
                   <VenturePanel ventureId={v.id} services={(config.services ?? {})[v.id] ?? []} config={config} onChange={svc => updateServices(v.id, svc)} />
                 </div>
               )
             })}
           </div>
-        </div>
+        </Card>
       )}
 
       {/* ── Leads tab ───────────────────────────────────────────────────────── */}
       {activeTab === 'leads' && config && (
         <div className="space-y-6">
-          <div>
-            <h2 className="text-base font-bold text-gray-900 tracking-tight">Lead Options</h2>
-            <p className="text-sm text-gray-400 mt-0.5">Manage dropdown options for the Lead form.</p>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <LeadOptionList label="Sources"             items={config?.leadSources            ?? []} onChange={v => updateLeadOption('leadSources', v)} />
+            <LeadOptionList label="Platforms"           items={config?.leadPlatforms          ?? []} onChange={v => updateLeadOption('leadPlatforms', v)} />
+            <LeadOptionList label="Business categories" items={config?.leadBusinessCategories ?? []} onChange={v => updateLeadOption('leadBusinessCategories', v)} />
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <LeadOptionList label="Sources"             description="How the lead found out about you (e.g. Referral, Cold Outreach)"    items={config?.leadSources            ?? []} onChange={v => updateLeadOption('leadSources', v)} />
-            <LeadOptionList label="Platforms"           description="Channel where the lead was contacted (e.g. Facebook, LinkedIn)"     items={config?.leadPlatforms          ?? []} onChange={v => updateLeadOption('leadPlatforms', v)} />
-            <LeadOptionList label="Business Categories" description="Industry or business type of the lead (e.g. E-commerce, Healthcare)" items={config?.leadBusinessCategories ?? []} onChange={v => updateLeadOption('leadBusinessCategories', v)} />
-          </div>
-          <div>
-            <h2 className="text-base font-bold text-gray-900 tracking-tight mb-0.5">Company Item Categories</h2>
-            <p className="text-sm text-gray-400 mb-4">Item name presets shown when adding company-provided assets to an employee profile.</p>
-            <LeadOptionList label="Item Categories" description="Suggested item names (e.g. Laptop, SIM Card, Access Card)" items={config?.companyItemCategories ?? []} onChange={v => updateLeadOption('companyItemCategories', v)} />
-          </div>
-          <div className="text-xs text-gray-400 bg-gray-50 rounded-2xl p-4 border border-gray-100">
-            <p className="font-semibold text-gray-600 mb-1">How this config links to projects &amp; leads</p>
-            <p>Selecting a venture dynamically populates the <strong>Category</strong> and <strong>Subcategory</strong> dropdowns. Changes take effect immediately after saving.</p>
+          <div className="space-y-3">
+            <div>
+              <h2 className="text-base font-semibold tracking-tight text-gray-900">Company item categories</h2>
+              <p className="mt-0.5 text-sm text-muted-foreground">Presets for employee asset items</p>
+            </div>
+            <LeadOptionList label="Item categories" items={config?.companyItemCategories ?? []} onChange={v => updateLeadOption('companyItemCategories', v)} />
           </div>
         </div>
       )}
 
       {/* ── Departments tab ──────────────────────────────────────────────────── */}
-      {activeTab === 'departments' && (
-        <div className="space-y-4">
-          <div>
-            <h2 className="text-base font-bold text-gray-900 tracking-tight">Departments</h2>
-            <p className="text-sm text-gray-400 mt-0.5">Manage departments used for employee grouping. Short codes appear in employee IDs.</p>
-          </div>
-          <DepartmentsSection />
-        </div>
-      )}
+      {activeTab === 'departments' && <DepartmentsSection />}
 
       {/* ── Company tab ──────────────────────────────────────────────────────── */}
       {activeTab === 'company' && (
-        <div className="space-y-4">
-          <div>
-            <h2 className="text-base font-bold text-gray-900 tracking-tight">Company Information</h2>
-            <p className="text-sm text-gray-400 mt-0.5">This information appears on printed invoices and quotations.</p>
-          </div>
-          {loadErrors.company ? (
-            renderLoadError('company', 'company information')
-          ) : companyLoading || !companyLoaded ? (
-            <div className="flex items-center justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-gray-300" /></div>
-          ) : (
-            <form onSubmit={saveCompany} className="bg-white border border-gray-100 rounded-2xl p-6 space-y-4 shadow-sm">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div><label className={lc}>Company Name</label><input value={company.name}    onChange={e => setCompany(c => ({ ...c, name:    e.target.value }))} placeholder="e.g. Acme Ltd."             className={ic} /></div>
+        loadErrors.company ? (
+          renderLoadError('company', 'company information')
+        ) : companyLoading || !companyLoaded ? (
+          spinner
+        ) : (
+          <Card as="form" onSubmit={saveCompany}>
+            <CardHeader>
+              <div>
+                <CardTitle>Company information</CardTitle>
+                <CardDescription>Shown on invoices and quotations</CardDescription>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div><label className={lc}>Company name</label><input value={company.name}    onChange={e => setCompany(c => ({ ...c, name:    e.target.value }))} placeholder="e.g. Acme Ltd."             className={ic} /></div>
                 <div><label className={lc}>Email</label>       <input type="email" value={company.email}   onChange={e => setCompany(c => ({ ...c, email:   e.target.value }))} placeholder="e.g. info@yourcompany.com" className={ic} /></div>
                 <div><label className={lc}>Phone</label>       <input value={company.phone}   onChange={e => setCompany(c => ({ ...c, phone:   e.target.value }))} placeholder="e.g. +8801XXXXXXXXX"        className={ic} /></div>
                 <div><label className={lc}>Website</label>     <input value={company.website} onChange={e => setCompany(c => ({ ...c, website: e.target.value }))} placeholder="e.g. www.yourcompany.com"    className={ic} /></div>
-                <div className="sm:col-span-2"><label className={lc}>Address</label><input value={company.address} onChange={e => setCompany(c => ({ ...c, address: e.target.value }))} placeholder="e.g. 123 Main St, Dhaka, Bangladesh" className={ic} /></div>
+                <div className="sm:col-span-2"><label className={lc}>Address</label><input value={company.address} onChange={e => setCompany(c => ({ ...c, address: e.target.value }))} placeholder="e.g. 123 Main St, Dhaka" className={ic} /></div>
               </div>
-              <div className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
-                <Receipt className="w-4 h-4 text-gray-400 shrink-0 hidden sm:block" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-gray-700">BIN/TIN &amp; VAT settings are managed in Tax &amp; VAT → Tax Settings.</p>
-                  <p className="text-xs text-gray-400 mt-0.5 font-mono break-all">
+              <div className="flex flex-col gap-3 rounded-lg bg-gray-50 px-4 py-3 sm:flex-row sm:items-center">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm text-gray-700">BIN, TIN &amp; VAT are managed in Tax settings.</p>
+                  <p className="mt-0.5 break-all font-mono text-xs text-muted-foreground">
                     BIN {companyTax.bin || 'not set'} · TIN {companyTax.tin || 'not set'}
                   </p>
                 </div>
-                <Link href="/admin/tax/settings" className="inline-flex items-center gap-1 text-sm font-medium text-gray-900 hover:underline shrink-0">
-                  Open Tax Settings <ExternalLink className="w-3.5 h-3.5" />
+                <Link href="/admin/tax/settings" className="inline-flex shrink-0 items-center gap-1 text-sm font-medium text-gray-900 underline-offset-4 hover:underline">
+                  Open tax settings <ExternalLink className="size-3.5" />
                 </Link>
               </div>
-              <div className="flex justify-end pt-2">
-                <button type="submit" disabled={companySaving} className={btnPrimary}>
-                  {companySaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save Company Info
-                </button>
-              </div>
-            </form>
-          )}
-        </div>
+            </CardContent>
+            <CardFooter className="justify-end">
+              <Button type="submit" loading={companySaving}>
+                {!companySaving && <Save />} Save
+              </Button>
+            </CardFooter>
+          </Card>
+        )
       )}
 
       {/* ── Verification tab ─────────────────────────────────────────────────── */}
       {activeTab === 'verification' && configLoaded && (
-        <div className="space-y-4">
-          <div>
-            <h2 className="text-base font-bold text-gray-900 tracking-tight">Verification &amp; Access</h2>
-            <p className="text-sm text-gray-400 mt-0.5">Control whether new users must complete a verification step before their account is active.</p>
-          </div>
+        <div className="space-y-3">
           {!configNeedsLoad && (
-            <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm divide-y divide-gray-50">
-              {[
-                { key: 'freelancer',        icon: Users,      iconBg: 'bg-purple-50', iconColor: 'text-purple-600', title: 'Freelancer & Agency Verification',
-                  on:  'Freelancers and agencies must complete KYC (identity/details + documents) and be approved by an admin before accessing the portal.',
-                  off: 'Accounts are active immediately — no KYC required. Freelancers can still complete their KYC optionally from the portal.' },
-                { key: 'clientKyc',         icon: UserCheck,  iconBg: 'bg-blue-50',   iconColor: 'text-blue-600',   title: 'Client KYC Verification',
-                  on:  'Clients must submit identity documents. An admin must approve them before their KYC status is marked Verified.',
-                  off: 'Clients are automatically marked as Verified upon account creation — no review required.' },
-                { key: 'employeeOnboarding',icon: ShieldCheck,iconBg: 'bg-emerald-50',iconColor: 'text-emerald-600',title: 'Employee Onboarding Flow',
-                  on:  'New employees receive a secure onboarding link to fill in their own profile. HR reviews and approves before activation.',
-                  off: 'Employees can be created directly by an admin without the self-service onboarding link.' },
-              ].map(({ key, icon: Icon, iconBg, iconColor, title, on, off }) => (
-                <div key={key} className="flex items-start justify-between gap-4 px-5 py-4">
-                  <div className="flex items-start gap-3">
-                    <div className={`w-9 h-9 ${iconBg} rounded-xl flex items-center justify-center shrink-0 mt-0.5`}><Icon className={`w-4 h-4 ${iconColor}`} /></div>
+            <Card className="overflow-hidden">
+              <CardHeader className="pb-3">
+                <CardTitle>Verification &amp; access</CardTitle>
+                {verificationSaving && (
+                  <CardAction className="text-xs text-muted-foreground">
+                    <LoadingSpinner size="sm" /> Saving…
+                  </CardAction>
+                )}
+              </CardHeader>
+              <div className="divide-y divide-gray-100 border-t border-gray-100">
+                {[
+                  { key: 'freelancer',         title: 'Freelancer & agency verification',
+                    on:  'KYC and admin approval required before portal access.',
+                    off: 'Active immediately; KYC is optional.' },
+                  { key: 'clientKyc',          title: 'Client KYC verification',
+                    on:  'An admin must approve submitted ID documents.',
+                    off: 'Clients are marked Verified on creation.' },
+                  { key: 'employeeOnboarding', title: 'Employee onboarding flow',
+                    on:  'New hires self-fill via onboarding link; HR approves.',
+                    off: 'Admins create employees directly, no link.' },
+                ].map(({ key, title, on, off }) => (
+                  <div key={key} className="flex items-start justify-between gap-4 px-5 py-4">
                     <div>
-                      <p className="text-sm font-semibold text-gray-900">{title}</p>
-                      <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">{verification[key] ? on : off}</p>
+                      <p className="text-sm font-medium text-gray-900">{title}</p>
+                      <p className="mt-0.5 text-[13px] text-muted-foreground">{verification[key] ? on : off}</p>
                     </div>
+                    <button type="button" role="switch" aria-checked={!!verification[key]} aria-label={title}
+                      disabled={verificationSaving} onClick={() => toggleVerification(key)} className="mt-0.5 shrink-0 disabled:opacity-50">
+                      <Switch on={verification[key]} />
+                    </button>
                   </div>
-                  <button type="button" disabled={verificationSaving} onClick={() => toggleVerification(key)} className="shrink-0 mt-0.5 disabled:opacity-50">
-                    <div className={cn('w-10 h-5 rounded-full transition-colors relative', verification[key] ? 'bg-gray-900' : 'bg-gray-200')}>
-                      <span className={cn('absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform', verification[key] ? 'translate-x-5' : 'translate-x-0')} />
-                    </div>
-                  </button>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            </Card>
           )}
-          {verificationSaving && <div className="flex items-center gap-2 text-xs text-gray-500"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving…</div>}
         </div>
       )}
 
       {/* ── Finance tab ──────────────────────────────────────────────────────── */}
       {activeTab === 'payment' && configLoaded && (
-        <div className="space-y-8">
+        <div className="space-y-6">
 
           {/* Transaction Categories — each category owns its subcategories (parent → children) */}
-          <div className="space-y-4">
-            <div>
-              <h2 className="text-base font-bold text-gray-900 tracking-tight">Transaction Categories</h2>
-              <p className="text-sm text-gray-400 mt-0.5">Add a category, then add subcategories under it. Picking a category in a transaction reveals its subcategories; spend on a subcategory rolls up into its parent in reports.</p>
-            </div>
-            {!configNeedsLoad && config ? (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">Expense Categories</p>
-                  <CategoryGroupManager
-                    items={config.expenseCategories ?? []}
-                    onChange={v => updateLeadOption('expenseCategories', v)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">Income Categories</p>
-                  <CategoryGroupManager
-                    items={config.incomeCategories ?? []}
-                    onChange={v => updateLeadOption('incomeCategories', v)}
-                  />
-                </div>
+          <Card>
+            <CardHeader>
+              <div>
+                <CardTitle>Transaction categories</CardTitle>
+                <CardDescription>Subcategory totals roll up to their parent</CardDescription>
               </div>
-            ) : (
-              !configNeedsLoad && <div className="flex items-center justify-center py-10"><Loader2 className="w-5 h-5 animate-spin text-gray-300" /></div>
-            )}
-          </div>
+            </CardHeader>
+            <CardContent>
+              {!configNeedsLoad && config ? (
+                <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                  <div className="space-y-2">
+                    <p className="text-[13px] font-medium text-gray-900">Expense categories</p>
+                    <CategoryGroupManager
+                      items={config.expenseCategories ?? []}
+                      onChange={v => updateLeadOption('expenseCategories', v)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-[13px] font-medium text-gray-900">Income categories</p>
+                    <CategoryGroupManager
+                      items={config.incomeCategories ?? []}
+                      onChange={v => updateLeadOption('incomeCategories', v)}
+                    />
+                  </div>
+                </div>
+              ) : (
+                !configNeedsLoad && <LoadingSpinner className="py-10" />
+              )}
+            </CardContent>
+          </Card>
 
           {/* Payment Methods */}
-          <div className="space-y-4">
-            <div>
-              <h2 className="text-base font-bold text-gray-900 tracking-tight">Payment Methods</h2>
-              <p className="text-sm text-gray-400 mt-0.5">These options appear in every payment dropdown across the CRM — project payments, invoices, expenses, and accounts.</p>
-            </div>
           {!configNeedsLoad && (
-            <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
-              <div className="divide-y divide-gray-50">
+            <Card className="overflow-hidden">
+              <CardHeader className="pb-3">
+                <div>
+                  <CardTitle>Payment methods</CardTitle>
+                  <CardDescription>Shown in every payment dropdown</CardDescription>
+                </div>
+              </CardHeader>
+              <div className="divide-y divide-gray-100 border-t border-gray-100">
                 {paymentMethods.map((m, idx) => (
-                  <div key={m.value} className="flex items-center gap-3 px-4 py-3">
-                    <GripVertical className="w-3.5 h-3.5 text-gray-300 shrink-0" />
+                  <div key={m.value} className="flex items-center gap-3 px-5 py-2.5">
                     {pmEditingIdx === idx ? (
-                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <div className="flex min-w-0 flex-1 items-center gap-2">
                         <input autoFocus value={pmEditingLabel} onChange={e => setPmEditingLabel(e.target.value)}
                           onKeyDown={e => { if (e.key === 'Enter') saveEditPm(idx); if (e.key === 'Escape') setPmEditingIdx(null) }}
-                          className="flex-1 text-sm bg-gray-50 border border-gray-300 rounded-xl px-3 py-1.5 focus:outline-none focus:border-gray-900" />
-                        <button onClick={() => saveEditPm(idx)} disabled={pmSaving} className="p-1.5 rounded-xl bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-50 transition-colors"><Check className="w-3.5 h-3.5" /></button>
-                        <button onClick={() => setPmEditingIdx(null)} className="p-1.5 rounded-xl text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"><X className="w-3.5 h-3.5" /></button>
+                          className={cn(ic, 'h-8 flex-1')} />
+                        <Button size="icon-sm" onClick={() => saveEditPm(idx)} disabled={pmSaving} aria-label="Save"><Check /></Button>
+                        <Button variant="ghost" size="icon-sm" onClick={() => setPmEditingIdx(null)} aria-label="Cancel" className="text-gray-400"><X /></Button>
                       </div>
                     ) : (
                       <>
-                        <div className="flex-1 min-w-0 flex items-center gap-2.5">
-                          <span className="text-sm text-gray-900 font-medium">{m.label}</span>
-                          <span className="text-xs text-gray-400 font-mono bg-gray-50 border border-gray-100 rounded-lg px-1.5 py-0.5">{m.value}</span>
+                        <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                          <span className="text-sm font-medium text-gray-900">{m.label}</span>
+                          <span className="font-mono text-xs text-muted-foreground">{m.value}</span>
                         </div>
-                        <div className="flex items-center gap-0.5 shrink-0">
-                          <button onClick={() => startEditPm(idx)} className="p-1.5 rounded-xl text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors" title="Rename"><Pencil className="w-3.5 h-3.5" /></button>
-                          <button onClick={() => deletePaymentMethod(m.value)} disabled={pmSaving} className="p-1.5 rounded-xl text-gray-400 hover:text-red-500 hover:bg-red-50 disabled:opacity-50 transition-colors" title="Remove"><Trash2 className="w-3.5 h-3.5" /></button>
+                        <div className="flex shrink-0 items-center gap-0.5">
+                          <Button variant="ghost" size="icon-sm" onClick={() => startEditPm(idx)} title="Rename" aria-label="Rename" className="text-gray-400"><Pencil className="size-3.5" /></Button>
+                          <Button variant="ghost" size="icon-sm" onClick={() => deletePaymentMethod(m.value)} disabled={pmSaving} title="Remove" aria-label="Remove" className="text-gray-400 hover:bg-red-50 hover:text-red-600"><Trash2 className="size-3.5" /></Button>
                         </div>
                       </>
                     )}
                   </div>
                 ))}
               </div>
-              <div className="border-t border-gray-100 px-4 py-3 flex items-center gap-2 bg-gray-50/50">
+              <div className="flex items-center gap-2 border-t border-gray-100 bg-gray-50/60 px-5 py-3">
                 <input value={pmNewLabel} onChange={e => setPmNewLabel(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addPaymentMethod() }}
-                  placeholder="New method… e.g. Upwork, PayPal" className="flex-1 text-sm bg-white border border-gray-200 rounded-xl px-3.5 py-2 focus:outline-none focus:border-gray-400" />
-                <button onClick={addPaymentMethod} disabled={pmSaving || !pmNewLabel.trim()} className={btnPrimary + ' py-2 text-xs'}>
-                  {pmSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />} Add
-                </button>
+                  placeholder="New method, e.g. PayPal" className={cn(ic, 'flex-1')} />
+                <Button variant="outline" onClick={addPaymentMethod} loading={pmSaving} disabled={!pmNewLabel.trim()}>
+                  {!pmSaving && <Plus />} Add
+                </Button>
               </div>
-            </div>
+            </Card>
           )}
-          </div>{/* /Payment Methods section */}
 
         </div>
       )}
@@ -1402,35 +1405,34 @@ function ConfigContent() {
       {/* ── Email tab ────────────────────────────────────────────────────────── */}
       {activeTab === 'email' && isSuperAdmin && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-bold text-gray-900 tracking-tight flex items-center gap-2">
-                Email Accounts
-                <span className="text-xs text-gray-400 bg-gray-100 rounded-full px-2 py-0.5 font-normal">{accounts.length}</span>
-              </h2>
-              <p className="text-sm text-gray-400 mt-0.5">SMTP accounts used to send emails from the CRM</p>
-            </div>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="flex items-center gap-2 text-base font-semibold tracking-tight text-gray-900">
+              Email accounts
+              <Badge variant="default" className="tabular-nums">{accounts.length}</Badge>
+            </h2>
             {emailMode === 'list' && emailLoaded && !emailLoading && (
-              <button onClick={() => { setEmailEditing(null); setEmailMode('add') }} className={btnPrimary}>
-                <Plus className="w-4 h-4" /> Add Account
-              </button>
+              <Button onClick={() => { setEmailEditing(null); setEmailMode('add') }}>
+                <Plus /> Add account
+              </Button>
             )}
           </div>
 
           {loadErrors.email ? (
             renderLoadError('email', 'email accounts')
           ) : emailLoading || !emailLoaded ? (
-            <div className="flex items-center justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-gray-300" /></div>
+            spinner
           ) : (
             <>
               {emailMode === 'add' && <AccountForm initial={null} onSave={handleEmailAdd} onCancel={() => setEmailMode('list')} isSaving={emailSaving} />}
               {accounts.length === 0 && emailMode !== 'add' ? (
-                <div className="text-center py-14 border-2 border-dashed border-gray-100 rounded-2xl">
-                  <Mail className="w-8 h-8 text-gray-200 mx-auto mb-3" />
-                  <p className="text-sm text-gray-500 font-semibold">No email accounts configured</p>
-                  <p className="text-xs text-gray-400 mt-1 mb-5">Add an account to start sending emails from the CRM</p>
-                  <button onClick={() => setEmailMode('add')} className={btnPrimary + ' mx-auto'}><Plus className="w-4 h-4" /> Add First Account</button>
-                </div>
+                <Card>
+                  <EmptyState
+                    icon={Mail}
+                    title="No email accounts yet"
+                    description="Without one, server SMTP settings are used"
+                    action={<Button variant="outline" onClick={() => setEmailMode('add')}><Plus /> Add account</Button>}
+                  />
+                </Card>
               ) : (
                 <div className="space-y-3">
                   {accounts.map(account => (
@@ -1440,26 +1442,7 @@ function ConfigContent() {
                   ))}
                 </div>
               )}
-              <div className="bg-gray-50 border border-gray-100 rounded-2xl p-4 text-xs text-gray-600 space-y-1.5">
-                <p className="font-semibold text-gray-700">How email routing works</p>
-                <ul className="space-y-1 text-gray-500 list-disc list-inside">
-                  <li>Each account is assigned one or more <strong>purposes</strong></li>
-                  <li>When the CRM sends an email it picks the account assigned to that purpose</li>
-                  <li>If no specific account matches, the <strong>General</strong> account is used as fallback</li>
-                  <li>If no accounts are configured, the system falls back to server environment variables</li>
-                </ul>
-              </div>
-              <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
-                <div className="px-4 py-3 border-b border-gray-50"><p className="text-xs font-semibold text-gray-500 uppercase tracking-widest">Purpose Reference</p></div>
-                <div className="divide-y divide-gray-50">
-                  {PURPOSES.map(p => (
-                    <div key={p.id} className="flex items-center gap-3 px-4 py-2.5">
-                      <span className="w-28 px-2 py-0.5 bg-gray-100 text-gray-700 text-xs rounded-lg font-medium text-center shrink-0">{p.label}</span>
-                      <span className="text-xs text-gray-500">{p.description}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <PurposeReference purposes={PURPOSES} />
             </>
           )}
         </div>
@@ -1468,35 +1451,42 @@ function ConfigContent() {
       {/* ── WhatsApp tab ─────────────────────────────────────────────────────── */}
       {activeTab === 'whatsapp' && isSuperAdmin && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-bold text-gray-900 tracking-tight flex items-center gap-2">
-                WhatsApp Accounts
-                <span className="text-xs text-gray-400 bg-gray-100 rounded-full px-2 py-0.5 font-normal">{waAccounts.length}</span>
-              </h2>
-              <p className="text-sm text-gray-400 mt-0.5">API keys used to send WhatsApp notifications</p>
-            </div>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="flex items-center gap-2 text-base font-semibold tracking-tight text-gray-900">
+              WhatsApp accounts
+              <Badge variant="default" className="tabular-nums">{waAccounts.length}</Badge>
+            </h2>
             {waMode === 'list' && waLoaded && !waLoading && (
-              <button onClick={() => { setWaEditing(null); setWaMode('add') }} className={btnPrimary}>
-                <Plus className="w-4 h-4" /> Add Account
-              </button>
+              <Button onClick={() => { setWaEditing(null); setWaMode('add') }}>
+                <Plus /> Add account
+              </Button>
             )}
           </div>
 
           {loadErrors.whatsapp ? (
             renderLoadError('whatsapp', 'WhatsApp accounts')
           ) : waLoading || !waLoaded ? (
-            <div className="flex items-center justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-gray-300" /></div>
+            spinner
           ) : (
             <>
+              <div className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800 sm:flex-row sm:items-center sm:justify-between">
+                <span className="flex items-start gap-2">
+                  <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+                  Link the WhatsApp instance to a phone number in Enfinito Cloud first.
+                </span>
+                <a href="https://api.enfinito.cloud" target="_blank" rel="noopener noreferrer" className="inline-flex shrink-0 items-center gap-1 font-medium underline-offset-4 hover:underline">
+                  Open dashboard <ExternalLink className="size-3.5" />
+                </a>
+              </div>
               {waMode === 'add' && <WAAccountForm initial={null} onSave={handleWaAdd} onCancel={() => setWaMode('list')} isSaving={waSaving} />}
               {waAccounts.length === 0 && waMode !== 'add' ? (
-                <div className="text-center py-14 border-2 border-dashed border-gray-100 rounded-2xl">
-                  <MessageCircle className="w-8 h-8 text-gray-200 mx-auto mb-3" />
-                  <p className="text-sm text-gray-500 font-semibold">No WhatsApp accounts configured</p>
-                  <p className="text-xs text-gray-400 mt-1 mb-5">Add an API key to start sending WhatsApp notifications</p>
-                  <button onClick={() => setWaMode('add')} className={btnPrimary + ' mx-auto'}><Plus className="w-4 h-4" /> Add First Account</button>
-                </div>
+                <Card>
+                  <EmptyState
+                    icon={MessageCircle}
+                    title="No WhatsApp accounts yet"
+                    action={<Button variant="outline" onClick={() => setWaMode('add')}><Plus /> Add account</Button>}
+                  />
+                </Card>
               ) : (
                 <div className="space-y-3">
                   {waAccounts.map(account => (
@@ -1506,30 +1496,7 @@ function ConfigContent() {
                   ))}
                 </div>
               )}
-              <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4 text-xs text-amber-800 space-y-2">
-                <p className="font-semibold">Instance must be connected first</p>
-                <p className="text-amber-700">Before this account can send messages, the WhatsApp instance must be linked to a phone number on the <strong>Enfinito Cloud dashboard</strong>.</p>
-                <a href="https://api.enfinito.cloud" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-amber-800 font-medium hover:underline">Open Enfinito Cloud Dashboard <ExternalLink className="w-3 h-3" /></a>
-              </div>
-              <div className="bg-gray-50 border border-gray-100 rounded-2xl p-4 text-xs text-gray-600 space-y-1.5">
-                <p className="font-semibold text-gray-700">How WhatsApp routing works</p>
-                <ul className="space-y-1 text-gray-500 list-disc list-inside">
-                  <li>Each account is assigned one or more <strong>purposes</strong></li>
-                  <li>When the CRM sends a WhatsApp message it picks the account assigned to that purpose</li>
-                  <li>If no specific account matches, the <strong>General</strong> account is used as fallback</li>
-                </ul>
-              </div>
-              <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
-                <div className="px-4 py-3 border-b border-gray-50"><p className="text-xs font-semibold text-gray-500 uppercase tracking-widest">Purpose Reference</p></div>
-                <div className="divide-y divide-gray-50">
-                  {WA_PURPOSES.map(p => (
-                    <div key={p.id} className="flex items-center gap-3 px-4 py-2.5">
-                      <span className="w-28 px-2 py-0.5 bg-gray-100 text-gray-700 text-xs rounded-lg font-medium text-center shrink-0">{p.label}</span>
-                      <span className="text-xs text-gray-500">{p.description}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <PurposeReference purposes={WA_PURPOSES} />
             </>
           )}
         </div>
@@ -1539,11 +1506,33 @@ function ConfigContent() {
   )
 }
 
+// Purpose → description list shown under the email / WhatsApp accounts.
+function PurposeReference({ purposes }) {
+  return (
+    <Card className="overflow-hidden">
+      <CardHeader className="pb-3">
+        <div>
+          <CardTitle>Purposes</CardTitle>
+          <CardDescription>Unmatched purposes fall back to General</CardDescription>
+        </div>
+      </CardHeader>
+      <div className="divide-y divide-gray-100 border-t border-gray-100">
+        {purposes.map(p => (
+          <div key={p.id} className="flex items-center gap-3 px-5 py-2.5">
+            <span className="w-32 shrink-0"><Badge variant="default">{p.label}</Badge></span>
+            <span className="text-[13px] text-muted-foreground">{p.description}</span>
+          </div>
+        ))}
+      </div>
+    </Card>
+  )
+}
+
 // ── Page wrapper ───────────────────────────────────────────────────────────────
 
 export default function ConfigPage() {
   return (
-    <Suspense fallback={<div className="flex justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-gray-300" /></div>}>
+    <Suspense fallback={<LoadingSpinner className="py-20" />}>
       <ConfigContent />
     </Suspense>
   )

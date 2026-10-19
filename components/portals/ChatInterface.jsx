@@ -1,7 +1,10 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Send, Paperclip, Loader2 } from 'lucide-react'
+import { Send, Loader2, CheckCheck, MessageSquare } from 'lucide-react'
+import Button from '@/components/ui/Button'
+import { textareaClass } from '@/components/ui/Input'
+import { cn } from '@/lib/utils'
 
 function formatTime(date) {
   return new Date(date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -91,53 +94,51 @@ export default function ChatInterface({ apiUrl, currentUserId, recipientName = '
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+      <div className="flex h-64 items-center justify-center">
+        <Loader2 className="size-5 animate-spin text-gray-400" />
       </div>
     )
   }
 
   return (
-    <div className="flex flex-col h-full min-h-[500px] max-h-[700px]">
+    <div className="flex h-full max-h-[700px] min-h-[500px] flex-col">
       {/* Chat header */}
-      <div className="px-4 py-3 border-b border-gray-100 bg-gray-50 rounded-t-2xl">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full bg-blue-100 flex items-center justify-center">
-            <span className="text-sm font-semibold text-blue-600">
-              {recipientName.charAt(0).toUpperCase()}
-            </span>
-          </div>
-          <div>
-            <p className="text-sm font-semibold text-gray-800">{recipientName}</p>
-            <p className="text-xs text-green-500 font-medium">Online</p>
-          </div>
+      <div className="flex items-center gap-3 rounded-t-xl border-b border-gray-100 px-4 py-3">
+        <div className="flex size-8 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-700">
+          {recipientName.charAt(0).toUpperCase()}
+        </div>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-gray-900">{recipientName}</p>
+          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span className="size-1.5 rounded-full bg-emerald-500" />
+            Online
+          </p>
         </div>
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
+      <div className="flex-1 space-y-4 overflow-y-auto p-4 scrollbar-thin">
         {error && (
-          <div className="text-center text-sm text-red-500 bg-red-50 py-2 px-4 rounded-lg">
+          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-center text-sm text-red-700">
             {error}
           </div>
         )}
 
         {Object.keys(groupedMessages).length === 0 && !error && (
-          <div className="flex flex-col items-center justify-center h-full text-center py-12">
-            <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mb-4">
-              <Send className="w-7 h-7 text-blue-400" />
+          <div className="flex h-full flex-col items-center justify-center py-12 text-center">
+            <div className="mb-4 flex size-11 items-center justify-center rounded-xl border border-gray-200/80 bg-white shadow-xs">
+              <MessageSquare className="size-5 text-gray-500" />
             </div>
-            <p className="text-gray-500 text-sm font-medium">No messages yet</p>
-            <p className="text-gray-400 text-xs mt-1">Start the conversation below</p>
+            <p className="text-sm font-semibold text-gray-900">No messages yet</p>
           </div>
         )}
 
         {Object.entries(groupedMessages).map(([date, msgs]) => (
           <div key={date}>
-            <div className="flex items-center gap-3 my-4">
-              <div className="flex-1 h-px bg-gray-100" />
-              <span className="text-xs text-gray-400 font-medium whitespace-nowrap">{date}</span>
-              <div className="flex-1 h-px bg-gray-100" />
+            <div className="my-4 flex items-center gap-3">
+              <div className="h-px flex-1 bg-gray-100" />
+              <span className="whitespace-nowrap text-xs font-medium text-muted-foreground">{date}</span>
+              <div className="h-px flex-1 bg-gray-100" />
             </div>
 
             {msgs.map((msg) => {
@@ -145,28 +146,27 @@ export default function ChatInterface({ apiUrl, currentUserId, recipientName = '
               return (
                 <div
                   key={msg.id}
-                  className={`flex mb-3 ${isOwn ? 'justify-end' : 'justify-start'}`}
+                  className={cn('mb-3 flex', isOwn ? 'justify-end' : 'justify-start')}
                 >
                   {!isOwn && (
-                    <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center mr-2 flex-shrink-0 self-end">
-                      <span className="text-xs font-semibold text-gray-600">
-                        {(msg.sender?.name || 'A').charAt(0).toUpperCase()}
-                      </span>
+                    <div className="mr-2 flex size-7 shrink-0 items-center justify-center self-end rounded-full bg-gray-100 text-[11px] font-semibold text-gray-600">
+                      {(msg.sender?.name || 'A').charAt(0).toUpperCase()}
                     </div>
                   )}
-                  <div className={`max-w-[70%] ${isOwn ? 'items-end' : 'items-start'} flex flex-col`}>
+                  <div className={cn('flex max-w-[70%] flex-col', isOwn ? 'items-end' : 'items-start')}>
                     <div
-                      className={`px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
+                      className={cn(
+                        'whitespace-pre-wrap rounded-2xl px-3.5 py-2 text-sm leading-relaxed',
                         isOwn
-                          ? 'bg-blue-600 text-white rounded-br-sm'
-                          : 'bg-gray-100 text-gray-800 rounded-bl-sm'
-                      }`}
+                          ? 'rounded-br-md bg-gray-900 text-white'
+                          : 'rounded-bl-md bg-gray-100 text-gray-900'
+                      )}
                     >
                       {msg.content}
                     </div>
-                    <span className={`text-xs mt-1 ${isOwn ? 'text-gray-400' : 'text-gray-400'}`}>
+                    <span className="mt-1 flex items-center gap-1 text-[11px] text-gray-400">
                       {formatTime(msg.createdAt)}
-                      {isOwn && msg.isRead && <span className="ml-1 text-blue-400">✓✓</span>}
+                      {isOwn && msg.isRead && <CheckCheck className="size-3.5 text-gray-500" aria-label="Read" />}
                     </span>
                   </div>
                 </div>
@@ -178,32 +178,26 @@ export default function ChatInterface({ apiUrl, currentUserId, recipientName = '
       </div>
 
       {/* Input */}
-      <div className="p-4 border-t border-gray-100 bg-white rounded-b-2xl">
+      <div className="rounded-b-xl border-t border-gray-100 bg-white p-3">
         <div className="flex items-end gap-2">
-          <div className="flex-1 relative">
-            <textarea
-              value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder={placeholder}
-              rows={1}
-              className="w-full resize-none rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent max-h-32 overflow-y-auto"
-              style={{ minHeight: '44px' }}
-            />
-          </div>
-          <button
+          <textarea
+            value={newMessage}
+            onChange={(e) => setNewMessage(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={placeholder}
+            title="Enter to send · Shift+Enter for a new line"
+            rows={1}
+            className={cn(textareaClass, 'max-h-32 min-h-9 flex-1 resize-none overflow-y-auto')}
+          />
+          <Button
+            size="icon"
             onClick={handleSend}
             disabled={!newMessage.trim() || sending}
-            className="w-10 h-10 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded-xl flex items-center justify-center transition-colors flex-shrink-0"
+            aria-label="Send message"
           >
-            {sending ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Send className="w-4 h-4" />
-            )}
-          </button>
+            {sending ? <Loader2 className="animate-spin" /> : <Send />}
+          </Button>
         </div>
-        <p className="text-xs text-gray-400 mt-1.5 ml-1">Press Enter to send, Shift+Enter for new line</p>
       </div>
     </div>
   )

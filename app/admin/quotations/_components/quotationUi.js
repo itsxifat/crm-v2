@@ -18,22 +18,23 @@ export const QUOTATION_CURRENCIES = [
   { value: 'GBP', label: 'GBP (£)' },
 ]
 
+/** `variant` feeds components/ui/Badge; `badge` is the equivalent class string. */
 export const STATUS_STYLES = {
-  DRAFT:    { badge: 'bg-gray-100 text-gray-600',   label: 'Draft' },
-  SENT:     { badge: 'bg-blue-100 text-blue-700',   label: 'Sent' },
-  ACCEPTED: { badge: 'bg-green-100 text-green-700', label: 'Accepted' },
-  REJECTED: { badge: 'bg-red-100 text-red-600',     label: 'Rejected' },
+  DRAFT:    { badge: 'bg-gray-100 text-gray-700 ring-1 ring-inset ring-gray-500/10',          variant: 'default', label: 'Draft' },
+  SENT:     { badge: 'bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-600/15',          variant: 'primary', label: 'Sent' },
+  ACCEPTED: { badge: 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/15', variant: 'success', label: 'Accepted' },
+  REJECTED: { badge: 'bg-red-50 text-red-700 ring-1 ring-inset ring-red-600/15',             variant: 'danger',  label: 'Rejected' },
 }
 
 /** Treatments whose lines carry a VAT rate. */
 export const RATED = ['STANDARD', 'REDUCED']
 
 export const TREATMENT_HINTS = {
-  STANDARD:   'Standard-rated supply — VAT is added on the value after discount.',
-  REDUCED:    'Reduced rate, e.g. IT-enabled services (S099.10) at 5%.',
-  ZERO_RATED: 'Export of services paid in foreign currency through a bank — VAT at 0%.',
-  EXEMPT:     'Exempt supply — no VAT is charged.',
-  NONE:       'Not a VAT quotation — prices are quoted without VAT lines.',
+  STANDARD:   'VAT added on the value after discount',
+  REDUCED:    'e.g. ITES (S099.10) at 5%',
+  ZERO_RATED: 'Export of services paid in FX via a bank',
+  EXEMPT:     'No VAT is charged',
+  NONE:       'Prices quoted without VAT lines',
 }
 
 export const treatmentDefaultRate = (t) => VAT_TREATMENTS.find(x => x.value === t)?.defaultRate ?? 0

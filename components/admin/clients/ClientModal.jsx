@@ -1,11 +1,15 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { X, Loader2, Plus, Trash2, Globe, Facebook, Instagram, Linkedin, Twitter, Youtube, Link2, Search } from 'lucide-react'
+import { X, Plus, Trash2, Globe, Facebook, Instagram, Linkedin, Twitter, Youtube, Link2, Search } from 'lucide-react'
 import toast from 'react-hot-toast'
 import FileUpload from '@/components/ui/FileUpload'
 import Select from '@/components/ui/Select'
 import TaxCodeSelect from '@/components/tax/TaxCodeSelect'
+import Button from '@/components/ui/Button'
+import Tabs from '@/components/ui/Tabs'
+import { Input, Textarea, NativeSelect, Label, Field, inputClass } from '@/components/ui/Input'
+import { cn } from '@/lib/utils'
 import { BIN_REGEX, TIN_REGEX, normalizeBin } from '@/lib/tax/catalog'
 
 const VAT_REGISTRATION_TYPES = [
@@ -150,16 +154,14 @@ function ParentClientSearch({ value, label, onChange }) {
 
   function clear() { onChange(null, '', null); setQuery('') }
 
-  const ic = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500'
-
   if (value) {
     return (
-      <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg">
-        <Link2 className="w-4 h-4 text-blue-500 shrink-0" />
-        <span className="text-sm text-blue-700 font-medium flex-1">{label}</span>
-        <button type="button" onClick={clear} className="p-0.5 text-blue-400 hover:text-blue-700">
-          <X className="w-3.5 h-3.5" />
-        </button>
+      <div className="flex items-center gap-2 rounded-lg border border-gray-200/80 bg-gray-50 px-3 py-1.5">
+        <Link2 className="size-4 shrink-0 text-gray-500" />
+        <span className="flex-1 text-sm font-medium text-gray-900">{label}</span>
+        <Button variant="ghost" size="icon-xs" onClick={clear} className="text-gray-400" aria-label="Unlink">
+          <X />
+        </Button>
       </div>
     )
   }
@@ -167,28 +169,28 @@ function ParentClientSearch({ value, label, onChange }) {
   return (
     <div ref={ref} className="relative">
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+        <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-gray-400" />
         <input
           value={query}
           onChange={e => { setQuery(e.target.value); setOpen(true) }}
           onFocus={() => setOpen(true)}
-          placeholder="Search by name, company, or code…"
-          className={`${ic} pl-9`}
+          placeholder="Search clients…"
+          className={cn(inputClass, 'pl-9')}
         />
       </div>
       {open && (query || results.length > 0) && (
-        <div className="absolute top-full mt-1 left-0 right-0 bg-white border border-gray-100 rounded-xl shadow-lg py-1 z-30 max-h-48 overflow-y-auto">
-          {loading && <p className="px-4 py-2 text-xs text-gray-400">Searching…</p>}
-          {!loading && results.length === 0 && query && <p className="px-4 py-2 text-xs text-gray-400">No clients found</p>}
+        <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-48 overflow-y-auto rounded-xl border border-gray-200/80 bg-white p-1 shadow-lg">
+          {loading && <p className="px-2 py-1.5 text-xs text-muted-foreground">Searching…</p>}
+          {!loading && results.length === 0 && query && <p className="px-2 py-1.5 text-xs text-muted-foreground">No results</p>}
           {results.map(c => {
             const name = c.clientType === 'COMPANY' ? (c.company || c.userId?.name) : c.userId?.name
             return (
               <button key={c._id ?? c.id} type="button" onClick={() => select(c)}
-                className="w-full flex items-center gap-3 px-4 py-2 hover:bg-gray-50 text-left transition-colors">
-                <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${c.clientType === 'INDIVIDUAL' ? 'bg-blue-500' : 'bg-violet-500'}`} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-800 truncate">{name}</p>
-                  <p className="text-xs text-gray-400">{c.clientCode} · {c.userId?.email}</p>
+                className="flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-gray-100">
+                <div className={`size-1.5 shrink-0 rounded-full ${c.clientType === 'INDIVIDUAL' ? 'bg-blue-500' : 'bg-violet-500'}`} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-gray-900">{name}</p>
+                  <p className="text-xs text-muted-foreground">{c.clientCode} · {c.userId?.email}</p>
                 </div>
               </button>
             )
@@ -397,16 +399,20 @@ export default function ClientModal({ open, onOpenChange, client, onSaved, initi
 
   if (!open) return null
 
-  const ic = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500'
-  const lc = 'block text-xs font-medium text-gray-600 mb-1'
+  const warn = 'mt-1.5 text-xs text-amber-700'
 
-  const hc = 'text-xs text-gray-400 mt-1'
+  const PRIORITY_OPTIONS = [
+    { value: 'LOW',    label: 'Low' },
+    { value: 'MEDIUM', label: 'Medium' },
+    { value: 'HIGH',   label: 'High' },
+    { value: 'VIP',    label: 'VIP' },
+  ]
 
   const TABS = [
-    { id: 'basic',    label: 'Basic Info'   },
+    { id: 'basic',    label: 'Basic info'   },
     { id: 'contact',  label: 'Contact'      },
     { id: 'tax',      label: 'Tax & VAT'    },
-    { id: 'social',   label: 'Social Links' },
+    { id: 'social',   label: 'Social links' },
     { id: 'notes',    label: 'Notes'        },
   ]
   const tabIds    = TABS.map(t => t.id)
@@ -416,31 +422,28 @@ export default function ClientModal({ open, onOpenChange, client, onSaved, initi
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => onOpenChange(false)} />
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" onClick={() => onOpenChange(false)} />
+      <div className="relative flex max-h-[92vh] w-full max-w-2xl flex-col rounded-2xl border border-gray-200/80 bg-white shadow-2xl">
 
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+        <div className="flex items-start justify-between gap-4 px-6 pt-5 pb-3">
           <div>
-            <h2 className="text-base font-semibold text-gray-900">{isEdit ? 'Edit Client' : 'Add New Client'}</h2>
-            {isEdit && <p className="text-xs text-gray-400 mt-0.5">#{client.clientCode}</p>}
+            <h2 className="text-base font-semibold tracking-tight text-gray-900">{isEdit ? 'Edit client' : 'New client'}</h2>
+            {isEdit && <p className="mt-0.5 font-mono text-xs text-muted-foreground">#{client.clientCode}</p>}
           </div>
-          <button onClick={() => onOpenChange(false)} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100">
-            <X className="w-4 h-4" />
-          </button>
+          <Button variant="ghost" size="icon-sm" onClick={() => onOpenChange(false)} className="-mr-1.5 -mt-0.5 text-gray-400" aria-label="Close">
+            <X />
+          </Button>
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-gray-100 px-6 overflow-x-auto">
-          {TABS.map(t => (
-            <button key={t.id} type="button" onClick={() => setTab(t.id)}
-              className={`px-3 py-2.5 text-sm font-medium whitespace-nowrap -mb-px border-b-2 transition-colors ${
-                tab === t.id ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'
-              }`}>
-              {t.label}
-            </button>
-          ))}
-        </div>
+        <Tabs
+          variant="underline"
+          className="px-6"
+          value={tab}
+          onChange={setTab}
+          tabs={TABS.map(t => ({ value: t.id, label: t.label }))}
+        />
 
         {/* Body */}
         <form id="client-form" onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-6 py-5">
@@ -450,188 +453,146 @@ export default function ClientModal({ open, onOpenChange, client, onSaved, initi
             <div className="space-y-6">
               {/* Client Type */}
               <div>
-                <label className={lc}>Client Type</label>
-                <div className="flex gap-3">
-                  {['COMPANY', 'INDIVIDUAL'].map(t => (
-                    <button key={t} type="button"
-                      onClick={() => set('clientType', t)}
-                      className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${
-                        form.clientType === t
-                          ? 'bg-blue-600 text-white border-blue-600'
-                          : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
-                      }`}>
-                      {t === 'INDIVIDUAL' ? 'Individual' : 'Company'}
-                    </button>
-                  ))}
-                </div>
+                <Label>Client type</Label>
+                <Tabs
+                  value={form.clientType}
+                  onChange={v => set('clientType', v)}
+                  tabs={[
+                    { value: 'COMPANY',    label: 'Company' },
+                    { value: 'INDIVIDUAL', label: 'Individual' },
+                  ]}
+                />
               </div>
 
               {/* ── Portfolio link (new clients only) ── */}
               {!isEdit && (
-                <div>
-                  <label className={lc}>
-                    <span className="flex items-center gap-1.5">
-                      <Link2 className="w-3.5 h-3.5" />
-                      Link to Existing Contact <span className="text-gray-400 font-normal">(optional)</span>
-                    </span>
-                  </label>
-                  <p className="text-xs text-gray-400 mb-1.5">
-                    Use this when the same person owns multiple companies. The contact's existing login will be reused — no new account is created.
-                  </p>
-                  <ParentClientSearch
-                    value={form.parentClientId}
-                    label={form._parentLabel}
-                    onChange={(id, label, contact) => setForm(f => ({
-                      ...f,
-                      parentClientId: id,
-                      _parentLabel:   label,
-                      // Auto-fill contact person info from the linked client — clear on unlink
-                      name:  contact ? contact.name  : f.name,
-                      email: contact ? contact.email : f.email,
-                      phone: contact ? contact.phone : f.phone,
-                    }))}
-                  />
-                </div>
+                <Field
+                  label={<>Link to existing contact <span className="font-normal text-muted-foreground">(optional)</span></>}
+                  hint="Reuses their login; no new account"
+                >
+                  <div title="Use this when the same person owns multiple companies.">
+                    <ParentClientSearch
+                      value={form.parentClientId}
+                      label={form._parentLabel}
+                      onChange={(id, label, contact) => setForm(f => ({
+                        ...f,
+                        parentClientId: id,
+                        _parentLabel:   label,
+                        // Auto-fill contact person info from the linked client — clear on unlink
+                        name:  contact ? contact.name  : f.name,
+                        email: contact ? contact.email : f.email,
+                        phone: contact ? contact.phone : f.phone,
+                      }))}
+                    />
+                  </div>
+                </Field>
               )}
 
               {/* ── Company Information ── */}
               {form.clientType === 'COMPANY' && (
-                <div className="space-y-3">
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-100 pb-1.5">Company Information</p>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="col-span-2">
-                      <label className={lc}>Company Name *</label>
-                      <input value={form.company} onChange={e => set('company', e.target.value)}
-                        placeholder="Acme Corporation" className={ic} />
-                    </div>
-                    <div>
-                      <label className={lc}>Company Phone</label>
-                      <input value={form.companyPhone} onChange={e => set('companyPhone', e.target.value)}
-                        placeholder="+8801XXXXXXXXX" className={ic} />
-                    </div>
-                    <div>
-                      <label className={lc}>Company Email</label>
-                      <input type="email" value={form.companyEmail} onChange={e => set('companyEmail', e.target.value)}
-                        placeholder="info@company.com" className={ic} />
-                    </div>
-                    <div>
-                      <label className={lc}>Business Type</label>
+                <div className="space-y-4">
+                  <SectionTitle>Company information</SectionTitle>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <Field label="Company name" required className="sm:col-span-2">
+                      <Input value={form.company} onChange={e => set('company', e.target.value)}
+                        placeholder="Acme Corporation" />
+                    </Field>
+                    <Field label="Company phone">
+                      <Input value={form.companyPhone} onChange={e => set('companyPhone', e.target.value)}
+                        placeholder="+8801…" />
+                    </Field>
+                    <Field label="Company email">
+                      <Input type="email" value={form.companyEmail} onChange={e => set('companyEmail', e.target.value)}
+                        placeholder="info@company.com" />
+                    </Field>
+                    <Field label="Business type">
                       <Select value={form.businessType} onChange={v => set('businessType', v ?? '')}
                         options={BUSINESS_TYPES.map(t => ({ value: t, label: t }))}
-                        placeholder="— Select type —"
+                        placeholder="Select…"
                       />
-                    </div>
-                    <div>
-                      <label className={lc}>Industry</label>
+                    </Field>
+                    <Field label="Industry">
                       <Select value={form.industry} onChange={v => set('industry', v ?? '')}
                         options={INDUSTRIES.map(i => ({ value: i, label: i }))}
-                        placeholder="— Select industry —"
+                        placeholder="Select…"
                       />
-                    </div>
-                    <div className="col-span-2 sm:col-span-1">
-                      <label className={lc}>BIN (VAT registration no.)</label>
-                      <input value={form.bin} onChange={e => setBin(e.target.value)} inputMode="numeric"
-                        placeholder="000123456-0101" className={`${ic} font-mono ${binInvalid ? 'border-red-300' : ''}`} />
-                      <p className={binInvalid ? 'text-xs text-red-500 mt-1' : hc}>
-                        {binInvalid ? 'BIN must be 9 or 13 digits' : 'More tax details in the Tax & VAT tab.'}
-                      </p>
-                    </div>
-                    <div>
-                      <label className={lc}>Priority</label>
+                    </Field>
+                    <Field label="BIN" error={binInvalid ? 'BIN must be 9 or 13 digits' : undefined}>
+                      <Input value={form.bin} onChange={e => setBin(e.target.value)} inputMode="numeric"
+                        placeholder="000123456-0101" className="font-mono" invalid={binInvalid}
+                        title="VAT registration number. More tax details in the Tax & VAT tab." />
+                    </Field>
+                    <Field label="Priority">
                       <Select value={form.priority} onChange={v => set('priority', v ?? 'MEDIUM')}
-                        options={[
-                          { value: 'LOW',    label: 'Low' },
-                          { value: 'MEDIUM', label: 'Medium' },
-                          { value: 'HIGH',   label: 'High' },
-                          { value: 'VIP',    label: 'VIP' },
-                        ]}
-                        placeholder="Select priority…"
+                        options={PRIORITY_OPTIONS}
+                        placeholder="Select…"
                       />
-                    </div>
-                    <div className="col-span-2">
-                      <label className={lc}>Logo</label>
-                      <FileUpload value={form.logo} onUploaded={url => set('logo', url)} accept="image/*" label="Upload logo" />
+                    </Field>
+                    <div className="sm:col-span-2">
+                      <FileUpload value={form.logo} onUploaded={url => set('logo', url)} accept="image/*" label="Logo" />
                     </div>
                   </div>
                 </div>
               )}
 
               {/* ── Concerned Person / Individual Details ── */}
-              <div className="space-y-3">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-100 pb-1.5">
-                  {form.clientType === 'COMPANY' ? 'Concerned Person' : 'Client Details'}
-                </p>
+              <div className="space-y-4">
+                <SectionTitle
+                  title={form.clientType === 'COMPANY'
+                    ? 'This person receives all notifications and has portal access.'
+                    : 'Used for login and notifications.'}
+                >
+                  {form.clientType === 'COMPANY' ? 'Concerned person' : 'Client details'}
+                </SectionTitle>
 
                 {/* When linked to existing contact — show read-only card, hide editable fields */}
                 {!isEdit && form.parentClientId ? (
-                  <div className="flex items-start gap-3 p-3 bg-gray-50 border border-gray-200 rounded-xl">
-                    <Link2 className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
-                    <div className="space-y-0.5 flex-1">
-                      <p className="text-sm font-semibold text-gray-800">{form.name || '—'}</p>
-                      <p className="text-xs text-gray-500">{form.email}</p>
-                      {form.phone && <p className="text-xs text-gray-400">{form.phone}</p>}
-                      <p className="text-xs text-blue-600 mt-1">Using existing account — no new login will be created.</p>
+                  <div className="flex items-start gap-3 rounded-lg bg-gray-50 p-3">
+                    <Link2 className="mt-0.5 size-4 shrink-0 text-gray-500" />
+                    <div className="flex-1 space-y-0.5">
+                      <p className="text-sm font-medium text-gray-900">{form.name || '—'}</p>
+                      <p className="text-xs text-muted-foreground">{form.email}</p>
+                      {form.phone && <p className="text-xs text-muted-foreground">{form.phone}</p>}
+                      <p className="pt-1 text-xs text-gray-600">Existing account · no new login</p>
                     </div>
                   </div>
                 ) : (
-                  <>
-                    <p className="text-xs text-blue-600 bg-blue-50 rounded-lg px-3 py-2">
-                      {form.clientType === 'COMPANY'
-                        ? 'This person will receive all notifications and have portal access.'
-                        : 'This information will be used for login and notifications.'}
-                    </p>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className={lc}>{form.clientType === 'COMPANY' ? 'Contact Person Name *' : 'Full Name *'}</label>
-                        <input value={form.name} onChange={e => set('name', e.target.value)} required
-                          placeholder={form.clientType === 'COMPANY' ? 'John Doe' : 'Jane Smith'} className={ic} />
-                      </div>
-                      <div>
-                        <label className={lc}>Designation</label>
-                        <input value={form.designation} onChange={e => set('designation', e.target.value)}
-                          placeholder="CEO, Director…" className={ic} />
-                      </div>
-                      <div>
-                        <label className={lc}>Email (for login & notifications) *</label>
-                        <input type="email" value={form.email} onChange={e => set('email', e.target.value)} required
-                          disabled={isEdit} placeholder="person@company.com" className={ic} />
-                      </div>
-                      <div>
-                        <label className={lc}>Phone (for notifications)</label>
-                        <input value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="+8801XXXXXXXXX" className={ic} />
-                      </div>
-                      {!isEdit && (
-                        <div className="col-span-2 flex items-start gap-2 p-3 bg-blue-50 border border-blue-100 rounded-xl text-xs text-blue-700">
-                          <span className="mt-0.5">ℹ</span>
-                          <span>A secure password will be auto-generated and sent to the client's email along with their Client ID and login instructions.</span>
-                        </div>
-                      )}
-                    </div>
-                  </>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <Field label={form.clientType === 'COMPANY' ? 'Contact person' : 'Full name'} required>
+                      <Input value={form.name} onChange={e => set('name', e.target.value)} required
+                        placeholder={form.clientType === 'COMPANY' ? 'John Doe' : 'Jane Smith'} />
+                    </Field>
+                    <Field label="Designation">
+                      <Input value={form.designation} onChange={e => set('designation', e.target.value)}
+                        placeholder="e.g. CEO" />
+                    </Field>
+                    <Field label="Login email" required hint={!isEdit ? 'Login details are emailed automatically' : undefined}>
+                      <Input type="email" value={form.email} onChange={e => set('email', e.target.value)} required
+                        disabled={isEdit} placeholder="person@company.com"
+                        title="Used for login and notifications" />
+                    </Field>
+                    <Field label="Phone">
+                      <Input value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="+8801…"
+                        title="Used for notifications" />
+                    </Field>
+                  </div>
                 )}
 
                 {/* Industry + Priority for individual clients */}
                 {form.clientType === 'INDIVIDUAL' && (
-                  <div className="grid grid-cols-2 gap-4 mt-1">
-                    <div>
-                      <label className={lc}>Industry</label>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <Field label="Industry">
                       <Select value={form.industry} onChange={v => set('industry', v ?? '')}
                         options={INDUSTRIES.map(i => ({ value: i, label: i }))}
-                        placeholder="— Select industry —"
+                        placeholder="Select…"
                       />
-                    </div>
-                    <div>
-                      <label className={lc}>Priority</label>
+                    </Field>
+                    <Field label="Priority">
                       <Select value={form.priority} onChange={v => set('priority', v ?? 'MEDIUM')}
-                        options={[
-                          { value: 'LOW',    label: 'Low' },
-                          { value: 'MEDIUM', label: 'Medium' },
-                          { value: 'HIGH',   label: 'High' },
-                          { value: 'VIP',    label: 'VIP' },
-                        ]}
-                        placeholder="Select priority…"
+                        options={PRIORITY_OPTIONS}
+                        placeholder="Select…"
                       />
-                    </div>
+                    </Field>
                   </div>
                 )}
               </div>
@@ -640,30 +601,25 @@ export default function ClientModal({ open, onOpenChange, client, onSaved, initi
 
           {/* ── CONTACT ── */}
           {tab === 'contact' && (
-            <div className="grid grid-cols-2 gap-4">
-              <div className="col-span-2">
-                <label className={lc}>Address</label>
-                <input value={form.address} onChange={e => set('address', e.target.value)}
-                  placeholder="Street address" className={ic} />
-              </div>
-              <div>
-                <label className={lc}>City</label>
-                <input value={form.city} onChange={e => set('city', e.target.value)} placeholder="Dhaka" className={ic} />
-              </div>
-              <div>
-                <label className={lc}>Country</label>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Address" className="sm:col-span-2">
+                <Input value={form.address} onChange={e => set('address', e.target.value)}
+                  placeholder="Street address" />
+              </Field>
+              <Field label="City">
+                <Input value={form.city} onChange={e => set('city', e.target.value)} placeholder="Dhaka" />
+              </Field>
+              <Field label="Country">
                 <Select value={form.country} onChange={v => setCountry(v ?? 'Bangladesh')}
                   options={COUNTRIES.map(c => ({ value: c, label: c }))}
-                  placeholder="Select country…"
+                  placeholder="Select…"
                 />
-              </div>
-              <div>
-                <label className={lc}>Alt. Phone</label>
-                <input value={form.altPhone} onChange={e => set('altPhone', e.target.value)}
-                  placeholder="+8801XXXXXXXXX" className={ic} />
-              </div>
-              <div>
-                <label className={lc}>Timezone</label>
+              </Field>
+              <Field label="Alt. phone">
+                <Input value={form.altPhone} onChange={e => set('altPhone', e.target.value)}
+                  placeholder="+8801…" />
+              </Field>
+              <Field label="Timezone">
                 <Select value={form.timezone} onChange={v => set('timezone', v ?? 'Asia/Dhaka')}
                   options={[
                     { value: 'Asia/Dhaka',          label: 'Asia/Dhaka (GMT+6)' },
@@ -682,109 +638,108 @@ export default function ClientModal({ open, onOpenChange, client, onSaved, initi
                     { value: 'Pacific/Auckland',     label: 'Pacific/Auckland (GMT+13)' },
                     { value: 'UTC',                  label: 'UTC (GMT+0)' },
                   ]}
-                  placeholder="Select timezone…"
+                  placeholder="Select…"
                 />
-              </div>
-              <div className="col-span-2">
-                <label className={lc}>Website</label>
-                <input value={form.website} onChange={e => set('website', e.target.value)}
-                  placeholder="https://company.com" className={ic} />
-              </div>
+              </Field>
+              <Field label="Website" className="sm:col-span-2">
+                <Input value={form.website} onChange={e => set('website', e.target.value)}
+                  placeholder="https://company.com" />
+              </Field>
             </div>
           )}
 
           {/* ── TAX & VAT ── */}
           {tab === 'tax' && (
             <div className="space-y-6">
-              <p className="text-xs text-gray-500 bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
-                Printed on Mushak-6.3 VAT invoices and used to track the VAT (VDS) and income tax (TDS / AIT)
-                this client deducts from your payments.
-              </p>
-
-              <div className="space-y-3">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-100 pb-1.5">Registration</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className={lc}>BIN (VAT registration no.)</label>
-                    <input value={form.bin} onChange={e => setBin(e.target.value)} inputMode="numeric"
-                      placeholder="000123456-0101" className={`${ic} font-mono ${binInvalid ? 'border-red-300' : ''}`} />
-                    {binInvalid
-                      ? <p className="text-xs text-red-500 mt-1">BIN must be 9 or 13 digits, e.g. 000123456-0101</p>
-                      : <p className={hc}>13 digits, e.g. 000123456-0101. Needed on Mushak-6.3 for supplies above Tk 25,000 and for the client to claim input VAT.</p>}
-                    {form._binFromLegacy && (
-                      <p className="text-xs text-amber-600 mt-1">Filled in from the old VAT number. Saving stores it as the BIN.</p>
+              <div className="space-y-4">
+                <SectionTitle title="Printed on Mushak-6.3 VAT invoices and used to track VDS and TDS / AIT this client deducts.">
+                  Registration
+                </SectionTitle>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <Field
+                    label="BIN"
+                    error={binInvalid ? 'BIN must be 9 or 13 digits, e.g. 000123456-0101' : undefined}
+                    hint={form._binFromLegacy ? undefined : '13 digits'}
+                  >
+                    <Input value={form.bin} onChange={e => setBin(e.target.value)} inputMode="numeric"
+                      placeholder="000123456-0101" className="font-mono" invalid={binInvalid}
+                      title="Needed on Mushak-6.3 for supplies above Tk 25,000 and for the client to claim input VAT." />
+                    {!binInvalid && form._binFromLegacy && (
+                      <p className={warn}>Filled from the old VAT number; saved as the BIN.</p>
                     )}
-                  </div>
-                  <div>
-                    <label className={lc}>TIN (e-TIN)</label>
-                    <input value={form.tin} onChange={e => set('tin', e.target.value)} inputMode="numeric"
-                      placeholder="12-digit e-TIN" className={`${ic} font-mono ${tinInvalid ? 'border-red-300' : ''}`} />
-                    {isMaskedValue(form.tin) && tinChanged
-                      ? <p className="text-xs text-red-500 mt-1">Clear the hidden TIN fully, then type the new 12-digit e-TIN.</p>
-                      : tinInvalid
-                        ? <p className="text-xs text-red-500 mt-1">TIN must be the 12-digit e-TIN</p>
-                        : <p className={hc}>
-                            {isMaskedValue(form.tin) ? 'Hidden for privacy. Leave it as is, or replace it with the full number.' : 'Shown on TDS certificates the client issues to you.'}
-                          </p>}
-                  </div>
-                  <div>
-                    <label className={lc}>VAT registration status</label>
-                    <select value={form.vatRegistrationType} onChange={e => set('vatRegistrationType', e.target.value)} className={ic}>
+                  </Field>
+                  <Field
+                    label="TIN (e-TIN)"
+                    error={isMaskedValue(form.tin) && tinChanged
+                      ? 'Clear the hidden TIN fully, then type the new 12-digit e-TIN.'
+                      : tinInvalid ? 'TIN must be the 12-digit e-TIN' : undefined}
+                    hint={isMaskedValue(form.tin) ? 'Hidden. Leave as is, or replace fully.' : undefined}
+                  >
+                    <Input value={form.tin} onChange={e => set('tin', e.target.value)} inputMode="numeric"
+                      placeholder="12-digit e-TIN" className="font-mono" invalid={tinInvalid}
+                      title="Shown on TDS certificates the client issues to you." />
+                  </Field>
+                  <Field
+                    label="VAT registration status"
+                    hint={form.vatRegistrationType === 'FOREIGN' ? 'Exports are usually zero-rated' : undefined}
+                  >
+                    <NativeSelect value={form.vatRegistrationType} onChange={e => set('vatRegistrationType', e.target.value)}>
                       <option value="">Not specified</option>
                       {VAT_REGISTRATION_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-                    </select>
-                    {form.vatRegistrationType === 'FOREIGN' ? (
-                      <p className={hc}>Services exported to overseas clients are usually zero-rated.</p>
-                    ) : form.country && form.country !== 'Bangladesh' && !form.vatRegistrationType ? (
-                      <p className="text-xs text-amber-600 mt-1">This client is outside Bangladesh. Consider marking them Foreign.</p>
-                    ) : form.vatRegistrationType === 'REGISTERED' && !binDigits(form.bin) ? (
-                      <p className="text-xs text-amber-600 mt-1">Add the BIN for a VAT-registered client.</p>
-                    ) : null}
-                  </div>
-                  <div>
-                    <label className={lc}>Foreign VAT / other tax ID</label>
-                    <input value={form.vatNumber} onChange={e => set('vatNumber', e.target.value)}
-                      placeholder="e.g. EU VAT ID (optional)" className={ic} />
-                    <p className={hc}>For overseas clients. Bangladesh clients: use the BIN.</p>
-                  </div>
+                    </NativeSelect>
+                    {form.vatRegistrationType !== 'FOREIGN' && (
+                      form.country && form.country !== 'Bangladesh' && !form.vatRegistrationType ? (
+                        <p className={warn}>Client is outside Bangladesh. Consider Foreign.</p>
+                      ) : form.vatRegistrationType === 'REGISTERED' && !binDigits(form.bin) ? (
+                        <p className={warn}>Add the BIN for a VAT-registered client.</p>
+                      ) : null
+                    )}
+                  </Field>
+                  <Field label="Foreign VAT / other tax ID" hint="Overseas clients only; BD clients use BIN">
+                    <Input value={form.vatNumber} onChange={e => set('vatNumber', e.target.value)}
+                      placeholder="e.g. EU VAT ID" />
+                  </Field>
                 </div>
               </div>
 
-              <div className="space-y-3">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-100 pb-1.5">Tax this client deducts from your payments</p>
-                <label className="flex items-start gap-3 cursor-pointer">
+              <div className="space-y-4">
+                <SectionTitle>Tax withheld by this client</SectionTitle>
+                <label
+                  className="flex cursor-pointer items-start gap-3"
+                  title="Government bodies, NGOs, banks, insurers, schools and limited companies deduct VAT when they pay and should give you a Mushak-6.6 certificate."
+                >
                   <input type="checkbox" checked={form.isVdsEntity} onChange={e => set('isVdsEntity', e.target.checked)}
-                    className="mt-0.5 w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                    className="mt-0.5 size-4 rounded border-gray-300" />
                   <span>
-                    <span className="block text-sm font-medium text-gray-800">Withholds VAT at source (VDS)</span>
-                    <span className="block text-xs text-gray-400">Government bodies, NGOs, banks, insurers, schools and limited companies deduct VAT when they pay and should give you a Mushak-6.6 certificate.</span>
+                    <span className="block text-sm font-medium text-gray-900">Withholds VAT at source (VDS)</span>
+                    <span className="block text-xs text-muted-foreground">Issues Mushak-6.6 certificates</span>
                   </span>
                 </label>
-                <label className="flex items-start gap-3 cursor-pointer">
+                <label
+                  className="flex cursor-pointer items-start gap-3"
+                  title="Companies and other specified payers deduct advance income tax and give a TDS certificate. It counts as tax already paid."
+                >
                   <input type="checkbox" checked={form.isTdsEntity} onChange={e => set('isTdsEntity', e.target.checked)}
-                    className="mt-0.5 w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                    className="mt-0.5 size-4 rounded border-gray-300" />
                   <span>
-                    <span className="block text-sm font-medium text-gray-800">Deducts income tax at source (TDS / AIT)</span>
-                    <span className="block text-xs text-gray-400">Companies and other specified payers deduct advance income tax and give a TDS certificate. It counts as tax already paid.</span>
+                    <span className="block text-sm font-medium text-gray-900">Deducts income tax at source (TDS / AIT)</span>
+                    <span className="block text-xs text-muted-foreground">Issues TDS certificates</span>
                   </span>
                 </label>
                 {form.isTdsEntity && (
-                  <div className="sm:w-1/2 sm:pl-7">
-                    <label className={lc}>Default TDS section</label>
+                  <Field label="Default TDS section" hint='IT work: usually s.90 "Any other service"' className="sm:w-1/2 sm:pl-7">
                     <TaxCodeSelect kind="TDS_SECTION" value={form.defaultTdsSection || null}
                       onChange={code => set('defaultTdsSection', code ?? '')}
-                      placeholder="Select section…" className={ic} />
-                    <p className={hc}>IT and digital marketing work usually falls under s.90 &quot;Any other service&quot;.</p>
-                  </div>
+                      placeholder="Select section…" />
+                  </Field>
                 )}
               </div>
 
-              <div>
-                <label className={lc}>Tax notes</label>
-                <textarea value={form.taxNotes} onChange={e => set('taxNotes', e.target.value)}
-                  rows={3} placeholder="e.g. Sends Mushak-6.6 quarterly; finance contact for certificates…"
-                  className={`${ic} resize-none`} />
-              </div>
+              <Field label="Tax notes">
+                <Textarea value={form.taxNotes} onChange={e => set('taxNotes', e.target.value)}
+                  rows={3} placeholder="e.g. Sends Mushak-6.6 quarterly"
+                  className="resize-none" />
+              </Field>
             </div>
           )}
 
@@ -792,7 +747,7 @@ export default function ClientModal({ open, onOpenChange, client, onSaved, initi
           {tab === 'social' && (
             <div className="space-y-3">
               {form.socialLinks.length === 0 && (
-                <p className="text-sm text-gray-400 text-center py-6">No social links added yet</p>
+                <p className="py-6 text-center text-sm text-muted-foreground">No social links yet</p>
               )}
               {form.socialLinks.map((link, i) => (
                 <div key={i} className="flex items-center gap-2">
@@ -800,65 +755,64 @@ export default function ClientModal({ open, onOpenChange, client, onSaved, initi
                     <Select value={link.platform} onChange={v => updateSocialLink(i, 'platform', v ?? 'facebook')}
                       options={SOCIAL_PLATFORMS.map(p => ({ value: p.value, label: p.label }))}
                       placeholder="Platform"
-                      size="sm"
                     />
                   </div>
-                  <input value={link.url} onChange={e => updateSocialLink(i, 'url', e.target.value)}
-                    placeholder="https://…" className={`${ic} flex-1`} />
-                  <button type="button" onClick={() => removeSocialLink(i)}
-                    className="p-2 text-gray-400 hover:text-red-500 transition-colors shrink-0">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  <Input value={link.url} onChange={e => updateSocialLink(i, 'url', e.target.value)}
+                    placeholder="https://…" className="flex-1" />
+                  <Button variant="ghost" size="icon-sm" onClick={() => removeSocialLink(i)}
+                    className="text-gray-400 hover:bg-red-50 hover:text-red-600" aria-label="Remove link">
+                    <Trash2 />
+                  </Button>
                 </div>
               ))}
-              <button type="button" onClick={addSocialLink}
-                className="flex items-center gap-2 px-3 py-2 text-sm text-blue-600 border border-dashed border-blue-300 rounded-lg hover:bg-blue-50 w-full justify-center">
-                <Plus className="w-4 h-4" /> Add Social Link
-              </button>
+              <Button variant="outline" onClick={addSocialLink} className="w-full border-dashed">
+                <Plus /> Add social link
+              </Button>
             </div>
           )}
 
           {/* ── NOTES ── */}
           {tab === 'notes' && (
-            <div>
-              <label className={lc}>Internal Notes (admin use only)</label>
-              <textarea value={form.notes} onChange={e => set('notes', e.target.value)}
-                rows={8} placeholder="Any internal notes about this client…"
-                className={`${ic} resize-none`} />
-              <p className="text-xs text-gray-400 mt-1.5">These notes are not visible to the client.</p>
-            </div>
+            <Field label="Internal notes" hint="Not visible to the client">
+              <Textarea value={form.notes} onChange={e => set('notes', e.target.value)}
+                rows={8} placeholder="Notes…"
+                className="resize-none" />
+            </Field>
           )}
 
         </form>
 
         {/* Footer */}
-        <div className="flex items-center justify-between gap-3 px-6 py-4 border-t border-gray-100">
-          <button type="button" onClick={() => onOpenChange(false)}
-            className="px-4 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">
+        <div className="flex items-center justify-between gap-2 rounded-b-2xl border-t border-gray-100 bg-gray-50/60 px-6 py-3.5">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
-          </button>
-          <div className="flex items-center gap-3">
+          </Button>
+          <div className="flex items-center gap-2">
             {!isFirst && (
-              <button type="button" onClick={() => setTab(tabIds[tabIndex - 1])}
-                className="px-4 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">
+              <Button variant="outline" onClick={() => setTab(tabIds[tabIndex - 1])}>
                 Back
-              </button>
+              </Button>
             )}
             {!isLast ? (
-              <button type="button" onClick={() => setTab(tabIds[tabIndex + 1])}
-                className="px-5 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700">
+              <Button onClick={() => setTab(tabIds[tabIndex + 1])}>
                 Next
-              </button>
+              </Button>
             ) : (
-              <button type="submit" form="client-form" disabled={saving}
-                className="px-5 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-60 flex items-center gap-2">
-                {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-                {isEdit ? 'Save Changes' : 'Add Client'}
-              </button>
+              <Button type="submit" form="client-form" loading={saving}>
+                {isEdit ? 'Save changes' : 'Create client'}
+              </Button>
             )}
           </div>
         </div>
       </div>
     </div>
+  )
+}
+
+function SectionTitle({ children, title }) {
+  return (
+    <h3 className="border-b border-gray-100 pb-2 text-sm font-semibold text-gray-900" title={title}>
+      {children}
+    </h3>
   )
 }

@@ -2,12 +2,14 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
-import { FileCheck, Loader2, AlertTriangle } from 'lucide-react'
+import { AlertTriangle } from 'lucide-react'
 import Modal, { ModalFooter } from '@/components/ui/Modal'
+import Button from '@/components/ui/Button'
+import { Input, NativeSelect, Field } from '@/components/ui/Input'
 import DatePicker from '@/components/ui/DatePicker'
 import FileUpload from '@/components/ui/FileUpload'
 import { dhakaDayKey } from '@/lib/dhakaTime'
-import { inputCls, labelCls, hintCls, btnPrimary, btnGhost, tk, fmtDay, todayKey, fetchJson, sumAmount } from './taxUi'
+import { tk, fmtDay, todayKey, fetchJson, sumAmount } from './taxUi'
 
 const COLLECT_TYPES = ['VDS_RECEIVABLE', 'TDS_RECEIVABLE']
 
@@ -73,61 +75,52 @@ export default function CertificateModal({ open, onOpenChange, entries = [], onS
 
   return (
     <Modal open={open} onOpenChange={onOpenChange} title={title} description={entries[0]?.partyName ? `${entries[0].partyName} · ${entries.length} entr${entries.length === 1 ? 'y' : 'ies'} · ${tk(total)}` : undefined} size="md">
-      <div className="space-y-4 mb-4">
-        <ul className="max-h-32 overflow-y-auto rounded-lg border border-gray-100 bg-gray-50 divide-y divide-gray-100 text-xs">
+      <div className="space-y-4">
+        <ul className="max-h-32 divide-y divide-gray-100 overflow-y-auto rounded-lg border border-gray-200/80 text-xs">
           {entries.map(e => (
-            <li key={e.id} className="flex items-center justify-between gap-3 px-3 py-1.5">
-              <span className="min-w-0 truncate text-gray-700"><span className="font-mono text-gray-400 mr-1.5">{e.entryNo}</span>{e.documentNo || '—'}</span>
-              <span className="shrink-0 text-gray-500">{fmtDay(e.date)} · <span className="font-medium text-gray-800">{tk(e.amount)}</span></span>
+            <li key={e.id} className="flex items-center justify-between gap-3 px-3 py-2">
+              <span className="min-w-0 truncate text-gray-700"><span className="mr-1.5 font-mono text-gray-400">{e.entryNo}</span>{e.documentNo || '—'}</span>
+              <span className="shrink-0 text-muted-foreground">{fmtDay(e.date)} · <span className="font-medium text-gray-900 tabular-nums">{tk(e.amount)}</span></span>
             </li>
           ))}
         </ul>
 
-        <div>
-          <label className={labelCls}>Action</label>
-          <select className={inputCls} value={status} onChange={e => setStatus(e.target.value)}>
+        <Field
+          label="Action"
+          hint={status === 'NOT_REQUIRED' ? (collect
+            ? (isVds ? 'Without a Mushak-6.6 the VDS can’t be claimed.' : 'Without it the AIT credit may be questioned.')
+            : 'Only when no certificate is legally required.') : undefined}
+        >
+          <NativeSelect value={status} onChange={e => setStatus(e.target.value)}>
             <option value={doneStatus}>{collect ? 'Certificate received' : 'Certificate issued'}</option>
             <option value="PENDING">Reset to pending</option>
             <option value="NOT_REQUIRED">Not required</option>
-          </select>
-          {status === 'NOT_REQUIRED' && (
-            <p className={hintCls}>{collect
-              ? (isVds ? 'Without a Mushak-6.6 the VDS cannot be claimed in your VAT return.' : 'Without a certificate the AIT credit may be questioned at assessment.')
-              : 'Use only when the law does not require a certificate (e.g. an unregistered supplier).'}</p>
-          )}
-        </div>
+          </NativeSelect>
+        </Field>
 
         {status === doneStatus && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className={labelCls}>Certificate no. *</label>
-              <input className={inputCls} value={number} onChange={e => setNumber(e.target.value)} maxLength={60} placeholder={isVds ? 'Mushak-6.6 no.' : 'Certificate no.'} />
-            </div>
-            <div>
-              <label className={labelCls}>Certificate date *</label>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Certificate no." required>
+              <Input value={number} onChange={e => setNumber(e.target.value)} maxLength={60} placeholder={isVds ? 'Mushak-6.6 no.' : 'Certificate no.'} />
+            </Field>
+            <Field label="Certificate date" required hint={collect && isVds ? 'Claim (note 29) within the next 6 periods' : undefined}>
               <DatePicker value={date} onChange={setDate} clearable={false} />
-            </div>
-            {collect && isVds && (
-              <p className={`${hintCls} sm:col-span-2 -mt-1`}>The VDS is claimed (note 29) in the return of the certificate's period or within the next 6 periods.</p>
-            )}
+            </Field>
           </div>
         )}
 
-        <FileUpload value={url} onUploaded={setUrl} label="Certificate copy (optional)" bucket="tax" />
+        <FileUpload value={url} onUploaded={setUrl} label="Certificate copy" bucket="tax" />
 
         {error && (
-          <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+          <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
             <span>{error}</span>
           </div>
         )}
       </div>
       <ModalFooter>
-        <button type="button" className={btnGhost} onClick={() => onOpenChange?.(false)} disabled={saving}>Cancel</button>
-        <button type="button" className={btnPrimary} onClick={submit} disabled={saving}>
-          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileCheck className="w-4 h-4" />}
-          Save
-        </button>
+        <Button variant="outline" onClick={() => onOpenChange?.(false)} disabled={saving}>Cancel</Button>
+        <Button onClick={submit} loading={saving}>Save</Button>
       </ModalFooter>
     </Modal>
   )

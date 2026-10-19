@@ -2,10 +2,17 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import { FolderOpen, Search, Clock, ChevronRight } from 'lucide-react'
+import { FolderOpen, Clock, ChevronRight } from 'lucide-react'
 import { STATUS_META } from '@/lib/ventures'
 import ProjectStatusBadge from '@/components/portals/ProjectStatusBadge'
 import { CURRENCIES } from '@/lib/currencies'
+import PageHeader from '@/components/ui/PageHeader'
+import Tabs from '@/components/ui/Tabs'
+import SearchInput from '@/components/ui/SearchInput'
+import EmptyState from '@/components/ui/EmptyState'
+import { Card } from '@/components/ui/Card'
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table'
+import { cn } from '@/lib/utils'
 
 // Each project's amounts are shown in that project's own currency.
 const fmtTk = (n, cur = 'BDT') => `${CURRENCIES.find(c => c.code === cur)?.symbol ?? cur} ${(Number(n) || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}`
@@ -58,149 +65,124 @@ export default function ClientProjectsPage() {
   if (loading) {
     return (
       <div className="space-y-6">
-        <div className="h-7 bg-gray-200 rounded animate-pulse w-40" />
-        <div className="bg-white rounded-xl border border-gray-100 divide-y divide-gray-50">
+        <div className="h-8 w-40 animate-pulse rounded-md bg-gray-100" />
+        <Card className="divide-y divide-gray-100">
           {[...Array(6)].map((_, i) => (
-            <div key={i} className="flex items-center gap-4 p-4 animate-pulse">
-              <div className="h-4 bg-gray-200 rounded w-20 flex-shrink-0" />
-              <div className="h-4 bg-gray-200 rounded w-1/3" />
-              <div className="h-5 bg-gray-200 rounded-full w-20 ml-auto flex-shrink-0" />
+            <div key={i} className="flex animate-pulse items-center gap-4 px-4 py-4">
+              <div className="h-4 w-20 shrink-0 rounded-md bg-gray-100" />
+              <div className="h-4 w-1/3 rounded-md bg-gray-100" />
+              <div className="ml-auto h-5 w-20 shrink-0 rounded-full bg-gray-100" />
             </div>
           ))}
-        </div>
+        </Card>
       </div>
     )
   }
 
   if (error) {
     return (
-      <div className="text-center py-20">
-        <p className="text-red-500 text-sm">{error}</p>
+      <div className="py-20 text-center">
+        <p className="text-sm text-red-600">{error}</p>
       </div>
     )
   }
 
   return (
-    <div className="space-y-5">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">My Projects</h1>
-        <p className="text-sm text-gray-500 mt-0.5">
-          {projects.length} project{projects.length !== 1 ? 's' : ''} total
-        </p>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Projects"
+        description={`${projects.length} project${projects.length !== 1 ? 's' : ''}`}
+      />
 
-      {/* Status chips */}
-      <div className="flex flex-wrap gap-2">
-        {statusChips.map(({ key, label, count }) => (
-          <button
-            key={key}
-            onClick={() => setStatusFilter(key)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
-              statusFilter === key
-                ? 'bg-gray-900 text-white border-gray-900'
-                : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400 hover:text-gray-800'
-            }`}
-          >
-            {label}
-            <span className={statusFilter === key ? 'text-gray-300' : 'text-gray-400'}>{count}</span>
-          </button>
-        ))}
-      </div>
-
-      {/* Search */}
-      <div className="relative w-full sm:max-w-xs">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-        <input
-          type="text"
-          placeholder="Search by name or ID…"
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-2">
+        <SearchInput
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full pl-9 pr-3 py-2 bg-white border border-gray-200 rounded-lg text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          onChange={setSearch}
+          debounceMs={0}
+          placeholder="Search…"
+          className="w-full sm:w-64"
+        />
+        <Tabs
+          value={statusFilter}
+          onChange={setStatusFilter}
+          tabs={statusChips.map(({ key, label, count }) => ({ value: key, label, count }))}
         />
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+      <Card className="overflow-hidden">
         {filtered.length === 0 ? (
-          <div className="p-16 text-center">
-            <FolderOpen className="w-12 h-12 text-gray-200 mx-auto mb-4" />
-            <h3 className="text-gray-600 font-semibold">No projects found</h3>
-            <p className="text-gray-400 text-sm mt-1">
-              {statusFilter !== 'ALL' || search ? 'Try changing the filters.' : 'You have no projects yet.'}
-            </p>
-          </div>
+          statusFilter !== 'ALL' || search
+            ? <EmptyState icon={FolderOpen} title="No results" description="Try changing the filters." />
+            : <EmptyState icon={FolderOpen} title="No projects yet" />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[820px]">
-              <thead>
-                <tr className="border-b border-gray-100 bg-gray-50/60">
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide whitespace-nowrap">Project ID</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">Project</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">Type</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wide">Value</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wide">Paid</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wide">Due</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide whitespace-nowrap">Due / Renews</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">Status</th>
-                  <th className="px-4 py-3 w-10" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {filtered.map((p) => {
-                  const isMonthly = p.projectType === 'MONTHLY'
-                  const due = isMonthly ? p.currentPeriodEnd : p.deadline
-                  const isOverdue = due && new Date(due) < new Date()
-                    && !['DELIVERED', 'CANCELLED', 'APPROVED', 'RENEWED'].includes(p.status)
-                  return (
-                    <tr
-                      key={p.id}
-                      onClick={() => router.push(`/client/projects/${p.id}`)}
-                      className="hover:bg-gray-50/60 cursor-pointer transition-colors group"
-                    >
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <span className="text-sm font-mono font-medium text-gray-800">{p.projectCode ?? '—'}</span>
-                      </td>
-                      <td className="px-4 py-3 min-w-44">
-                        <p className="text-sm font-medium text-gray-900 truncate max-w-[220px]">{p.name}</p>
-                        {(p.category || p.subcategory) && (
-                          <p className="text-xs text-gray-400 mt-0.5 truncate max-w-[220px]">
-                            {p.category}{p.subcategory ? ` › ${p.subcategory}` : ''}
-                          </p>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <span className="text-xs text-gray-500">{isMonthly ? 'Monthly' : 'Fixed'}</span>
-                      </td>
-                      <td className="px-4 py-3 text-right whitespace-nowrap text-sm text-gray-700">{fmtTk(p.netValue, p.currency)}</td>
-                      <td className="px-4 py-3 text-right whitespace-nowrap text-sm text-green-600">{fmtTk(p.paidAmount, p.currency)}</td>
-                      <td className="px-4 py-3 text-right whitespace-nowrap">
-                        <span className={`text-sm ${p.dueAmount > 0 ? 'text-amber-600' : 'text-gray-400'}`}>{fmtTk(p.dueAmount, p.currency)}</span>
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        {due ? (
-                          <span className={`inline-flex items-center gap-1 text-xs ${isOverdue ? 'text-red-500' : 'text-gray-500'}`}>
-                            <Clock className="w-3 h-3" />
-                            {isOverdue ? 'Overdue · ' : ''}{fmtDate(due)}
-                          </span>
-                        ) : (
-                          <span className="text-xs text-gray-300">—</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <ProjectStatusBadge status={p.status} />
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-blue-500 transition-colors" />
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+          <Table className="min-w-[820px]">
+            <TableHeader>
+              <TableRow>
+                <TableHead>ID</TableHead>
+                <TableHead>Project</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead className="text-right">Value</TableHead>
+                <TableHead className="text-right">Paid</TableHead>
+                <TableHead className="text-right">Due</TableHead>
+                <TableHead>Due / renews</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="w-10" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filtered.map((p) => {
+                const isMonthly = p.projectType === 'MONTHLY'
+                const due = isMonthly ? p.currentPeriodEnd : p.deadline
+                const isOverdue = due && new Date(due) < new Date()
+                  && !['DELIVERED', 'CANCELLED', 'APPROVED', 'RENEWED'].includes(p.status)
+                return (
+                  <TableRow
+                    key={p.id}
+                    onClick={() => router.push(`/client/projects/${p.id}`)}
+                    className="group cursor-pointer"
+                  >
+                    <TableCell className="whitespace-nowrap font-mono text-xs text-gray-600">
+                      {p.projectCode ?? '—'}
+                    </TableCell>
+                    <TableCell className="min-w-44">
+                      <p className="max-w-[220px] truncate font-medium text-gray-900">{p.name}</p>
+                      {(p.category || p.subcategory) && (
+                        <p className="mt-0.5 max-w-[220px] truncate text-xs text-muted-foreground">
+                          {p.category}{p.subcategory ? ` › ${p.subcategory}` : ''}
+                        </p>
+                      )}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-gray-600">{isMonthly ? 'Monthly' : 'Fixed'}</TableCell>
+                    <TableCell className="whitespace-nowrap text-right tabular-nums text-gray-900">{fmtTk(p.netValue, p.currency)}</TableCell>
+                    <TableCell className="whitespace-nowrap text-right tabular-nums text-emerald-600">{fmtTk(p.paidAmount, p.currency)}</TableCell>
+                    <TableCell className={cn('whitespace-nowrap text-right tabular-nums', p.dueAmount > 0 ? 'text-amber-600' : 'text-gray-400')}>
+                      {fmtTk(p.dueAmount, p.currency)}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      {due ? (
+                        <span className={cn('inline-flex items-center gap-1.5 text-xs', isOverdue ? 'text-red-600' : 'text-gray-600')}>
+                          <Clock className="size-3.5 text-current opacity-70" />
+                          {isOverdue ? 'Overdue · ' : ''}{fmtDate(due)}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-gray-300">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      <ProjectStatusBadge status={p.status} />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <ChevronRight className="size-4 text-gray-300 transition-colors group-hover:text-gray-600" />
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
         )}
-      </div>
+      </Card>
     </div>
   )
 }

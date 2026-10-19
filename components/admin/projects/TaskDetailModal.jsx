@@ -1,21 +1,17 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
-import {
-  X, Clock, MessageSquare, Paperclip, Play, Square,
-  Send, Lock, Globe, User, Calendar, Tag, ChevronDown,
-  Loader2, Activity, Plus, Check,
-} from 'lucide-react'
-import { formatDate, formatRelativeTime, getStatusColor, getPriorityBadgeColor, getInitials } from '@/lib/utils'
+import { X, Paperclip, Play, Square, Send, Lock, Globe, Plus, Check } from 'lucide-react'
+import { formatDate, formatRelativeTime } from '@/lib/utils'
+import Button from '@/components/ui/Button'
+import Badge from '@/components/ui/Badge'
+import Avatar from '@/components/ui/Avatar'
+import { Input } from '@/components/ui/Input'
 import { useSession } from 'next-auth/react'
 import toast from 'react-hot-toast'
 
-const PRIORITY_COLORS = {
-  LOW:    'bg-slate-100 text-slate-700',
-  MEDIUM: 'bg-blue-100 text-blue-700',
-  HIGH:   'bg-orange-100 text-orange-700',
-  URGENT: 'bg-red-100 text-red-700',
-}
+const PRIORITY_VARIANT = { LOW: 'default', MEDIUM: 'primary', HIGH: 'orange', URGENT: 'danger' }
+const PRIORITY_LABEL   = { LOW: 'Low', MEDIUM: 'Medium', HIGH: 'High', URGENT: 'Urgent' }
 
 export default function TaskDetailModal({ taskId, onClose, onUpdate }) {
   const { data: sessionData } = useSession()
@@ -134,7 +130,7 @@ export default function TaskDetailModal({ taskId, onClose, onUpdate }) {
     setTimerActive(false)
     setTimerSeconds(0)
     setLogHours(hours.toFixed(2))
-    toast.success(`Timer stopped — ${formatDuration(timerSeconds)} logged to hours field`)
+    toast.success(`Timer stopped — ${formatDuration(timerSeconds)} added to hours`)
   }
 
   function formatDuration(secs) {
@@ -148,170 +144,158 @@ export default function TaskDetailModal({ taskId, onClose, onUpdate }) {
   const totalLogged = (task?.timesheets ?? []).reduce((s, t) => s + t.hours, 0)
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-end bg-black/40 backdrop-blur-sm">
-      <div className="h-full w-full max-w-2xl bg-white shadow-2xl flex flex-col animate-in slide-in-from-right">
+    <div className="fixed inset-0 z-50 flex items-center justify-end bg-black/40 backdrop-blur-[2px]">
+      <div className="flex h-full w-full max-w-2xl flex-col border-l border-gray-200/80 bg-white shadow-2xl animate-in slide-in-from-right">
         {/* Header */}
-        <div className="flex items-start justify-between px-6 py-4 border-b border-gray-100">
-          <div className="flex-1 min-w-0 pr-4">
+        <div className="flex items-start justify-between gap-4 border-b border-gray-100 px-6 pb-4 pt-5">
+          <div className="min-w-0 flex-1">
             {loading ? (
-              <div className="h-6 w-48 bg-gray-200 rounded animate-pulse" />
+              <div className="h-6 w-48 animate-pulse rounded-md bg-gray-100" />
             ) : (
               <>
-                <h2 className="font-semibold text-gray-900 text-lg leading-tight truncate">{task?.title}</h2>
-                <p className="text-xs text-gray-500 mt-0.5">{task?.projectId?.name}</p>
+                <h2 className="truncate text-base font-semibold leading-tight tracking-tight text-gray-900">{task?.title}</h2>
+                {task?.projectId?.name && <p className="mt-0.5 text-[13px] text-muted-foreground">{task.projectId.name}</p>}
               </>
             )}
           </div>
-          <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors shrink-0">
-            <X className="w-4 h-4" />
-          </button>
+          <Button variant="ghost" size="icon-sm" onClick={onClose} className="-mr-1.5 -mt-0.5 text-gray-400" aria-label="Close">
+            <X />
+          </Button>
         </div>
 
         {loading ? (
-          <div className="flex-1 p-6 space-y-4">
+          <div className="flex-1 space-y-3 p-6">
             {[...Array(5)].map((_, i) => (
-              <div key={i} className="h-10 bg-gray-100 rounded-lg animate-pulse" />
+              <div key={i} className="h-10 animate-pulse rounded-md bg-gray-100" />
             ))}
           </div>
         ) : task ? (
           <div className="flex-1 overflow-y-auto">
             {/* Meta badges */}
-            <div className="px-6 py-3 border-b border-gray-50 flex flex-wrap gap-2">
-              <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${getStatusColor(task.status)}`}>
-                {task.status.replace('_', ' ')}
-              </span>
-              <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${PRIORITY_COLORS[task.priority]}`}>
-                {task.priority}
-              </span>
+            <div className="flex flex-wrap gap-2 border-b border-gray-100 px-6 py-3">
+              <Badge status={task.status} />
+              <Badge variant={PRIORITY_VARIANT[task.priority] ?? 'default'}>
+                {PRIORITY_LABEL[task.priority] ?? task.priority}
+              </Badge>
               {task.isClientVisible && (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
-                  <Globe className="w-3 h-3" /> Client visible
-                </span>
+                <Badge variant="success">
+                  <Globe className="size-3" /> Client visible
+                </Badge>
               )}
               {task.assignedEmployeeId && task.assignmentStatus && (
-                <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
-                  task.assignmentStatus === 'ACCEPTED' ? 'bg-emerald-100 text-emerald-700'
-                  : task.assignmentStatus === 'DECLINED' ? 'bg-rose-100 text-rose-700'
-                  : 'bg-amber-100 text-amber-700'
-                }`}>
+                <Badge variant={
+                  task.assignmentStatus === 'ACCEPTED' ? 'success'
+                  : task.assignmentStatus === 'DECLINED' ? 'danger'
+                  : 'warning'
+                }>
                   {task.assignmentStatus === 'ACCEPTED' ? 'Accepted'
                     : task.assignmentStatus === 'DECLINED' ? 'Declined' : 'Awaiting acceptance'}
-                </span>
+                </Badge>
               )}
             </div>
 
             {/* Assignee accept / decline */}
             {sessionData?.user?.role === 'EMPLOYEE' && task.assignmentStatus === 'ASSIGNED' && (
-              <div className="px-6 py-3 bg-amber-50 border-b border-amber-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                <p className="text-sm text-amber-800">This task was assigned to you. Accept it to confirm.</p>
+              <div className="mx-6 mt-4 flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm text-amber-800">Assigned to you — accept to confirm.</p>
                 <div className="flex items-center gap-2">
-                  <button onClick={() => respondToAssignment('accept')} disabled={respondingAccept}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white text-xs font-medium rounded-lg hover:bg-emerald-700 disabled:opacity-50">
-                    {respondingAccept ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />} Accept
-                  </button>
-                  <button onClick={() => respondToAssignment('decline')} disabled={respondingAccept}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 text-rose-600 text-xs font-medium rounded-lg hover:bg-rose-50 disabled:opacity-50">
-                    <X className="w-3.5 h-3.5" /> Decline
-                  </button>
+                  <Button size="sm" onClick={() => respondToAssignment('accept')} loading={respondingAccept}>
+                    {!respondingAccept && <Check />} Accept
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => respondToAssignment('decline')} disabled={respondingAccept} className="text-red-600 hover:text-red-700">
+                    <X /> Decline
+                  </Button>
                 </div>
               </div>
             )}
 
-            <div className="px-6 py-4 space-y-5">
+            <div className="space-y-6 px-6 py-5">
               {/* Description */}
               {task.description && (
                 <div>
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Description</p>
-                  <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{task.description}</p>
+                  <p className="mb-1.5 text-sm font-semibold text-gray-900">Description</p>
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700">{task.description}</p>
                 </div>
               )}
 
               {/* Info grid */}
               <div className="grid grid-cols-2 gap-3">
                 {assignee && (
-                  <div className="bg-gray-50 rounded-xl p-3">
-                    <p className="text-xs text-gray-400 mb-1">Assignee</p>
+                  <div className="rounded-lg bg-gray-50 p-3">
+                    <p className="mb-1 text-xs text-muted-foreground">Assignee</p>
                     <div className="flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-full bg-primary text-white text-xs flex items-center justify-center font-semibold">
-                        {getInitials(assignee.name)}
-                      </div>
-                      <span className="text-sm font-medium text-gray-800">{assignee.name}</span>
+                      <Avatar name={assignee.name} src={assignee.avatar} size="xs" />
+                      <span className="truncate text-sm font-medium text-gray-900">{assignee.name}</span>
                     </div>
                   </div>
                 )}
                 {task.dueDate && (
-                  <div className="bg-gray-50 rounded-xl p-3">
-                    <p className="text-xs text-gray-400 mb-1">Due Date</p>
-                    <p className="text-sm font-medium text-gray-800">{formatDate(task.dueDate)}</p>
+                  <div className="rounded-lg bg-gray-50 p-3">
+                    <p className="mb-1 text-xs text-muted-foreground">Due date</p>
+                    <p className="text-sm font-medium text-gray-900">{formatDate(task.dueDate)}</p>
                   </div>
                 )}
                 {task.estimatedHours && (
-                  <div className="bg-gray-50 rounded-xl p-3">
-                    <p className="text-xs text-gray-400 mb-1">Estimated</p>
-                    <p className="text-sm font-medium text-gray-800">{task.estimatedHours}h</p>
+                  <div className="rounded-lg bg-gray-50 p-3">
+                    <p className="mb-1 text-xs text-muted-foreground">Estimated</p>
+                    <p className="text-sm font-medium tabular-nums text-gray-900">{task.estimatedHours}h</p>
                   </div>
                 )}
-                <div className="bg-gray-50 rounded-xl p-3">
-                  <p className="text-xs text-gray-400 mb-1">Logged</p>
-                  <p className="text-sm font-medium text-gray-800">{totalLogged.toFixed(1)}h</p>
+                <div className="rounded-lg bg-gray-50 p-3">
+                  <p className="mb-1 text-xs text-muted-foreground">Logged</p>
+                  <p className="text-sm font-medium tabular-nums text-gray-900">{totalLogged.toFixed(1)}h</p>
                 </div>
               </div>
 
               {/* Time Tracker */}
-              <div className="border border-gray-200 rounded-xl p-4">
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                  <Clock className="w-3.5 h-3.5" /> Time Tracker
-                </p>
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="flex-1 text-center py-3 bg-gray-50 rounded-xl">
-                    <span className="text-2xl font-mono font-bold text-gray-800">
+              <div className="rounded-xl border border-gray-200/80 p-4">
+                <p className="mb-3 text-sm font-semibold text-gray-900">Time tracker</p>
+                <div className="mb-3 flex items-center gap-3">
+                  <div className="flex-1 rounded-lg bg-gray-50 py-3 text-center">
+                    <span className="font-mono text-2xl font-semibold tabular-nums text-gray-900">
                       {formatDuration(timerSeconds)}
                     </span>
                   </div>
-                  <button
+                  <Button
+                    variant="outline"
+                    size="lg"
                     onClick={() => timerActive ? stopTimer() : setTimerActive(true)}
-                    className={`flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-medium transition-colors ${
-                      timerActive ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-green-100 text-green-700 hover:bg-green-200'
-                    }`}
+                    className={timerActive ? 'h-12 text-red-600 hover:text-red-700' : 'h-12'}
                   >
-                    {timerActive ? <><Square className="w-4 h-4" /> Stop</> : <><Play className="w-4 h-4" /> Start</>}
-                  </button>
+                    {timerActive ? <><Square /> Stop</> : <><Play /> Start</>}
+                  </Button>
                 </div>
                 <div className="flex gap-2">
-                  <input
+                  <Input
                     type="number"
                     step="0.25"
                     value={logHours}
                     onChange={(e) => setLogHours(e.target.value)}
                     placeholder="Hours"
-                    className="w-24 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    className="w-24"
                   />
-                  <input
+                  <Input
                     value={logDesc}
                     onChange={(e) => setLogDesc(e.target.value)}
                     placeholder="Description (optional)"
-                    className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    className="flex-1"
                   />
-                  <button
-                    onClick={logTime}
-                    disabled={loggingTime}
-                    className="flex items-center gap-1.5 px-3 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-60 transition-colors"
-                  >
-                    {loggingTime ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                  <Button variant="outline" onClick={logTime} loading={loggingTime}>
+                    {!loggingTime && <Plus />}
                     Log
-                  </button>
+                  </Button>
                 </div>
 
                 {/* Timesheet entries */}
                 {(task.timesheets ?? []).length > 0 && (
-                  <div className="mt-3 space-y-1.5 max-h-32 overflow-y-auto">
+                  <div className="mt-3 max-h-32 divide-y divide-gray-100 overflow-y-auto">
                     {task.timesheets.slice(0, 5).map((ts) => {
                       const who = ts.employeeId?.userId ?? ts.freelancerId?.userId
                       return (
-                        <div key={ts.id} className="flex items-center justify-between text-xs text-gray-600 py-1 border-b border-gray-50 last:border-0">
+                        <div key={ts.id} className="flex items-center justify-between py-1.5 text-xs text-gray-700">
                           <span>{who?.name ?? 'Unknown'}</span>
-                          <span className="text-gray-400">{formatDate(ts.date, 'MMM dd')}</span>
-                          <span className="font-medium">{ts.hours}h</span>
+                          <span className="text-muted-foreground">{formatDate(ts.date, 'MMM dd')}</span>
+                          <span className="font-medium tabular-nums">{ts.hours}h</span>
                         </div>
                       )
                     })}
@@ -321,27 +305,26 @@ export default function TaskDetailModal({ taskId, onClose, onUpdate }) {
 
               {/* Comments */}
               <div>
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                  <MessageSquare className="w-3.5 h-3.5" /> Comments ({(task.comments ?? []).length})
+                <p className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-900">
+                  Comments
+                  <Badge>{(task.comments ?? []).length}</Badge>
                 </p>
-                <div className="space-y-3 mb-3 max-h-48 overflow-y-auto">
+                <div className="mb-3 max-h-48 space-y-3 overflow-y-auto">
                   {(task.comments ?? []).length === 0 ? (
-                    <p className="text-sm text-gray-400 text-center py-4">No comments yet.</p>
+                    <p className="py-4 text-center text-sm text-muted-foreground">No comments yet</p>
                   ) : (
                     task.comments.map((c) => (
                       <div key={c.id} className="flex gap-2.5">
-                        <div className="w-7 h-7 rounded-full bg-gray-200 text-gray-600 text-xs flex items-center justify-center font-semibold shrink-0">
-                          {getInitials(c.authorId?.name ?? '?')}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-0.5">
-                            <span className="text-xs font-semibold text-gray-800">{c.authorId?.name}</span>
+                        <Avatar name={c.authorId?.name ?? '?'} src={c.authorId?.avatar} size="xs" />
+                        <div className="min-w-0 flex-1">
+                          <div className="mb-0.5 flex items-center gap-2">
+                            <span className="text-xs font-medium text-gray-900">{c.authorId?.name}</span>
                             {c.isInternal && (
-                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded text-2xs">
-                                <Lock className="w-2.5 h-2.5" /> Internal
-                              </span>
+                              <Badge>
+                                <Lock className="size-3" /> Internal
+                              </Badge>
                             )}
-                            <span className="text-xs text-gray-400 ml-auto">{formatRelativeTime(c.createdAt)}</span>
+                            <span className="ml-auto text-xs text-muted-foreground">{formatRelativeTime(c.createdAt)}</span>
                           </div>
                           <p className="text-sm text-gray-700">{c.content}</p>
                         </div>
@@ -351,33 +334,29 @@ export default function TaskDetailModal({ taskId, onClose, onUpdate }) {
                 </div>
 
                 {/* Comment input */}
-                <div className="border border-gray-200 rounded-xl overflow-hidden">
+                <div className="overflow-hidden rounded-lg border border-input bg-white shadow-xs focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/30">
                   <textarea
                     value={comment}
                     onChange={(e) => setComment(e.target.value)}
-                    placeholder="Write a comment..."
+                    placeholder="Write a comment…"
                     rows={2}
-                    className="w-full px-3 py-2 text-sm focus:outline-none resize-none"
+                    className="w-full resize-none border-0 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-0"
                     onKeyDown={(e) => { if (e.key === 'Enter' && e.metaKey) sendComment() }}
                   />
-                  <div className="flex items-center justify-between px-3 py-2 border-t border-gray-100 bg-gray-50">
-                    <label className="flex items-center gap-1.5 cursor-pointer">
+                  <div className="flex items-center justify-between border-t border-gray-100 bg-gray-50/60 px-3 py-2">
+                    <label className="flex cursor-pointer items-center gap-1.5 text-xs text-gray-600">
                       <input
                         type="checkbox"
                         checked={isInternal}
                         onChange={(e) => setIsInternal(e.target.checked)}
-                        className="w-3.5 h-3.5 text-primary border-gray-300 rounded"
+                        className="size-3.5 rounded border-gray-300"
                       />
-                      <span className="text-xs text-gray-500">Internal only</span>
+                      Internal only
                     </label>
-                    <button
-                      onClick={sendComment}
-                      disabled={sendingComment || !comment.trim()}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
-                    >
-                      {sendingComment ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+                    <Button size="xs" onClick={sendComment} disabled={!comment.trim()} loading={sendingComment}>
+                      {!sendingComment && <Send />}
                       Send
-                    </button>
+                    </Button>
                   </div>
                 </div>
               </div>
@@ -385,8 +364,9 @@ export default function TaskDetailModal({ taskId, onClose, onUpdate }) {
               {/* Attachments */}
               {(task.attachments ?? []).length > 0 && (
                 <div>
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                    <Paperclip className="w-3.5 h-3.5" /> Attachments ({task.attachments.length})
+                  <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-900">
+                    Attachments
+                    <Badge>{task.attachments.length}</Badge>
                   </p>
                   <div className="space-y-1.5">
                     {task.attachments.map((att) => (
@@ -395,10 +375,10 @@ export default function TaskDetailModal({ taskId, onClose, onUpdate }) {
                         href={att.fileUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="flex items-center gap-2 p-2.5 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                        className="flex items-center gap-2 rounded-lg border border-gray-200/80 p-2.5 transition-colors hover:bg-gray-50"
                       >
-                        <Paperclip className="w-4 h-4 text-gray-400" />
-                        <span className="text-sm text-blue-600 hover:underline truncate">{att.fileName}</span>
+                        <Paperclip className="size-4 shrink-0 text-gray-400" />
+                        <span className="truncate text-sm font-medium text-gray-900 underline-offset-4 hover:underline">{att.fileName}</span>
                       </a>
                     ))}
                   </div>
@@ -407,7 +387,7 @@ export default function TaskDetailModal({ taskId, onClose, onUpdate }) {
             </div>
           </div>
         ) : (
-          <div className="flex-1 flex items-center justify-center text-gray-400">Task not found</div>
+          <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">Task not found</div>
         )}
       </div>
     </div>

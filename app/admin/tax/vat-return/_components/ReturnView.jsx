@@ -5,10 +5,14 @@ import {
   FileSpreadsheet, AlertTriangle, Info, AlertOctagon, Receipt, Landmark, ArrowRight,
 } from 'lucide-react'
 import EmptyState from '@/components/ui/EmptyState'
+import Button from '@/components/ui/Button'
+import Badge from '@/components/ui/Badge'
+import { Card, CardHeader, CardTitle, CardAction } from '@/components/ui/Card'
+import { Table, TableHeader, TableBody, TableFooter, TableRow, TableHead, TableCell } from '@/components/ui/Table'
 import { cn } from '@/lib/utils'
 import { periodLastDay } from '@/lib/finance/fiscal'
 import NotesTable from './NotesTable'
-import { fmtAmount, fmtDay, toNum, round2, RETURN_TYPE_LABELS, btnGhost } from '../_lib/format'
+import { fmtAmount, fmtDay, toNum, round2, RETURN_TYPE_LABELS } from '../_lib/format'
 
 const WARNING_LINKS = {
   COMPANY_BIN_MISSING:      { href: '/admin/tax/settings', label: 'Tax settings' },
@@ -44,9 +48,9 @@ function warningLink(w, period) {
 }
 
 const LEVEL_STYLES = {
-  danger:  { box: 'border-red-200 bg-red-50 text-red-800', Icon: AlertOctagon },
-  warning: { box: 'border-amber-200 bg-amber-50 text-amber-800', Icon: AlertTriangle },
-  info:    { box: 'border-blue-100 bg-blue-50 text-blue-800', Icon: Info },
+  danger:  { box: 'border-red-200 bg-red-50 text-red-800', Icon: AlertOctagon, icon: 'text-red-600' },
+  warning: { box: 'border-amber-200 bg-amber-50 text-amber-800', Icon: AlertTriangle, icon: 'text-amber-600' },
+  info:    { box: 'border-blue-200 bg-blue-50 text-blue-800', Icon: Info, icon: 'text-blue-600' },
 }
 
 function Figure({ label, value, sub, onClick }) {
@@ -56,14 +60,23 @@ function Figure({ label, value, sub, onClick }) {
       type={onClick ? 'button' : undefined}
       onClick={onClick}
       className={cn(
-        'text-left bg-white border border-gray-100 rounded-xl p-4 min-w-0',
-        onClick && 'hover:border-gray-300 hover:shadow-sm transition',
+        'min-w-0 rounded-xl border border-gray-200/80 bg-white p-4 text-left shadow-xs',
+        onClick && 'transition-colors hover:border-gray-300 hover:bg-gray-50/60',
       )}
     >
-      <p className="text-xs font-medium text-gray-500 truncate">{label}</p>
-      <p className="mt-1 text-lg sm:text-xl font-bold text-gray-900 tabular-nums truncate">Tk {fmtAmount(value ?? 0)}</p>
-      {sub && <p className="mt-0.5 text-[11px] text-gray-400 truncate">{sub}</p>}
+      <p className="truncate text-[13px] font-medium text-muted-foreground">{label}</p>
+      <p className="mt-1 truncate text-lg font-semibold tracking-tight text-gray-900 tabular-nums sm:text-xl">Tk {fmtAmount(value ?? 0)}</p>
+      {sub && <p className="mt-0.5 truncate text-xs text-muted-foreground">{sub}</p>}
     </Comp>
+  )
+}
+
+function SumRow({ label, value, className }) {
+  return (
+    <div className={cn('flex justify-between gap-2', className)}>
+      <span>{label}</span>
+      <span className="tabular-nums">Tk {fmtAmount(value)}</span>
+    </div>
   )
 }
 
@@ -77,9 +90,9 @@ export default function ReturnView({
 }) {
   if (!shown) {
     return (
-      <div className="bg-white border border-gray-100 rounded-xl">
-        <EmptyState icon={FileSpreadsheet} title="Nothing to show" description="Choose a return period above." />
-      </div>
+      <Card>
+        <EmptyState icon={FileSpreadsheet} title="Nothing to show" description="Choose a return period." />
+      </Card>
     )
   }
 
@@ -96,12 +109,13 @@ export default function ReturnView({
   const vatDepositCount = deposits.filter(l => Number(l.note ?? 58) !== 59).length
   const warnings = shown.warnings ?? []
   const prev = shown.previousSource
+  const due = balanceDue > 0.005
 
   return (
     <>
       {/* Key figures */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2 grid grid-cols-2 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:col-span-2">
           <Figure label="Output VAT (9c)" value={n[9]?.c} sub={`Sales value Tk ${fmtAmount(n[9]?.a ?? 0)}`} />
           <Figure label="Input tax credit (23b)" value={n[23]?.b} sub={`${(shown.lines?.input ?? []).length} purchase(s)`} />
           <Figure label="Net adjustments (28 − 33)" value={round2(toNum(n[28]) - toNum(n[33]))} sub={`+${fmtAmount(n[28] ?? 0)} / −${fmtAmount(n[33] ?? 0)}`} />
@@ -119,45 +133,46 @@ export default function ReturnView({
             onClick={(shown.noteEntries?.[58] ?? []).length ? () => onDrill(58) : undefined}
           />
         </div>
-        <div className={cn('rounded-xl p-5 border flex flex-col justify-between', balanceDue > 0.005 ? 'bg-amber-50 border-amber-200' : 'bg-emerald-50 border-emerald-200')}>
+        <Card className="flex flex-col justify-between p-5">
           <div>
-            <p className={cn('text-xs font-semibold uppercase tracking-wide', balanceDue > 0.005 ? 'text-amber-800' : 'text-emerald-800')}>
-              Net payable for treasury deposit (note 50)
-            </p>
-            <p className={cn('mt-1 text-3xl font-extrabold tabular-nums', balanceDue > 0.005 ? 'text-amber-900' : 'text-emerald-900')}>
+            <div className="flex items-start justify-between gap-2">
+              <p className="text-[13px] font-medium text-muted-foreground">Net payable for treasury deposit (note 50)</p>
+              <Badge variant={due ? 'warning' : 'success'} dot>{due ? 'Payment due' : 'Nothing due'}</Badge>
+            </div>
+            <p className="mt-1.5 text-3xl font-semibold tracking-tight text-gray-900 tabular-nums">
               Tk {fmtAmount(n50)}
             </p>
-            <div className="mt-3 space-y-1 text-sm">
-              <div className="flex justify-between gap-2"><span className="text-gray-600">Deposited (58)</span><span className="tabular-nums font-medium">Tk {fmtAmount(n58)}</span></div>
-              {balanceDue > 0.005 ? (
-                <div className="flex justify-between gap-2 text-red-700 font-semibold"><span>Still to pay</span><span className="tabular-nums">Tk {fmtAmount(balanceDue)}</span></div>
+            <div className="mt-4 space-y-1.5 text-sm">
+              <SumRow label="Deposited (58)" value={n58} className="text-gray-600" />
+              {due ? (
+                <SumRow label="Still to pay" value={balanceDue} className="font-semibold text-red-700" />
               ) : (
-                <div className="flex justify-between gap-2 text-emerald-800 font-semibold"><span>Closing balance (65)</span><span className="tabular-nums">Tk {fmtAmount(n[65] ?? 0)}</span></div>
+                <SumRow label="Closing balance (65)" value={n[65] ?? 0} className="font-semibold text-emerald-700" />
               )}
               {toNum(n[67]) > 0 && (
-                <div className="flex justify-between gap-2 text-gray-600"><span>Refund requested (67)</span><span className="tabular-nums">Tk {fmtAmount(n[67])}</span></div>
+                <SumRow label="Refund requested (67)" value={n[67]} className="text-gray-600" />
               )}
               {showSd && (
-                <div className="pt-2 mt-2 border-t border-black/5 space-y-1">
-                  <div className="flex justify-between gap-2"><span className="text-gray-600">Net payable SD (51)</span><span className="tabular-nums font-medium">Tk {fmtAmount(n51)}</span></div>
-                  <div className="flex justify-between gap-2"><span className="text-gray-600">SD deposited (59)</span><span className="tabular-nums font-medium">Tk {fmtAmount(n59)}</span></div>
+                <div className="mt-2 space-y-1.5 border-t border-gray-100 pt-2">
+                  <SumRow label="Net payable SD (51)" value={n51} className="text-gray-600" />
+                  <SumRow label="SD deposited (59)" value={n59} className="text-gray-600" />
                   {sdBalanceDue > 0.005 ? (
-                    <div className="flex justify-between gap-2 text-red-700 font-semibold"><span>SD still to pay</span><span className="tabular-nums">Tk {fmtAmount(sdBalanceDue)}</span></div>
+                    <SumRow label="SD still to pay" value={sdBalanceDue} className="font-semibold text-red-700" />
                   ) : (
-                    <div className="flex justify-between gap-2 text-emerald-800 font-semibold"><span>SD closing balance (66)</span><span className="tabular-nums">Tk {fmtAmount(n[66] ?? 0)}</span></div>
+                    <SumRow label="SD closing balance (66)" value={n[66] ?? 0} className="font-semibold text-emerald-700" />
                   )}
                 </div>
               )}
             </div>
           </div>
-          <p className="mt-4 text-[11px] text-gray-600 flex items-start gap-1.5">
-            <Landmark className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+          <p className="mt-4 flex items-start gap-1.5 border-t border-gray-100 pt-3 text-xs text-muted-foreground">
+            <Landmark className="mt-0.5 size-3.5 shrink-0" />
             <span>
-              Pay by A-challan / e-payment to <span className="font-mono">{settings?.challanCode ?? '1/1133/0010/0311'}</span> (code {settings?.challanCodeNew ?? '1141101'}) before submitting.
-              {showSd && <> SD goes to <span className="font-mono">{settings?.sdChallanCode ?? '1/1133/0010/0721'}</span> (code {settings?.sdChallanCodeNew ?? '1141103'}).</>}
+              A-challan / e-payment: <span className="font-mono text-gray-700">{settings?.challanCode ?? '1/1133/0010/0311'}</span> (code {settings?.challanCodeNew ?? '1141101'})
+              {showSd && <> · SD: <span className="font-mono text-gray-700">{settings?.sdChallanCode ?? '1/1133/0010/0721'}</span> (code {settings?.sdChallanCodeNew ?? '1141103'})</>}
             </span>
           </p>
-        </div>
+        </Card>
       </div>
 
       {/* Warnings */}
@@ -167,12 +182,12 @@ export default function ReturnView({
             const st = LEVEL_STYLES[w.level] ?? LEVEL_STYLES.info
             const link = warningLink(w, period)
             return (
-              <div key={`${w.code}-${i}`} className={cn('flex items-start gap-2 rounded-lg border px-4 py-2.5 text-sm', st.box)}>
-                <st.Icon className="w-4 h-4 mt-0.5 shrink-0" />
+              <div key={`${w.code}-${i}`} className={cn('flex items-start gap-2 rounded-lg border px-3 py-2.5 text-sm', st.box)}>
+                <st.Icon className={cn('mt-0.5 size-4 shrink-0', st.icon)} />
                 <p className="flex-1">{w.message}</p>
                 {link && (
-                  <Link href={link.href} className="shrink-0 inline-flex items-center gap-1 text-xs font-medium underline-offset-2 hover:underline">
-                    {link.label} <ArrowRight className="w-3 h-3" />
+                  <Link href={link.href} className="inline-flex shrink-0 items-center gap-1 text-xs font-medium underline-offset-4 hover:underline">
+                    {link.label} <ArrowRight className="size-3.5" />
                   </Link>
                 )}
               </div>
@@ -182,115 +197,110 @@ export default function ReturnView({
       )}
 
       {/* Treasury deposits (note 58) */}
-      <section className="bg-white border border-gray-100 rounded-xl overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-3 flex-wrap">
-          <div>
-            <h2 className="text-sm font-semibold text-gray-900">Treasury deposits for this return (note 58{showSd ? ' / 59' : ''})</h2>
-            <p className="text-xs text-gray-500">VAT payments recorded in the tax ledger plus challans entered with the return{showSd ? ' — supplementary duty (SD) challans count in note 59' : ''}.</p>
-          </div>
+      <Card className="overflow-hidden">
+        <CardHeader className="items-center pb-4">
+          <CardTitle>Treasury deposits (note 58{showSd ? ' / 59' : ''})</CardTitle>
           {canFile && !filed && !showingFiled && shown.fileable !== false && (
-            <button type="button" onClick={onEditChallans} className={btnGhost}>
-              <Receipt className="w-4 h-4" /> Edit challans
-            </button>
+            <CardAction>
+              <Button variant="outline" size="sm" onClick={onEditChallans}>
+                <Receipt /> Edit challans
+              </Button>
+            </CardAction>
           )}
-        </div>
+        </CardHeader>
         {deposits.length === 0 ? (
-          <p className="px-4 py-6 text-sm text-gray-500 text-center">
-            No deposits yet.{balanceDue > 0.005 ? ` Pay Tk ${fmtAmount(balanceDue)} by A-challan / e-payment, then record the challan.` : ''}
-            {sdBalanceDue > 0.005 ? ` Pay the SD of Tk ${fmtAmount(sdBalanceDue)} by its own challan and enter it as an SD challan.` : ''}
+          <p className="border-t border-gray-100 px-5 py-8 text-center text-sm text-muted-foreground">
+            No deposits yet.{balanceDue > 0.005 ? ` Tk ${fmtAmount(balanceDue)} still to pay.` : ''}
+            {sdBalanceDue > 0.005 ? ` SD Tk ${fmtAmount(sdBalanceDue)} still to pay by its own challan.` : ''}
           </p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[640px]">
-              <thead>
-                <tr className="text-xs text-gray-500 border-b border-gray-100">
-                  <th className="text-left font-medium px-4 py-2">Challan / token</th>
-                  <th className="text-left font-medium px-3 py-2">Head</th>
-                  <th className="text-left font-medium px-3 py-2">Date</th>
-                  <th className="text-left font-medium px-3 py-2">Bank / branch</th>
-                  <th className="text-left font-medium px-3 py-2">Account code</th>
-                  <th className="text-left font-medium px-3 py-2">Source</th>
-                  <th className="text-right font-medium px-4 py-2">Amount</th>
+          <Table className="min-w-[640px]" wrapperClassName="border-t border-gray-100">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Challan / token</TableHead>
+                <TableHead>Head</TableHead>
+                <TableHead>Date</TableHead>
+                <TableHead>Bank / branch</TableHead>
+                <TableHead>Account code</TableHead>
+                <TableHead>Source</TableHead>
+                <TableHead className="text-right">Amount</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {deposits.map((l, i) => {
+                const sd = Number(l.note) === 59
+                return (
+                  <TableRow key={`${l.id ?? l.challanNo ?? 'c'}-${i}`}>
+                    <TableCell className="font-mono text-xs text-gray-900">{l.challanNo || l.documentNo || '—'}</TableCell>
+                    <TableCell className="whitespace-nowrap text-xs">{sd ? 'SD (59)' : 'VAT (58)'}</TableCell>
+                    <TableCell className="whitespace-nowrap">{fmtDay(l.date) || '—'}</TableCell>
+                    <TableCell className="text-gray-600">{[l.bank, l.branch].filter(Boolean).join(', ') || '—'}</TableCell>
+                    <TableCell className="font-mono text-xs">{l.accountCode || '—'}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{l.source === 'CHALLAN' ? 'Entered with the return' : `Ledger ${l.entryNo ?? ''}`}</TableCell>
+                    <TableCell className="text-right tabular-nums text-gray-900">{fmtAmount(l.amount)}</TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+            <TableFooter>
+              <tr className="font-semibold text-gray-900">
+                <td className="px-4 py-2.5" colSpan={6}>Total VAT (note 58)</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{fmtAmount(n58)}</td>
+              </tr>
+              {showSd && (
+                <tr className="border-t border-gray-100 font-semibold text-gray-900">
+                  <td className="px-4 py-2.5" colSpan={6}>Total SD (note 59)</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{fmtAmount(n59)}</td>
                 </tr>
-              </thead>
-              <tbody>
-                {deposits.map((l, i) => {
-                  const sd = Number(l.note) === 59
-                  return (
-                    <tr key={`${l.id ?? l.challanNo ?? 'c'}-${i}`} className="border-b border-gray-50">
-                      <td className="px-4 py-2 font-mono text-xs">{l.challanNo || l.documentNo || '—'}</td>
-                      <td className="px-3 py-2 text-xs whitespace-nowrap">{sd ? 'SD (59)' : 'VAT (58)'}</td>
-                      <td className="px-3 py-2 whitespace-nowrap">{fmtDay(l.date) || '—'}</td>
-                      <td className="px-3 py-2 text-gray-600">{[l.bank, l.branch].filter(Boolean).join(', ') || '—'}</td>
-                      <td className="px-3 py-2 font-mono text-xs">{l.accountCode || '—'}</td>
-                      <td className="px-3 py-2 text-xs text-gray-500">{l.source === 'CHALLAN' ? 'Entered with the return' : `Ledger ${l.entryNo ?? ''}`}</td>
-                      <td className="px-4 py-2 text-right tabular-nums">{fmtAmount(l.amount)}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-              <tfoot>
-                <tr className="bg-gray-50 font-semibold">
-                  <td className="px-4 py-2" colSpan={6}>Total VAT (note 58)</td>
-                  <td className="px-4 py-2 text-right tabular-nums">{fmtAmount(n58)}</td>
-                </tr>
-                {showSd && (
-                  <tr className="bg-gray-50 font-semibold">
-                    <td className="px-4 py-2" colSpan={6}>Total SD (note 59)</td>
-                    <td className="px-4 py-2 text-right tabular-nums">{fmtAmount(n59)}</td>
-                  </tr>
-                )}
-              </tfoot>
-            </table>
-          </div>
+              )}
+            </TableFooter>
+          </Table>
         )}
-      </section>
+      </Card>
 
       {/* Notes */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <p className="text-xs text-gray-500">
-          {showingFiled ? 'Showing the figures as filed.' : 'Live figures from the tax ledger.'} Click a note to see its entries.
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-[13px] text-muted-foreground">
+          {showingFiled ? 'Figures as filed' : 'Live figures from the tax ledger'}
         </p>
-        <label className="inline-flex items-center gap-2 text-xs text-gray-600">
+        <label className="inline-flex items-center gap-2 text-[13px] text-gray-700" title="Includes goods, import and SD notes">
           <input type="checkbox" className="rounded border-gray-300" checked={showAll} onChange={e => onShowAll(e.target.checked)} />
-          Show every note (incl. goods / import / SD notes)
+          Show all notes
         </label>
       </div>
       <NotesTable result={shown} showAll={showAll} onDrill={onDrill} />
 
       {/* Amendment history */}
       {history.length > 0 && (
-        <section className="bg-white border border-gray-100 rounded-xl overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-100">
-            <h2 className="text-sm font-semibold text-gray-900">Earlier versions of this return</h2>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[560px]">
-              <thead>
-                <tr className="text-xs text-gray-500 border-b border-gray-100">
-                  <th className="text-left font-medium px-4 py-2">Type</th>
-                  <th className="text-left font-medium px-3 py-2">Submitted</th>
-                  <th className="text-left font-medium px-3 py-2">Acknowledgement</th>
-                  <th className="text-right font-medium px-3 py-2">Net payable (50)</th>
-                  <th className="text-right font-medium px-3 py-2">Closing (65)</th>
-                  <th className="text-left font-medium px-3 py-2">Replaced</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[...history].reverse().map((h, i) => (
-                  <tr key={i} className="border-b border-gray-50">
-                    <td className="px-4 py-2">{RETURN_TYPE_LABELS[h.returnType] ?? h.returnType ?? '—'}</td>
-                    <td className="px-3 py-2">{fmtDay(h.filedAt) || '—'}</td>
-                    <td className="px-3 py-2 font-mono text-xs">{h.acknowledgementNo || '—'}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{fmtAmount(h.netPayable)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{fmtAmount(Math.max(0, (Number(h.closingBalance) || 0) - (Number(h.refundRequested) || 0)))}</td>
-                    <td className="px-3 py-2 text-gray-500">{fmtDay(h.supersededAt)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
+        <Card className="overflow-hidden">
+          <CardHeader className="pb-4">
+            <CardTitle>Earlier versions of this return</CardTitle>
+          </CardHeader>
+          <Table className="min-w-[560px]" wrapperClassName="border-t border-gray-100">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Type</TableHead>
+                <TableHead>Submitted</TableHead>
+                <TableHead>Acknowledgement</TableHead>
+                <TableHead className="text-right">Net payable (50)</TableHead>
+                <TableHead className="text-right">Closing (65)</TableHead>
+                <TableHead>Replaced</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {[...history].reverse().map((h, i) => (
+                <TableRow key={i}>
+                  <TableCell className="text-gray-900">{RETURN_TYPE_LABELS[h.returnType] ?? h.returnType ?? '—'}</TableCell>
+                  <TableCell>{fmtDay(h.filedAt) || '—'}</TableCell>
+                  <TableCell className="font-mono text-xs">{h.acknowledgementNo || '—'}</TableCell>
+                  <TableCell className="text-right tabular-nums">{fmtAmount(h.netPayable)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{fmtAmount(Math.max(0, (Number(h.closingBalance) || 0) - (Number(h.refundRequested) || 0)))}</TableCell>
+                  <TableCell className="text-muted-foreground">{fmtDay(h.supersededAt)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </Card>
       )}
     </>
   )

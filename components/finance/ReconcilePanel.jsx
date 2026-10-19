@@ -8,6 +8,12 @@ import {
 import DatePicker from '@/components/ui/DatePicker'
 import EmptyState from '@/components/ui/EmptyState'
 import FileUpload from '@/components/ui/FileUpload'
+import Button, { buttonVariants } from '@/components/ui/Button'
+import Badge from '@/components/ui/Badge'
+import Tabs from '@/components/ui/Tabs'
+import { Card, CardTitle } from '@/components/ui/Card'
+import { Input, Label } from '@/components/ui/Input'
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table'
 import { cn } from '@/lib/utils'
 import { dayKeyLabel, taxPeriodOf, addPeriods, periodLastDay } from '@/lib/finance/fiscal'
 import { PAYMENT_CHANNEL_LABELS } from '@/lib/finance/constants'
@@ -15,14 +21,14 @@ import { invalidateMoneyAccounts } from './MoneyAccountSelect'
 import AmountInput from './AmountInput'
 import { ConfirmDialog, ReasonDialog, FieldError } from './FinanceDialogs'
 import {
-  INPUT, LABEL, BTN_PRIMARY, BTN_SECONDARY, formatAmount, formatSigned, fetchJson, todayKey, dayKeyOf,
-  parseAmount, plainAmount, round2,
+  formatAmount, formatSigned, fetchJson, todayKey, dayKeyOf, parseAmount, plainAmount, round2,
 } from './accountTheme'
 
+/** Badge variant per reconciliation status. */
 const STATUS_BADGE = {
-  IN_PROGRESS: 'bg-sky-50 text-sky-700',
-  COMPLETED: 'bg-emerald-50 text-emerald-700',
-  UNDONE: 'bg-gray-100 text-gray-600',
+  IN_PROGRESS: 'primary',
+  COMPLETED: 'success',
+  UNDONE: 'default',
 }
 const STATUS_LABEL = { IN_PROGRESS: 'In progress', COMPLETED: 'Completed', UNDONE: 'Undone' }
 const FILTERS = [
@@ -149,7 +155,7 @@ export default function ReconcilePanel({ account, canReconcile, onChanged, onRec
           notes: startNotes.trim() || null, attachmentUrl: startAttachment || null,
         }),
       })
-      toast.success('Reconciliation started — tick the items on the statement')
+      toast.success('Reconciliation started')
       setStartBalance(''); setStartNotes(''); setStartAttachment('')
       await loadSession(json.data.id)
       refreshAll()
@@ -260,7 +266,7 @@ export default function ReconcilePanel({ account, canReconcile, onChanged, onRec
       await fetchJson(`/api/finance/reconciliations/${undoTarget.id}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'undo', reason }),
       })
-      toast.success('Reconciliation undone — its items are back to “cleared”')
+      toast.success('Reconciliation undone')
       setUndoTarget(null)
       refreshAll()
     } catch (err) {
@@ -297,229 +303,235 @@ export default function ReconcilePanel({ account, canReconcile, onChanged, onRec
   return (
     <div className="space-y-6">
       {!canReconcile && (
-        <p className="flex items-start gap-2 rounded-xl border border-gray-100 bg-white px-4 py-3 text-sm text-gray-600">
-          <Info className="w-4 h-4 mt-0.5 shrink-0 text-gray-400" />
-          You can view reconciliation history. Reconciling needs the “Reconcile bank/wallet statements” permission.
+        <p className="flex items-start gap-2 rounded-lg border border-gray-200/80 bg-gray-50 px-3 py-2.5 text-sm text-gray-600">
+          <Info className="mt-0.5 size-4 shrink-0 text-gray-400" />
+          View only — reconciling needs the “Reconcile bank/wallet statements” permission.
         </p>
       )}
 
       {/* Start a session */}
       {canReconcile && !sessionId && !session && (
-        <div className="bg-white border border-gray-100 rounded-xl p-5">
-          <div className="flex items-start gap-3">
-            <span className="w-10 h-10 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center shrink-0"><ListChecks className="w-5 h-5" /></span>
-            <div className="min-w-0">
-              <h3 className="text-sm font-semibold text-gray-900">{cash ? 'Count the cash' : 'Reconcile with a statement'}</h3>
-              <p className="text-xs text-gray-500 mt-0.5">
-                {cash
-                  ? 'Enter the cash you counted and tick the entries it reflects. The difference must be zero to finish.'
-                  : `Enter the closing balance from the ${account?.type === 'MFS' ? 'wallet' : 'bank'} statement, then tick each item that appears on it. The difference must be zero to finish.`}
-                {lastCompleted && <> Last reconciled to <strong>{dayKeyLabel(lastCompleted.statementDate)}</strong> at {formatAmount(lastCompleted.statementBalance, currency)}.</>}
-              </p>
-            </div>
-          </div>
-          <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <Card className="p-5">
+          <h3 className="text-sm font-semibold text-gray-900">{cash ? 'Count the cash' : 'Reconcile with a statement'}</h3>
+          <p className="mt-1 text-[13px] text-muted-foreground">
+            {cash
+              ? 'Enter the cash counted, then tick the entries it reflects.'
+              : `Enter the ${account?.type === 'MFS' ? 'wallet' : 'bank'} statement's closing balance, then tick each item on it.`}
+            {lastCompleted && <> Last reconciled to <span className="font-medium text-gray-900">{dayKeyLabel(lastCompleted.statementDate)}</span> at {formatAmount(lastCompleted.statementBalance, currency)}.</>}
+          </p>
+          <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div>
-              <label className={LABEL}>{cash ? 'Count date' : 'Statement end date'} <span className="text-red-500">*</span></label>
+              <Label required>{cash ? 'Count date' : 'Statement end date'}</Label>
               <DatePicker value={startDate || null} onChange={v => setStartDate(v ?? '')} clearable={false} />
               <FieldError message={startErrors.statementDate} />
             </div>
             <div>
-              <label className={LABEL}>{cash ? 'Cash counted' : 'Closing balance on statement'} ({currency}) <span className="text-red-500">*</span></label>
+              <Label required>{cash ? 'Cash counted' : 'Closing balance on statement'} ({currency})</Label>
               <AmountInput value={startBalance} onChange={setStartBalance} currency={currency} allowNegative error={startErrors.statementBalance} />
               <FieldError message={startErrors.statementBalance} />
             </div>
             <div>
-              <label className={LABEL}>Note</label>
-              <input value={startNotes} onChange={e => setStartNotes(e.target.value)} placeholder="e.g. Sep 2026 e-statement" className={INPUT} />
+              <Label>Note</Label>
+              <Input value={startNotes} onChange={e => setStartNotes(e.target.value)} placeholder="e.g. Sep 2026 e-statement" />
             </div>
           </div>
-          <div className="mt-3 flex flex-col sm:flex-row sm:items-end gap-3">
+          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
             <div className="flex-1"><FileUpload value={startAttachment} onUploaded={setStartAttachment} label={`${cash ? 'Count sheet' : 'Statement'} (optional)`} /></div>
-            <button type="button" className={BTN_PRIMARY} onClick={start} disabled={starting}>
-              {starting && <Loader2 className="w-4 h-4 animate-spin" />} Start reconciliation
-            </button>
+            <Button onClick={start} loading={starting}>
+              {!starting && <ListChecks />} Start reconciliation
+            </Button>
           </div>
-        </div>
+        </Card>
       )}
 
       {/* Working session */}
       {(sessLoading && !session) && (
-        <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-gray-300" /></div>
+        <div className="flex justify-center py-10"><Loader2 className="size-5 animate-spin text-gray-300" /></div>
       )}
       {sessError && !session && (
-        <div className="bg-white border border-red-100 rounded-xl p-6 text-center text-sm text-red-600">
-          {sessError} <button type="button" onClick={() => loadSession(sessionId)} className="ml-2 underline">Retry</button>
-        </div>
+        <Card className="p-6 text-center text-sm text-red-600">
+          {sessError} <button type="button" onClick={() => loadSession(sessionId)} className="ml-2 font-medium underline underline-offset-4">Retry</button>
+        </Card>
       )}
       {session && rec?.status === 'IN_PROGRESS' && (
         <div className="space-y-4">
           {/* Statement details */}
-          <div className="bg-white border border-gray-100 rounded-xl p-4">
-            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-              <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                <ListChecks className="w-4 h-4 text-sky-600" /> Reconciliation in progress
-                <span className="text-xs font-normal text-gray-400">started {dayKeyLabel(rec.createdAt)}{rec.createdBy ? ` by ${rec.createdBy}` : ''}</span>
-              </h3>
-              <a href={`/api/finance/reconciliations/${rec.id}/report`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-gray-600 hover:text-gray-900">
-                <Printer className="w-3.5 h-3.5" /> Draft report
+          <Card className="p-5">
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-sm font-semibold text-gray-900">Reconciliation</h3>
+                  <Badge variant="primary" dot>In progress</Badge>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">Started {dayKeyLabel(rec.createdAt)}{rec.createdBy ? ` by ${rec.createdBy}` : ''}</p>
+              </div>
+              <a
+                href={`/api/finance/reconciliations/${rec.id}/report`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={buttonVariants({ variant: 'ghost', size: 'sm' })}
+              >
+                <Printer /> Draft report
               </a>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <div>
-                <label className={LABEL}>{cash ? 'Count date' : 'Statement end date'}</label>
+                <Label>{cash ? 'Count date' : 'Statement end date'}</Label>
                 <DatePicker value={stmtDate || null} onChange={v => setStmtDate(v ?? '')} clearable={false} disabled={!canReconcile} />
               </div>
               <div>
-                <label className={LABEL}>{cash ? 'Cash counted' : 'Closing balance on statement'} ({currency})</label>
+                <Label>{cash ? 'Cash counted' : 'Closing balance on statement'} ({currency})</Label>
                 <AmountInput value={stmtBalance} onChange={setStmtBalance} currency={currency} allowNegative disabled={!canReconcile} />
               </div>
               <div>
-                <label className={LABEL}>Note</label>
-                <input value={notes} onChange={e => setNotes(e.target.value)} disabled={!canReconcile} className={INPUT} />
+                <Label>Note</Label>
+                <Input value={notes} onChange={e => setNotes(e.target.value)} disabled={!canReconcile} />
               </div>
             </div>
-            <div className="mt-3 flex flex-col sm:flex-row sm:items-end gap-3">
+            <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
               <div className="flex-1"><FileUpload value={attachment} onUploaded={setAttachment} label={`${cash ? 'Count sheet' : 'Statement'} (optional)`} /></div>
               {canReconcile && (
-                <button type="button" className={BTN_SECONDARY} onClick={() => saveDetails()} disabled={!dirty || saving}>
-                  {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save details
-                </button>
+                <Button variant="outline" onClick={() => saveDetails()} loading={saving} disabled={!dirty}>
+                  {!saving && <Save />} Save details
+                </Button>
               )}
             </div>
-            {dirty && <p className="mt-2 text-[11px] text-amber-700">Unsaved changes — they are saved automatically when you finish.</p>}
-          </div>
+            {dirty && <p className="mt-2 text-xs text-amber-700">Unsaved changes — saved automatically when you finish.</p>}
+          </Card>
 
           {/* Items */}
-          <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
-            <div className="flex flex-col lg:flex-row lg:items-center gap-3 px-4 py-3 border-b border-gray-50">
-              <div className="flex flex-wrap gap-1.5">
-                {FILTERS.map(f => (
-                  <button
-                    key={f.key}
-                    type="button"
-                    onClick={() => setFilter(f.key)}
-                    className={cn('rounded-full px-3 py-1 text-xs font-medium border', filter === f.key ? 'bg-gray-900 text-white border-gray-900' : 'border-gray-200 text-gray-600 hover:bg-gray-50')}
-                  >
-                    {f.label}
-                    {f.key === 'in' && <span className="ml-1 opacity-60">{counts.in}</span>}
-                    {f.key === 'out' && <span className="ml-1 opacity-60">{counts.out}</span>}
-                    {f.key === 'ticked' && <span className="ml-1 opacity-60">{counts.ticked}</span>}
-                  </button>
-                ))}
-              </div>
+          <Card className="overflow-hidden">
+            <div className="flex flex-col gap-2 border-b border-gray-100 p-3 lg:flex-row lg:items-center">
+              <Tabs
+                size="sm"
+                value={filter}
+                onChange={setFilter}
+                tabs={FILTERS.map(f => ({
+                  value: f.key,
+                  label: f.label,
+                  count: f.key === 'in' ? counts.in : f.key === 'out' ? counts.out : f.key === 'ticked' ? counts.ticked : undefined,
+                }))}
+              />
               <div className="relative lg:ml-auto lg:w-64">
-                <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                <input value={q} onChange={e => setQ(e.target.value)} placeholder="Find amount, ref, cheque…" className="w-full border border-gray-200 rounded-lg pl-8 pr-7 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900" />
-                {q && <button type="button" onClick={() => setQ('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400" aria-label="Clear"><X className="w-3.5 h-3.5" /></button>}
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-gray-400" />
+                <Input value={q} onChange={e => setQ(e.target.value)} placeholder="Amount, ref, cheque…" className="h-8 pl-8 pr-8 text-[13px]" />
+                {q && (
+                  <button type="button" onClick={() => setQ('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700" aria-label="Clear">
+                    <X className="size-3.5" />
+                  </button>
+                )}
               </div>
             </div>
             {canReconcile && (
-              <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-b border-gray-50 bg-gray-50/50 text-xs">
-                <button type="button" disabled={!visibleOpen.length} onClick={() => toggle(visibleOpen.map(r => r.id), true)} className="font-medium text-gray-700 hover:text-gray-900 disabled:opacity-40">Tick all shown ({visibleOpen.length})</button>
-                <span className="text-gray-300">|</span>
-                <button type="button" disabled={!visibleTicked.length} onClick={() => toggle(visibleTicked.map(r => r.id), false)} className="font-medium text-gray-700 hover:text-gray-900 disabled:opacity-40">Untick shown ({visibleTicked.length})</button>
+              <div className="flex flex-wrap items-center gap-1 border-b border-gray-100 bg-gray-50/60 px-3 py-1.5">
+                <Button variant="ghost" size="xs" disabled={!visibleOpen.length} onClick={() => toggle(visibleOpen.map(r => r.id), true)}>
+                  Tick all shown ({visibleOpen.length})
+                </Button>
+                <Button variant="ghost" size="xs" disabled={!visibleTicked.length} onClick={() => toggle(visibleTicked.map(r => r.id), false)}>
+                  Untick shown ({visibleTicked.length})
+                </Button>
                 {onRecordMovement && (
-                  <span className="sm:ml-auto flex flex-wrap gap-2">
-                    <button type="button" onClick={() => onRecordMovement('BANK_CHARGE')} className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-white px-2.5 py-1 font-medium text-gray-600 hover:bg-gray-50"><Receipt className="w-3.5 h-3.5" /> Add bank charge</button>
-                    <button type="button" onClick={() => onRecordMovement('INTEREST_INCOME')} className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-white px-2.5 py-1 font-medium text-gray-600 hover:bg-gray-50"><Percent className="w-3.5 h-3.5" /> Add interest</button>
+                  <span className="flex flex-wrap gap-1.5 sm:ml-auto">
+                    <Button variant="outline" size="xs" onClick={() => onRecordMovement('BANK_CHARGE')}><Receipt /> Add bank charge</Button>
+                    <Button variant="outline" size="xs" onClick={() => onRecordMovement('INTEREST_INCOME')}><Percent /> Add interest</Button>
                   </span>
                 )}
               </div>
             )}
 
             {rows.length === 0 ? (
-              <EmptyState icon={ListChecks} title="Nothing to tick" description={`There are no uncleared entries up to ${dayKeyLabel(rec.statementDate)}. If the ${noun} shows charges or interest, add them above.`} className="py-10" />
+              <EmptyState icon={ListChecks} title="Nothing to tick" description={`No uncleared entries up to ${dayKeyLabel(rec.statementDate)}.`} className="py-10" />
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm min-w-[640px]">
-                  <thead>
-                    <tr className="text-left text-[11px] uppercase tracking-wide text-gray-400">
-                      <th className="pl-4 pr-2 py-2 w-10"><span className="sr-only">Cleared</span></th>
-                      <th className="px-2 py-2 font-medium w-28">Date</th>
-                      <th className="px-2 py-2 font-medium">Details</th>
-                      <th className="px-4 py-2 font-medium text-right w-32">In</th>
-                      <th className="px-4 py-2 font-medium text-right w-32">Out</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
-                    {visible.map(r => (
-                      <tr
-                        key={r.id}
-                        onClick={() => canReconcile && toggle([r.id], !r.cleared)}
-                        className={cn('align-top transition-colors', canReconcile && 'cursor-pointer', r.cleared ? 'bg-emerald-50/40 hover:bg-emerald-50/70' : 'hover:bg-gray-50')}
-                      >
-                        <td className="pl-4 pr-2 py-2.5" onClick={e => e.stopPropagation()}>
-                          <input
-                            type="checkbox"
-                            checked={!!r.cleared}
-                            disabled={!canReconcile}
-                            onChange={e => toggle([r.id], e.target.checked)}
-                            className="w-4 h-4 rounded border-gray-300 accent-emerald-600"
-                            aria-label={`Cleared: ${r.description}`}
-                          />
-                        </td>
-                        <td className="px-2 py-2.5 text-gray-600 whitespace-nowrap">{dayKeyLabel(r.date)}</td>
-                        <td className="px-2 py-2.5">
-                          <p className="text-gray-900">{r.description}</p>
-                          <p className="text-[11px] text-gray-500 flex flex-wrap gap-x-2">
-                            <span>{r.category}</span>
-                            {r.txnId && <span className="font-mono text-gray-400">{r.txnId}</span>}
-                            {r.counterAccount && <span>{r.type === 'EXPENSE' ? 'to' : 'from'} {r.counterAccount}</span>}
-                            {!r.counterAccount && r.party && <span>{r.party}</span>}
-                            {r.cheque?.no && <span>Chq {r.cheque.no}</span>}
-                            {r.reference && <span>Ref {r.reference}</span>}
-                            {r.channel && <span>{PAYMENT_CHANNEL_LABELS[r.channel] ?? r.channel}</span>}
-                          </p>
-                        </td>
-                        <td className="px-4 py-2.5 text-right tabular-nums whitespace-nowrap text-emerald-700">{r.type === 'INCOME' ? formatAmount(r.amount, currency) : ''}</td>
-                        <td className="px-4 py-2.5 text-right tabular-nums whitespace-nowrap text-gray-900">{r.type === 'EXPENSE' ? formatAmount(r.amount, currency) : ''}</td>
-                      </tr>
-                    ))}
-                    {visible.length === 0 && (
-                      <tr><td colSpan={5} className="px-4 py-8 text-center text-sm text-gray-500">No items match.</td></tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+              <Table className="min-w-[640px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-10 pl-4 pr-2"><span className="sr-only">Cleared</span></TableHead>
+                    <TableHead className="w-28 px-2">Date</TableHead>
+                    <TableHead className="px-2">Details</TableHead>
+                    <TableHead className="w-32 text-right">In</TableHead>
+                    <TableHead className="w-32 text-right">Out</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {visible.map(r => (
+                    <TableRow
+                      key={r.id}
+                      onClick={() => canReconcile && toggle([r.id], !r.cleared)}
+                      className={cn('align-top', canReconcile && 'cursor-pointer', r.cleared ? 'bg-emerald-50/40 hover:bg-emerald-50/70' : '')}
+                    >
+                      <TableCell className="pl-4 pr-2" onClick={e => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={!!r.cleared}
+                          disabled={!canReconcile}
+                          onChange={e => toggle([r.id], e.target.checked)}
+                          className="size-4 rounded"
+                          aria-label={`Cleared: ${r.description}`}
+                        />
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap px-2 text-gray-600">{dayKeyLabel(r.date)}</TableCell>
+                      <TableCell className="px-2">
+                        <p className="text-gray-900">{r.description}</p>
+                        <p className="mt-0.5 flex flex-wrap gap-x-2 text-xs text-muted-foreground">
+                          <span>{r.category}</span>
+                          {r.txnId && <span className="font-mono text-gray-400">{r.txnId}</span>}
+                          {r.counterAccount && <span>{r.type === 'EXPENSE' ? 'to' : 'from'} {r.counterAccount}</span>}
+                          {!r.counterAccount && r.party && <span>{r.party}</span>}
+                          {r.cheque?.no && <span>Chq {r.cheque.no}</span>}
+                          {r.reference && <span>Ref {r.reference}</span>}
+                          {r.channel && <span>{PAYMENT_CHANNEL_LABELS[r.channel] ?? r.channel}</span>}
+                        </p>
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums text-emerald-700">{r.type === 'INCOME' ? formatAmount(r.amount, currency) : ''}</TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums text-gray-900">{r.type === 'EXPENSE' ? formatAmount(r.amount, currency) : ''}</TableCell>
+                    </TableRow>
+                  ))}
+                  {visible.length === 0 && (
+                    <TableRow className="hover:bg-transparent">
+                      <TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">No results</TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
             )}
             {(session.laterUncleared > 0 || session.truncated) && (
-              <div className="px-4 py-2.5 border-t border-gray-50 text-[11px] text-gray-500 space-y-0.5">
-                {session.laterUncleared > 0 && <p>{session.laterUncleared} uncleared item{session.laterUncleared === 1 ? ' is' : 's are'} dated after {dayKeyLabel(rec.statementDate)} and not shown — they belong to the next {noun}.</p>}
+              <div className="space-y-0.5 border-t border-gray-100 px-4 py-2.5 text-xs text-muted-foreground">
+                {session.laterUncleared > 0 && <p>{session.laterUncleared} uncleared item{session.laterUncleared === 1 ? '' : 's'} after {dayKeyLabel(rec.statementDate)} hidden — they belong to the next {noun}.</p>}
                 {session.truncated && <p className="text-amber-700">Showing the first {rows.length} of {session.total} items — reconcile in smaller date steps.</p>}
               </div>
             )}
-          </div>
+          </Card>
 
-          {/* Sticky difference footer */}
-          <div className="sticky bottom-0 z-20 -mx-4 sm:-mx-6 px-4 sm:px-6 py-3 bg-white/95 backdrop-blur border-t border-gray-200 shadow-[0_-6px_16px_rgba(15,23,42,0.06)]">
-            <div className="flex flex-col xl:flex-row xl:items-center gap-3">
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-4 gap-y-1.5 flex-1 text-xs">
-                <div><p className="text-gray-500">Opening (reconciled)</p><p className="font-semibold tabular-nums text-gray-900">{formatAmount(summary.openingBalance, currency)}</p></div>
-                <div><p className="text-gray-500">Ticked in</p><p className="font-semibold tabular-nums text-emerald-700">+{formatAmount(summary.clearedIn ?? 0, currency)}</p></div>
-                <div><p className="text-gray-500">Ticked out</p><p className="font-semibold tabular-nums text-gray-900">−{formatAmount(summary.clearedOut ?? 0, currency)}</p></div>
-                <div><p className="text-gray-500">Cleared balance</p><p className="font-semibold tabular-nums text-gray-900">{formatAmount(summary.clearedBalance, currency)}</p></div>
-                <div><p className="text-gray-500">{cash ? 'Counted' : 'Statement'}{dirty ? ' (unsaved)' : ''}</p><p className="font-semibold tabular-nums text-gray-900">{formatAmount(liveStatement, currency)}</p></div>
-                <div className={cn('rounded-lg px-2 py-1 -my-1', balanced ? 'bg-emerald-50' : 'bg-red-50')}>
-                  <p className={cn('font-medium flex items-center gap-1', balanced ? 'text-emerald-700' : 'text-red-700')}>
-                    {balanced ? <CheckCircle2 className="w-3.5 h-3.5" /> : <AlertTriangle className="w-3.5 h-3.5" />} Difference
+          {/* Sticky difference footer (bleeds to the page padding: p-4 sm:p-6 lg:p-8) */}
+          <div className="sticky bottom-0 z-20 -mx-4 border-t border-gray-200/80 bg-white/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
+              <div className="grid flex-1 grid-cols-2 gap-x-4 gap-y-2 text-xs sm:grid-cols-3 lg:grid-cols-6">
+                <div><p className="text-muted-foreground">Opening (reconciled)</p><p className="font-semibold tabular-nums text-gray-900">{formatAmount(summary.openingBalance, currency)}</p></div>
+                <div><p className="text-muted-foreground">Ticked in</p><p className="font-semibold tabular-nums text-emerald-700">+{formatAmount(summary.clearedIn ?? 0, currency)}</p></div>
+                <div><p className="text-muted-foreground">Ticked out</p><p className="font-semibold tabular-nums text-gray-900">−{formatAmount(summary.clearedOut ?? 0, currency)}</p></div>
+                <div><p className="text-muted-foreground">Cleared balance</p><p className="font-semibold tabular-nums text-gray-900">{formatAmount(summary.clearedBalance, currency)}</p></div>
+                <div><p className="text-muted-foreground">{cash ? 'Counted' : 'Statement'}{dirty ? ' (unsaved)' : ''}</p><p className="font-semibold tabular-nums text-gray-900">{formatAmount(liveStatement, currency)}</p></div>
+                <div className={cn('-my-1 rounded-lg px-2 py-1 ring-1 ring-inset', balanced ? 'bg-emerald-50 ring-emerald-600/15' : 'bg-red-50 ring-red-600/15')}>
+                  <p className={cn('flex items-center gap-1 font-medium', balanced ? 'text-emerald-700' : 'text-red-700')}>
+                    {balanced ? <CheckCircle2 className="size-3.5" /> : <AlertTriangle className="size-3.5" />} Difference
                   </p>
-                  <p className={cn('text-sm font-bold tabular-nums', balanced ? 'text-emerald-700' : 'text-red-700')}>{balanced ? formatAmount(0, currency) : formatSigned(difference, currency)}</p>
+                  <p className={cn('text-sm font-semibold tabular-nums', balanced ? 'text-emerald-700' : 'text-red-700')}>{balanced ? formatAmount(0, currency) : formatSigned(difference, currency)}</p>
                 </div>
               </div>
               {canReconcile && (
                 <div className="flex gap-2 xl:shrink-0">
-                  <button type="button" className={cn(BTN_SECONDARY, 'flex-1 xl:flex-none')} onClick={() => setConfirmCancel(true)} disabled={finishing}>Discard</button>
-                  <button type="button" className={cn(BTN_PRIMARY, 'flex-1 xl:flex-none')} onClick={finish} disabled={!balanced || finishing || pending > 0 || saving}>
-                    {(finishing || pending > 0) && <Loader2 className="w-4 h-4 animate-spin" />}
-                    <ShieldCheck className="w-4 h-4" /> Finish
-                  </button>
+                  <Button variant="outline" className="flex-1 xl:flex-none" onClick={() => setConfirmCancel(true)} disabled={finishing}>Discard</Button>
+                  <Button className="flex-1 xl:flex-none" onClick={finish} loading={finishing || pending > 0} disabled={!balanced || saving}>
+                    {!(finishing || pending > 0) && <ShieldCheck />} Finish
+                  </Button>
                 </div>
               )}
             </div>
             {!balanced && (
-              <p className="mt-1.5 text-[11px] text-gray-500">
-                {difference > 0 ? `The ${noun} shows ${formatAmount(difference, currency)} more than you've ticked — look for unticked receipts or unrecorded interest.` : `You've ticked ${formatAmount(-difference, currency)} more than the ${noun} shows — look for unticked payments, bank charges or items ticked by mistake.`}
+              <p className="mt-2 text-xs text-muted-foreground">
+                {difference > 0
+                  ? `The ${noun} shows ${formatAmount(difference, currency)} more than ticked — check for unticked receipts or unrecorded interest.`
+                  : `You've ticked ${formatAmount(-difference, currency)} more than the ${noun} — check for unticked payments, bank charges or wrong ticks.`}
               </p>
             )}
           </div>
@@ -527,66 +539,73 @@ export default function ReconcilePanel({ account, canReconcile, onChanged, onRec
       )}
 
       {/* History */}
-      <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-50 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-gray-900">Reconciliation history</h3>
-          {histLoading && <Loader2 className="w-4 h-4 animate-spin text-gray-300" />}
+      <Card className="overflow-hidden">
+        <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3.5">
+          <CardTitle>Reconciliation history</CardTitle>
+          {histLoading && <Loader2 className="size-4 animate-spin text-gray-300" />}
         </div>
         {histError ? (
-          <div className="px-4 py-8 text-center text-sm text-red-600">{histError} <button type="button" onClick={loadHistory} className="ml-2 underline">Retry</button></div>
+          <div className="px-4 py-8 text-center text-sm text-red-600">
+            {histError} <button type="button" onClick={loadHistory} className="ml-2 font-medium underline underline-offset-4">Retry</button>
+          </div>
         ) : !histLoading && pastSessions.length === 0 ? (
-          <EmptyState icon={ShieldCheck} title="Not reconciled yet" description={`Reconcile against each ${noun} so the cleared balance here always matches the ${cash ? 'cash in the box' : 'bank'}.`} className="py-10" />
+          <EmptyState icon={ShieldCheck} title="Not reconciled yet" className="py-10" />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[640px]">
-              <thead>
-                <tr className="text-left text-[11px] uppercase tracking-wide text-gray-400">
-                  <th className="px-4 py-2 font-medium">{cash ? 'Count date' : 'Statement date'}</th>
-                  <th className="px-4 py-2 font-medium text-right">Balance</th>
-                  <th className="px-4 py-2 font-medium text-right">Items</th>
-                  <th className="px-4 py-2 font-medium">Status</th>
-                  <th className="px-4 py-2 font-medium">By</th>
-                  <th className="px-4 py-2" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {pastSessions.map(h => (
-                  <tr key={h.id} className="align-top">
-                    <td className="px-4 py-2.5 whitespace-nowrap text-gray-800">{dayKeyLabel(h.statementDate)}</td>
-                    <td className="px-4 py-2.5 text-right tabular-nums whitespace-nowrap font-medium">{formatAmount(h.statementBalance, currency)}</td>
-                    <td className="px-4 py-2.5 text-right tabular-nums text-gray-600">{h.itemCount}</td>
-                    <td className="px-4 py-2.5">
-                      <span className={cn('inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold', STATUS_BADGE[h.status])}>{STATUS_LABEL[h.status] ?? h.status}</span>
-                      {h.status === 'UNDONE' && h.undoReason && <p className="mt-0.5 text-[11px] text-gray-500 max-w-[260px]">“{h.undoReason}”{h.undoneBy ? ` — ${h.undoneBy}` : ''}</p>}
-                    </td>
-                    <td className="px-4 py-2.5 text-xs text-gray-500 whitespace-nowrap">
-                      {h.status === 'COMPLETED' || h.status === 'UNDONE'
-                        ? <>{h.completedBy ?? '—'}{h.completedAt ? <span className="block">{dayKeyLabel(h.completedAt)}</span> : null}</>
-                        : (h.createdBy ?? '—')}
-                    </td>
-                    <td className="px-4 py-2.5 text-right whitespace-nowrap">
-                      <a href={`/api/finance/reconciliations/${h.id}/report`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-gray-600 hover:text-gray-900">
-                        <Printer className="w-3.5 h-3.5" /> Report
+          <Table className="min-w-[640px]">
+            <TableHeader>
+              <TableRow>
+                <TableHead className="pl-5">{cash ? 'Count date' : 'Statement date'}</TableHead>
+                <TableHead className="text-right">Balance</TableHead>
+                <TableHead className="text-right">Items</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>By</TableHead>
+                <TableHead><span className="sr-only">Actions</span></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {pastSessions.map(h => (
+                <TableRow key={h.id} className="align-top">
+                  <TableCell className="whitespace-nowrap pl-5 text-gray-900">{dayKeyLabel(h.statementDate)}</TableCell>
+                  <TableCell className="whitespace-nowrap text-right font-medium tabular-nums text-gray-900">{formatAmount(h.statementBalance, currency)}</TableCell>
+                  <TableCell className="text-right tabular-nums text-gray-600">{h.itemCount}</TableCell>
+                  <TableCell>
+                    <Badge variant={STATUS_BADGE[h.status] ?? 'default'}>{STATUS_LABEL[h.status] ?? h.status}</Badge>
+                    {h.status === 'UNDONE' && h.undoReason && <p className="mt-1 max-w-[260px] text-xs text-muted-foreground">“{h.undoReason}”{h.undoneBy ? ` — ${h.undoneBy}` : ''}</p>}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                    {h.status === 'COMPLETED' || h.status === 'UNDONE'
+                      ? <>{h.completedBy ?? '—'}{h.completedAt ? <span className="block">{dayKeyLabel(h.completedAt)}</span> : null}</>
+                      : (h.createdBy ?? '—')}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap py-2 text-right">
+                    <div className="inline-flex items-center gap-1">
+                      <a
+                        href={`/api/finance/reconciliations/${h.id}/report`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={buttonVariants({ variant: 'ghost', size: 'xs' })}
+                      >
+                        <Printer className="size-3.5" /> Report
                       </a>
                       {canReconcile && h.canUndo && (
-                        <button type="button" onClick={() => setUndoTarget(h)} className="ml-3 inline-flex items-center gap-1 text-xs font-medium text-rose-600 hover:text-rose-700">
-                          <Undo2 className="w-3.5 h-3.5" /> Undo
-                        </button>
+                        <Button variant="ghost" size="xs" onClick={() => setUndoTarget(h)} className="text-red-600 hover:bg-red-50 hover:text-red-700">
+                          <Undo2 className="size-3.5" /> Undo
+                        </Button>
                       )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         )}
-      </div>
+      </Card>
 
       <ConfirmDialog
         open={confirmCancel}
         onOpenChange={setConfirmCancel}
         title="Discard this reconciliation?"
-        description="All ticks in this session are cleared and the session is deleted. Nothing in the ledger changes."
+        description="Deletes this session and its ticks. The ledger isn't changed."
         confirmLabel="Discard"
         danger
         onConfirm={cancelSession}
@@ -595,7 +614,7 @@ export default function ReconcilePanel({ account, canReconcile, onChanged, onRec
         open={!!undoTarget}
         onOpenChange={(v) => !v && setUndoTarget(null)}
         title="Undo reconciliation"
-        description={undoTarget ? `Re-opens the ${dayKeyLabel(undoTarget.statementDate)} reconciliation. Its ${undoTarget.itemCount} items go back to “cleared” and can be reconciled again.` : ''}
+        description={undoTarget ? `Re-opens the ${dayKeyLabel(undoTarget.statementDate)} reconciliation; its ${undoTarget.itemCount} items go back to “cleared”.` : ''}
         confirmLabel="Undo reconciliation"
         danger
         placeholder="e.g. Wrong statement balance entered"

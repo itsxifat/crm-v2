@@ -1,22 +1,23 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import Link from 'next/link'
-import Image from 'next/image'
 import { useParams, useRouter } from 'next/navigation'
 import {
-  ArrowLeft, Copy, Laptop, Pencil, Printer, Tag, Trash2, AlertTriangle, Clock, ShieldCheck, ShieldAlert, Loader2,
-  RefreshCw, MapPin, UserRound, Building2, CalendarClock, FileText,
+  ArrowLeft, Copy, Pencil, Printer, Tag, Trash2, AlertTriangle, Clock, ShieldCheck, ShieldAlert,
+  RefreshCw, UserRound, Building2, CalendarClock, FileText,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import ActionMenu from '@/components/ui/ActionMenu'
 import Modal, { ModalFooter } from '@/components/ui/Modal'
 import EmptyState from '@/components/ui/EmptyState'
+import PageHeader from '@/components/ui/PageHeader'
+import Button from '@/components/ui/Button'
+import { Card } from '@/components/ui/Card'
 import { PageLoader } from '@/components/ui/LoadingSpinner'
 import AssetStatusBadge, { AssetConditionBadge, InventoryBadge } from '@/components/inventory/AssetStatusBadge'
 import { usePermission } from '@/components/auth/Can'
 import { cn } from '@/lib/utils'
-import { ACK_META, safeLinkUrl } from '@/lib/inventory/constants'
+import { ACK_META } from '@/lib/inventory/constants'
 import { TAX_DEPRECIATION_CLASSES } from '@/lib/tax/catalog'
 import {
   availableAssetActions, primaryActionKeys, returnActionLabel, hasHolder,
@@ -27,25 +28,34 @@ import {
   AssetTimeline, FinancialsPanel, DamagePanel, DocumentsPanel, PurchasePanel, DisposalSummary,
 } from '../_components/AssetDetailPanels'
 import {
-  ACTION_ICONS, Section, InfoRow, btnPrimary, btnSecondary, btnDanger, cardCls, tk, fmtDay, todayKey, dayKeyOf,
+  ACTION_ICONS, Section, InfoRow, tk, fmtDay, todayKey, dayKeyOf,
   holderName, openPrint, labelsUrl, apiJson,
 } from '../_components/shared'
 
 function Banner({ tone, icon: Icon, children, action }) {
   const cls = {
-    red: 'bg-red-50 text-red-800 border-red-100',
-    orange: 'bg-orange-50 text-orange-800 border-orange-100',
-    yellow: 'bg-amber-50 text-amber-800 border-amber-100',
-    blue: 'bg-blue-50 text-blue-800 border-blue-100',
-  }[tone] ?? 'bg-gray-50 text-gray-700 border-gray-100'
+    red: 'border-red-200 bg-red-50 text-red-800',
+    orange: 'border-orange-200 bg-orange-50 text-orange-800',
+    yellow: 'border-amber-200 bg-amber-50 text-amber-800',
+    blue: 'border-blue-200 bg-blue-50 text-blue-800',
+  }[tone] ?? 'border-gray-200 bg-gray-50 text-gray-700'
   return (
-    <div className={cn('flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 rounded-xl border px-4 py-3 text-sm', cls)}>
-      <div className="flex items-start gap-2 flex-1 min-w-0">
-        {Icon && <Icon className="w-4 h-4 mt-0.5 shrink-0" />}
+    <div className={cn('flex flex-col gap-2 rounded-lg border px-3 py-2.5 text-sm sm:flex-row sm:items-center sm:gap-3', cls)}>
+      <div className="flex min-w-0 flex-1 items-start gap-2">
+        {Icon && <Icon className="mt-0.5 size-4 shrink-0" />}
         <div className="min-w-0">{children}</div>
       </div>
       {action}
     </div>
+  )
+}
+
+function Figure({ label, children, className }) {
+  return (
+    <Card className="min-w-0 px-4 py-3.5">
+      <p className="text-[13px] text-muted-foreground">{label}</p>
+      <p className={cn('mt-1 truncate text-lg font-semibold tracking-tight text-gray-900 tabular-nums', className)}>{children}</p>
+    </Card>
   )
 }
 
@@ -114,19 +124,19 @@ export default function AssetDetailPage() {
   if (loading && !data) return <PageLoader />
   if (error && !data) {
     return (
-      <div className="max-w-xl mx-auto">
+      <Card className="mx-auto max-w-xl">
         <EmptyState
           icon={error.status === 404 ? Tag : AlertTriangle}
-          title={error.status === 404 ? 'Asset not found' : 'Could not load the asset'}
-          description={error.status === 404 ? 'It may have been deleted, or the link is wrong.' : error.message}
+          title={error.status === 404 ? 'Asset not found' : "Couldn't load the asset"}
+          description={error.status === 404 ? 'It may have been deleted.' : error.message}
           action={(
-            <div className="flex gap-2 justify-center">
-              <Link href="/admin/inventory/assets" className={btnSecondary}><ArrowLeft className="w-4 h-4" /> All assets</Link>
-              {error.status !== 404 && <button type="button" className={btnPrimary} onClick={() => load()}><RefreshCw className="w-4 h-4" /> Retry</button>}
+            <div className="flex justify-center gap-2">
+              <Button variant="outline" href="/admin/inventory/assets"><ArrowLeft /> All assets</Button>
+              {error.status !== 404 && <Button onClick={() => load()}><RefreshCw /> Retry</Button>}
             </div>
           )}
         />
-      </div>
+      </Card>
     )
   }
   if (!asset) return null
@@ -160,101 +170,83 @@ export default function AssetDetailPage() {
     },
   ].filter(Boolean)
 
-  return (
-    <div className="space-y-4 max-w-7xl mx-auto">
-      <Link href="/admin/inventory/assets" className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900">
-        <ArrowLeft className="w-4 h-4" /> Assets
-      </Link>
+  const subline = [asset.brand, asset.model, asset.serialNumber ? `S/N ${asset.serialNumber}` : null].filter(Boolean).join(' · ')
 
-      {/* ── Header ── */}
-      <div className={cn(cardCls, 'p-4 sm:p-6')}>
-        <div className="flex flex-col lg:flex-row gap-5 lg:items-start lg:justify-between">
-          <div className="flex items-start gap-4 min-w-0">
-            <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl bg-gray-100 flex items-center justify-center overflow-hidden shrink-0">
-              {safeLinkUrl(asset.imageUrl)
-                ? <Image src={safeLinkUrl(asset.imageUrl)} alt={asset.name} width={80} height={80} unoptimized className="w-full h-full object-cover" />
-                : <Laptop className="w-8 h-8 text-gray-400" />}
-            </div>
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-mono text-sm font-bold tracking-wide bg-gray-900 text-white px-2 py-0.5 rounded">{asset.assetTag}</span>
-                <button type="button" className="p-1 text-gray-400 hover:text-gray-700" aria-label="Copy tag"
-                  onClick={() => navigator.clipboard?.writeText(asset.assetTag).then(() => toast.success('Tag copied')).catch(() => {})}>
-                  <Copy className="w-3.5 h-3.5" />
-                </button>
-                <AssetStatusBadge status={asset.status} />
-                <AssetConditionBadge condition={asset.condition} />
-                {ack.status && ack.status !== 'NOT_REQUIRED' && (
-                  <InventoryBadge label={ACK_META[ack.status]?.label ?? ack.status} color={ACK_META[ack.status]?.color} />
-                )}
-                {asset.isCapitalized === false && <InventoryBadge label="Expensed" color="gray" dot={false} />}
-                {asset.opening?.isExisting && <InventoryBadge label="Opening register" color="indigo" dot={false} />}
-              </div>
-              <h1 className="text-xl font-semibold text-gray-900 mt-2 break-words">{asset.name}</h1>
-              <p className="text-sm text-gray-500 mt-0.5 break-words">
-                {[asset.brand, asset.model, asset.serialNumber ? `S/N ${asset.serialNumber}` : null].filter(Boolean).join(' · ') || 'No brand / model recorded'}
-              </p>
-              <p className="text-xs text-gray-400 mt-1">
-                {[asset.categoryId?.name, asset.locationId?.name, `Added ${fmtDay(asset.createdAt)}`].filter(Boolean).join(' · ')}
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2 lg:justify-end lg:max-w-md">
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        back="/admin/inventory/assets"
+        backLabel="Assets"
+        title={asset.name}
+        meta={(
+          <>
+            <AssetStatusBadge status={asset.status} />
+            <AssetConditionBadge condition={asset.condition} />
+            {ack.status && ack.status !== 'NOT_REQUIRED' && (
+              <InventoryBadge label={ACK_META[ack.status]?.label ?? ack.status} color={ACK_META[ack.status]?.color} />
+            )}
+            {asset.isCapitalized === false && <InventoryBadge label="Expensed" color="gray" dot={false} />}
+            {asset.opening?.isExisting && <InventoryBadge label="Opening register" color="indigo" dot={false} />}
+          </>
+        )}
+        actions={(
+          <>
             {primary.map((a, i) => {
               const Icon = ACTION_ICONS[a.icon]
               return (
-                <button key={a.key} type="button" onClick={() => openAction(a.key)}
-                  className={i === 0 ? (a.tone === 'danger' ? btnDanger : btnPrimary) : btnSecondary}>
-                  {Icon && <Icon className="w-4 h-4" />} {actionLabel(a)}
-                </button>
+                <Button key={a.key} onClick={() => openAction(a.key)}
+                  variant={i === 0 ? (a.tone === 'danger' ? 'destructive' : 'default') : 'outline'}>
+                  {Icon && <Icon />} {actionLabel(a)}
+                </Button>
               )
             })}
-            <button type="button" className={btnSecondary} onClick={() => openPrint(labelsUrl([asset.id], { size: 'small' }))}>
-              <Printer className="w-4 h-4" /> Label
-            </button>
-            <div className="flex items-center rounded-lg border border-gray-200 bg-white px-0.5" title="More actions">
+            <Button variant="outline" onClick={() => openPrint(labelsUrl([asset.id], { size: 'small' }))}>
+              <Printer /> Label
+            </Button>
+            <div className="flex size-9 items-center justify-center rounded-lg border border-input bg-white shadow-xs" title="More actions">
               <ActionMenu items={moreItems} />
             </div>
-          </div>
+          </>
+        )}
+      >
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+          <span className="inline-flex items-center gap-0.5">
+            <span className="font-mono text-[13px] font-medium text-gray-900">{asset.assetTag}</span>
+            <Button variant="ghost" size="icon-xs" className="text-gray-400" aria-label="Copy tag"
+              onClick={() => navigator.clipboard?.writeText(asset.assetTag).then(() => toast.success('Tag copied')).catch(() => {})}>
+              <Copy className="size-3.5" />
+            </Button>
+          </span>
+          <span className="break-words">{subline || 'No brand / model'}</span>
+          <span className="text-gray-300">·</span>
+          <span>{[asset.categoryId?.name, `Added ${fmtDay(asset.createdAt)}`].filter(Boolean).join(' · ')}</span>
         </div>
+      </PageHeader>
 
-        {/* key figures */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-5">
-          <div className="rounded-lg border border-gray-100 px-3 py-2.5">
-            <p className="text-xs text-gray-500">Cost</p>
-            <p className="text-lg font-semibold text-gray-900">{tk(asset.cost)}</p>
-          </div>
-          <div className="rounded-lg border border-gray-100 px-3 py-2.5">
-            <p className="text-xs text-gray-500">Net book value</p>
-            <p className="text-lg font-semibold text-gray-900">{asset.isCapitalized === false ? tk(0) : tk(asset.bookValue)}</p>
-          </div>
-          <div className="rounded-lg border border-gray-100 px-3 py-2.5 min-w-0">
-            <p className="text-xs text-gray-500">{terminal ? 'Last holder' : 'With'}</p>
-            <p className="text-sm font-semibold text-gray-900 truncate mt-1">{holder ?? (terminal ? '—' : 'In store')}</p>
-          </div>
-          <div className="rounded-lg border border-gray-100 px-3 py-2.5 min-w-0">
-            <p className="text-xs text-gray-500">Location</p>
-            <p className="text-sm font-semibold text-gray-900 truncate mt-1">{asset.locationId?.name ?? '—'}</p>
-          </div>
-        </div>
+      {/* ── Key figures ── */}
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <Figure label="Cost">{tk(asset.cost)}</Figure>
+        <Figure label="Net book value">{asset.isCapitalized === false ? tk(0) : tk(asset.bookValue)}</Figure>
+        <Figure label={terminal ? 'Last holder' : 'With'} className="text-base">{holder ?? (terminal ? '—' : 'In store')}</Figure>
+        <Figure label="Location" className="text-base">{asset.locationId?.name ?? '—'}</Figure>
       </div>
 
       {/* ── Banners ── */}
       {terminal && <DisposalSummary asset={asset} />}
       {asset.status === 'LOST' || asset.status === 'STOLEN' ? (
         <Banner tone="red" icon={ShieldAlert}
-          action={actions.some(a => a.key === 'found') && <button type="button" className={btnSecondary} onClick={() => openAction('found')}>Mark found</button>}>
-          Reported {asset.status === 'STOLEN' ? 'stolen' : 'lost'}. If it is not recovered, write it off so the register and books stay correct.
+          action={actions.some(a => a.key === 'found') && <Button variant="outline" size="sm" onClick={() => openAction('found')}>Mark found</Button>}>
+          Reported {asset.status === 'STOLEN' ? 'stolen' : 'lost'}. Write it off if it isn&apos;t recovered.
         </Banner>
       ) : null}
       {asset.status === 'DAMAGED' && (
         <Banner tone="orange" icon={AlertTriangle}>
-          Damaged — send it for repair, put it back in stock after assessment, or dispose of it.
+          Damaged — repair, restock after assessment, or dispose.
         </Banner>
       )}
       {asset.status === 'IN_REPAIR' && repairSent && (
         <Banner tone="yellow" icon={Clock}
-          action={actions.some(a => a.key === 'repair_complete') && <button type="button" className={btnSecondary} onClick={() => openAction('repair_complete')}>Complete repair</button>}>
+          action={actions.some(a => a.key === 'repair_complete') && <Button variant="outline" size="sm" onClick={() => openAction('repair_complete')}>Complete repair</Button>}>
           In repair{repairSent.vendorName ? ` with ${repairSent.vendorName}` : ''} since {fmtDay(repairSent.date)}
           {repairSent.expectedDate ? ` · expected back ${fmtDay(repairSent.expectedDate)}` : ''}
           {repairSent.expectedDate && dayKeyOf(repairSent.expectedDate) < today ? ' (overdue)' : ''}.
@@ -262,21 +254,21 @@ export default function AssetDetailPage() {
       )}
       {ack.status === 'PENDING' && emp && (
         <Banner tone="yellow" icon={Clock}>
-          Waiting for {emp.name ?? 'the employee'} to confirm receipt in My Assets{asset.assignedAt ? ` (assigned ${fmtDay(asset.assignedAt)})` : ''}.
+          Awaiting receipt confirmation from {emp.name ?? 'the employee'}{asset.assignedAt ? ` (assigned ${fmtDay(asset.assignedAt)})` : ''}.
         </Banner>
       )}
       {ack.status === 'DECLINED' && (
         <Banner tone="red" icon={AlertTriangle}>
-          {emp?.name ?? 'The employee'} declined the hand-over{ack.at ? ` on ${fmtDay(ack.at)}` : ''}{ack.note ? `: “${ack.note}”` : ''}. Check with them and reassign or return the asset.
+          {emp?.name ?? 'The employee'} declined the hand-over{ack.at ? ` on ${fmtDay(ack.at)}` : ''}{ack.note ? `: “${ack.note}”` : '.'}
         </Banner>
       )}
       {overdue && (
-        <Banner tone="orange" icon={CalendarClock}>Return was expected on {fmtDay(asset.expectedReturnDate)}.</Banner>
+        <Banner tone="orange" icon={CalendarClock}>Return overdue — expected {fmtDay(asset.expectedReturnDate)}.</Banner>
       )}
       {unassessed.length > 0 && (
         <Banner tone="orange" icon={AlertTriangle}
-          action={canReport && <button type="button" className={btnSecondary} onClick={() => openAction('report_damage', { damageCase: unassessed[0] })}>Assess</button>}>
-          {unassessed.length === 1 ? 'The employee reported a problem' : `${unassessed.length} problems reported by the employee`}: “{unassessed[0].description}”
+          action={canReport && <Button variant="outline" size="sm" onClick={() => openAction('report_damage', { damageCase: unassessed[0] })}>Assess</Button>}>
+          {unassessed.length === 1 ? 'Problem reported by the employee' : `${unassessed.length} problems reported by the employee`}: “{unassessed[0].description}”
         </Banner>
       )}
       {!terminal && warrantyDays !== null && warrantyDays <= 30 && (
@@ -286,8 +278,8 @@ export default function AssetDetailPage() {
       )}
 
       {/* ── Body ── */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 items-start">
-        <div className="xl:col-span-2 space-y-4 min-w-0">
+      <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-3">
+        <div className="min-w-0 space-y-6 xl:col-span-2">
           <FinancialsPanel asset={asset} book={data.book} tax={data.tax} ledger={data.ledger} taxEntries={data.taxEntries} />
           <DamagePanel
             cases={data.damageCases ?? []}
@@ -299,35 +291,35 @@ export default function AssetDetailPage() {
           <AssetTimeline events={data.events ?? []} assetId={asset.id} />
         </div>
 
-        <div className="space-y-4 min-w-0">
+        <div className="min-w-0 space-y-6">
           <Section title="Custody"
             actions={lastAssigned && (
-              <button type="button" className={cn(btnSecondary, 'py-1.5 text-xs')} onClick={() => openPrint(`/api/inventory/assets/${asset.id}/handover${asset.status === 'ASSIGNED' ? '' : `?eventId=${lastAssigned.id}`}`)}>
-                <Printer className="w-3.5 h-3.5" /> Hand-over form
-              </button>
+              <Button variant="outline" size="xs" onClick={() => openPrint(`/api/inventory/assets/${asset.id}/handover${asset.status === 'ASSIGNED' ? '' : `?eventId=${lastAssigned.id}`}`)}>
+                <Printer className="size-3.5" /> Hand-over form
+              </Button>
             )}>
             {hasHolder(asset) ? (
-              <div className="flex items-start gap-3 mb-2">
-                <div className="w-9 h-9 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-                  {emp ? <UserRound className="w-4 h-4" /> : <Building2 className="w-4 h-4" />}
+              <div className="mb-2 flex items-start gap-3">
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-600">
+                  {emp ? <UserRound className="size-4" /> : <Building2 className="size-4" />}
                 </div>
                 <div className="min-w-0">
-                  <p className="text-sm font-medium text-gray-900 truncate">{holder}</p>
-                  <p className="text-xs text-gray-500 truncate">{[emp?.employeeId, emp?.designation, asset.assignedDepartmentId?.name].filter(Boolean).join(' · ')}</p>
+                  <p className="truncate text-sm font-medium text-gray-900">{holder}</p>
+                  <p className="truncate text-xs text-muted-foreground">{[emp?.employeeId, emp?.designation, asset.assignedDepartmentId?.name].filter(Boolean).join(' · ')}</p>
                 </div>
               </div>
             ) : (
-              <p className="text-sm text-gray-500 mb-2">{terminal ? 'No longer held — disposed of.' : 'Not assigned — in store.'}</p>
+              <p className="mb-2 text-sm text-muted-foreground">{terminal ? 'Disposed — no longer held' : 'In store — not assigned'}</p>
             )}
             <InfoRow label="Since">{asset.assignedAt ? fmtDay(asset.assignedAt) : null}</InfoRow>
             <InfoRow label="Expected return">{asset.expectedReturnDate ? fmtDay(asset.expectedReturnDate) : null}</InfoRow>
             <InfoRow label="Acknowledgement">{ack.status && ack.status !== 'NOT_REQUIRED' ? `${ACK_META[ack.status]?.label}${ack.at ? ` · ${fmtDay(ack.at)}` : ''}` : null}</InfoRow>
-            <InfoRow label={<span className="inline-flex items-center gap-1"><MapPin className="w-3.5 h-3.5" /> Location</span>}>{asset.locationId?.name}</InfoRow>
+            <InfoRow label="Location">{asset.locationId?.name}</InfoRow>
             <InfoRow label="Last audit">{asset.lastAuditAt ? `${fmtDay(asset.lastAuditAt)}${asset.lastAuditResult ? ` · ${asset.lastAuditResult.toLowerCase().replace(/_/g, ' ')}` : ''}` : null}</InfoRow>
           </Section>
 
           <Section title="Details" actions={canManage && !asset.isArchived && (
-            <button type="button" className={cn(btnSecondary, 'py-1.5 text-xs')} onClick={() => setEditOpen(true)}><Pencil className="w-3.5 h-3.5" /> Edit</button>
+            <Button variant="outline" size="xs" onClick={() => setEditOpen(true)}><Pencil className="size-3.5" /> Edit</Button>
           )}>
             <InfoRow label="Category">{asset.categoryId?.name ? `${asset.categoryId.name} (${asset.categoryId.code})` : null}</InfoRow>
             <InfoRow label="Brand">{asset.brand}</InfoRow>
@@ -335,14 +327,14 @@ export default function AssetDetailPage() {
             <InfoRow label="Serial number" mono>{asset.serialNumber}</InfoRow>
             <InfoRow label="Tax class">{cls ? `${cls.label} · ${asset.taxRatePct ?? cls.rate}%` : asset.taxClass}</InfoRow>
             <InfoRow label="Warranty">{asset.warrantyExpiry ? `until ${fmtDay(asset.warrantyExpiry)}` : null}</InfoRow>
-            {asset.warrantyNotes && <p className="text-xs text-gray-500 -mt-1 mb-1 text-right">{asset.warrantyNotes}</p>}
+            {asset.warrantyNotes && <p className="-mt-1 mb-1 text-right text-xs text-muted-foreground">{asset.warrantyNotes}</p>}
             {asset.insurance && (asset.insurance.provider || asset.insurance.policyNo) && (
               <InfoRow label="Insurance">{[asset.insurance.provider, asset.insurance.policyNo, asset.insurance.expiry ? `to ${fmtDay(asset.insurance.expiry)}` : null, asset.insurance.insuredValue ? tk(asset.insurance.insuredValue) : null].filter(Boolean).join(' · ')}</InfoRow>
             )}
             <InfoRow label="Added by">{asset.createdBy?.name}</InfoRow>
-            {asset.specs && <div className="mt-2"><p className="text-xs text-gray-500">Specifications</p><p className="text-sm text-gray-800 whitespace-pre-wrap break-words">{asset.specs}</p></div>}
-            {asset.description && <div className="mt-2"><p className="text-xs text-gray-500">Description</p><p className="text-sm text-gray-800 whitespace-pre-wrap break-words">{asset.description}</p></div>}
-            {asset.notes && <div className="mt-2"><p className="text-xs text-gray-500">Notes</p><p className="text-sm text-gray-800 whitespace-pre-wrap break-words">{asset.notes}</p></div>}
+            {asset.specs && <div className="mt-3 border-t border-gray-100 pt-3"><p className="text-[13px] text-muted-foreground">Specifications</p><p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-gray-800">{asset.specs}</p></div>}
+            {asset.description && <div className="mt-3 border-t border-gray-100 pt-3"><p className="text-[13px] text-muted-foreground">Description</p><p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-gray-800">{asset.description}</p></div>}
+            {asset.notes && <div className="mt-3 border-t border-gray-100 pt-3"><p className="text-[13px] text-muted-foreground">Notes</p><p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-gray-800">{asset.notes}</p></div>}
           </Section>
 
           <PurchasePanel asset={asset} />
@@ -370,12 +362,10 @@ export default function AssetDetailPage() {
       )}
       <Modal open={deleteOpen} onOpenChange={(v) => !deleting && setDeleteOpen(v)} size="sm" title={`Delete ${asset.assetTag}?`}
         description="Only for an asset added by mistake. Its history is removed and the tag is never reused.">
-        <p className="text-sm text-gray-600">To take a real asset out of use, sell, scrap, donate or write it off instead — that keeps the audit trail.</p>
-        <ModalFooter className="-mx-4 sm:-mx-6 -mb-4 mt-5">
-          <button type="button" className={btnSecondary} onClick={() => setDeleteOpen(false)} disabled={deleting}>Cancel</button>
-          <button type="button" className={btnDanger} onClick={onDelete} disabled={deleting}>
-            {deleting && <Loader2 className="w-4 h-4 animate-spin" />} Delete
-          </button>
+        <p className="text-sm text-muted-foreground">For a real asset, sell, scrap, donate or write it off instead.</p>
+        <ModalFooter>
+          <Button variant="outline" onClick={() => setDeleteOpen(false)} disabled={deleting}>Cancel</Button>
+          <Button variant="destructive" onClick={onDelete} loading={deleting}>Delete</Button>
         </ModalFooter>
       </Modal>
     </div>

@@ -44,33 +44,36 @@ export default function FileUpload({ value, onUploaded, label = 'Receipt / Invoi
 
   return (
     <div className="space-y-1.5">
-      {label && <label className="block text-sm font-medium text-gray-700">{label}</label>}
+      {label && <label className="block text-sm font-medium text-gray-900">{label}</label>}
 
       {value ? (
-        <div className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg bg-gray-50">
+        <div className="flex items-center gap-2.5 rounded-lg border border-gray-200 bg-white px-2.5 py-2 shadow-xs">
           {isPdf
-            ? <FileText className="w-4 h-4 text-red-500 shrink-0" />
-            : <Image src={value} alt="receipt" width={32} height={32} className="w-8 h-8 object-cover rounded" />
+            ? <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-gray-100"><FileText className="size-4 text-gray-600" /></span>
+            : <Image src={value} alt="receipt" width={32} height={32} className="size-8 object-cover rounded-md" />
           }
           <a href={value} target="_blank" rel="noopener noreferrer"
-            className="flex-1 text-xs text-blue-600 hover:underline truncate">
+            className="flex-1 truncate text-[13px] font-medium text-gray-900 hover:underline">
             {filename}
           </a>
           <button type="button" onClick={() => onUploaded('')}
-            className="p-0.5 text-gray-400 hover:text-red-500 transition-colors">
-            <X className="w-3.5 h-3.5" />
+            className="inline-flex size-7 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-900" aria-label="Remove file">
+            <X className="size-4" />
           </button>
         </div>
       ) : (
         <div
           onClick={() => inputRef.current?.click()}
-          className="flex items-center gap-2 px-3 py-2.5 border-2 border-dashed border-gray-200 rounded-lg cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors">
-          {uploading
-            ? <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />
-            : <Upload className="w-4 h-4 text-gray-400" />
-          }
-          <span className="text-xs text-gray-500">
-            {uploading ? 'Uploading…' : 'Click to upload (JPG, PNG, PDF — max 5 MB)'}
+          className="flex cursor-pointer items-center gap-3 rounded-lg border border-dashed border-gray-300 bg-white px-3 py-2.5 transition-colors hover:border-gray-400 hover:bg-gray-50">
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-gray-200 bg-white shadow-xs">
+            {uploading
+              ? <Loader2 className="size-4 text-gray-500 animate-spin" />
+              : <Upload className="size-4 text-gray-500" />
+            }
+          </span>
+          <span className="min-w-0">
+            <span className="block text-[13px] font-medium text-gray-900">{uploading ? 'Uploading…' : 'Upload file'}</span>
+            <span className="block text-xs text-muted-foreground">JPG, PNG or PDF · up to 5 MB</span>
           </span>
           <input
             ref={inputRef}

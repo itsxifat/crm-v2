@@ -1,10 +1,21 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Plus, X, Loader2, Check, Ban, Search, CalendarDays } from 'lucide-react'
+import { Plus, Loader2, Check, Ban, Trash2, CalendarDays } from 'lucide-react'
 import Select from '@/components/ui/Select'
 import DatePicker from '@/components/ui/DatePicker'
+import Button from '@/components/ui/Button'
+import { Card } from '@/components/ui/Card'
+import { Textarea, Field } from '@/components/ui/Input'
+import PageHeader from '@/components/ui/PageHeader'
+import Modal, { ModalFooter } from '@/components/ui/Modal'
+import Tabs from '@/components/ui/Tabs'
+import Badge from '@/components/ui/Badge'
+import SearchInput from '@/components/ui/SearchInput'
+import EmptyState from '@/components/ui/EmptyState'
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table'
 import { Can } from '@/components/auth/Can'
+import { cn } from '@/lib/utils'
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -16,21 +27,21 @@ const STATUS_TABS = [
 ]
 
 const STATUS_CFG = {
-  PENDING:  { label: 'Pending',  bg: 'bg-amber-50',  text: 'text-amber-700',  dot: 'bg-amber-500' },
-  APPROVED: { label: 'Approved', bg: 'bg-emerald-50', text: 'text-emerald-700',dot: 'bg-emerald-500' },
-  REJECTED: { label: 'Rejected', bg: 'bg-red-50',    text: 'text-red-600',    dot: 'bg-red-500' },
+  PENDING:  { label: 'Pending',  variant: 'warning', dot: 'bg-amber-500' },
+  APPROVED: { label: 'Approved', variant: 'success', dot: 'bg-emerald-500' },
+  REJECTED: { label: 'Rejected', variant: 'danger',  dot: 'bg-red-500' },
 }
 
 const LEAVE_TYPES = ['ANNUAL', 'SICK', 'CASUAL', 'MATERNITY', 'PATERNITY', 'UNPAID', 'OTHER']
 
 const TYPE_CFG = {
-  ANNUAL:    { label: 'Annual',    bg: 'bg-blue-50',   text: 'text-blue-700' },
-  SICK:      { label: 'Sick',      bg: 'bg-red-50',    text: 'text-red-700' },
-  CASUAL:    { label: 'Casual',    bg: 'bg-violet-50', text: 'text-violet-700' },
-  MATERNITY: { label: 'Maternity', bg: 'bg-pink-50',   text: 'text-pink-700' },
-  PATERNITY: { label: 'Paternity', bg: 'bg-indigo-50', text: 'text-indigo-700' },
-  UNPAID:    { label: 'Unpaid',    bg: 'bg-gray-100',  text: 'text-gray-600' },
-  OTHER:     { label: 'Other',     bg: 'bg-gray-100',  text: 'text-gray-600' },
+  ANNUAL:    { label: 'Annual' },
+  SICK:      { label: 'Sick' },
+  CASUAL:    { label: 'Casual' },
+  MATERNITY: { label: 'Maternity' },
+  PATERNITY: { label: 'Paternity' },
+  UNPAID:    { label: 'Unpaid' },
+  OTHER:     { label: 'Other' },
 }
 
 const ALL = '__all' // Select sentinel for "no filter" (Radix forbids '')
@@ -98,65 +109,44 @@ function NewLeaveModal({ employees, onClose, onCreated }) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-          <h2 className="text-sm font-semibold text-gray-900">New Leave Request</h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors">
-            <X className="w-4 h-4 text-gray-500" />
-          </button>
+    <Modal open onOpenChange={o => { if (!o) onClose() }} title="New leave request">
+      <form onSubmit={submit} className="space-y-4">
+        {error && <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">{error}</p>}
+
+        <Field label="Employee">
+          <Select value={form.employeeId} onChange={v => set('employeeId', v ?? '')}
+            options={employees.map(emp => ({ value: rid(emp), label: emp.userId?.name ?? 'Unknown' }))}
+            placeholder="Select…"
+          />
+        </Field>
+
+        <Field label="Leave type">
+          <Select value={form.type} onChange={v => set('type', v ?? 'ANNUAL')}
+            options={LEAVE_TYPES.map(t => ({ value: t, label: TYPE_CFG[t]?.label ?? t }))}
+            placeholder="Select…"
+          />
+        </Field>
+
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="From">
+            <DatePicker value={form.startDate || null} onChange={v => set('startDate', v ?? '')} />
+          </Field>
+          <Field label="To">
+            <DatePicker value={form.endDate || null} onChange={v => set('endDate', v ?? '')} />
+          </Field>
         </div>
-        <form onSubmit={submit} className="p-5 space-y-4">
-          {error && <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{error}</p>}
 
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Employee</label>
-            <Select value={form.employeeId} onChange={v => set('employeeId', v ?? '')}
-              options={employees.map(emp => ({ value: rid(emp), label: emp.userId?.name ?? 'Unknown' }))}
-              placeholder="Select employee…"
-            />
-          </div>
+        <Field label="Reason" htmlFor="leave-reason">
+          <Textarea id="leave-reason" value={form.reason} onChange={e => set('reason', e.target.value)}
+            rows={2} placeholder="Optional" className="min-h-0 resize-none" />
+        </Field>
 
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Leave Type</label>
-            <Select value={form.type} onChange={v => set('type', v ?? 'ANNUAL')}
-              options={LEAVE_TYPES.map(t => ({ value: t, label: TYPE_CFG[t]?.label ?? t }))}
-              placeholder="Select type…"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">From</label>
-              <DatePicker value={form.startDate || null} onChange={v => set('startDate', v ?? '')} />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">To</label>
-              <DatePicker value={form.endDate || null} onChange={v => set('endDate', v ?? '')} />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Reason <span className="text-gray-400 font-normal">(optional)</span></label>
-            <textarea value={form.reason} onChange={e => set('reason', e.target.value)}
-              rows={2} placeholder="Reason for leave…"
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none" />
-          </div>
-
-          <div className="flex gap-3 pt-1">
-            <button type="button" onClick={onClose}
-              className="flex-1 px-4 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-              Cancel
-            </button>
-            <button type="submit" disabled={saving}
-              className="flex-1 px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
-              {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-              Submit
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+        <ModalFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button type="submit" loading={saving}>Submit request</Button>
+        </ModalFooter>
+      </form>
+    </Modal>
   )
 }
 
@@ -247,178 +237,142 @@ export default function LeavesPage() {
   const rejected = leaves.filter(l => l.status === 'REJECTED').length
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
+      <PageHeader
+        title="Leaves"
+        description={pending > 0 ? `${pending} pending approval` : 'No pending requests'}
+        actions={<Button onClick={() => setShowModal(true)}><Plus /> New request</Button>}
+      />
 
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-gray-900">Leaves</h1>
-          <p className="text-sm text-gray-400 mt-0.5">
-            {pending > 0 ? `${pending} pending approval` : 'No pending requests'}
-          </p>
-        </div>
-        <button onClick={() => setShowModal(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors">
-          <Plus className="w-4 h-4" />
-          New Request
-        </button>
-      </div>
-
-      {/* Summary cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      {/* Summary cards (click to filter) */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         {[
           { label: 'Pending',  count: pending,  dot: 'bg-amber-500',   click: 'PENDING' },
           { label: 'Approved', count: approved, dot: 'bg-emerald-500', click: 'APPROVED' },
           { label: 'Rejected', count: rejected, dot: 'bg-red-500',     click: 'REJECTED' },
-        ].map(s => (
-          <div key={s.label} onClick={() => setStatusTab(prev => prev === s.click ? '' : s.click)}
-            className={`bg-white border border-gray-100 rounded-xl p-4 flex items-center gap-3 cursor-pointer transition-all ${statusTab === s.click ? 'ring-2 ring-blue-500' : 'hover:shadow-sm'}`}>
-            <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${s.dot}`} />
-            <div>
-              <p className="text-xl font-bold text-gray-900 leading-none">{s.count}</p>
-              <p className="text-xs text-gray-500 mt-0.5">{s.label}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Status tabs */}
-      <div className="flex gap-5 border-b border-gray-100">
-        {STATUS_TABS.map(t => (
-          <button key={t.key} onClick={() => setStatusTab(t.key)}
-            className={`pb-2.5 text-sm whitespace-nowrap transition-colors ${
-              statusTab === t.key
-                ? 'text-gray-900 border-b-2 border-gray-900 font-medium'
-                : 'text-gray-400 hover:text-gray-600'
-            }`}>
-            {t.label}
-            {t.key === 'PENDING' && pending > 0 && (
-              <span className="ml-1.5 px-1.5 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full font-medium">{pending}</span>
-            )}
-          </button>
-        ))}
+        ].map(s => {
+          const active = statusTab === s.click
+          return (
+            <button
+              key={s.label}
+              type="button"
+              onClick={() => setStatusTab(prev => prev === s.click ? '' : s.click)}
+              className={cn(
+                'rounded-xl border bg-white p-4 text-left shadow-xs transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+                active ? 'border-gray-900 ring-1 ring-gray-900' : 'border-gray-200/80 hover:border-gray-300'
+              )}
+            >
+              <div className="flex items-center gap-2 text-[13px] font-medium text-muted-foreground">
+                <span className={cn('size-2 shrink-0 rounded-full', s.dot)} />
+                {s.label}
+              </div>
+              <p className="mt-1.5 text-2xl font-semibold tracking-tight text-gray-900 tabular-nums">{s.count}</p>
+            </button>
+          )
+        })}
       </div>
 
       {/* Filters */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="relative flex-1 min-w-[200px] max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Search by employee…"
-            className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" />
-        </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <Tabs
+          value={statusTab}
+          onChange={setStatusTab}
+          tabs={STATUS_TABS.map(t => ({
+            value: t.key,
+            label: t.label,
+            count: t.key === 'PENDING' && pending > 0 ? pending : undefined,
+          }))}
+        />
+        <SearchInput value={search} onChange={setSearch} placeholder="Search…" debounceMs={0} className="w-full sm:w-64" />
         <Select value={empFilter || ALL} onChange={v => setEmpFilter(!v || v === ALL ? '' : v)}
           options={[{ value: ALL, label: 'All employees' }, ...employees.map(emp => ({ value: rid(emp), label: emp.userId?.name ?? 'Unknown' }))]}
           placeholder="All employees"
-          size="sm"
+          className="w-full sm:w-52"
         />
         <Select value={typeFilter || ALL} onChange={v => setTypeFilter(!v || v === ALL ? '' : v)}
           options={[{ value: ALL, label: 'All types' }, ...LEAVE_TYPES.map(t => ({ value: t, label: TYPE_CFG[t]?.label ?? t }))]}
           placeholder="All types"
-          size="sm"
+          className="w-full sm:w-40"
         />
       </div>
 
       {loadError && (
-        <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{loadError}</p>
+        <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">{loadError}</p>
       )}
 
       {/* Table */}
-      <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[780px]">
-            <thead>
-              <tr className="bg-gray-50 border-b border-gray-100">
-                {['Employee', 'Type', 'From', 'To', 'Duration', 'Reason', 'Status', 'Actions'].map(h => (
-                  <th key={h} className="px-5 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {loading ? (
-                <tr><td colSpan={8} className="px-5 py-16 text-center">
-                  <Loader2 className="w-5 h-5 animate-spin text-blue-600 mx-auto" />
-                </td></tr>
-              ) : filtered.length === 0 ? (
-                <tr><td colSpan={8} className="px-5 py-16 text-center">
-                  <CalendarDays className="w-8 h-8 text-gray-200 mx-auto mb-2" />
-                  <p className="text-sm text-gray-400 font-medium">No leave requests</p>
-                  {statusTab === 'PENDING' && <p className="text-xs text-gray-300 mt-1">No pending approvals</p>}
-                </td></tr>
-              ) : filtered.map(l => {
-                const sCfg    = STATUS_CFG[l.status] ?? STATUS_CFG.PENDING
-                const tCfg    = TYPE_CFG[l.type]   ?? TYPE_CFG.OTHER
-                const name    = l.employeeId?.userId?.name ?? '—'
-                const isPending = l.status === 'PENDING'
-                const isBusy    = actioning === l._id
+      <Card className="overflow-hidden">
+        <Table className="min-w-[780px]">
+          <TableHeader>
+            <TableRow>
+              <TableHead>Employee</TableHead>
+              <TableHead>Type</TableHead>
+              <TableHead>From</TableHead>
+              <TableHead>To</TableHead>
+              <TableHead className="text-right">Duration</TableHead>
+              <TableHead>Reason</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {loading ? (
+              <TableRow className="hover:bg-transparent"><TableCell colSpan={8} className="py-16">
+                <Loader2 className="mx-auto size-5 animate-spin text-gray-400" />
+              </TableCell></TableRow>
+            ) : filtered.length === 0 ? (
+              <TableRow className="hover:bg-transparent"><TableCell colSpan={8} className="p-0">
+                <EmptyState
+                  icon={CalendarDays}
+                  title={statusTab === 'PENDING' ? 'No pending approvals' : (search || statusTab || empFilter || typeFilter) ? 'No results' : 'No leave requests yet'}
+                />
+              </TableCell></TableRow>
+            ) : filtered.map(l => {
+              const sCfg    = STATUS_CFG[l.status] ?? STATUS_CFG.PENDING
+              const tCfg    = TYPE_CFG[l.type]   ?? TYPE_CFG.OTHER
+              const name    = l.employeeId?.userId?.name ?? '—'
+              const isPending = l.status === 'PENDING'
+              const isBusy    = actioning === l._id
 
-                return (
-                  <tr key={l._id} className="hover:bg-gray-50/60 transition-colors">
-                    {/* Employee */}
-                    <td className="px-5 py-3.5">
-                      <span className="text-sm font-medium text-gray-800">{name}</span>
-                    </td>
-                    {/* Type */}
-                    <td className="px-5 py-3.5">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${tCfg.bg} ${tCfg.text}`}>
-                        {tCfg.label}
-                      </span>
-                    </td>
-                    {/* From */}
-                    <td className="px-5 py-3.5">
-                      <span className="text-sm text-gray-600">{fmtDate(l.startDate)}</span>
-                    </td>
-                    {/* To */}
-                    <td className="px-5 py-3.5">
-                      <span className="text-sm text-gray-600">{fmtDate(l.endDate)}</span>
-                    </td>
-                    {/* Duration */}
-                    <td className="px-5 py-3.5">
-                      <span className="text-sm font-medium text-gray-700">{calcDays(l.startDate, l.endDate)}</span>
-                    </td>
-                    {/* Reason */}
-                    <td className="px-5 py-3.5 max-w-[180px]">
-                      <span className="text-xs text-gray-400 truncate block">{l.reason || '—'}</span>
-                    </td>
-                    {/* Status */}
-                    <td className="px-5 py-3.5">
-                      <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium ${sCfg.bg} ${sCfg.text}`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${sCfg.dot}`} />
-                        {sCfg.label}
-                      </span>
-                    </td>
-                    {/* Actions */}
-                    <td className="px-5 py-3.5">
-                      <div className="flex items-center gap-1.5">
-                        <Can perm="hr.leaves.approve">
+              return (
+                <TableRow key={l._id}>
+                  <TableCell className="font-medium text-gray-900">{name}</TableCell>
+                  <TableCell><Badge variant="outline">{tCfg.label}</Badge></TableCell>
+                  <TableCell className="tabular-nums">{fmtDate(l.startDate)}</TableCell>
+                  <TableCell className="tabular-nums">{fmtDate(l.endDate)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{calcDays(l.startDate, l.endDate)}</TableCell>
+                  <TableCell className="max-w-[180px]">
+                    <span className="block truncate text-[13px] text-muted-foreground">{l.reason || '—'}</span>
+                  </TableCell>
+                  <TableCell><Badge variant={sCfg.variant}>{sCfg.label}</Badge></TableCell>
+                  <TableCell className="px-2">
+                    <div className="flex items-center justify-end gap-1">
+                      <Can perm="hr.leaves.approve">
                         {isPending && (
                           <>
-                            <button onClick={() => handleAction(l._id, 'APPROVED')} disabled={isBusy}
-                              className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg hover:bg-emerald-100 transition-colors disabled:opacity-50">
-                              {isBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                            <Button variant="outline" size="xs" onClick={() => handleAction(l._id, 'APPROVED')} disabled={isBusy}>
+                              {isBusy ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5 text-emerald-600" />}
                               Approve
-                            </button>
-                            <button onClick={() => handleAction(l._id, 'REJECTED')} disabled={isBusy}
-                              className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-red-600 bg-red-50 border border-red-100 rounded-lg hover:bg-red-100 transition-colors disabled:opacity-50">
-                              {isBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : <Ban className="w-3 h-3" />}
+                            </Button>
+                            <Button variant="outline" size="xs" onClick={() => handleAction(l._id, 'REJECTED')} disabled={isBusy}>
+                              {isBusy ? <Loader2 className="size-3.5 animate-spin" /> : <Ban className="size-3.5 text-red-600" />}
                               Reject
-                            </button>
+                            </Button>
                           </>
                         )}
-                        <button onClick={() => handleDelete(l._id)}
-                          className="px-2.5 py-1 text-xs text-gray-400 border border-gray-200 rounded-lg hover:bg-gray-50 hover:text-red-500 transition-colors">
-                          <X className="w-3 h-3" />
-                        </button>
-                        </Can>
-                      </div>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
+                        <Button variant="ghost" size="icon-xs" onClick={() => handleDelete(l._id)} title="Delete" aria-label="Delete"
+                          className="text-gray-400 hover:bg-red-50 hover:text-red-600">
+                          <Trash2 className="size-3.5" />
+                        </Button>
+                      </Can>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              )
+            })}
+          </TableBody>
+        </Table>
+      </Card>
 
       {/* Modal */}
       {showModal && (

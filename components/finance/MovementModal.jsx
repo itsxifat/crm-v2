@@ -3,9 +3,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
 import {
-  Loader2, Briefcase, UserRound, Landmark, HandCoins, Receipt, Percent, PlusCircle, SlidersHorizontal, Info,
+  Briefcase, UserRound, Landmark, HandCoins, Receipt, Percent, PlusCircle, SlidersHorizontal,
 } from 'lucide-react'
 import Modal, { ModalFooter } from '@/components/ui/Modal'
+import Button from '@/components/ui/Button'
+import { Input, NativeSelect, Label } from '@/components/ui/Input'
 import DatePicker from '@/components/ui/DatePicker'
 import FileUpload from '@/components/ui/FileUpload'
 import { useConfig } from '@/lib/useConfig'
@@ -18,8 +20,7 @@ import AmountInput from './AmountInput'
 import { FieldError } from './FinanceDialogs'
 import { MOVEMENT_KINDS, MOVEMENT_KIND_MAP, BANK_CHARGE_TYPES } from './movementKinds'
 import {
-  INPUT, INPUT_ERR, LABEL, BTN_PRIMARY, BTN_SECONDARY, FOOTER_STICKY,
-  formatAmount, parseAmount, round2, todayKey, fetchJson,
+  FOOTER_STICKY, formatAmount, parseAmount, round2, todayKey, fetchJson,
 } from './accountTheme'
 
 const KIND_ICONS = {
@@ -184,70 +185,69 @@ export default function MovementModal({ open, onOpenChange, defaultAccountId = n
       open={open}
       onOpenChange={(v) => !saving && onOpenChange(v)}
       title="Record money movement"
-      description="Money in or out of an account that isn't a client payment or a supplier bill."
       size="lg"
     >
       <div className="space-y-5">
         {/* Kind */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-          {MOVEMENT_KINDS.map(k => {
-            const Icon = KIND_ICONS[k.value] ?? PlusCircle
-            const active = kind === k.value
-            const inbound = k.direction === 'IN'
-            return (
-              <button
-                key={k.value}
-                type="button"
-                onClick={() => { setKind(k.value); setErrors({}) }}
-                className={cn(
-                  'flex items-center gap-2 rounded-xl border p-2.5 text-left transition-colors',
-                  active ? 'border-gray-900 ring-1 ring-gray-900 bg-gray-50' : 'border-gray-200 hover:bg-gray-50',
-                )}
-              >
-                <span className={cn('w-7 h-7 rounded-lg flex items-center justify-center shrink-0', inbound ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600')}>
-                  <Icon className="w-3.5 h-3.5" />
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-xs font-semibold text-gray-900 leading-tight">{k.label}</span>
-                  <span className={cn('block text-[10px] font-medium uppercase tracking-wide', inbound ? 'text-emerald-600' : 'text-rose-600')}>{inbound ? 'Money in' : 'Money out'}</span>
-                </span>
-              </button>
-            )
-          })}
+        <div className="space-y-2">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {MOVEMENT_KINDS.map(k => {
+              const Icon = KIND_ICONS[k.value] ?? PlusCircle
+              const active = kind === k.value
+              const inbound = k.direction === 'IN'
+              return (
+                <button
+                  key={k.value}
+                  type="button"
+                  onClick={() => { setKind(k.value); setErrors({}) }}
+                  className={cn(
+                    'flex items-center gap-2.5 rounded-lg border p-2.5 text-left transition-colors',
+                    active ? 'border-gray-900 bg-gray-50 ring-1 ring-gray-900' : 'border-gray-200/80 hover:bg-gray-50',
+                  )}
+                >
+                  <Icon className={cn('size-4 shrink-0', active ? 'text-gray-900' : 'text-gray-500')} />
+                  <span className="min-w-0">
+                    <span className="block text-[13px] font-medium leading-tight text-gray-900">{k.label}</span>
+                    <span className={cn('mt-0.5 block text-[11px] font-medium', inbound ? 'text-emerald-600' : 'text-red-600')}>{inbound ? 'Money in' : 'Money out'}</span>
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+          <p className="text-[13px] text-muted-foreground">{def.hint}</p>
         </div>
-        <p className="flex items-start gap-1.5 text-xs text-gray-500"><Info className="w-3.5 h-3.5 mt-px shrink-0" />{def.hint}</p>
 
         {/* Account + amount */}
         <div>
-          <label className={LABEL}>Account <span className="text-red-500">*</span></label>
+          <Label required>Account</Label>
           <div className="flex items-center gap-2">
             {account && <AccountIcon account={account} size="sm" />}
-            <select value={accountId} onChange={e => setAccountId(e.target.value)} disabled={loading} className={cn(INPUT, errors.accountId && INPUT_ERR)}>
-              <option value="">{loading ? 'Loading accounts…' : 'Choose account'}</option>
+            <NativeSelect value={accountId} onChange={e => setAccountId(e.target.value)} disabled={loading} invalid={!!errors.accountId}>
+              <option value="">{loading ? 'Loading accounts…' : 'Select account'}</option>
               {accounts.map(a => <option key={a.id} value={a.id}>{moneyAccountLabel(a)}</option>)}
-            </select>
+            </NativeSelect>
           </div>
           <FieldError message={errors.accountId} />
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label className={LABEL}>{kind === 'INTEREST_INCOME' ? 'Net amount credited' : kind === 'LOAN_REPAYMENT' ? 'Total instalment paid' : 'Amount'} ({currency}) <span className="text-red-500">*</span></label>
+            <Label required>{kind === 'INTEREST_INCOME' ? 'Net amount credited' : kind === 'LOAN_REPAYMENT' ? 'Total instalment paid' : 'Amount'} ({currency})</Label>
             <AmountInput value={amount} onChange={setAmount} currency={currency} error={errors.amount} autoFocus />
             <FieldError message={errors.amount} />
-            {overdraw && <p className="mt-1 text-[11px] text-red-600">Only {formatAmount(available, currency)} available in {account.name}.</p>}
+            {overdraw && <p className="mt-1.5 text-xs text-red-600">Only {formatAmount(available, currency)} available in {account.name}.</p>}
           </div>
           <div>
-            <label className={LABEL}>Date <span className="text-red-500">*</span></label>
+            <Label required>Date</Label>
             <DatePicker value={date} onChange={v => setDate(v ?? '')} clearable={false} />
             <FieldError message={errors.date} />
-            {dateLocked && !errors.date && <p className="mt-1 text-[11px] text-red-600">Books are locked up to {dayKeyLabel(lockedUntil)}.</p>}
+            {dateLocked && !errors.date && <p className="mt-1.5 text-xs text-red-600">Books are locked up to {dayKeyLabel(lockedUntil)}.</p>}
           </div>
         </div>
 
         {foreign && (
           <div className="sm:w-1/2">
-            <label className={LABEL}>Value in BDT <span className="text-red-500">*</span></label>
+            <Label required>Value in BDT</Label>
             <AmountInput value={amountBDT} onChange={setAmountBDT} currency="BDT" error={errors.amountBDT} />
             <FieldError message={errors.amountBDT} />
           </div>
@@ -256,53 +256,53 @@ export default function MovementModal({ open, onOpenChange, defaultAccountId = n
         {/* Kind specific */}
         {kind === 'BANK_CHARGE' && (
           <div className="sm:w-1/2">
-            <label className={LABEL}>Charge type</label>
-            <select value={chargeType} onChange={e => setChargeType(e.target.value)} className={INPUT}>
+            <Label>Charge type</Label>
+            <NativeSelect value={chargeType} onChange={e => setChargeType(e.target.value)}>
               {BANK_CHARGE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-            </select>
-            {chargeType === 'VAT_ON_FEES' && <p className="mt-1 text-[11px] text-gray-500">VAT on bank charges may be creditable input VAT — record it in Tax &amp; VAT if you claim it.</p>}
+            </NativeSelect>
+            {chargeType === 'VAT_ON_FEES' && <p className="mt-1.5 text-xs text-muted-foreground">May be creditable input VAT — record it in Tax &amp; VAT to claim it.</p>}
           </div>
         )}
 
         {kind === 'INTEREST_INCOME' && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-xl border border-gray-100 p-3">
+          <div className="grid grid-cols-1 gap-4 rounded-lg bg-gray-50 p-3 sm:grid-cols-2">
             <div>
-              <label className={LABEL}>Tax deducted by the bank (AIT)</label>
+              <Label>Tax deducted by the bank (AIT)</Label>
               <AmountInput value={ait} onChange={setAit} currency={currency} error={errors.aitDeducted} />
               <FieldError message={errors.aitDeducted} />
-              <p className="mt-1 text-[11px] text-gray-500">Usually 10% of gross interest (with TIN). It becomes an advance tax credit.</p>
+              <p className="mt-1.5 text-xs text-muted-foreground">Usually 10% of gross; becomes a tax credit.</p>
             </div>
             <div>
-              <label className={LABEL}>Bank tax certificate no.</label>
-              <input value={aitCertificateNo} onChange={e => setAitCertificateNo(e.target.value)} placeholder="If already received" className={INPUT} />
+              <Label>Bank tax certificate no.</Label>
+              <Input value={aitCertificateNo} onChange={e => setAitCertificateNo(e.target.value)} placeholder="Optional" />
             </div>
           </div>
         )}
 
         {kind === 'LOAN_REPAYMENT' && (
           <div className="sm:w-1/2">
-            <label className={LABEL}>Interest included ({currency})</label>
+            <Label>Interest included ({currency})</Label>
             <AmountInput value={interest} onChange={setInterest} currency={currency} error={errors.interestAmount} />
             <FieldError message={errors.interestAmount} />
           </div>
         )}
 
         {kind === 'OTHER_INCOME' && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <label className={LABEL}>Income category</label>
-              <select value={category} onChange={e => { setCategory(e.target.value); setSubcategory('') }} className={INPUT}>
+              <Label>Income category</Label>
+              <NativeSelect value={category} onChange={e => { setCategory(e.target.value); setSubcategory('') }}>
                 <option value="">Other Income</option>
                 {(incomeCategories ?? []).map(c => <option key={c.id} value={c.label}>{c.label}</option>)}
-              </select>
+              </NativeSelect>
             </div>
             {subcategories.length > 0 && (
               <div>
-                <label className={LABEL}>Subcategory</label>
-                <select value={subcategory} onChange={e => setSubcategory(e.target.value)} className={INPUT}>
+                <Label>Subcategory</Label>
+                <NativeSelect value={subcategory} onChange={e => setSubcategory(e.target.value)}>
                   <option value="">—</option>
                   {subcategories.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
+                </NativeSelect>
               </div>
             )}
           </div>
@@ -310,46 +310,45 @@ export default function MovementModal({ open, onOpenChange, defaultAccountId = n
 
         {def.partyLabel && (
           <div className="sm:w-1/2">
-            <label className={LABEL}>{def.partyLabel}</label>
-            <input value={party} onChange={e => setParty(e.target.value)} placeholder={kind.startsWith('LOAN') ? 'e.g. IDLC Finance / Director' : 'Name'} className={INPUT} />
+            <Label>{def.partyLabel}</Label>
+            <Input value={party} onChange={e => setParty(e.target.value)} placeholder={kind.startsWith('LOAN') ? 'e.g. IDLC Finance' : 'Name'} />
           </div>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="sm:col-span-2">
-            <label className={LABEL}>{isAdjustment ? 'Reason' : 'Description'}{isAdjustment && <span className="text-red-500"> *</span>}</label>
-            <input value={description} onChange={e => setDescription(e.target.value)} placeholder={isAdjustment ? 'e.g. Cash count on 30 Sep short by ৳120 — booking error' : def.label} className={cn(INPUT, errors.description && INPUT_ERR)} />
+            <Label required={isAdjustment}>{isAdjustment ? 'Reason' : 'Description'}</Label>
+            <Input value={description} onChange={e => setDescription(e.target.value)} placeholder={isAdjustment ? 'e.g. Cash count short — booking error' : def.label} invalid={!!errors.description} />
             <FieldError message={errors.description} />
           </div>
           <div>
-            <label className={LABEL}>Reference</label>
-            <input value={reference} onChange={e => setReference(e.target.value)} placeholder="Statement / voucher ref" className={INPUT} />
+            <Label>Reference</Label>
+            <Input value={reference} onChange={e => setReference(e.target.value)} placeholder="Statement / voucher ref" />
           </div>
           <div>
-            <label className={LABEL}>Channel</label>
-            <select value={channel} onChange={e => setChannel(e.target.value)} className={INPUT}>
-              <option value="">Automatic (from account)</option>
+            <Label>Channel</Label>
+            <NativeSelect value={channel} onChange={e => setChannel(e.target.value)}>
+              <option value="">Automatic</option>
               {MOVEMENT_CHANNELS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-            </select>
+            </NativeSelect>
           </div>
         </div>
 
         <FileUpload value={receiptUrl} onUploaded={setReceiptUrl} label="Statement / advice (optional)" />
 
         {effect && (
-          <div className={cn('rounded-xl border p-3 text-xs space-y-0.5', isIn ? 'border-emerald-100 bg-emerald-50/50 text-emerald-900' : 'border-rose-100 bg-rose-50/50 text-rose-900')}>
-            <p className="font-semibold">{account ? account.name : 'Effect'}</p>
+          <div className="space-y-0.5 rounded-lg border border-gray-200/80 bg-gray-50/60 p-3 text-[13px] text-gray-600">
+            <p className="font-medium text-gray-900">{account ? account.name : 'Effect'}</p>
             {effect.lines.map((l, i) => <p key={i} className="tabular-nums">{l}</p>)}
           </div>
         )}
       </div>
 
       <ModalFooter className={FOOTER_STICKY}>
-        <button type="button" className={BTN_SECONDARY} onClick={() => onOpenChange(false)} disabled={saving}>Cancel</button>
-        <button type="button" className={BTN_PRIMARY} onClick={submit} disabled={saving || loading}>
-          {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+        <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
+        <Button onClick={submit} loading={saving} disabled={loading}>
           Record {def.short.toLowerCase()}
-        </button>
+        </Button>
       </ModalFooter>
     </Modal>
   )

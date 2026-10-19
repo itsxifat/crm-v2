@@ -1,8 +1,11 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { TrendingUp, Plus, Wallet, Trophy, XCircle, Users } from 'lucide-react'
+import { TrendingUp, Plus, Wallet, Trophy, XCircle, Users, X } from 'lucide-react'
 import toast from 'react-hot-toast'
+import PageHeader from '@/components/ui/PageHeader'
+import Button from '@/components/ui/Button'
+import { Card } from '@/components/ui/Card'
 import StatsCard from '@/components/ui/StatsCard'
 import SearchInput from '@/components/ui/SearchInput'
 import FilterSelect from '@/components/ui/FilterSelect'
@@ -16,7 +19,7 @@ import { formatCurrency } from '@/lib/utils'
 const STATUS_OPTIONS = [
   { value: 'NEW',           label: 'New' },
   { value: 'CONTACTED',     label: 'Contacted' },
-  { value: 'PROPOSAL_SENT', label: 'Proposal Sent' },
+  { value: 'PROPOSAL_SENT', label: 'Proposal sent' },
   { value: 'NEGOTIATION',   label: 'Negotiation' },
   { value: 'WON',           label: 'Won' },
   { value: 'LOST',          label: 'Lost' },
@@ -121,38 +124,33 @@ export default function LeadsPage() {
     fetchStats()
   }
 
+  const hasFilters = !!(search || status || priority || platform || dateFrom || dateTo)
+
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Leads</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Manage and track your sales pipeline</p>
-        </div>
-        <Can perm="sales.leads.create">
-          <button
-            onClick={() => { setEditingLead(null); setModalOpen(true) }}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
-          >
-            <Plus className="w-4 h-4" />
-            Add Lead
-          </button>
-        </Can>
-      </div>
+      <PageHeader
+        title="Leads"
+        actions={
+          <Can perm="sales.leads.create">
+            <Button onClick={() => { setEditingLead(null); setModalOpen(true) }}>
+              <Plus /> New lead
+            </Button>
+          </Can>
+        }
+      />
 
       {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
         <StatsCard
-          title="Total Leads"
+          title="Total leads"
           value={stats?.total ?? '—'}
           icon={Users}
-          color="blue"
         />
         <StatsCard
-          title="New Leads"
+          title="New"
           value={stats?.newLeads ?? '—'}
           icon={TrendingUp}
-          color="indigo"
+          color="blue"
         />
         <StatsCard
           title="Won"
@@ -168,69 +166,63 @@ export default function LeadsPage() {
           positive={false}
         />
         <StatsCard
-          title="Pipeline Value"
+          title="Pipeline value"
           value={stats ? (typeof stats.pipelineValue === 'string' ? stats.pipelineValue : formatCurrency(stats.pipelineValue)) : '—'}
           icon={Wallet}
-          color="emerald"
         />
       </div>
 
-      {/* Filter bar */}
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-        <div className="flex flex-wrap items-center gap-3">
+      <Card className="overflow-hidden">
+        {/* Filter bar */}
+        <div className="flex flex-wrap items-center gap-2 border-b border-gray-100 p-3">
           <SearchInput
             value={search}
             onChange={handleSearch}
-            placeholder="Search name, company, email..."
-            className="flex-1 min-w-[200px] max-w-sm"
+            placeholder="Search…"
+            className="w-full sm:w-64"
           />
           <FilterSelect
             value={status}
             onChange={handleStatus}
             options={STATUS_OPTIONS}
-            placeholder="All Statuses"
+            placeholder="All statuses"
             className="w-36"
           />
           <FilterSelect
             value={priority}
             onChange={handlePriority}
             options={PRIORITY_OPTIONS}
-            placeholder="All Priorities"
+            placeholder="All priorities"
             className="w-36"
           />
           <FilterSelect
             value={platform}
             onChange={handlePlatform}
             options={platformOptions}
-            placeholder="All Platforms"
+            placeholder="All platforms"
             className="w-36"
           />
-          <div className="flex items-center gap-2 ml-auto">
-            <span className="text-xs text-gray-500 font-medium">From</span>
-            <DatePicker value={dateFrom || null} onChange={v => { setDateFrom(v ?? ''); setPage(1) }} placeholder="Start date" size="sm" className="w-36" />
-            <span className="text-xs text-gray-500 font-medium">To</span>
-            <DatePicker value={dateTo || null} onChange={v => { setDateTo(v ?? ''); setPage(1) }} placeholder="End date" size="sm" className="w-36" />
-            {(search || status || priority || platform || dateFrom || dateTo) && (
-              <button
+          <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+            <DatePicker value={dateFrom || null} onChange={v => { setDateFrom(v ?? ''); setPage(1) }} placeholder="From" size="sm" className="w-36" />
+            <span className="text-muted-foreground">–</span>
+            <DatePicker value={dateTo || null} onChange={v => { setDateTo(v ?? ''); setPage(1) }} placeholder="To" size="sm" className="w-36" />
+            {hasFilters && (
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => { setSearch(''); setStatus(null); setPriority(null); setPlatform(null); setDateFrom(''); setDateTo(''); setPage(1) }}
-                className="px-3 py-2 text-xs font-medium text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
               >
-                Clear
-              </button>
+                <X /> Clear
+              </Button>
             )}
           </div>
         </div>
-      </div>
 
-      {/* Table card */}
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
         {loading ? (
-          <div className="p-8">
-            <div className="space-y-3">
-              {Array.from({ length: 8 }).map((_, i) => (
-                <div key={i} className="h-10 bg-gray-100 rounded-lg animate-pulse" />
-              ))}
-            </div>
+          <div className="space-y-2 p-4">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="h-10 animate-pulse rounded-md bg-gray-100" />
+            ))}
           </div>
         ) : (
           <LeadsTable
@@ -243,7 +235,7 @@ export default function LeadsPage() {
 
         {/* Pagination */}
         {!loading && meta.pages > 1 && (
-          <div className="px-4 py-3 border-t border-gray-100">
+          <div className="border-t border-gray-100 px-4 py-3">
             <Pagination
               page={meta.page}
               pages={meta.pages}
@@ -253,7 +245,7 @@ export default function LeadsPage() {
             />
           </div>
         )}
-      </div>
+      </Card>
 
       {/* Modal */}
       <LeadModal

@@ -4,15 +4,17 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
 import {
-  TrendingDown, Play, History, Loader2, CheckCircle2, AlertTriangle, RotateCcw, Info, RefreshCw,
+  Play, History, Loader2, CheckCircle2, AlertTriangle, RotateCcw, Info, RefreshCw,
 } from 'lucide-react'
 import Modal, { ModalFooter } from '@/components/ui/Modal'
+import Button from '@/components/ui/Button'
+import Badge from '@/components/ui/Badge'
+import Tabs from '@/components/ui/Tabs'
+import { Card, CardTitle } from '@/components/ui/Card'
+import { Input, NativeSelect, Field } from '@/components/ui/Input'
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table'
 import { cn } from '@/lib/utils'
 import { fmtMoney, fmtTk, fmtPeriod, fmtDay, currentPeriod, shiftPeriod, fetchJson, errorText } from './format'
-
-const inputCls = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-gray-900'
-const btnPrimary = 'inline-flex items-center justify-center gap-1.5 bg-gray-900 text-white hover:bg-gray-800 rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed'
-const btnGhost = 'inline-flex items-center justify-center gap-1.5 border border-gray-200 text-gray-700 hover:bg-gray-50 rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-50'
 
 const CONVENTION_LABEL = {
   PRORATA_DAYS: 'Pro-rata by days',
@@ -23,11 +25,9 @@ function RunStatus({ status, interrupted = false }) {
   const posted = status === 'POSTED'
   const posting = status === 'POSTING'
   return (
-    <span className={cn('inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium',
-      posted ? 'bg-green-50 text-green-700' : posting ? 'bg-amber-50 text-amber-700' : 'bg-gray-100 text-gray-500')}>
-      <span className={cn('w-1.5 h-1.5 rounded-full', posted ? 'bg-green-500' : posting ? 'bg-amber-500' : 'bg-gray-400')} />
+    <Badge variant={posted ? 'success' : posting ? 'warning' : 'default'} dot>
       {posted ? 'Posted' : posting ? (interrupted ? 'Interrupted' : 'Posting…') : 'Reversed'}
-    </span>
+    </Badge>
   )
 }
 
@@ -68,48 +68,40 @@ export default function DepreciationPanel({ canRun = false, onChanged, className
   }
 
   return (
-    <div className={cn('bg-white border border-gray-100 rounded-xl p-5 flex flex-col', className)}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-purple-50 ring-4 ring-purple-100 flex items-center justify-center shrink-0">
-            <TrendingDown className="w-5 h-5 text-purple-600" />
-          </div>
-          <div>
-            <h3 className="text-sm font-semibold text-gray-900">Depreciation</h3>
-            <p className="text-xs text-gray-500">Monthly book depreciation run</p>
-          </div>
-        </div>
-        <button onClick={load} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100" aria-label="Refresh">
-          <RefreshCw className={cn('w-4 h-4', loading && 'animate-spin')} />
-        </button>
+    <Card className={cn('flex flex-col p-5', className)}>
+      <div className="flex items-center justify-between gap-3">
+        <CardTitle>Depreciation</CardTitle>
+        <Button variant="ghost" size="icon-xs" onClick={load} aria-label="Refresh" className="-mr-1 text-gray-400">
+          <RefreshCw className={cn(loading && 'animate-spin')} />
+        </Button>
       </div>
 
       {loading && !info ? (
-        <div className="py-10 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-gray-400" /></div>
+        <div className="flex justify-center py-10"><Loader2 className="size-5 animate-spin text-gray-400" /></div>
       ) : error ? (
-        <div className="mt-4 text-sm text-red-600 bg-red-50 rounded-lg p-3">
+        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
           {error}
-          <button onClick={load} className="ml-2 underline">Retry</button>
+          <button type="button" onClick={load} className="ml-2 font-medium underline underline-offset-4">Retry</button>
         </div>
       ) : info ? (
         <>
           <div className="mt-4 rounded-lg bg-gray-50 p-4">
             <div className="flex items-center justify-between gap-2">
-              <p className="text-xs font-medium text-gray-500">Next month to post</p>
+              <p className="text-xs text-muted-foreground">Next month to post</p>
               {preview?.posted ? (
-                <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700"><CheckCircle2 className="w-3.5 h-3.5" /> Up to date</span>
+                <Badge variant="success" dot>Up to date</Badge>
               ) : status?.due ? (
-                <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-700"><AlertTriangle className="w-3.5 h-3.5" /> Due</span>
+                <Badge variant="warning" dot>Due</Badge>
               ) : (
-                <span className="text-xs font-medium text-gray-500">Not yet due</span>
+                <Badge>Not yet due</Badge>
               )}
             </div>
-            <p className="mt-1 text-lg font-semibold text-gray-900">{preview?.label ?? fmtPeriod(info.period)}</p>
-            <p className="text-sm text-gray-600">
-              {fmtTk(preview?.total ?? 0, 2)} across {preview?.assetCount ?? 0} asset{preview?.assetCount === 1 ? '' : 's'}
+            <p className="mt-1 text-lg font-semibold tracking-tight text-gray-900">{preview?.label ?? fmtPeriod(info.period)}</p>
+            <p className="text-sm text-gray-600 tabular-nums">
+              {fmtTk(preview?.total ?? 0, 2)} · {preview?.assetCount ?? 0} asset{preview?.assetCount === 1 ? '' : 's'}
             </p>
             {inProgressMonth && !preview?.posted && (
-              <p className="mt-2 text-xs text-gray-500">This month is still in progress — post it after month end so the charge covers the whole month.</p>
+              <p className="mt-2 text-xs text-muted-foreground">Month in progress — post after month end.</p>
             )}
             {preview?.blockedReason && !preview?.posted && !inProgressMonth && (
               <p className="mt-2 text-xs text-amber-700">{preview.blockedReason}</p>
@@ -118,27 +110,27 @@ export default function DepreciationPanel({ canRun = false, onChanged, className
 
           <dl className="mt-4 grid grid-cols-2 gap-3 text-xs">
             <div>
-              <dt className="text-gray-500">Last run</dt>
+              <dt className="text-muted-foreground">Last run</dt>
               <dd className="mt-0.5 font-medium text-gray-900">
                 {lastRun ? `${fmtPeriod(lastRun.period)} · ${fmtTk(lastRun.totalAmount, 0)}` : 'None yet'}
               </dd>
             </div>
             <div>
-              <dt className="text-gray-500">Method</dt>
+              <dt className="text-muted-foreground">Method</dt>
               <dd className="mt-0.5 font-medium text-gray-900">
                 {CONVENTION_LABEL[info.settings?.convention] ?? info.settings?.convention}
-                {info.settings?.postToLedger === false && <span className="block text-amber-700 font-normal">Not posted to ledger</span>}
+                {info.settings?.postToLedger === false && <span className="block font-normal text-amber-700">Not posted to ledger</span>}
               </dd>
             </div>
           </dl>
 
-          <div className="mt-auto pt-4 flex flex-wrap gap-2">
-            <button className={btnPrimary} onClick={() => { setTab('run'); setOpen(true) }}>
-              <Play className="w-4 h-4" /> {canRun ? 'Preview & run' : 'Preview'}
-            </button>
-            <button className={btnGhost} onClick={() => { setTab('history'); setOpen(true) }}>
-              <History className="w-4 h-4" /> History
-            </button>
+          <div className="mt-auto flex flex-wrap gap-2 pt-4">
+            <Button size="sm" onClick={() => { setTab('run'); setOpen(true) }}>
+              <Play /> {canRun ? 'Preview & run' : 'Preview'}
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => { setTab('history'); setOpen(true) }}>
+              <History /> History
+            </Button>
           </div>
         </>
       ) : null}
@@ -154,7 +146,7 @@ export default function DepreciationPanel({ canRun = false, onChanged, className
           onChanged={afterChange}
         />
       )}
-    </div>
+    </Card>
   )
 }
 
@@ -212,7 +204,7 @@ function DepreciationModal({ open, onOpenChange, tab, setTab, canRun, initialPer
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'run', period, notes: notes.trim() || null }),
       })
-      toast.success(`Depreciation for ${preview.label} posted`)
+      toast.success(`${preview.label} depreciation posted`)
       setNotes('')
       await load(period)
       onChanged?.()
@@ -225,7 +217,7 @@ function DepreciationModal({ open, onOpenChange, tab, setTab, canRun, initialPer
 
   async function reverse() {
     if (!reverseFor) return
-    if (reason.trim().length < 5) { toast.error('Give a reason of at least 5 characters'); return }
+    if (reason.trim().length < 5) { toast.error('Reason must be at least 5 characters'); return }
     setReversing(true)
     try {
       await fetchJson('/api/inventory/depreciation', {
@@ -246,107 +238,102 @@ function DepreciationModal({ open, onOpenChange, tab, setTab, canRun, initialPer
   }
 
   return (
-    <Modal open={open} onOpenChange={onOpenChange} title="Book depreciation" description="Preview, post and review monthly depreciation runs" size="xl">
-      <div className="flex gap-1 border-b border-gray-100 -mt-1 mb-4">
-        {[['run', 'Preview & run'], ['history', 'History']].map(([k, l]) => (
-          <button key={k} onClick={() => setTab(k)}
-            className={cn('px-3 py-2 text-sm font-medium border-b-2 -mb-px', tab === k ? 'border-gray-900 text-gray-900' : 'border-transparent text-gray-500 hover:text-gray-700')}>
-            {l}
-          </button>
-        ))}
-      </div>
+    <Modal open={open} onOpenChange={onOpenChange} title="Book depreciation" size="xl">
+      <Tabs
+        variant="underline"
+        value={tab}
+        onChange={setTab}
+        className="mb-4"
+        tabs={[{ value: 'run', label: 'Preview & run' }, { value: 'history', label: 'History' }]}
+      />
 
-      {error && <div className="mb-3 text-sm text-red-600 bg-red-50 rounded-lg p-3">{error}</div>}
+      {error && <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">{error}</div>}
 
       {tab === 'run' ? (
         <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-end gap-3">
-            <div className="sm:w-56">
-              <label className="block text-xs font-medium text-gray-600 mb-1">Month</label>
-              <select className={inputCls} value={period} onChange={e => setPeriod(e.target.value)}>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <Field label="Month" className="sm:w-56">
+              <NativeSelect value={period} onChange={e => setPeriod(e.target.value)}>
                 {options.map(p => <option key={p} value={p}>{fmtPeriod(p)}{runs.find(r => r.period === p && r.status === 'POSTED') ? ' — posted' : ''}</option>)}
-              </select>
-            </div>
-            {loading && <Loader2 className="w-4 h-4 animate-spin text-gray-400 mb-3" />}
+              </NativeSelect>
+            </Field>
+            {loading && <Loader2 className="mb-2.5 size-4 animate-spin text-gray-400" />}
           </div>
 
           {preview && (
             <>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <Figure label={preview.posted ? 'Posted' : 'To post'} value={fmtTk(preview.total, 2)} />
                 <Figure label="Assets" value={preview.assetCount} />
-                <Figure label="Catch-up lines" value={catchUps} hint={catchUps ? 'Missed months included' : null} />
+                <Figure label="Catch-up lines" value={catchUps} hint={catchUps ? 'Includes missed months' : null} />
                 <Figure label="Ledger" value={preview.postToLedger ? 'Non-cash expense' : 'Not posted'} />
               </div>
 
               {preview.posted && preview.run && (
-                <div className="flex items-start gap-2 text-sm text-green-800 bg-green-50 rounded-lg p-3">
-                  <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" />
+                <div className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-800">
+                  <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
                   <div>
-                    Posted on {fmtDay(preview.run.createdAt)}{preview.run.notes ? <span className="block text-xs text-green-700 whitespace-pre-line mt-1">{preview.run.notes}</span> : null}
+                    Posted on {fmtDay(preview.run.createdAt)}{preview.run.notes ? <span className="mt-1 block whitespace-pre-line text-xs text-emerald-700">{preview.run.notes}</span> : null}
                   </div>
                 </div>
               )}
               {!preview.posted && preview.blockedReason && (
-                <div className="flex items-start gap-2 text-sm text-amber-800 bg-amber-50 rounded-lg p-3">
-                  <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" /> {preview.blockedReason}
+                <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
+                  <AlertTriangle className="mt-0.5 size-4 shrink-0" /> {preview.blockedReason}
                 </div>
               )}
               {!preview.posted && preview.period === currentPeriod() && !preview.blockedReason && (
-                <div className="flex items-start gap-2 text-sm text-gray-700 bg-gray-50 rounded-lg p-3">
-                  <Info className="w-4 h-4 mt-0.5 shrink-0" /> {preview.label} is still in progress. Posting now charges the full month; usually you post after month end.
+                <div className="flex items-start gap-2 rounded-lg border border-gray-200/80 bg-gray-50 px-3 py-2.5 text-sm text-gray-700">
+                  <Info className="mt-0.5 size-4 shrink-0 text-gray-500" /> {preview.label} is still in progress — posting now charges the full month.
                 </div>
               )}
 
-              <div className="border border-gray-100 rounded-xl overflow-hidden">
-                <div className="overflow-x-auto max-h-[45vh]">
-                  <table className="w-full text-sm">
-                    <thead className="sticky top-0 bg-gray-50">
-                      <tr className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                        <th className="px-3 py-2">Tag</th>
-                        <th className="px-3 py-2">Asset</th>
-                        <th className="px-3 py-2">Months</th>
-                        <th className="px-3 py-2 text-right">Amount</th>
-                        <th className="px-3 py-2 text-right">Accumulated after</th>
-                        <th className="px-3 py-2 text-right">Book value after</th>
+              <div className="overflow-hidden rounded-lg border border-gray-200/80">
+                <Table wrapperClassName="max-h-[45vh] overflow-y-auto">
+                  <TableHeader className="sticky top-0 z-[1] bg-white">
+                    <TableRow>
+                      <TableHead>Tag</TableHead>
+                      <TableHead>Asset</TableHead>
+                      <TableHead>Months</TableHead>
+                      <TableHead className="text-right">Amount</TableHead>
+                      <TableHead className="text-right">Accumulated after</TableHead>
+                      <TableHead className="text-right">Book value after</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(preview.lines || []).length === 0 ? (
+                      <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-muted-foreground">Nothing to depreciate this month</td></tr>
+                    ) : preview.lines.map(l => (
+                      <TableRow key={l.assetId}>
+                        <TableCell className="whitespace-nowrap py-2.5 font-mono text-xs">
+                          <Link href={`/admin/inventory/assets/${l.assetId}`} className="font-medium text-gray-900 underline-offset-4 hover:underline">{l.tag ?? '—'}</Link>
+                        </TableCell>
+                        <TableCell className="py-2.5">{l.name}</TableCell>
+                        <TableCell className="whitespace-nowrap py-2.5 text-xs text-muted-foreground">
+                          {l.catchUp ? `${fmtPeriod(l.fromPeriod)} – ${preview.label} (${l.months})` : '1'}
+                        </TableCell>
+                        <TableCell className="py-2.5 text-right tabular-nums">{fmtMoney(l.amount)}</TableCell>
+                        <TableCell className="py-2.5 text-right tabular-nums text-gray-600">{l.accumulatedAfter == null ? '' : fmtMoney(l.accumulatedAfter)}</TableCell>
+                        <TableCell className="py-2.5 text-right tabular-nums text-gray-600">{l.bookValueAfter == null ? '' : fmtMoney(l.bookValueAfter)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                  {(preview.lines || []).length > 0 && (
+                    <tfoot className="border-t border-gray-200 bg-gray-50/60 font-semibold text-gray-900">
+                      <tr>
+                        <td className="px-4 py-2.5" colSpan={3}>Total</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums">{fmtMoney(preview.total)}</td>
+                        <td colSpan={2} />
                       </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50">
-                      {(preview.lines || []).length === 0 ? (
-                        <tr><td colSpan={6} className="px-3 py-8 text-center text-sm text-gray-500">No asset needs depreciation for this month.</td></tr>
-                      ) : preview.lines.map(l => (
-                        <tr key={l.assetId}>
-                          <td className="px-3 py-2 font-mono text-xs whitespace-nowrap">
-                            <Link href={`/admin/inventory/assets/${l.assetId}`} className="text-blue-600 hover:underline">{l.tag ?? '—'}</Link>
-                          </td>
-                          <td className="px-3 py-2 text-gray-700">{l.name}</td>
-                          <td className="px-3 py-2 text-xs text-gray-500 whitespace-nowrap">
-                            {l.catchUp ? `${fmtPeriod(l.fromPeriod)} – ${preview.label} (${l.months})` : '1'}
-                          </td>
-                          <td className="px-3 py-2 text-right tabular-nums">{fmtMoney(l.amount)}</td>
-                          <td className="px-3 py-2 text-right tabular-nums text-gray-600">{l.accumulatedAfter == null ? '' : fmtMoney(l.accumulatedAfter)}</td>
-                          <td className="px-3 py-2 text-right tabular-nums text-gray-600">{l.bookValueAfter == null ? '' : fmtMoney(l.bookValueAfter)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    {(preview.lines || []).length > 0 && (
-                      <tfoot className="bg-gray-50 font-semibold">
-                        <tr>
-                          <td className="px-3 py-2" colSpan={3}>Total</td>
-                          <td className="px-3 py-2 text-right tabular-nums">{fmtMoney(preview.total)}</td>
-                          <td colSpan={2} />
-                        </tr>
-                      </tfoot>
-                    )}
-                  </table>
-                </div>
+                    </tfoot>
+                  )}
+                </Table>
               </div>
 
               {canRun && !preview.posted && preview.canRun && (
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Note (optional)</label>
-                  <input className={inputCls} value={notes} maxLength={500} onChange={e => setNotes(e.target.value)} placeholder="e.g. Month-end close" />
-                </div>
+                <Field label="Note">
+                  <Input value={notes} maxLength={500} onChange={e => setNotes(e.target.value)} placeholder="Optional" />
+                </Field>
               )}
             </>
           )}
@@ -354,69 +341,67 @@ function DepreciationModal({ open, onOpenChange, tab, setTab, canRun, initialPer
       ) : (
         <div className="space-y-3">
           {runs.length === 0 ? (
-            <p className="text-sm text-gray-500 py-8 text-center">No depreciation has been posted yet.</p>
+            <p className="py-8 text-center text-sm text-muted-foreground">No runs yet</p>
           ) : (
-            <div className="border border-gray-100 rounded-xl overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50">
-                  <tr className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                    <th className="px-3 py-2">Month</th>
-                    <th className="px-3 py-2">Status</th>
-                    <th className="px-3 py-2 text-right">Assets</th>
-                    <th className="px-3 py-2 text-right">Amount</th>
-                    <th className="px-3 py-2">Posted</th>
-                    <th className="px-3 py-2" />
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
+            <div className="overflow-hidden rounded-lg border border-gray-200/80">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Month</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Assets</TableHead>
+                    <TableHead className="text-right">Amount</TableHead>
+                    <TableHead>Posted</TableHead>
+                    <TableHead />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {runs.map(r => (
-                    <tr key={r.id} className="align-top">
-                      <td className="px-3 py-2 font-medium text-gray-900 whitespace-nowrap">{r.label}</td>
-                      <td className="px-3 py-2"><RunStatus status={r.status} interrupted={r.interrupted} /></td>
-                      <td className="px-3 py-2 text-right tabular-nums">{r.assetCount}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{fmtMoney(r.totalAmount)}</td>
-                      <td className="px-3 py-2 text-xs text-gray-500">
+                    <TableRow key={r.id} className="align-top">
+                      <TableCell className="whitespace-nowrap font-medium text-gray-900">{r.label}</TableCell>
+                      <TableCell><RunStatus status={r.status} interrupted={r.interrupted} /></TableCell>
+                      <TableCell className="text-right tabular-nums">{r.assetCount}</TableCell>
+                      <TableCell className="text-right tabular-nums">{fmtMoney(r.totalAmount)}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
                         {fmtDay(r.createdAt)} · {r.runByName}
                         {r.status === 'REVERSED' && (
                           <span className="block text-gray-400">Reversed {fmtDay(r.reversedAt)}{r.reversedByName ? ` by ${r.reversedByName}` : ''}{r.reversalReason ? ` — ${r.reversalReason}` : ''}</span>
                         )}
                         {r.status === 'POSTING' && (
                           <span className="block text-amber-700">
-                            {r.interrupted ? `Interrupted while posting — run ${r.label} again to recover it` : 'Posting in progress…'}
+                            {r.interrupted ? `Interrupted — run ${r.label} again to recover it` : 'Posting in progress…'}
                           </span>
                         )}
-                        {r.notes && r.status !== 'POSTING' && <span className="block text-gray-400 whitespace-pre-line">{r.notes}</span>}
-                      </td>
-                      <td className="px-3 py-2 text-right">
+                        {r.notes && r.status !== 'POSTING' && <span className="block whitespace-pre-line text-gray-400">{r.notes}</span>}
+                      </TableCell>
+                      <TableCell className="text-right">
                         {canRun && latestPosted?.id === r.id && (
-                          <button className="inline-flex items-center gap-1 text-xs font-medium text-red-600 hover:text-red-700"
+                          <Button variant="ghost" size="xs" className="text-red-600 hover:bg-red-50 hover:text-red-700"
                             onClick={() => { setReverseFor(r); setReason('') }}>
-                            <RotateCcw className="w-3.5 h-3.5" /> Reverse
-                          </button>
+                            <RotateCcw className="size-3.5" /> Reverse
+                          </Button>
                         )}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
           )}
 
           {reverseFor && (
-            <div className="border border-red-100 bg-red-50/50 rounded-xl p-4 space-y-3">
+            <div className="space-y-3 rounded-lg border border-red-200 bg-red-50/60 p-4">
               <p className="text-sm text-gray-800">
-                Reverse the <strong>{reverseFor.label}</strong> run ({fmtTk(reverseFor.totalAmount, 2)})? Each asset&apos;s accumulated depreciation goes back to its previous value and a reversing ledger entry is dated the last day of {reverseFor.label}. You can post the month again afterwards.
+                Reverse the <strong className="font-semibold">{reverseFor.label}</strong> run ({fmtTk(reverseFor.totalAmount, 2)})? Depreciation is restored and a reversing ledger entry is dated the last day of {reverseFor.label}.
               </p>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Reason</label>
-                <input className={inputCls} value={reason} maxLength={500} onChange={e => setReason(e.target.value)} placeholder="e.g. Assets were missing from the register when posted" />
-              </div>
+              <Field label="Reason" required>
+                <Input value={reason} maxLength={500} onChange={e => setReason(e.target.value)} placeholder="At least 5 characters" />
+              </Field>
               <div className="flex justify-end gap-2">
-                <button className={btnGhost} onClick={() => setReverseFor(null)} disabled={reversing}>Cancel</button>
-                <button className="inline-flex items-center gap-1.5 bg-red-600 text-white hover:bg-red-700 rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50"
-                  onClick={reverse} disabled={reversing || reason.trim().length < 5}>
-                  {reversing && <Loader2 className="w-4 h-4 animate-spin" />} Reverse run
-                </button>
+                <Button variant="outline" size="sm" onClick={() => setReverseFor(null)} disabled={reversing}>Cancel</Button>
+                <Button variant="destructive" size="sm" onClick={reverse} loading={reversing} disabled={reason.trim().length < 5}>
+                  Reverse run
+                </Button>
               </div>
             </div>
           )}
@@ -424,13 +409,13 @@ function DepreciationModal({ open, onOpenChange, tab, setTab, canRun, initialPer
       )}
 
       {tab === 'run' && (
-        <ModalFooter className="-mx-4 sm:-mx-6 -mb-4 mt-4">
-          <button className={btnGhost} onClick={() => onOpenChange(false)}>Close</button>
+        <ModalFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
           {canRun && preview && !preview.posted && (
-            <button className={btnPrimary} onClick={post} disabled={posting || loading || !preview.canRun}>
-              {posting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+            <Button onClick={post} loading={posting} disabled={loading || !preview.canRun}>
+              {!posting && <Play />}
               Post {preview.label}
-            </button>
+            </Button>
           )}
         </ModalFooter>
       )}
@@ -440,9 +425,9 @@ function DepreciationModal({ open, onOpenChange, tab, setTab, canRun, initialPer
 
 function Figure({ label, value, hint }) {
   return (
-    <div className="rounded-lg border border-gray-100 p-3">
-      <p className="text-xs text-gray-500">{label}</p>
-      <p className="mt-0.5 text-sm font-semibold text-gray-900">{value}</p>
+    <div className="rounded-lg border border-gray-200/80 p-3">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="mt-0.5 text-sm font-semibold tabular-nums text-gray-900">{value}</p>
       {hint && <p className="text-xs text-gray-400">{hint}</p>}
     </div>
   )

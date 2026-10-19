@@ -14,8 +14,9 @@ export default function TkAmt({ value, decimals = 0, className = '' }) {
   })
   return (
     <span className={className}>
-      <span style={{ fontFamily: 'Georgia, serif', fontWeight: 400, fontSize: '1.05em', letterSpacing: '-0.5px' }}>৳</span>
-      {'\u00A0'}{formatted}
+      {/* ৳ comes from a fallback font that renders small next to Inter — scale it up. */}
+      <span className="mr-[0.18em] align-[-0.04em] text-[1.18em] font-normal leading-none opacity-70">৳</span>
+      <span className="tabular-nums">{formatted}</span>
     </span>
   )
 }

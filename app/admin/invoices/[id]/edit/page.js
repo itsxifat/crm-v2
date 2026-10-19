@@ -3,7 +3,10 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import InvoiceForm from '@/components/admin/invoices/InvoiceForm'
-import { Loader2 } from 'lucide-react'
+import { AlertCircle, Lock } from 'lucide-react'
+import { PageLoader } from '@/components/ui/LoadingSpinner'
+import EmptyState from '@/components/ui/EmptyState'
+import Button from '@/components/ui/Button'
 
 export default function EditInvoicePage() {
   const { id } = useParams()
@@ -22,18 +25,22 @@ export default function EditInvoicePage() {
       .finally(() => setLoading(false))
   }, [id])
 
-  if (loading) return (
-    <div className="flex items-center justify-center h-60">
-      <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
-    </div>
-  )
+  if (loading) return <PageLoader />
 
   if (error) return (
-    <div className="text-center py-20 text-red-500">{error}</div>
+    <EmptyState
+      icon={AlertCircle}
+      title={error}
+      action={<Button variant="outline" size="sm" href="/admin/invoices">Back to invoices</Button>}
+    />
   )
 
   if (invoice?.status !== 'DRAFT') return (
-    <div className="text-center py-20 text-gray-500">Only DRAFT invoices can be edited.</div>
+    <EmptyState
+      icon={Lock}
+      title="Only draft invoices can be edited"
+      action={<Button variant="outline" size="sm" href={`/admin/invoices/${id}`}>View invoice</Button>}
+    />
   )
 
   return <InvoiceForm invoice={invoice} />

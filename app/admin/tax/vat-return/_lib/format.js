@@ -74,7 +74,10 @@ export const RETURN_TYPE_OPTIONS = [
 
 export const RETURN_TYPE_LABELS = Object.fromEntries(RETURN_TYPE_OPTIONS.map(o => [o.value, o.label]))
 
-export const inputCls = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-gray-900 disabled:bg-gray-50 disabled:text-gray-500'
-export const labelCls = 'block text-xs font-medium text-gray-600 mb-1'
-export const btnPrimary = 'inline-flex items-center justify-center gap-2 bg-gray-900 text-white hover:bg-gray-800 rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed'
-export const btnGhost = 'inline-flex items-center justify-center gap-2 border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed'
+// Class strings mirroring components/ui/Input (inputClass / Label) and Button (default / outline)
+// for raw elements in the tax pages. Prefer the components themselves in new code.
+// No fixed height: some callers put it on a <textarea>.
+export const inputCls = 'block min-h-9 w-full min-w-0 rounded-lg border border-input bg-white px-3 py-1.5 text-sm text-gray-900 shadow-xs transition-[color,box-shadow,border-color] outline-none placeholder:text-gray-400 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 focus:border-ring focus:ring-[3px] focus:ring-ring/30 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:opacity-60'
+export const labelCls = 'mb-2 block text-sm font-medium leading-none text-gray-900'
+export const btnPrimary = "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg h-9 px-4 has-[>svg]:px-3 text-sm font-medium bg-primary text-primary-foreground shadow-xs hover:bg-primary/90 transition-[color,background-color,border-color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 [&_svg]:shrink-0 [&_svg:not([class*='size-']):not([class*='w-'])]:size-4"
+export const btnGhost = "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg h-9 px-4 has-[>svg]:px-3 text-sm font-medium border border-input bg-white text-gray-900 shadow-xs hover:bg-accent transition-[color,background-color,border-color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 [&_svg]:shrink-0 [&_svg:not([class*='size-']):not([class*='w-'])]:size-4"

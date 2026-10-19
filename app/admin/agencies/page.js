@@ -3,6 +3,14 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Building2, Plus, Eye, Pencil, Trash2, Ban, RotateCcw, Mail } from 'lucide-react'
 import toast from 'react-hot-toast'
+import Button from '@/components/ui/Button'
+import { Card } from '@/components/ui/Card'
+import PageHeader from '@/components/ui/PageHeader'
+import Tabs from '@/components/ui/Tabs'
+import Badge from '@/components/ui/Badge'
+import EmptyState from '@/components/ui/EmptyState'
+import { PageLoader } from '@/components/ui/LoadingSpinner'
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table'
 import SearchInput from '@/components/ui/SearchInput'
 import Pagination from '@/components/ui/Pagination'
 import ActionMenu from '@/components/ui/ActionMenu'
@@ -12,22 +20,13 @@ import { formatCurrency } from '@/lib/utils'
 
 function InviteBadge({ accepted }) {
   if (accepted) return null
-  return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 text-amber-700 text-xs rounded-md font-medium border border-amber-200">
-      <Mail className="w-3 h-3" />
-      Invited
-    </span>
-  )
+  return <Badge variant="warning"><Mail className="size-3" /> Invited</Badge>
 }
 
 function KycPill({ status }) {
-  if (status === 'APPROVED') {
-    return <span className="inline-flex items-center px-2 py-0.5 bg-green-50 text-green-700 text-[11px] rounded-md font-medium border border-green-200">Verified</span>
-  }
-  if (status === 'PENDING_APPROVAL') {
-    return <span className="inline-flex items-center px-2 py-0.5 bg-blue-50 text-blue-700 text-[11px] rounded-md font-medium border border-blue-200">Pending review</span>
-  }
-  return <span className="inline-flex items-center px-2 py-0.5 bg-gray-100 text-gray-500 text-[11px] rounded-md font-medium">Unverified</span>
+  if (status === 'APPROVED') return <Badge variant="success">Verified</Badge>
+  if (status === 'PENDING_APPROVAL') return <Badge variant="primary">Pending review</Badge>
+  return <Badge variant="default">Unverified</Badge>
 }
 
 export default function AgenciesPage() {
@@ -72,11 +71,11 @@ export default function AgenciesPage() {
     // password is returned only once, so show it for manual sharing.
     if (result?.emailSent === false) {
       if (result.link || result.tempPassword) setUnsent(result)
-      else toast.error('Agency created, but the invitation email could not be sent.', { duration: 8000 })
+      else toast.error('Agency created, but the invite email failed', { duration: 8000 })
       return
     }
 
-    toast.success('Agency invitation sent!')
+    toast.success('Invitation sent')
   }
 
   async function handleDelete(f) {
@@ -111,105 +110,86 @@ export default function AgenciesPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Agencies</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Manage partner agencies</p>
-        </div>
-        <button
-          onClick={() => { setEditing(null); setModalOpen(true) }}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          <Plus className="w-4 h-4" /> Add Agency
-        </button>
-      </div>
+      <PageHeader
+        title="Agencies"
+        actions={<Button onClick={() => { setEditing(null); setModalOpen(true) }}><Plus /> New agency</Button>}
+      />
 
-      {/* Table */}
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-4">
+      <Card className="overflow-hidden">
+        <div className="flex flex-wrap items-center gap-2 border-b border-gray-100 p-3">
           <SearchInput
             value={search}
             onChange={(v) => { setSearch(v); setPage(1) }}
-            placeholder="Search by agency name or email…"
-            className="w-80"
+            placeholder="Search…"
+            className="w-full sm:w-64"
           />
-          <div className="flex items-center gap-2">
-            {[['all', 'All'], ['pending', 'Pending review'], ['verified', 'Verified'], ['unverified', 'Unverified']].map(([k, label]) => (
-              <button
-                key={k}
-                onClick={() => { setVerify(k); setPage(1) }}
-                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-                  verify === k ? 'bg-blue-600 text-white' : 'text-gray-500 hover:bg-gray-100'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          <Tabs
+            size="sm"
+            value={verify}
+            onChange={(k) => { setVerify(k); setPage(1) }}
+            tabs={[
+              { value: 'all', label: 'All' },
+              { value: 'pending', label: 'Pending review' },
+              { value: 'verified', label: 'Verified' },
+              { value: 'unverified', label: 'Unverified' },
+            ]}
+          />
         </div>
 
         {loading ? (
-          <div className="flex items-center justify-center py-20">
-            <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-          </div>
+          <PageLoader />
         ) : agencies.length === 0 ? (
-          <div className="text-center py-20">
-            <Building2 className="w-12 h-12 text-gray-200 mx-auto mb-3" />
-            <p className="text-gray-500 font-medium">No agencies found</p>
-            {search && <p className="text-gray-400 text-sm mt-1">Try a different search</p>}
-          </div>
+          <EmptyState
+            icon={Building2}
+            title={search ? 'No results' : 'No agencies found'}
+            description={search ? 'Try a different search' : undefined}
+          />
         ) : (
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-gray-100 bg-gray-50">
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Agency</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Contact Person</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Agency Type</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Owed</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
-                <th className="px-6 py-3" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Agency</TableHead>
+                <TableHead>Contact person</TableHead>
+                <TableHead>Agency type</TableHead>
+                <TableHead className="text-right">Owed</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="w-12" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {agencies.map((f) => (
-                <tr key={f.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-6 py-4">
+                <TableRow key={f.id}>
+                  <TableCell>
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0">
-                        <Building2 className="w-4 h-4 text-indigo-600" />
+                      <div className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-gray-200/80 bg-white shadow-xs">
+                        <Building2 className="size-4 text-gray-600" />
                       </div>
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">{f.agencyInfo?.agencyName ?? '—'}</p>
-                        <p className="text-xs text-gray-400">{f.userId?.email}</p>
+                      <div className="min-w-0">
+                        <p className="font-medium text-gray-900">{f.agencyInfo?.agencyName ?? '—'}</p>
+                        <p className="text-xs text-muted-foreground">{f.userId?.email}</p>
                       </div>
                     </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <p className="text-sm text-gray-700">{f.contactPerson?.name ?? '—'}</p>
-                    <p className="text-xs text-gray-400">{f.contactPerson?.designation ?? ''}</p>
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-600">{f.agencyInfo?.type ?? '—'}</td>
-                  <td className="px-6 py-4 text-sm font-medium text-gray-900 whitespace-nowrap">
+                  </TableCell>
+                  <TableCell>
+                    <p className="text-gray-900">{f.contactPerson?.name ?? '—'}</p>
+                    <p className="text-xs text-muted-foreground">{f.contactPerson?.designation ?? ''}</p>
+                  </TableCell>
+                  <TableCell>{f.agencyInfo?.type ?? '—'}</TableCell>
+                  <TableCell className="whitespace-nowrap text-right font-medium tabular-nums text-gray-900">
                     {f.finance?.owedBDT ? formatCurrency(f.finance.owedBDT) : <span className="text-gray-300">—</span>}
-                    {f.finance?.owedOther?.map(o => <div key={o.currency} className="text-xs text-gray-500">{o.currency} {Number(o.total).toLocaleString()}</div>)}
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-2 flex-wrap">
+                    {f.finance?.owedOther?.map(o => <div key={o.currency} className="text-xs font-normal text-muted-foreground">{o.currency} {Number(o.total).toLocaleString()}</div>)}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap items-center gap-1.5">
                       {(() => {
                         const disabled = f.disabledAt || f.userId?.isActive === false
-                        return (
-                          <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${disabled ? 'text-rose-600' : 'text-green-700'}`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${disabled ? 'bg-rose-500' : 'bg-green-500'}`} />
-                            {disabled ? 'Disabled' : 'Active'}
-                          </span>
-                        )
+                        return <Badge variant={disabled ? 'danger' : 'success'} dot>{disabled ? 'Disabled' : 'Active'}</Badge>
                       })()}
                       <InviteBadge accepted={f.inviteAccepted} />
                       <KycPill status={f.profileStatus} />
                     </div>
-                  </td>
-                  <td className="px-6 py-4 text-right">
+                  </TableCell>
+                  <TableCell className="text-right">
                     {(() => {
                       const disabled = f.disabledAt || f.userId?.isActive === false
                       return (
@@ -227,19 +207,19 @@ export default function AgenciesPage() {
                         />
                       )
                     })()}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         )}
 
         {meta.pages > 1 && (
-          <div className="px-6 py-4 border-t border-gray-100">
+          <div className="border-t border-gray-100 px-4 py-3">
             <Pagination page={meta.page} pages={meta.pages} onChange={setPage} />
           </div>
         )}
-      </div>
+      </Card>
 
       <FreelancerModal
         open={modalOpen}

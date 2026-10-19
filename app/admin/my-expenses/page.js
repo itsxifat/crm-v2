@@ -2,8 +2,16 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import toast from 'react-hot-toast'
-import { Plus, X, Loader2, Printer, Receipt, FileText } from 'lucide-react'
+import { Plus, X, Printer, Receipt, FileText } from 'lucide-react'
 import FileUpload from '@/components/ui/FileUpload'
+import Badge from '@/components/ui/Badge'
+import Button, { buttonVariants } from '@/components/ui/Button'
+import { Card } from '@/components/ui/Card'
+import EmptyState from '@/components/ui/EmptyState'
+import LoadingSpinner from '@/components/ui/LoadingSpinner'
+import PageHeader from '@/components/ui/PageHeader'
+import { Field, Input, NativeSelect, Textarea } from '@/components/ui/Input'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/Table'
 import { CURRENCIES } from '@/lib/currencies'
 import { useConfig, subcategoriesFor } from '@/lib/useConfig'
 import { dhakaDayKey } from '@/lib/dhakaTime'
@@ -12,10 +20,10 @@ const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-dig
 const fmt     = (n, c = 'BDT') => `${(n ?? 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })} ${c}`
 
 const STATUS_BADGE = {
-  PENDING:    'bg-yellow-100 text-yellow-700',
-  PAID:       'bg-blue-100 text-blue-700',
-  AUTHORIZED: 'bg-green-100 text-green-700',
-  REJECTED:   'bg-red-100 text-red-700',
+  PENDING:    'warning',
+  PAID:       'primary',
+  AUTHORIZED: 'success',
+  REJECTED:   'danger',
 }
 const STATUS_LABEL = {
   PENDING:    'Pending review',
@@ -23,8 +31,6 @@ const STATUS_LABEL = {
   AUTHORIZED: 'Reimbursed',
   REJECTED:   'Rejected',
 }
-
-const ic = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900'
 
 // ─── Submit Expense Modal ─────────────────────────────────────────────────────
 
@@ -80,91 +86,79 @@ function ExpenseModal({ onClose, onSaved }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-xl border border-gray-200 w-full max-w-lg p-6 space-y-4 max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between">
-          <h3 className="text-base font-semibold text-gray-900">Submit Expense</h3>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100"><X className="w-4 h-4 text-gray-400" /></button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-[2px]">
+      <div className="flex max-h-[90vh] w-full max-w-lg flex-col rounded-2xl border border-gray-200/80 bg-white shadow-2xl">
+        <div className="flex shrink-0 items-start justify-between gap-4 px-6 pb-3 pt-5">
+          <h3 className="text-base font-semibold tracking-tight text-gray-900">Submit expense</h3>
+          <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close" className="-mr-1.5 -mt-0.5 text-gray-400">
+            <X />
+          </Button>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <div className="col-span-2">
-            <label className="block text-xs font-medium text-gray-500 mb-1">Reason / Title *</label>
-            <input value={form.title} onChange={e => set('title', e.target.value)} placeholder="e.g. Taxi to client meeting" className={ic} />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Amount *</label>
-            <input type="number" step="0.01" value={form.amount} onChange={e => set('amount', e.target.value)} placeholder="0.00" className={ic} />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Currency</label>
-            <select value={form.currency} onChange={e => set('currency', e.target.value)} className={ic}>
+        <div className="grid flex-1 gap-4 overflow-y-auto px-6 pb-5 pt-1 sm:grid-cols-2">
+          <Field label="Reason / title" required className="sm:col-span-2">
+            <Input value={form.title} onChange={e => set('title', e.target.value)} placeholder="e.g. Taxi to client meeting" />
+          </Field>
+          <Field label="Amount" required>
+            <Input type="number" step="0.01" value={form.amount} onChange={e => set('amount', e.target.value)} placeholder="0.00" />
+          </Field>
+          <Field label="Currency">
+            <NativeSelect value={form.currency} onChange={e => set('currency', e.target.value)}>
               {CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.code} — {c.label}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Date</label>
-            <input type="date" value={form.date} onChange={e => set('date', e.target.value)} className={ic} />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Related project</label>
-            <select value={form.projectId} onChange={e => set('projectId', e.target.value)} className={ic}>
-              <option value="">— None / general —</option>
+            </NativeSelect>
+          </Field>
+          <Field label="Date">
+            <Input type="date" value={form.date} onChange={e => set('date', e.target.value)} />
+          </Field>
+          <Field label="Project">
+            <NativeSelect value={form.projectId} onChange={e => set('projectId', e.target.value)}>
+              <option value="">None</option>
               {projects.map(p => <option key={p.id ?? p._id} value={p.id ?? p._id}>{p.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Category *</label>
-            <select value={form.category}
+            </NativeSelect>
+          </Field>
+          <Field
+            label="Category"
+            required
+            error={expenseCategories.length === 0 ? 'No expense categories set up in Config → Finance.' : undefined}
+          >
+            <NativeSelect value={form.category}
               onChange={e => setForm(f => ({ ...f, category: e.target.value, subcategory: '' }))}
-              className={ic} disabled={expenseCategories.length === 0}>
-              <option value="">— Select category —</option>
+              disabled={expenseCategories.length === 0}>
+              <option value="">Select…</option>
               {expenseCategories.map(c => <option key={c.id ?? c.label} value={c.label}>{c.label}</option>)}
-            </select>
-            {expenseCategories.length === 0 && (
-              <p className="text-xs mt-1 text-amber-600">No expense categories set up in Config → Finance.</p>
-            )}
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">
-              Subcategory {subcats.length > 0 && <span className="text-red-500">*</span>}
-            </label>
-            <select value={form.subcategory} onChange={e => set('subcategory', e.target.value)}
-              className={ic} disabled={!form.category || subcats.length === 0}>
+            </NativeSelect>
+          </Field>
+          <Field label="Subcategory" required={subcats.length > 0}>
+            <NativeSelect value={form.subcategory} onChange={e => set('subcategory', e.target.value)}
+              disabled={!form.category || subcats.length === 0}>
               <option value="">
-                {!form.category ? '— Select category first —' : subcats.length === 0 ? '— No subcategories —' : '— Select subcategory —'}
+                {!form.category ? 'Select a category first' : subcats.length === 0 ? 'None' : 'Select…'}
               </option>
               {subcats.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-          <div className="col-span-2">
+            </NativeSelect>
+          </Field>
+          <div className="sm:col-span-2">
             <FileUpload
-              label="Proof / memo / invoice (optional)"
+              label="Proof / memo / invoice"
               value={form.invoiceUrl}
               onUploaded={url => set('invoiceUrl', url)}
             />
           </div>
-          <div className="col-span-2">
-            <label className="block text-xs font-medium text-gray-500 mb-1">
-              Description {!hasProof && <span className="text-red-500">*</span>}
-            </label>
-            <textarea value={form.notes} onChange={e => set('notes', e.target.value)} rows={3}
-              placeholder="Describe what the expense was for. Required in detail if you have no proof to attach."
-              className={`${ic} resize-none`} />
+          <Field label="Description" required={!hasProof} className="sm:col-span-2">
+            <Textarea value={form.notes} onChange={e => set('notes', e.target.value)} rows={3}
+              placeholder="What was it for?"
+              className="resize-none" />
             {!hasProof && (
-              <p className={`text-xs mt-1 ${detailOk ? 'text-gray-400' : 'text-amber-600'}`}>
-                No proof attached — provide a detailed description ({form.notes.trim().length}/30 characters).
+              <p className={`mt-1.5 text-xs ${detailOk ? 'text-muted-foreground' : 'text-amber-700'}`}>
+                No proof attached — describe it in detail ({form.notes.trim().length}/30 characters).
               </p>
             )}
-          </div>
+          </Field>
         </div>
 
-        <div className="flex gap-2 justify-end pt-1">
-          <button onClick={onClose} className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
-          <button onClick={save} disabled={saving}
-            className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 disabled:opacity-40 flex items-center gap-2">
-            {saving && <Loader2 className="w-4 h-4 animate-spin" />} Submit
-          </button>
+        <div className="flex shrink-0 justify-end gap-2 rounded-b-2xl border-t border-gray-100 bg-gray-50/60 px-6 py-3.5">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={save} loading={saving}>Submit</Button>
         </div>
       </div>
     </div>
@@ -202,97 +196,83 @@ export default function MyExpensesPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-gray-900">My Expenses</h1>
-          <p className="text-sm text-gray-400 mt-0.5">Out-of-pocket expenses you’ve submitted for reimbursement</p>
-        </div>
-        <button onClick={() => setAddModal(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-xl hover:bg-gray-800 transition-colors">
-          <Plus className="w-4 h-4" /> New Expense
-        </button>
-      </div>
+      <PageHeader
+        title="My expenses"
+        actions={<Button onClick={() => setAddModal(true)}><Plus /> New expense</Button>}
+      />
 
-      {/* Table */}
-      <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+      <Card className="overflow-hidden">
         {loading ? (
-          <div className="flex justify-center py-16">
-            <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
-          </div>
+          <LoadingSpinner className="py-16" />
         ) : rows.length === 0 ? (
-          <div className="text-center py-16 text-gray-400">
-            <Receipt className="w-10 h-10 mx-auto mb-3 opacity-30" />
-            <p className="text-sm">No expense submissions yet</p>
-            <button onClick={() => setAddModal(true)} className="mt-3 text-sm text-blue-600 hover:underline">Submit your first expense</button>
-          </div>
+          <EmptyState
+            icon={Receipt}
+            title="No expenses yet"
+            action={<Button variant="outline" size="sm" onClick={() => setAddModal(true)}><Plus /> New expense</Button>}
+          />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px]">
-              <thead>
-                <tr className="border-b border-gray-100 bg-gray-50">
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Expense ID</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Reason</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Amount</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Date</th>
-                  <th className="px-4 py-3" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {rows.map(r => (
-                  <tr key={r.id ?? r._id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-4 py-3 text-xs font-medium text-gray-500 whitespace-nowrap">{r.expenseId ?? '—'}</td>
-                    <td className="px-4 py-3">
-                      <p className="text-sm font-medium text-gray-900 max-w-[260px] truncate">{r.title}</p>
-                      {r.category && <p className="text-xs text-gray-400 mt-0.5">{r.category}{r.subcategory ? ` / ${r.subcategory}` : ''}</p>}
-                      {r.projectId?.name && <p className="text-xs text-gray-400 mt-0.5">{r.projectId.name}</p>}
-                    </td>
-                    <td className="px-4 py-3 text-sm font-medium text-gray-800 whitespace-nowrap">{fmt(r.amount, r.currency)}</td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_BADGE[r.status] ?? 'bg-gray-100 text-gray-600'}`}>
-                        {STATUS_LABEL[r.status] ?? r.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">{fmtDate(r.date ?? r.createdAt)}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center justify-end gap-2">
-                        {r.status !== 'PENDING' && r.status !== 'REJECTED' && (
-                          <a href={`/api/expenses/${r.id ?? r._id}/voucher`} target="_blank" rel="noreferrer"
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50">
-                            <Printer className="w-3.5 h-3.5" /> Invoice
-                          </a>
-                        )}
-                        {r.status === 'AUTHORIZED' && r.signedInvoiceUrl && (
-                          <a href={r.signedInvoiceUrl} target="_blank" rel="noreferrer"
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-green-200 text-green-700 bg-green-50 rounded-lg hover:bg-green-100">
-                            <FileText className="w-3.5 h-3.5" /> Authorized
-                          </a>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <Table className="min-w-[720px]">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Expense ID</TableHead>
+                <TableHead>Reason</TableHead>
+                <TableHead className="text-right">Amount</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Date</TableHead>
+                <TableHead><span className="sr-only">Actions</span></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map(r => (
+                <TableRow key={r.id ?? r._id}>
+                  <TableCell className="whitespace-nowrap text-xs font-medium text-muted-foreground">{r.expenseId ?? '—'}</TableCell>
+                  <TableCell>
+                    <p className="max-w-[260px] truncate text-sm font-medium text-gray-900">{r.title}</p>
+                    {r.category && <p className="mt-0.5 text-xs text-muted-foreground">{r.category}{r.subcategory ? ` / ${r.subcategory}` : ''}</p>}
+                    {r.projectId?.name && <p className="mt-0.5 text-xs text-muted-foreground">{r.projectId.name}</p>}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-right font-medium tabular-nums text-gray-900">{fmt(r.amount, r.currency)}</TableCell>
+                  <TableCell>
+                    <Badge variant={STATUS_BADGE[r.status] ?? 'default'}>
+                      {STATUS_LABEL[r.status] ?? r.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-[13px] text-muted-foreground">{fmtDate(r.date ?? r.createdAt)}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center justify-end gap-2">
+                      {r.status !== 'PENDING' && r.status !== 'REJECTED' && (
+                        <a href={`/api/expenses/${r.id ?? r._id}/voucher`} target="_blank" rel="noreferrer"
+                          className={buttonVariants({ variant: 'outline', size: 'xs' })}>
+                          <Printer /> Invoice
+                        </a>
+                      )}
+                      {r.status === 'AUTHORIZED' && r.signedInvoiceUrl && (
+                        <a href={r.signedInvoiceUrl} target="_blank" rel="noreferrer"
+                          className={buttonVariants({ variant: 'outline', size: 'xs' })}>
+                          <FileText className="size-3.5 text-emerald-600" /> Authorized
+                        </a>
+                      )}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         )}
         {pages > 1 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
-            <p className="text-xs text-gray-400">Page {page} of {pages} · {total} submissions</p>
+          <div className="flex items-center justify-between border-t border-gray-100 px-4 py-3">
+            <p className="text-xs text-muted-foreground">Page {page} of {pages} · {total} submissions</p>
             <div className="flex items-center gap-2">
-              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1 || loading}
-                className="px-3 py-1.5 text-xs font-medium border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 disabled:opacity-40">
+              <Button variant="outline" size="xs" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1 || loading}>
                 Previous
-              </button>
-              <button onClick={() => setPage(p => Math.min(pages, p + 1))} disabled={page >= pages || loading}
-                className="px-3 py-1.5 text-xs font-medium border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 disabled:opacity-40">
+              </Button>
+              <Button variant="outline" size="xs" onClick={() => setPage(p => Math.min(pages, p + 1))} disabled={page >= pages || loading}>
                 Next
-              </button>
+              </Button>
             </div>
           </div>
         )}
-      </div>
+      </Card>
 
       {addModal && <ExpenseModal onClose={() => setAddModal(false)} onSaved={() => (page === 1 ? load() : setPage(1))} />}
     </div>

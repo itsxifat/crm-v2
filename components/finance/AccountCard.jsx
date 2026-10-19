@@ -6,15 +6,19 @@ import {
   ShieldCheck, Clock, UserRound, AlertTriangle,
 } from 'lucide-react'
 import ActionMenu from '@/components/ui/ActionMenu'
+import Badge from '@/components/ui/Badge'
+import { Card } from '@/components/ui/Card'
 import { cn } from '@/lib/utils'
 import { dayKeyLabel } from '@/lib/finance/fiscal'
 import AccountIcon from './AccountIcon'
-import { accountColor, accountSubtitle, maskedNumber, formatAmount, withAlpha } from './accountTheme'
+import { accountSubtitle, maskedNumber, formatAmount } from './accountTheme'
+
+const QUICK_ACTION = 'inline-flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium text-gray-600 transition-colors outline-none hover:bg-gray-100 hover:text-gray-900 focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:flex-row sm:gap-1.5'
 
 function QuickAction({ icon: Icon, label, onClick, href }) {
-  const cls = 'flex-1 min-w-0 inline-flex flex-col sm:flex-row items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-[11px] font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors'
-  if (href) return <Link href={href} className={cls}><Icon className="w-3.5 h-3.5 shrink-0" /><span className="truncate">{label}</span></Link>
-  return <button type="button" onClick={onClick} className={cls}><Icon className="w-3.5 h-3.5 shrink-0" /><span className="truncate">{label}</span></button>
+  const body = <><Icon className="size-4 shrink-0 text-gray-500" /><span className="truncate">{label}</span></>
+  if (href) return <Link href={href} className={QUICK_ACTION}>{body}</Link>
+  return <button type="button" onClick={onClick} className={QUICK_ACTION}>{body}</button>
 }
 
 /**
@@ -24,7 +28,6 @@ export default function AccountCard({
   account, canManage, canReconcile, onTransfer, onMovement, onEdit, onArchive, onRestore, onDelete,
 }) {
   const a = account
-  const color = accountColor(a)
   const archived = a.status === 'ARCHIVED'
   const negative = a.balance < -0.004
   const number = maskedNumber(a)
@@ -42,78 +45,80 @@ export default function AccountCard({
     canManage && deletable && { label: 'Delete permanently', icon: Trash2, onClick: () => onDelete?.(a), danger: true },
   ].filter(Boolean)
 
+  const hasBadges = a.isDefault || a.currency !== 'BDT' || archived || inProgress
+    || (!a.allowNegative && Number(a.creditLimit) > 0) || (a.isBankingChannel === false && !cash)
+
   return (
-    <div className={cn(
-      'group relative bg-white border border-gray-100 rounded-xl overflow-hidden flex flex-col transition-shadow hover:shadow-sm',
-      archived && 'opacity-70',
-    )}>
-      <div className="h-1 w-full" style={{ backgroundColor: color }} />
-      <div className="p-4 flex-1 flex flex-col gap-3">
+    <Card className={cn('group relative flex flex-col overflow-hidden transition-shadow hover:shadow-sm', archived && 'opacity-70')}>
+      <div className="flex flex-1 flex-col gap-4 p-5">
         {/* Identity */}
         <div className="flex items-start gap-3">
           <AccountIcon account={a} />
           <div className="min-w-0 flex-1">
-            <Link href={href} className="block text-sm font-semibold text-gray-900 hover:underline truncate" title={a.name}>{a.name}</Link>
-            <p className="text-xs text-gray-500 truncate" title={accountSubtitle(a)}>{accountSubtitle(a)}</p>
-            {number && <p className="text-xs text-gray-400 tabular-nums mt-0.5">{number}</p>}
+            <Link href={href} className="block truncate text-sm font-semibold text-gray-900 underline-offset-4 hover:underline" title={a.name}>{a.name}</Link>
+            <p className="truncate text-xs text-muted-foreground" title={accountSubtitle(a)}>
+              {accountSubtitle(a)}{number && <span className="tabular-nums text-gray-400"> · {number}</span>}
+            </p>
           </div>
-          <ActionMenu items={menu} />
+          <div className="-mr-2 -mt-1">
+            <ActionMenu items={menu} />
+          </div>
         </div>
 
         {/* Badges */}
-        <div className="flex flex-wrap gap-1">
-          {a.isDefault && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700"><Star className="w-3 h-3" /> Default</span>
-          )}
-          {a.currency !== 'BDT' && (
-            <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-700">{a.currency}</span>
-          )}
-          {archived && <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-600">Archived</span>}
-          {inProgress && (
-            <Link href={`${href}?tab=reconcile`} className="rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-700 hover:bg-sky-100">Reconciling…</Link>
-          )}
-          {!a.allowNegative && Number(a.creditLimit) > 0 && (
-            <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-600">OD limit {formatAmount(a.creditLimit, a.currency)}</span>
-          )}
-          {a.isBankingChannel === false && !cash && (
-            <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-600">Not a banking channel</span>
-          )}
-        </div>
+        {hasBadges && (
+          <div className="-mt-1 flex flex-wrap gap-1">
+            {a.isDefault && <Badge variant="warning"><Star className="size-3" /> Default</Badge>}
+            {a.currency !== 'BDT' && <Badge variant="outline">{a.currency}</Badge>}
+            {archived && <Badge>Archived</Badge>}
+            {inProgress && (
+              <Link href={`${href}?tab=reconcile`} className="rounded-full">
+                <Badge variant="primary" dot>Reconciling</Badge>
+              </Link>
+            )}
+            {!a.allowNegative && Number(a.creditLimit) > 0 && (
+              <Badge>OD limit {formatAmount(a.creditLimit, a.currency)}</Badge>
+            )}
+            {a.isBankingChannel === false && !cash && <Badge>Not a banking channel</Badge>}
+          </div>
+        )}
 
         {/* Balance */}
         <div>
-          <p className="text-[11px] uppercase tracking-wide text-gray-400 font-medium">Balance</p>
-          <p className={cn('text-xl font-bold tabular-nums tracking-tight', negative ? 'text-red-600' : 'text-gray-900')}>
+          <p className="text-[13px] text-muted-foreground">Balance</p>
+          <p className={cn('mt-0.5 text-2xl font-semibold tracking-tight tabular-nums', negative ? 'text-red-600' : 'text-gray-900')}>
             {formatAmount(a.balance, a.currency)}
           </p>
-          <p className="text-xs text-gray-500 tabular-nums">
+          <p className="mt-0.5 text-xs text-muted-foreground tabular-nums">
             Cleared {formatAmount(a.clearedBalance, a.currency)}
             {a.unclearedCount > 0 && <span className="text-gray-400"> · {a.unclearedCount} uncleared</span>}
           </p>
           {negative && !a.allowNegative && (
-            <p className="mt-1 text-[11px] text-red-600 flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> Below zero — check for missing receipts</p>
+            <p className="mt-1.5 flex items-center gap-1.5 text-xs text-red-600" title="Check for missing receipts">
+              <AlertTriangle className="size-3.5" /> Below zero
+            </p>
           )}
         </div>
 
         {/* Meta */}
-        <div className="space-y-1 text-[11px] text-gray-500">
+        <div className="mt-auto space-y-1.5 text-xs text-muted-foreground">
           <p className="flex items-center gap-1.5">
-            <ShieldCheck className={cn('w-3.5 h-3.5', a.lastReconciledDate ? 'text-emerald-600' : 'text-gray-300')} />
+            <ShieldCheck className={cn('size-3.5', a.lastReconciledDate ? 'text-emerald-600' : 'text-gray-300')} />
             {a.lastReconciledDate
               ? <>Reconciled to {dayKeyLabel(a.lastReconciledDate)}</>
               : <>{cash ? 'Never counted' : 'Never reconciled'}</>}
           </p>
           <p className="flex items-center gap-1.5">
-            <Clock className="w-3.5 h-3.5 text-gray-300" />
+            <Clock className="size-3.5 text-gray-400" />
             {a.lastTxDate ? <>Last activity {dayKeyLabel(a.lastTxDate)}</> : <>No transactions yet</>}
           </p>
           {cash && a.custodian && (
-            <p className="flex items-center gap-1.5"><UserRound className="w-3.5 h-3.5 text-gray-300" /> Held by {a.custodian.name}</p>
+            <p className="flex items-center gap-1.5"><UserRound className="size-3.5 text-gray-400" /> Held by {a.custodian.name}</p>
           )}
           {a.linkedPaymentMethods?.length > 0 && (
             <div className="flex flex-wrap gap-1 pt-0.5">
               {a.linkedPaymentMethods.map(m => (
-                <span key={m} className="rounded px-1.5 py-0.5 text-[10px] font-medium" style={{ backgroundColor: withAlpha(color, 0.08), color }}>
+                <span key={m} className="rounded-md bg-gray-100 px-1.5 py-0.5 text-[11px] font-medium text-gray-600">
                   {String(m).replace(/_/g, ' ')}
                 </span>
               ))}
@@ -124,13 +129,13 @@ export default function AccountCard({
 
       {/* Quick actions */}
       {!archived && (
-        <div className="border-t border-gray-50 px-2 py-1.5 flex items-stretch gap-1">
+        <div className="flex items-stretch gap-1 border-t border-gray-100 p-1.5">
           <QuickAction icon={FileText} label="Statement" href={href} />
           {canManage && <QuickAction icon={ArrowLeftRight} label="Transfer" onClick={() => onTransfer?.(a)} />}
           {canManage && <QuickAction icon={PlusCircle} label="Movement" onClick={() => onMovement?.(a)} />}
           {canReconcile && <QuickAction icon={ListChecks} label={inProgress ? 'Continue' : 'Reconcile'} href={`${href}?tab=reconcile`} />}
         </div>
       )}
-    </div>
+    </Card>
   )
 }

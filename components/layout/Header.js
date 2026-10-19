@@ -1,27 +1,11 @@
 'use client'
 
-import { useSession, signOut } from 'next-auth/react'
-import { useRouter } from 'next/navigation'
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useRouter, usePathname, useSearchParams } from 'next/navigation'
+import { useState, useRef, useEffect, useCallback, Suspense } from 'react'
 import Link from 'next/link'
-import {
-  Bell, LogOut, User, Settings, ChevronDown,
-  CheckCheck, Loader2, Menu,
-} from 'lucide-react'
-import Image from 'next/image'
-import { cn, getInitials, getRoleLabel } from '@/lib/utils'
-import { canDo } from '@/lib/rbac'
-
-const TYPE_STYLES = {
-  TASK:      'bg-purple-100 text-purple-700',
-  INVOICE:   'bg-blue-100 text-blue-700',
-  PAYMENT:   'bg-green-100 text-green-700',
-  QUOTATION: 'bg-teal-100 text-teal-700',
-  LEAVE:     'bg-yellow-100 text-yellow-700',
-  ASSET:     'bg-orange-100 text-orange-700',
-  TAX:       'bg-rose-100 text-rose-700',
-  GENERAL:   'bg-gray-100 text-gray-600',
-}
+import { Bell, CheckCheck, Loader2, PanelLeft, Search, ChevronRight } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { findActive } from './nav'
 
 const fmtAgo = (d) => {
   const diff = Date.now() - new Date(d).getTime()
@@ -33,31 +17,54 @@ const fmtAgo = (d) => {
   return `${Math.floor(hrs / 24)}d ago`
 }
 
-export default function Header({ onMenuClick }) {
-  const { data: session } = useSession()
-  const router            = useRouter()
+function Breadcrumb() {
+  const pathname     = usePathname()
+  const searchParams = useSearchParams()
+  const match = findActive(pathname, searchParams)
+  if (!match) return null
+  const { group, item } = match
+  const base = item.basePath ?? item.href.split('?')[0]
+  const deeper = pathname !== base && pathname.startsWith(`${base}/`)
 
-  const [profileOpen, setProfileOpen]   = useState(false)
-  const [notifOpen,   setNotifOpen]     = useState(false)
+  return (
+    <nav aria-label="Breadcrumb" className="hidden min-w-0 items-center gap-1.5 text-sm sm:flex">
+      {group && (
+        <>
+          <span className="truncate text-muted-foreground">{group.label}</span>
+          <ChevronRight className="size-3.5 shrink-0 text-gray-300" />
+        </>
+      )}
+      {deeper ? (
+        <>
+          <Link href={item.href} className="truncate text-muted-foreground hover:text-gray-900">{item.label}</Link>
+          <ChevronRight className="size-3.5 shrink-0 text-gray-300" />
+          <span className="truncate font-medium text-gray-900">Details</span>
+        </>
+      ) : (
+        <span className="truncate font-medium text-gray-900">{item.label}</span>
+      )}
+    </nav>
+  )
+}
+
+function Notifications() {
+  const router = useRouter()
+  const [open, setOpen]                 = useState(false)
   const [notifications, setNotifications] = useState([])
-  const [unreadCount,   setUnreadCount]   = useState(0)
-  const [notifLoading,  setNotifLoading]  = useState(false)
-  const [markingAll,    setMarkingAll]    = useState(false)
+  const [unreadCount, setUnreadCount]   = useState(0)
+  const [loading, setLoading]           = useState(false)
+  const [markingAll, setMarkingAll]     = useState(false)
+  const ref = useRef(null)
 
-  const profileRef = useRef(null)
-  const notifRef   = useRef(null)
-
-  // Close dropdowns on outside click
   useEffect(() => {
     function handleOutside(e) {
-      if (profileRef.current && !profileRef.current.contains(e.target)) setProfileOpen(false)
-      if (notifRef.current   && !notifRef.current.contains(e.target))   setNotifOpen(false)
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false)
     }
     document.addEventListener('mousedown', handleOutside)
     return () => document.removeEventListener('mousedown', handleOutside)
   }, [])
 
-  // Fetch unread count on mount and every 60s
+  // Unread count on mount and every 60s
   const fetchUnread = useCallback(async () => {
     try {
       const res  = await fetch('/api/notifications?unread=true&limit=1')
@@ -72,17 +79,17 @@ export default function Header({ onMenuClick }) {
     return () => clearInterval(id)
   }, [fetchUnread])
 
-  async function openNotifications() {
-    setNotifOpen(v => !v)
-    if (notifOpen) return
-    setNotifLoading(true)
+  async function toggle() {
+    setOpen(v => !v)
+    if (open) return
+    setLoading(true)
     try {
       const res  = await fetch('/api/notifications?limit=15')
       const json = await res.json()
       setNotifications(json.data ?? [])
       setUnreadCount(json.unreadCount ?? 0)
     } catch {}
-    finally { setNotifLoading(false) }
+    finally { setLoading(false) }
   }
 
   async function markOne(id) {
@@ -101,165 +108,125 @@ export default function Header({ onMenuClick }) {
     finally { setMarkingAll(false) }
   }
 
-  async function handleSignOut() {
-    await signOut({ redirect: false })
-    router.push('/login')
-  }
-
-  const user = session?.user
-
   return (
-    <header className="h-16 bg-white border-b border-gray-200 flex items-center gap-3 px-4 sm:px-6 shrink-0 z-30">
-      {/* Hamburger – mobile only */}
+    <div className="relative" ref={ref}>
       <button
-        onClick={onMenuClick}
-        className="lg:hidden p-2 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors shrink-0"
-        aria-label="Open menu"
+        onClick={toggle}
+        aria-label="Notifications"
+        className={cn(
+          'relative inline-flex size-9 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900',
+          open && 'bg-gray-100 text-gray-900'
+        )}
       >
-        <Menu className="w-5 h-5" />
+        <Bell className="size-[18px]" />
+        {unreadCount > 0 && (
+          <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-none text-white ring-2 ring-white">
+            {unreadCount > 99 ? '99+' : unreadCount}
+          </span>
+        )}
       </button>
 
-      {/* Left – spacer (the global search box was removed: it had no search backend) */}
-      <div className="flex-1 lg:flex-none lg:w-72" />
-
-      {/* Right – Notifications + Profile */}
-      <div className="flex items-center gap-2 ml-auto">
-
-        {/* Notifications */}
-        <div className="relative" ref={notifRef}>
-          <button
-            onClick={openNotifications}
-            className="relative p-2 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors"
-          >
-            <Bell className="w-5 h-5" />
+      {open && (
+        <div className="absolute right-0 top-full z-50 mt-2 w-[360px] max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-xl border border-gray-200/80 bg-white shadow-lg animate-in fade-in-0 zoom-in-95 duration-100">
+          <div className="flex items-center justify-between px-4 py-3">
+            <p className="text-sm font-semibold text-gray-900">Notifications</p>
             {unreadCount > 0 && (
-              <span className="absolute top-1 right-1 min-w-[16px] h-4 bg-red-500 rounded-full text-[10px] font-bold text-white flex items-center justify-center px-1 border border-white">
-                {unreadCount > 99 ? '99+' : unreadCount}
-              </span>
+              <button onClick={markAll} disabled={markingAll}
+                className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 disabled:opacity-50">
+                {markingAll ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCheck className="size-3.5" />}
+                Mark all read
+              </button>
             )}
-          </button>
+          </div>
 
-          {notifOpen && (
-            <div className="absolute right-0 top-full mt-1.5 w-80 max-w-[calc(100vw-1rem)] bg-white rounded-xl border border-gray-200 shadow-lg z-50 animate-fade-in overflow-hidden">
-              {/* Header */}
-              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-                <p className="text-sm font-semibold text-gray-900">Notifications</p>
-                {unreadCount > 0 && (
-                  <button onClick={markAll} disabled={markingAll}
-                    className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 disabled:opacity-50">
-                    {markingAll ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCheck className="w-3.5 h-3.5" />}
-                    Mark all read
-                  </button>
-                )}
+          <div className="max-h-[360px] overflow-y-auto border-t border-gray-100 p-1">
+            {loading ? (
+              <div className="flex justify-center py-10"><Loader2 className="size-5 animate-spin text-gray-400" /></div>
+            ) : notifications.length === 0 ? (
+              <div className="flex flex-col items-center py-10 text-center">
+                <Bell className="size-5 text-gray-300" />
+                <p className="mt-2 text-sm text-muted-foreground">You&apos;re all caught up</p>
               </div>
-
-              {/* List */}
-              <div className="max-h-80 overflow-y-auto divide-y divide-gray-50">
-                {notifLoading ? (
-                  <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-gray-400" /></div>
-                ) : notifications.length === 0 ? (
-                  <div className="text-center py-8 text-sm text-gray-400">No notifications</div>
-                ) : (
-                  notifications.map(n => (
-                    <div key={n.id}
-                      className={cn('flex gap-3 px-4 py-3 hover:bg-gray-50 cursor-pointer transition-colors', !n.isRead && 'bg-blue-50/40')}
-                      onClick={() => {
-                        if (!n.isRead) markOne(n.id)
-                        if (n.link) { router.push(n.link); setNotifOpen(false) }
-                      }}
-                    >
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between gap-2">
-                          <p className={cn('text-xs font-semibold text-gray-800', !n.isRead && 'text-gray-900')}>{n.title}</p>
-                          {!n.isRead && <span className="w-1.5 h-1.5 rounded-full bg-blue-500 mt-1 shrink-0" />}
-                        </div>
-                        <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{n.message}</p>
-                        <p className="text-[10px] text-gray-400 mt-1">{fmtAgo(n.createdAt)}</p>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-
-              {/* Footer */}
-              <div className="border-t border-gray-100 px-4 py-2.5">
-                <Link href="/admin/notifications" onClick={() => setNotifOpen(false)}
-                  className="text-xs text-blue-600 hover:text-blue-800 font-medium">
-                  View all notifications
-                </Link>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Profile Dropdown */}
-        <div className="relative" ref={profileRef}>
-          <button
-            onClick={() => setProfileOpen((v) => !v)}
-            className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-gray-100 transition-colors"
-          >
-            <div className="w-8 h-8 rounded-full bg-primary flex-center text-white text-sm font-semibold shrink-0">
-              {user?.avatar ? (
-                <Image src={user.avatar} alt={user.name} width={32} height={32} className="w-8 h-8 rounded-full object-cover" />
-              ) : (
-                getInitials(user?.name ?? 'U')
-              )}
-            </div>
-            <div className="hidden md:block text-left">
-              <p className="text-sm font-medium text-gray-900 leading-tight">{user?.name ?? '—'}</p>
-              <p className="text-xs text-gray-500 leading-tight">{getRoleLabel(user?.role)}</p>
-            </div>
-            <ChevronDown
-              className={cn(
-                'w-4 h-4 text-gray-400 hidden md:block transition-transform duration-200',
-                profileOpen && 'rotate-180'
-              )}
-            />
-          </button>
-
-          {profileOpen && (
-            <div className="absolute right-0 top-full mt-1.5 w-56 bg-white rounded-xl border border-gray-200 shadow-lg py-1 z-50 animate-fade-in">
-              <div className="px-4 py-3 border-b border-gray-100">
-                <p className="text-sm font-semibold text-gray-900">{user?.name}</p>
-                <p className="text-xs text-gray-500 mt-0.5">{user?.email}</p>
-                <span className="inline-block mt-1.5 text-2xs font-medium px-2 py-0.5 rounded-full bg-primary/10 text-primary">
-                  {getRoleLabel(user?.role)}
-                </span>
-              </div>
-
-              <div className="py-1">
-                <Link
-                  href="/admin/account"
-                  onClick={() => setProfileOpen(false)}
-                  className="flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                >
-                  <User className="w-4 h-4 text-gray-400" />
-                  My Account
-                </Link>
-                {canDo(session, 'system.config.view') && (
-                  <Link
-                    href="/admin/config"
-                    onClick={() => setProfileOpen(false)}
-                    className="flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                  >
-                    <Settings className="w-4 h-4 text-gray-400" />
-                    Settings
-                  </Link>
-                )}
-              </div>
-
-              <div className="border-t border-gray-100 py-1">
+            ) : (
+              notifications.map(n => (
                 <button
-                  onClick={handleSignOut}
-                  className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                  key={n.id}
+                  type="button"
+                  className="flex w-full gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-gray-50"
+                  onClick={() => {
+                    if (!n.isRead) markOne(n.id)
+                    if (n.link) { router.push(n.link); setOpen(false) }
+                  }}
                 >
-                  <LogOut className="w-4 h-4" />
-                  Sign out
+                  <span className={cn('mt-1.5 size-2 shrink-0 rounded-full', n.isRead ? 'bg-transparent' : 'bg-brand')} />
+                  <span className="min-w-0 flex-1">
+                    <span className={cn('block text-[13px]', n.isRead ? 'text-gray-700' : 'font-medium text-gray-900')}>{n.title}</span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground line-clamp-2">{n.message}</span>
+                    <span className="mt-1 block text-[11px] text-gray-400">{fmtAgo(n.createdAt)}</span>
+                  </span>
                 </button>
-              </div>
-            </div>
-          )}
+              ))
+            )}
+          </div>
+
+          <div className="border-t border-gray-100 p-1">
+            <Link href="/admin/notifications" onClick={() => setOpen(false)}
+              className="block rounded-lg px-3 py-2 text-center text-[13px] font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-900">
+              View all
+            </Link>
+          </div>
         </div>
+      )}
+    </div>
+  )
+}
+
+export default function Header({ onMenuClick, onToggleSidebar, onSearchClick }) {
+  const [isMac, setIsMac] = useState(false)
+  useEffect(() => { setIsMac(/Mac|iPhone|iPad/.test(navigator.platform)) }, [])
+
+  return (
+    <header className="relative z-30 flex h-14 shrink-0 items-center gap-2 border-b border-gray-100 bg-white px-3 sm:px-4">
+      {/* Mobile: open drawer · Desktop: collapse rail */}
+      <button
+        onClick={onMenuClick}
+        className="inline-flex size-8 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 lg:hidden"
+        aria-label="Open menu"
+      >
+        <PanelLeft className="size-4" />
+      </button>
+      <button
+        onClick={onToggleSidebar}
+        className="hidden size-8 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 lg:inline-flex"
+        aria-label="Toggle sidebar"
+      >
+        <PanelLeft className="size-4" />
+      </button>
+      <div className="mx-1 hidden h-4 w-px bg-gray-200 sm:block" />
+
+      <Suspense fallback={null}>
+        <Breadcrumb />
+      </Suspense>
+
+      <div className="ml-auto flex items-center gap-1.5">
+        <button
+          onClick={onSearchClick}
+          className="hidden h-9 w-60 items-center gap-2 rounded-lg border border-gray-200 bg-gray-50/60 px-3 text-sm text-gray-400 transition-colors hover:border-gray-300 hover:bg-white md:flex"
+        >
+          <Search className="size-4" />
+          <span className="flex-1 text-left">Search…</span>
+          <kbd className="rounded-md border border-gray-200 bg-white px-1.5 py-px text-[11px] font-medium text-gray-500 shadow-xs">
+            {isMac ? '⌘K' : 'Ctrl K'}
+          </kbd>
+        </button>
+        <button
+          onClick={onSearchClick}
+          className="inline-flex size-9 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 md:hidden"
+          aria-label="Search"
+        >
+          <Search className="size-[18px]" />
+        </button>
+        <Notifications />
       </div>
     </header>
   )

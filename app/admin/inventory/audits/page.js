@@ -10,15 +10,18 @@ import DataTable from '@/components/ui/DataTable'
 import Pagination from '@/components/ui/Pagination'
 import SearchInput from '@/components/ui/SearchInput'
 import EmptyState from '@/components/ui/EmptyState'
+import Button, { buttonVariants } from '@/components/ui/Button'
+import { Card } from '@/components/ui/Card'
+import { Input, Textarea, NativeSelect, Field } from '@/components/ui/Input'
+import PageHeader from '@/components/ui/PageHeader'
+import Tabs from '@/components/ui/Tabs'
+import Badge from '@/components/ui/Badge'
 import { InventoryBadge } from '@/components/inventory/AssetStatusBadge'
 import { usePermission } from '@/components/auth/Can'
 import { AUDIT_STATUS_META } from '@/lib/inventory/constants'
 import { cn } from '@/lib/utils'
 
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Dhaka' }) : '—'
-const ic = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-gray-900'
-const lc = 'block text-xs font-medium text-gray-600 mb-1'
-const btnPrimary = 'inline-flex items-center justify-center gap-2 bg-gray-900 text-white hover:bg-gray-800 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50'
 
 const STATUS_TABS = [
   { value: '',            label: 'All' },
@@ -33,11 +36,11 @@ function Progress({ summary }) {
   const pct = total ? Math.round((checked / total) * 100) : 0
   return (
     <div className="min-w-[120px]">
-      <div className="flex justify-between text-xs text-gray-500 mb-1">
+      <div className="mb-1 flex justify-between text-xs tabular-nums text-muted-foreground">
         <span>{checked}/{total}</span><span>{pct}%</span>
       </div>
-      <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
-        <div className="h-full bg-gray-900 rounded-full" style={{ width: `${pct}%` }} />
+      <div className="h-1.5 overflow-hidden rounded-full bg-gray-100">
+        <div className="h-full rounded-full bg-gray-900" style={{ width: `${pct}%` }} />
       </div>
     </div>
   )
@@ -45,16 +48,16 @@ function Progress({ summary }) {
 
 function ResultChips({ summary, unexpected }) {
   const chips = [
-    { n: summary?.found, label: 'found', cls: 'bg-green-50 text-green-700' },
-    { n: summary?.missing, label: 'missing', cls: 'bg-red-50 text-red-700' },
-    { n: summary?.wrongLocation, label: 'misplaced', cls: 'bg-orange-50 text-orange-700' },
-    { n: summary?.damaged, label: 'damaged', cls: 'bg-amber-50 text-amber-700' },
-    { n: unexpected, label: 'unexpected', cls: 'bg-indigo-50 text-indigo-700' },
+    { n: summary?.found, label: 'found', variant: 'success' },
+    { n: summary?.missing, label: 'missing', variant: 'danger' },
+    { n: summary?.wrongLocation, label: 'misplaced', variant: 'orange' },
+    { n: summary?.damaged, label: 'damaged', variant: 'warning' },
+    { n: unexpected, label: 'unexpected', variant: 'indigo' },
   ].filter(c => c.n > 0)
   if (!chips.length) return <span className="text-xs text-gray-400">—</span>
   return (
     <div className="flex flex-wrap gap-1">
-      {chips.map(c => <span key={c.label} className={cn('px-1.5 py-0.5 rounded text-xs font-medium whitespace-nowrap', c.cls)}>{c.n} {c.label}</span>)}
+      {chips.map(c => <Badge key={c.label} variant={c.variant}>{c.n} {c.label}</Badge>)}
     </div>
   )
 }
@@ -131,7 +134,7 @@ function NewAuditModal({ open, onClose, onCreated }) {
       const json = await res.json()
       if (res.status === 409 && json.auditId) { setClash({ id: json.auditId, message: json.error }); return }
       if (!res.ok) throw new Error(json.error || 'Failed to start the audit')
-      toast.success(`Audit ${json.data.auditNo ?? ''} started — ${json.data.expected} assets to count`)
+      toast.success(`Audit ${json.data.auditNo ?? ''} started · ${json.data.expected} assets`)
       onCreated?.()
       router.push(`/admin/inventory/audits/${json.data.id}`)
     } catch (err) {
@@ -142,66 +145,62 @@ function NewAuditModal({ open, onClose, onCreated }) {
   }
 
   return (
-    <Modal open={open} onOpenChange={(o) => { if (!o && !saving) onClose() }} size="md" title="Start a physical audit"
-      description="Snapshot the assets expected in a place, then scan what you actually find.">
+    <Modal open={open} onOpenChange={(o) => { if (!o && !saving) onClose() }} size="md" title="New audit">
       <form id="new-audit-form" onSubmit={submit} className="space-y-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label className={lc}>Location</label>
-            <select value={form.locationId} onChange={set('locationId')} className={ic} disabled={optLoading}>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Location">
+            <NativeSelect value={form.locationId} onChange={set('locationId')} disabled={optLoading}
+              title="Includes rooms and floors inside it">
               <option value="">All locations</option>
               {options.locations.map(l => <option key={l.id} value={l.id}>{l.path}</option>)}
-            </select>
-            <p className="text-[11px] text-gray-400 mt-1">Includes rooms and floors inside it.</p>
-          </div>
-          <div>
-            <label className={lc}>Category</label>
-            <select value={form.categoryId} onChange={set('categoryId')} className={ic} disabled={optLoading}>
+            </NativeSelect>
+          </Field>
+          <Field label="Category">
+            <NativeSelect value={form.categoryId} onChange={set('categoryId')} disabled={optLoading}>
               <option value="">All categories</option>
               {options.categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </div>
+            </NativeSelect>
+          </Field>
         </div>
-        <div className="space-y-2">
-          <label className="flex items-start gap-2 text-sm text-gray-700">
-            <input type="checkbox" checked={form.includeRepair} onChange={set('includeRepair')} className="mt-0.5 rounded border-gray-300 text-gray-900 focus:ring-gray-900" />
-            <span>Include assets out for repair<span className="block text-xs text-gray-400">Usually off — they are with the repair vendor.</span></span>
+        <div className="space-y-2.5">
+          <label className="flex items-center gap-2 text-sm text-gray-700" title="Usually off — they are with the repair vendor">
+            <input type="checkbox" checked={form.includeRepair} onChange={set('includeRepair')} className="rounded border-gray-300" />
+            Include assets out for repair
           </label>
-          <label className="flex items-start gap-2 text-sm text-gray-700">
-            <input type="checkbox" checked={form.includeLost} onChange={set('includeLost')} className="mt-0.5 rounded border-gray-300 text-gray-900 focus:ring-gray-900" />
-            <span>Include assets already marked lost or stolen<span className="block text-xs text-gray-400">Turn on to look for them during this count.</span></span>
+          <label className="flex items-center gap-2 text-sm text-gray-700" title="Turn on to look for them during this count">
+            <input type="checkbox" checked={form.includeLost} onChange={set('includeLost')} className="rounded border-gray-300" />
+            Include lost or stolen assets
           </label>
         </div>
-        <div>
-          <label className={lc}>Name (optional)</label>
-          <input value={form.name} onChange={set('name')} maxLength={120} className={ic} placeholder="Defaults to the location and month, e.g. Head Office — Oct 2026" />
-        </div>
-        <div>
-          <label className={lc}>Notes (optional)</label>
-          <textarea rows={2} value={form.notes} onChange={set('notes')} maxLength={2000} className={ic} placeholder="Who is counting, any areas to skip…" />
-        </div>
+        <Field label="Name">
+          <Input value={form.name} onChange={set('name')} maxLength={120} placeholder="e.g. Head Office — Oct 2026" />
+        </Field>
+        <Field label="Notes">
+          <Textarea rows={2} value={form.notes} onChange={set('notes')} maxLength={2000} placeholder="Optional" />
+        </Field>
 
-        <div className={cn('flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm', preview?.expected ? 'bg-gray-50 text-gray-700' : 'bg-amber-50 text-amber-800')}>
-          {previewing ? <Loader2 className="w-4 h-4 animate-spin text-gray-400" /> : <ClipboardCheck className="w-4 h-4 shrink-0" />}
-          {previewing ? 'Counting assets in scope…'
+        <div className={cn('flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm',
+          preview?.expected ? 'border-gray-200/80 bg-gray-50 text-gray-700' : 'border-amber-200 bg-amber-50 text-amber-800')}>
+          {previewing ? <Loader2 className="size-4 shrink-0 animate-spin text-gray-400" /> : <ClipboardCheck className="size-4 shrink-0" />}
+          {previewing ? 'Counting assets…'
             : preview ? (preview.expected
-              ? <span><strong>{preview.expected}</strong> asset{preview.expected === 1 ? '' : 's'} will be on the count sheet.</span>
-              : 'No registered assets match this scope.')
-              : 'Choose a scope to see how many assets will be counted.'}
+              ? <span><strong className="font-semibold">{preview.expected}</strong> asset{preview.expected === 1 ? '' : 's'} to count</span>
+              : 'No assets match this scope')
+              : 'Choose a scope to see the count'}
         </div>
 
         {clash && (
-          <div className="flex items-start gap-2 rounded-lg bg-red-50 border border-red-100 px-3 py-2.5 text-sm text-red-700">
-            <CircleAlert className="w-4 h-4 shrink-0 mt-0.5" />
-            <p>{clash.message}. <Link href={`/admin/inventory/audits/${clash.id}`} className="font-medium underline">Open it</Link></p>
+          <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
+            <CircleAlert className="mt-0.5 size-4 shrink-0" />
+            <p>{clash.message}. <Link href={`/admin/inventory/audits/${clash.id}`} className="font-medium underline underline-offset-4">Open it</Link></p>
           </div>
         )}
       </form>
-      <ModalFooter className="-mx-4 sm:-mx-6 -mb-4 mt-4">
-        <button type="button" onClick={onClose} disabled={saving} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">Cancel</button>
-        <button type="submit" form="new-audit-form" disabled={saving || previewing || !preview?.expected} className={btnPrimary}>
-          {saving && <Loader2 className="w-4 h-4 animate-spin" />} Start audit
-        </button>
+      <ModalFooter>
+        <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
+        <Button type="submit" form="new-audit-form" loading={saving} disabled={previewing || !preview?.expected}>
+          Start audit
+        </Button>
       </ModalFooter>
     </Modal>
   )
@@ -254,17 +253,17 @@ export default function AuditsPage() {
       key: 'auditNo', label: 'Audit',
       render: (r) => (
         <div className="min-w-[180px]">
-          <p className="font-mono text-xs text-gray-500">{r.auditNo ?? '—'}</p>
-          <p className="text-sm font-medium text-gray-900">{r.name}</p>
+          <p className="font-medium text-gray-900">{r.name}</p>
+          <p className="font-mono text-xs text-muted-foreground">{r.auditNo ?? '—'}</p>
         </div>
       ),
     },
     {
       key: 'scope', label: 'Scope',
       render: (r) => (
-        <div className="text-xs text-gray-600 min-w-[140px]">
-          <p>{r.location?.name ?? 'All locations'}</p>
-          <p className="text-gray-400">{r.category?.name ?? 'All categories'}</p>
+        <div className="min-w-[140px] text-[13px]">
+          <p className="text-gray-700">{r.location?.name ?? 'All locations'}</p>
+          <p className="text-xs text-muted-foreground">{r.category?.name ?? 'All categories'}</p>
         </div>
       ),
     },
@@ -277,18 +276,18 @@ export default function AuditsPage() {
     {
       key: 'startedAt', label: 'Started', sortable: true,
       render: (r) => (
-        <div className="text-xs whitespace-nowrap">
+        <div className="whitespace-nowrap text-[13px]">
           <p className="text-gray-700">{fmtDate(r.startedAt)}</p>
-          {r.createdByName && <p className="text-gray-400">{r.createdByName}</p>}
+          {r.createdByName && <p className="text-xs text-muted-foreground">{r.createdByName}</p>}
         </div>
       ),
     },
     {
       key: 'completedAt', label: 'Closed',
       render: (r) => (
-        <div className="text-xs whitespace-nowrap">
+        <div className="whitespace-nowrap text-[13px]">
           <p className="text-gray-700">{fmtDate(r.completedAt)}</p>
-          {r.completedByName && <p className="text-gray-400">{r.completedByName}</p>}
+          {r.completedByName && <p className="text-xs text-muted-foreground">{r.completedByName}</p>}
         </div>
       ),
     },
@@ -297,14 +296,13 @@ export default function AuditsPage() {
       render: (r) => (
         <div className="flex justify-end" onClick={e => e.stopPropagation()}>
           {r.status === 'IN_PROGRESS' ? (
-            <Link href={`/admin/inventory/audits/${r.id}`}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-800">
-              <ScanBarcode className="w-3.5 h-3.5" /> Continue
-            </Link>
+            <Button href={`/admin/inventory/audits/${r.id}`} variant="outline" size="xs">
+              <ScanBarcode className="size-3.5" /> Continue
+            </Button>
           ) : (
             <a href={`/api/inventory/audits/${r.id}/print`} target="_blank" rel="noreferrer"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50">
-              <Printer className="w-3.5 h-3.5" /> Report
+              className={buttonVariants({ variant: 'ghost', size: 'xs' })}>
+              <Printer className="size-3.5" /> Report
             </a>
           )}
         </div>
@@ -314,59 +312,47 @@ export default function AuditsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-gray-900">Physical Audit</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Count assets on the floor and reconcile them with the register</p>
-        </div>
-        {canRun && (
-          <button type="button" onClick={() => setNewOpen(true)} className={btnPrimary}>
-            <Plus className="w-4 h-4" /> New audit
-          </button>
+      <PageHeader
+        title="Physical audits"
+        actions={canRun && (
+          <Button onClick={() => setNewOpen(true)}>
+            <Plus /> New audit
+          </Button>
         )}
+      />
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Tabs
+          value={status}
+          onChange={(v) => { setStatus(v); setPage(1) }}
+          tabs={STATUS_TABS.map(t => ({ value: t.value, label: t.label, count: meta ? (t.value ? counts[t.value] ?? 0 : totalAll) : null }))}
+        />
+        <SearchInput value={search} onChange={(v) => { setSearch(v); setPage(1) }} placeholder="Search…" className="w-full sm:w-64" />
+        <Button variant="ghost" size="icon-sm" onClick={load} disabled={loading} aria-label="Refresh" className="ml-auto text-gray-500">
+          <RefreshCw className={cn(loading && 'animate-spin')} />
+        </Button>
       </div>
 
-      <div className="bg-white border border-gray-100 rounded-xl p-4 flex flex-wrap items-center gap-3">
-        <div className="flex gap-1 bg-gray-100 rounded-lg p-1 overflow-x-auto max-w-full">
-          {STATUS_TABS.map(t => {
-            const n = t.value ? counts[t.value] ?? 0 : totalAll
-            return (
-              <button key={t.value || 'all'} type="button" onClick={() => { setStatus(t.value); setPage(1) }}
-                className={cn('px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap transition-colors',
-                  status === t.value ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700')}>
-                {t.label}{meta ? <span className="ml-1 text-xs text-gray-400">{n}</span> : null}
-              </button>
-            )
-          })}
-        </div>
-        <SearchInput value={search} onChange={(v) => { setSearch(v); setPage(1) }} placeholder="Search audit no. or name" className="w-full sm:w-64" />
-        <button type="button" onClick={load} disabled={loading} aria-label="Refresh"
-          className="ml-auto p-2 text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-50">
-          <RefreshCw className={cn('w-4 h-4', loading && 'animate-spin')} />
-        </button>
-      </div>
-
-      <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+      <Card className="overflow-hidden">
         {error ? (
           <EmptyState icon={CircleAlert} title="Couldn’t load audits" description={error}
-            action={<button type="button" onClick={load} className={btnPrimary}><RefreshCw className="w-4 h-4" /> Try again</button>} />
+            action={<Button variant="outline" onClick={load}><RefreshCw /> Try again</Button>} />
         ) : !loading && rows.length === 0 && !status && !search ? (
           <EmptyState icon={ClipboardCheck} title="No audits yet"
-            description="Start an audit for a location, then scan every tag you find. Missing and misplaced assets are listed for follow-up."
-            action={canRun ? <button type="button" onClick={() => setNewOpen(true)} className={btnPrimary}><Plus className="w-4 h-4" /> Start your first audit</button> : null} />
+            action={canRun ? <Button variant="outline" onClick={() => setNewOpen(true)}><Plus /> New audit</Button> : null} />
         ) : (
           <>
             <DataTable columns={columns} data={rows} loading={loading}
-              emptyTitle="No audits match" emptyDescription="Try another status or search."
+              emptyTitle="No results"
               onRowClick={(r) => router.push(`/admin/inventory/audits/${r.id}`)} />
             {meta && meta.pages > 1 && (
-              <div className="px-4 py-3 border-t border-gray-100">
+              <div className="border-t border-gray-100 px-4 py-3">
                 <Pagination meta={meta} onPageChange={setPage} />
               </div>
             )}
           </>
         )}
-      </div>
+      </Card>
 
       <NewAuditModal open={newOpen} onClose={() => setNewOpen(false)} onCreated={() => setNewOpen(false)} />
     </div>

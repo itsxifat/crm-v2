@@ -5,9 +5,11 @@ import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import toast from 'react-hot-toast'
-import { Loader2, RefreshCw, Eye, EyeOff, Copy, Check, UserCheck, ExternalLink } from 'lucide-react'
-import Modal from '@/components/ui/Modal'
+import { RefreshCw, Eye, EyeOff, Copy, Check, UserCheck, ExternalLink } from 'lucide-react'
+import Modal, { ModalFooter } from '@/components/ui/Modal'
 import Select from '@/components/ui/Select'
+import Button, { buttonVariants } from '@/components/ui/Button'
+import { Input, Field } from '@/components/ui/Input'
 import { isStrongPassword } from '@/lib/passwordPolicy'
 
 // Lead fields arrive masked ('+880••••78') for users without PII permissions
@@ -138,180 +140,137 @@ export default function ConvertLeadModal({ open, onClose, lead, onSuccess }) {
     }
   }
 
-  const ic  = (err) => `w-full px-3 py-2 text-sm border rounded-lg bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors ${err ? 'border-red-300' : 'border-gray-200'}`
-  const lc  = 'block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide'
-  const sec = 'text-xs font-bold text-gray-400 uppercase tracking-wider pb-2 border-b border-gray-100 mb-3'
-
   return (
     <Modal
       open={open}
       onOpenChange={(v) => !v && onClose()}
-      title="Convert Lead to Client"
-      description={result ? 'Client account created — share these login details' : `Set login credentials and fill in the client profile for ${lead?.name ?? ''}`}
+      title="Convert to client"
+      description={result ? undefined : lead?.name}
       size="lg"
     >
       {result ? (
         /* ── Success: show the credentials to share ── */
-        <div className="space-y-5">
-          <div className="flex items-center gap-3 p-3 rounded-lg bg-green-50 border border-green-100">
-            <div className="w-9 h-9 rounded-full bg-green-100 flex items-center justify-center shrink-0">
-              <UserCheck className="w-5 h-5 text-green-600" />
-            </div>
-            <p className="text-sm text-green-800">
-              The client can now log in with the credentials below. Make sure to share them securely.
-            </p>
+        <div className="space-y-4">
+          <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-800">
+            <UserCheck className="size-4 shrink-0" />
+            Client account created. Share these details securely.
           </div>
 
-          <div className="rounded-lg border border-gray-200 divide-y divide-gray-100">
-            <div className="flex items-center justify-between px-4 py-3">
-              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Email</span>
-              <span className="text-sm font-medium text-gray-900 select-all">{result.email}</span>
+          <div className="divide-y divide-gray-100 rounded-lg border border-gray-200/80">
+            <div className="flex items-center justify-between gap-3 px-4 py-3">
+              <span className="text-sm text-muted-foreground">Email</span>
+              <span className="select-all text-sm font-medium text-gray-900">{result.email}</span>
             </div>
-            <div className="flex items-center justify-between px-4 py-3">
-              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Password</span>
-              <span className="text-sm font-mono font-medium text-gray-900 select-all">{result.tempPassword}</span>
+            <div className="flex items-center justify-between gap-3 px-4 py-3">
+              <span className="text-sm text-muted-foreground">Password</span>
+              <span className="select-all font-mono text-sm font-medium text-gray-900">{result.tempPassword}</span>
             </div>
           </div>
 
-          <div className="flex items-center justify-between gap-3 pt-2 border-t border-gray-100">
-            <button
-              type="button"
-              onClick={copyCredentials}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-            >
-              {copied ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
+          <ModalFooter className="sm:justify-between">
+            <Button variant="outline" onClick={copyCredentials}>
+              {copied ? <Check className="text-emerald-600" /> : <Copy />}
               {copied ? 'Copied' : 'Copy credentials'}
-            </button>
-            <a
-              href={`/admin/clients/${result.clientId}`}
-              className="flex items-center gap-2 px-5 py-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
-            >
-              View Client <ExternalLink className="w-4 h-4" />
+            </Button>
+            <a href={`/admin/clients/${result.clientId}`} className={buttonVariants()}>
+              View client <ExternalLink />
             </a>
-          </div>
+          </ModalFooter>
         </div>
       ) : (
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
 
           {/* ── Login Credentials ── */}
-          <div>
-            <p className={sec}>Login Credentials</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="sm:col-span-2">
-                <label className={lc}>Email *</label>
-                <input {...register('email')} type="email" placeholder="client@example.com" className={ic(errors.email)} />
-                {errors.email && <p className="mt-1 text-xs text-red-500">{errors.email.message}</p>}
-                <p className="mt-1 text-xs text-gray-400">Used by the client to log in.</p>
-              </div>
-              <div className="sm:col-span-2">
-                <label className={lc}>Password</label>
+          <section>
+            <h3 className="mb-3 text-sm font-semibold text-gray-900">Login</h3>
+            <div className="grid gap-4">
+              <Field label="Email" required error={errors.email?.message}>
+                <Input {...register('email')} type="email" placeholder="client@example.com" invalid={!!errors.email} />
+              </Field>
+              <Field label="Password" error={errors.password?.message}>
                 <div className="flex gap-2">
                   <div className="relative flex-1">
-                    <input
+                    <Input
                       {...register('password')}
                       type={showPw ? 'text' : 'password'}
-                      placeholder="Leave blank to auto-generate"
-                      className={ic(errors.password) + ' pr-10'}
+                      placeholder="Auto-generated if blank"
+                      invalid={!!errors.password}
+                      className="pr-10"
                     />
                     <button
                       type="button"
                       onClick={() => setShowPw(v => !v)}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
                       tabIndex={-1}
+                      aria-label={showPw ? 'Hide password' : 'Show password'}
                     >
-                      {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      {showPw ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                     </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => { setValue('password', genPassword()); setShowPw(true) }}
-                    className="px-3 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 shrink-0 flex items-center gap-1.5"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" /> Generate
-                  </button>
+                  <Button variant="outline" onClick={() => { setValue('password', genPassword()); setShowPw(true) }}>
+                    <RefreshCw /> Generate
+                  </Button>
                 </div>
-                {errors.password && <p className="mt-1 text-xs text-red-500">{errors.password.message}</p>}
-              </div>
-              <div className="sm:col-span-2">
-                <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
-                  <input type="checkbox" {...register('requirePasswordChange')} className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
-                  Require password change on first login
-                </label>
-              </div>
+              </Field>
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-700">
+                <input type="checkbox" {...register('requirePasswordChange')} className="rounded border-gray-300" />
+                Require password change on first login
+              </label>
             </div>
-          </div>
+          </section>
 
           {/* ── Client Profile ── */}
-          <div>
-            <p className={sec}>Client Profile</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className={lc}>Name *</label>
-                <input {...register('name')} placeholder="John Smith" className={ic(errors.name)} />
-                {errors.name && <p className="mt-1 text-xs text-red-500">{errors.name.message}</p>}
-              </div>
-              <div>
-                <label className={lc}>Phone</label>
-                <input {...register('phone')} type="tel" placeholder="+880 1X XX XXX XXX" className={ic()} />
-              </div>
-              <div>
-                <label className={lc}>Client Type</label>
+          <section>
+            <h3 className="mb-3 text-sm font-semibold text-gray-900">Client profile</h3>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Name" required error={errors.name?.message}>
+                <Input {...register('name')} placeholder="John Smith" invalid={!!errors.name} />
+              </Field>
+              <Field label="Phone">
+                <Input {...register('phone')} type="tel" placeholder="e.g. 017…" />
+              </Field>
+              <Field label="Client type">
                 <Controller name="clientType" control={control} render={({ field }) => (
-                  <Select value={field.value} onChange={field.onChange} options={CLIENT_TYPES} placeholder="Select type…" />
+                  <Select value={field.value} onChange={field.onChange} options={CLIENT_TYPES} placeholder="Select…" />
                 )} />
-              </div>
-              <div>
-                <label className={lc}>Designation</label>
-                <input {...register('designation')} placeholder="CEO, Marketing Head…" className={ic()} />
-              </div>
-              <div>
-                <label className={lc}>Company</label>
-                <input {...register('company')} placeholder="Acme Corp" className={ic()} />
-              </div>
-              <div>
-                <label className={lc}>Industry</label>
-                <input {...register('industry')} placeholder="E-commerce, Healthcare…" className={ic()} />
-              </div>
-              <div>
-                <label className={lc}>Company Email</label>
-                <input {...register('companyEmail')} type="email" placeholder="info@acme.com" className={ic(errors.companyEmail)} />
-                {errors.companyEmail && <p className="mt-1 text-xs text-red-500">{errors.companyEmail.message}</p>}
-              </div>
-              <div>
-                <label className={lc}>Company Phone</label>
-                <input {...register('companyPhone')} type="tel" placeholder="+880 …" className={ic()} />
-              </div>
-              <div className="sm:col-span-2">
-                <label className={lc}>Website</label>
-                <input {...register('website')} placeholder="https://acme.com" className={ic()} />
-              </div>
-              <div className="sm:col-span-2">
-                <label className={lc}>Address</label>
-                <input {...register('address')} placeholder="Street address…" className={ic()} />
-              </div>
-              <div>
-                <label className={lc}>City</label>
-                <input {...register('city')} placeholder="Dhaka" className={ic()} />
-              </div>
-              <div>
-                <label className={lc}>Country</label>
-                <input {...register('country')} placeholder="Bangladesh" className={ic()} />
-              </div>
+              </Field>
+              <Field label="Designation">
+                <Input {...register('designation')} placeholder="e.g. CEO" />
+              </Field>
+              <Field label="Company">
+                <Input {...register('company')} placeholder="Acme Corp" />
+              </Field>
+              <Field label="Industry">
+                <Input {...register('industry')} placeholder="e.g. E-commerce" />
+              </Field>
+              <Field label="Company email" error={errors.companyEmail?.message}>
+                <Input {...register('companyEmail')} type="email" placeholder="info@acme.com" invalid={!!errors.companyEmail} />
+              </Field>
+              <Field label="Company phone">
+                <Input {...register('companyPhone')} type="tel" placeholder="e.g. 02…" />
+              </Field>
+              <Field label="Website" className="sm:col-span-2">
+                <Input {...register('website')} placeholder="https://acme.com" />
+              </Field>
+              <Field label="Address" className="sm:col-span-2">
+                <Input {...register('address')} placeholder="Street address" />
+              </Field>
+              <Field label="City">
+                <Input {...register('city')} placeholder="Dhaka" />
+              </Field>
+              <Field label="Country">
+                <Input {...register('country')} placeholder="Bangladesh" />
+              </Field>
             </div>
-          </div>
+          </section>
 
-          {/* ── Footer ── */}
-          <div className="flex items-center justify-end gap-3 pt-2 border-t border-gray-100">
-            <button type="button" onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors">
-              Cancel
-            </button>
-            <button type="submit" disabled={loading}
-              className="px-5 py-2 text-sm font-semibold text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors disabled:opacity-60 flex items-center gap-2">
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserCheck className="w-4 h-4" />}
-              Convert to Client
-            </button>
-          </div>
+          <ModalFooter>
+            <Button variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="submit" loading={loading}>
+              {!loading && <UserCheck />}
+              Convert to client
+            </Button>
+          </ModalFooter>
         </form>
       )}
     </Modal>

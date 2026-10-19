@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
-import { Loader2 } from 'lucide-react'
+import { AlertTriangle } from 'lucide-react'
 import Modal, { ModalFooter } from '@/components/ui/Modal'
+import Button from '@/components/ui/Button'
+import { Input, Textarea, Field } from '@/components/ui/Input'
 import ChallansEditor, { challanToRow, rowsToPayload, challanProblem } from './ChallansEditor'
-import { readJson, inputCls, labelCls, btnPrimary, btnGhost } from '../_lib/format'
+import { readJson } from '../_lib/format'
 
 /**
  * Save treasury challans / refund request / notes on a DRAFT return so they
@@ -59,14 +61,12 @@ export default function DraftModal({ open, onClose, period, filing, settings, on
       open={open}
       onOpenChange={(v) => { if (!v && !saving) onClose() }}
       title="Challans & draft notes"
-      description={period ? `${period.label} — saved as a draft until the return is filed` : undefined}
+      description={period ? `${period.label} · draft until filed` : undefined}
       size="lg"
     >
       <div className="space-y-5">
-        <p className="text-sm text-gray-600">
-          Record the treasury challans (A-challan / e-payment) paid for this return. They are added to note 58 (VAT)
-          or note 59 (supplementary duty, choose “SD”). A challan already recorded as a VAT payment in the tax ledger
-          is counted once (matched by challan number).
+        <p className="text-[13px] text-muted-foreground">
+          Counted in note 58 (VAT) or 59 (SD). Challans already in the tax ledger count once.
         </p>
         <ChallansEditor
           rows={challans}
@@ -74,23 +74,24 @@ export default function DraftModal({ open, onClose, period, filing, settings, on
           defaultAccountCode={settings?.challanCode ?? ''}
           sdAccountCode={settings?.sdChallanCode ?? ''}
         />
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label className={labelCls}>Refund requested (note 67)</label>
-            <input type="number" min="0" step="0.01" className={inputCls} value={refund} onChange={e => setRefund(e.target.value)} placeholder="0.00" />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field label="Refund requested (note 67)">
+            <Input type="number" min="0" step="0.01" value={refund} onChange={e => setRefund(e.target.value)} placeholder="0.00" />
+          </Field>
+        </div>
+        <Field label="Working notes">
+          <Textarea rows={3} className="resize-none" value={notes} maxLength={2000} onChange={e => setNotes(e.target.value)} />
+        </Field>
+        {error && (
+          <div className="flex gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-800">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-red-600" />
+            <p>{error}</p>
           </div>
-        </div>
-        <div>
-          <label className={labelCls}>Working notes</label>
-          <textarea rows={3} className={`${inputCls} resize-none`} value={notes} maxLength={2000} onChange={e => setNotes(e.target.value)} />
-        </div>
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        )}
       </div>
-      <ModalFooter className="-mx-4 sm:-mx-6 -mb-4 mt-5">
-        <button type="button" onClick={onClose} disabled={saving} className={btnGhost}>Cancel</button>
-        <button type="button" onClick={save} disabled={saving} className={btnPrimary}>
-          {saving && <Loader2 className="w-4 h-4 animate-spin" />} Save draft
-        </button>
+      <ModalFooter>
+        <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
+        <Button onClick={save} loading={saving}>Save draft</Button>
       </ModalFooter>
     </Modal>
   )

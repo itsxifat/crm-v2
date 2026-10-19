@@ -2,10 +2,13 @@
 
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
-import { ExternalLink, FileText, Loader2, Paperclip, Plus, Printer, Trash2, TrendingDown } from 'lucide-react'
+import { ExternalLink, FileText, Paperclip, Plus, Printer, Trash2, TrendingDown } from 'lucide-react'
 import toast from 'react-hot-toast'
 import DocPreview from '@/components/ui/DocPreview'
 import FileUpload from '@/components/ui/FileUpload'
+import Button from '@/components/ui/Button'
+import Tabs from '@/components/ui/Tabs'
+import { Input } from '@/components/ui/Input'
 import { InventoryBadge, AssetEventIcon } from '@/components/inventory/AssetStatusBadge'
 import { cn } from '@/lib/utils'
 import {
@@ -17,7 +20,7 @@ import { periodLabelOf as rawPeriodLabel } from '@/lib/inventory/depreciationMat
 
 /** 'Oct 2026' for '2026-10' (falls back to the raw value instead of throwing). */
 const periodLabelOf = (p) => { try { return rawPeriodLabel(p) } catch { return p ?? '' } }
-import { Section, InfoRow, tk, fmtDay, fmtDateTime, inputCls, btnSecondary, apiJson } from './shared'
+import { Section, InfoRow, tk, fmtDay, fmtDateTime, apiJson } from './shared'
 
 const statusLabel = (s) => STATUS_META[s]?.label ?? s
 const condLabel = (c) => CONDITION_META[c]?.label ?? c
@@ -161,23 +164,17 @@ export function AssetTimeline({ events = [], assetId }) {
   }), [events, filter, showDep])
 
   return (
-    <Section title="History" description="Every change to this asset, newest first"
+    <Section title="History"
       actions={depCount > 0 && filter !== 'money' && (
-        <label className="flex items-center gap-1.5 text-xs text-gray-500">
+        <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <input type="checkbox" className="rounded border-gray-300" checked={showDep} onChange={e => setShowDep(e.target.checked)} />
           Monthly depreciation ({depCount})
         </label>
       )}>
-      <div className="flex flex-wrap gap-1.5 mb-4">
-        {FILTERS.map(fl => (
-          <button key={fl.key} type="button" onClick={() => setFilter(fl.key)}
-            className={cn('px-2.5 py-1 rounded-md text-xs font-medium', filter === fl.key ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')}>
-            {fl.label}
-          </button>
-        ))}
-      </div>
+      <Tabs size="sm" className="mb-4" value={filter} onChange={setFilter}
+        tabs={FILTERS.map(fl => ({ value: fl.key, label: fl.label }))} />
       {shown.length === 0 ? (
-        <p className="text-sm text-gray-400 py-6 text-center">No events in this view.</p>
+        <p className="py-6 text-center text-sm text-muted-foreground">No events</p>
       ) : (
         <ol className="relative">
           {shown.slice(0, limit).map((e, i) => {
@@ -186,7 +183,7 @@ export function AssetTimeline({ events = [], assetId }) {
             const last = i === Math.min(shown.length, limit) - 1
             return (
               <li key={e.id} className="relative flex gap-3 pb-5">
-                {!last && <span className="absolute left-4 top-8 bottom-0 w-px bg-gray-100" aria-hidden="true" />}
+                {!last && <span className="absolute bottom-0 left-4 top-8 w-px bg-gray-200/70" aria-hidden="true" />}
                 <AssetEventIcon type={e.type} className="relative z-[1]" />
                 <div className="min-w-0 flex-1 pt-0.5">
                   <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
@@ -196,17 +193,17 @@ export function AssetTimeline({ events = [], assetId }) {
                         <span className="ml-2 text-xs font-normal text-gray-400">{statusLabel(e.fromStatus)} → {statusLabel(e.toStatus)}</span>
                       )}
                     </p>
-                    <time className="text-xs text-gray-400 whitespace-nowrap" dateTime={e.date}>{fmtDateTime(e.date)}</time>
+                    <time className="whitespace-nowrap text-xs text-gray-400" dateTime={e.date}>{fmtDateTime(e.date)}</time>
                   </div>
-                  {summary && <p className="text-sm text-gray-600 mt-0.5 break-words">{summary}</p>}
+                  {summary && <p className="mt-0.5 break-words text-sm text-gray-600">{summary}</p>}
                   {e.notes && e.notes !== summary && e.notes !== e.details?.description && (
-                    <p className="text-sm text-gray-500 mt-1 whitespace-pre-wrap break-words border-l-2 border-gray-100 pl-2">{e.notes}</p>
+                    <p className="mt-1 whitespace-pre-wrap break-words border-l-2 border-gray-200 pl-2 text-sm text-muted-foreground">{e.notes}</p>
                   )}
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-xs text-gray-400">
+                  <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-400">
                     {e.createdByName && <span>by {e.createdByName}</span>}
                     {e.type === 'ASSIGNED' && e.toEmployee && (
-                      <a href={`/api/inventory/assets/${assetId}/handover?eventId=${e.id}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-600 hover:underline">
-                        <Printer className="w-3 h-3" /> Hand-over form
+                      <a href={`/api/inventory/assets/${assetId}/handover?eventId=${e.id}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-medium text-gray-600 underline-offset-4 hover:text-gray-900 hover:underline">
+                        <Printer className="size-3" /> Hand-over form
                       </a>
                     )}
                     {e.expense && (
@@ -216,8 +213,8 @@ export function AssetTimeline({ events = [], assetId }) {
                       </span>
                     )}
                     {(e.attachments ?? []).map((u, k) => (
-                      <a key={`${u}-${k}`} href={safeLinkUrl(u) ?? undefined} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-600 hover:underline">
-                        <Paperclip className="w-3 h-3" /> {u.split('/').pop().slice(0, 18)}
+                      <a key={`${u}-${k}`} href={safeLinkUrl(u) ?? undefined} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-medium text-gray-600 underline-offset-4 hover:text-gray-900 hover:underline">
+                        <Paperclip className="size-3" /> {u.split('/').pop().slice(0, 18)}
                       </a>
                     ))}
                   </div>
@@ -228,9 +225,9 @@ export function AssetTimeline({ events = [], assetId }) {
         </ol>
       )}
       {shown.length > limit && (
-        <button type="button" className={cn(btnSecondary, 'w-full')} onClick={() => setLimit(l => l + 50)}>
+        <Button variant="outline" size="sm" className="w-full" onClick={() => setLimit(l => l + 50)}>
           Show {Math.min(50, shown.length - limit)} more
-        </button>
+        </Button>
       )}
     </Section>
   )
@@ -267,61 +264,56 @@ export function FinancialsPanel({ asset, book, tax, ledger, taxEntries, initialT
   }, [book, allPosted])
 
   const tabs = [
-    { key: 'book', label: 'Book depreciation' },
-    { key: 'tax', label: 'Tax (Third Schedule)' },
-    ...(ledger ? [{ key: 'ledger', label: `Ledger (${ledger.length})` }] : []),
+    { value: 'book', label: 'Book depreciation' },
+    { value: 'tax', label: 'Tax (Third Schedule)' },
+    ...(ledger ? [{ value: 'ledger', label: 'Ledger', count: ledger.length }] : []),
   ]
 
   return (
     <Section title="Value & depreciation" bodyClassName="p-0">
-      <div className="px-4 sm:px-5 py-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 gap-3 px-5 pb-4 sm:grid-cols-4">
         <div className="rounded-lg bg-gray-50 px-3 py-2.5">
-          <p className="text-xs text-gray-500">Cost</p>
-          <p className="text-base font-semibold text-gray-900">{tk(cost)}</p>
+          <p className="text-xs text-muted-foreground">Cost</p>
+          <p className="mt-0.5 text-base font-semibold tabular-nums text-gray-900">{tk(cost)}</p>
         </div>
         <div className="rounded-lg bg-gray-50 px-3 py-2.5">
-          <p className="text-xs text-gray-500">Accumulated depreciation</p>
-          <p className="text-base font-semibold text-gray-900">{tk(accumulated)}</p>
+          <p className="text-xs text-muted-foreground">Accumulated depreciation</p>
+          <p className="mt-0.5 text-base font-semibold tabular-nums text-gray-900">{tk(accumulated)}</p>
         </div>
         <div className="rounded-lg bg-gray-50 px-3 py-2.5">
-          <p className="text-xs text-gray-500">Net book value</p>
-          <p className="text-base font-semibold text-gray-900">{capitalized ? tk(nbv) : tk(0)}</p>
+          <p className="text-xs text-muted-foreground">Net book value</p>
+          <p className="mt-0.5 text-base font-semibold tabular-nums text-gray-900">{capitalized ? tk(nbv) : tk(0)}</p>
         </div>
         <div className="rounded-lg bg-gray-50 px-3 py-2.5">
-          <p className="text-xs text-gray-500">Tax WDV ({tax?.currentFiscalYear ?? '—'})</p>
-          <p className="text-base font-semibold text-gray-900">{tax?.currentWdv != null ? tk(tax.currentWdv) : '—'}</p>
+          <p className="text-xs text-muted-foreground">Tax WDV ({tax?.currentFiscalYear ?? '—'})</p>
+          <p className="mt-0.5 text-base font-semibold tabular-nums text-gray-900">{tax?.currentWdv != null ? tk(tax.currentWdv) : '—'}</p>
         </div>
       </div>
       {capitalized ? (
-        <div className="px-4 sm:px-5 pb-4">
-          <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
+        <div className="px-5 pb-4">
+          <div className="mb-1.5 flex items-center justify-between text-xs text-muted-foreground">
             <span>{pct}% depreciated</span>
             <span>{book?.endPeriod ? `Fully depreciated by ${periodLabelOf(book.endPeriod)}` : book?.fullyDepreciated ? 'Fully depreciated' : ''}</span>
           </div>
-          <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
-            <div className="h-full bg-gray-900 rounded-full" style={{ width: `${pct}%` }} />
+          <div className="h-1.5 overflow-hidden rounded-full bg-gray-100">
+            <div className="h-full rounded-full bg-gray-900" style={{ width: `${pct}%` }} />
           </div>
         </div>
       ) : (
-        <p className="px-4 sm:px-5 pb-4 text-xs text-gray-500">This item was expensed when bought (below the capitalization threshold or set as non-capital). It is tracked for custody only.</p>
+        <p className="px-5 pb-4 text-xs text-muted-foreground">Expensed when bought — tracked for custody only.</p>
       )}
 
-      <div className="border-t border-gray-50 px-4 sm:px-5 pt-3 flex gap-1 overflow-x-auto">
-        {tabs.map(t => (
-          <button key={t.key} type="button" onClick={() => setTab(t.key)}
-            className={cn('px-3 py-1.5 text-xs font-medium rounded-md whitespace-nowrap', tab === t.key ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-100')}>
-            {t.label}
-          </button>
-        ))}
+      <div className="border-t border-gray-100 px-5 pt-4">
+        <Tabs size="sm" value={tab} onChange={setTab} tabs={tabs} />
       </div>
 
-      <div className="px-4 sm:px-5 py-4">
+      <div className="px-5 pb-5 pt-4">
         {tab === 'book' && (
           !book?.depreciates && !(book?.posted ?? []).length ? (
-            <p className="text-sm text-gray-500">No book depreciation — {capitalized ? 'the method is “Not depreciated” or the cost is zero' : 'the item is not capitalized'}.</p>
+            <p className="text-sm text-muted-foreground">No book depreciation — {capitalized ? 'the method is “Not depreciated” or the cost is zero' : 'the item is not capitalized'}.</p>
           ) : (
             <>
-              <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-500 mb-3">
+              <div className="mb-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground">
                 <span>Method: <b className="text-gray-700">{DEPRECIATION_METHOD_LABELS[book.method] ?? book.method}</b></span>
                 {book.usefulLifeMonths && <span>Life: <b className="text-gray-700">{book.usefulLifeMonths} months</b></span>}
                 {book.monthlyCharge != null && <span>Monthly: <b className="text-gray-700">{tk(book.monthlyCharge)}</b></span>}
@@ -330,12 +322,12 @@ export function FinancialsPanel({ asset, book, tax, ledger, taxEntries, initialT
                 <span>Posted through: <b className="text-gray-700">{book.lastPostedPeriod ? periodLabelOf(book.lastPostedPeriod) : 'not yet'}</b></span>
               </div>
               {bookRows.hidden > 0 && (
-                <button type="button" className="text-xs text-blue-600 hover:underline mb-2" onClick={() => setAllPosted(true)}>Show {plural(bookRows.hidden, 'earlier posted month')}</button>
+                <button type="button" className="mb-2 text-xs font-medium text-gray-900 underline-offset-4 hover:underline" onClick={() => setAllPosted(true)}>Show {plural(bookRows.hidden, 'earlier posted month')}</button>
               )}
               <div className="overflow-x-auto -mx-4 sm:mx-0">
                 <table className="w-full text-sm min-w-[520px]">
                   <thead>
-                    <tr className="text-xs text-gray-500 border-b border-gray-100">
+                    <tr className="border-b border-gray-100 text-xs text-muted-foreground">
                       <th className="text-left font-medium py-2 px-4 sm:px-2">Month</th>
                       <th className="text-right font-medium py-2 px-2">Charge</th>
                       <th className="text-right font-medium py-2 px-2">Accumulated</th>
@@ -343,7 +335,7 @@ export function FinancialsPanel({ asset, book, tax, ledger, taxEntries, initialT
                       <th className="text-right font-medium py-2 px-4 sm:px-2">Status</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-50">
+                  <tbody className="divide-y divide-gray-100">
                     {bookRows.rows.map(r => (
                       <tr key={r.key} className={cn(r.state === 'PROJECTED' && 'text-gray-500')}>
                         <td className="py-1.5 px-4 sm:px-2 whitespace-nowrap">{r.label}{r.note && <span className="ml-1 text-xs text-gray-400">({r.note})</span>}</td>
@@ -354,30 +346,30 @@ export function FinancialsPanel({ asset, book, tax, ledger, taxEntries, initialT
                       </tr>
                     ))}
                     {!bookRows.rows.length && (
-                      <tr><td colSpan={5} className="py-4 text-center text-gray-400 text-sm">Nothing scheduled — the asset is fully depreciated or disposed of.</td></tr>
+                      <tr><td colSpan={5} className="py-4 text-center text-sm text-muted-foreground">Nothing scheduled — fully depreciated or disposed of</td></tr>
                     )}
                   </tbody>
                 </table>
               </div>
-              <p className="text-xs text-gray-400 mt-3">{DEPRECIATION_CONVENTION_LABELS[book.convention] ?? ''}. Monthly runs post these amounts to the ledger as non-cash “Depreciation”.</p>
+              <p className="mt-3 text-xs text-muted-foreground">{DEPRECIATION_CONVENTION_LABELS[book.convention] ?? ''} · posted monthly as non-cash depreciation.</p>
             </>
           )
         )}
 
         {tab === 'tax' && (
           <>
-            <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-500 mb-3">
+            <div className="mb-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground">
               <span>Class: <b className="text-gray-700">{tax?.classLabel}</b></span>
               <span>Rate: <b className="text-gray-700">{tax?.rate}% {tax?.method === 'STRAIGHT_LINE' ? 'on cost (straight-line)' : 'on WDV'}</b></span>
               {tax?.costCap && <span>Cost cap: <b className="text-gray-700">{tk(tax.costCap)}</b></span>}
             </div>
             {!(tax?.rows ?? []).length ? (
-              <p className="text-sm text-gray-500">No tax depreciation — {capitalized ? 'add a purchase date and cost to build the schedule' : 'expensed items are deducted in the year bought'}.</p>
+              <p className="text-sm text-muted-foreground">No tax depreciation — {capitalized ? 'add a purchase date and cost to build the schedule' : 'expensed items are deducted in the year bought'}.</p>
             ) : (
               <div className="overflow-x-auto -mx-4 sm:mx-0">
                 <table className="w-full text-sm min-w-[560px]">
                   <thead>
-                    <tr className="text-xs text-gray-500 border-b border-gray-100">
+                    <tr className="border-b border-gray-100 text-xs text-muted-foreground">
                       <th className="text-left font-medium py-2 px-4 sm:px-2">Income year</th>
                       <th className="text-right font-medium py-2 px-2">Opening WDV</th>
                       <th className="text-right font-medium py-2 px-2">Rate</th>
@@ -386,7 +378,7 @@ export function FinancialsPanel({ asset, book, tax, ledger, taxEntries, initialT
                       <th className="text-left font-medium py-2 px-4 sm:px-2">Note</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-50">
+                  <tbody className="divide-y divide-gray-100">
                     {tax.rows.map(r => (
                       <tr key={r.fy} className={cn(r.projected && 'text-gray-400 italic')}>
                         <td className="py-1.5 px-4 sm:px-2 whitespace-nowrap">{r.fy}{r.projected && ' (projected)'}</td>
@@ -401,19 +393,19 @@ export function FinancialsPanel({ asset, book, tax, ledger, taxEntries, initialT
                 </table>
               </div>
             )}
-            <p className="text-xs text-gray-400 mt-3">Income Tax Act 2023, Third Schedule: full-year allowance in the year of acquisition, none in the year of disposal; total never exceeds cost. This schedule supports the depreciation statement filed with the return.</p>
+            <p className="mt-3 text-xs text-muted-foreground">ITA 2023 Third Schedule: full-year allowance in the acquisition year, none in the disposal year; capped at cost.</p>
           </>
         )}
 
         {tab === 'ledger' && ledger && (
           <>
             {!ledger.length ? (
-              <p className="text-sm text-gray-500">No ledger entries reference this asset yet.</p>
+              <p className="text-sm text-muted-foreground">No ledger entries yet</p>
             ) : (
               <div className="overflow-x-auto -mx-4 sm:mx-0">
                 <table className="w-full text-sm min-w-[560px]">
                   <thead>
-                    <tr className="text-xs text-gray-500 border-b border-gray-100">
+                    <tr className="border-b border-gray-100 text-xs text-muted-foreground">
                       <th className="text-left font-medium py-2 px-4 sm:px-2">Date</th>
                       <th className="text-left font-medium py-2 px-2">Entry</th>
                       <th className="text-left font-medium py-2 px-2">Kind</th>
@@ -421,7 +413,7 @@ export function FinancialsPanel({ asset, book, tax, ledger, taxEntries, initialT
                       <th className="text-left font-medium py-2 px-4 sm:px-2">Account</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-50">
+                  <tbody className="divide-y divide-gray-100">
                     {ledger.map(t => (
                       <tr key={t.id}>
                         <td className="py-1.5 px-4 sm:px-2 whitespace-nowrap">{fmtDay(t.date)}</td>
@@ -430,7 +422,7 @@ export function FinancialsPanel({ asset, book, tax, ledger, taxEntries, initialT
                           <p className="text-xs text-gray-400 font-mono">{t.txnId}</p>
                         </td>
                         <td className="py-1.5 px-2"><InventoryBadge label={KIND_LABELS[t.kind] ?? t.kind ?? 'Operating'} color={t.kind === 'NON_CASH' ? 'purple' : t.kind === 'ASSET_SALE' ? 'teal' : 'gray'} dot={false} className="py-0.5" /></td>
-                        <td className={cn('py-1.5 px-2 text-right tabular-nums', t.type === 'INCOME' ? 'text-green-700' : 'text-gray-900')}>
+                        <td className={cn('py-1.5 px-2 text-right tabular-nums', t.type === 'INCOME' ? 'text-emerald-700' : 'text-gray-900')}>
                           {t.type === 'INCOME' ? '+' : '−'} {tk(t.amountBDT ?? t.amount)}
                         </td>
                         <td className="py-1.5 px-4 sm:px-2 text-xs text-gray-500">{t.accountId?.name ?? 'Non-cash'}</td>
@@ -442,7 +434,7 @@ export function FinancialsPanel({ asset, book, tax, ledger, taxEntries, initialT
             )}
             {(taxEntries ?? []).length > 0 && (
               <div className="mt-4">
-                <p className="text-xs font-semibold text-gray-700 mb-1">Tax entries</p>
+                <p className="mb-1 text-[13px] font-medium text-gray-900">Tax entries</p>
                 {taxEntries.map(t => (
                   <div key={t.id} className="flex flex-wrap items-center justify-between gap-2 text-sm py-1">
                     <span className="text-gray-700">{t.entryType.replace(/_/g, ' ')} <span className="text-xs text-gray-400 font-mono">{t.entryNo}</span>{t.status === 'VOID' && <span className="ml-1 text-xs text-red-500">void</span>}</span>
@@ -463,33 +455,33 @@ export function FinancialsPanel({ asset, book, tax, ledger, taxEntries, initialT
 export function DamagePanel({ cases = [], canResolve, canAssess, onResolve, onAssess }) {
   if (!cases.length) return null
   return (
-    <Section title="Damage & recovery" description="Damage register (Labour Act 2006 s.125/127) — recoveries need a proper enquiry and never exceed the actual loss">
+    <Section title="Damage & recovery" description="Labour Act 2006 s.125/127 register">
       <div className="space-y-3">
         {cases.map(c => {
           const st = RECOVERY_STATUS_META[c.recovery?.status]
           const awaiting = c.reportedByEmployee && !c.assessed
           return (
-            <div key={c.eventId} className="border border-gray-100 rounded-lg p-3">
+            <div key={c.eventId} className="rounded-lg border border-gray-200/80 p-3">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-gray-900">
                     {awaiting ? 'Problem reported by employee' : (DAMAGE_CAUSE_LABELS[c.cause] ?? 'Damage')}
                     <span className="ml-2 text-xs font-normal text-gray-400">{fmtDay(c.date)}</span>
                   </p>
-                  {c.description && <p className="text-sm text-gray-600 mt-0.5 break-words">{c.description}</p>}
+                  {c.description && <p className="mt-0.5 break-words text-sm text-gray-600">{c.description}</p>}
                 </div>
                 {awaiting
                   ? <InventoryBadge label="Awaiting assessment" color="orange" />
                   : st && <InventoryBadge label={st.label} color={st.color} />}
               </div>
               {!awaiting && (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2 text-xs">
-                  <div><p className="text-gray-400">Assessed loss</p><p className="text-gray-900 font-medium">{tk(c.assessedLoss)}</p></div>
-                  <div><p className="text-gray-400">Responsible</p><p className="text-gray-900 font-medium">{c.responsibleEmployeeName ?? '—'}{c.liabilityPct != null && c.responsibleEmployeeName ? ` (${c.liabilityPct}%)` : ''}</p></div>
-                  <div><p className="text-gray-400">Recovery</p><p className="text-gray-900 font-medium">{RECOVERY_METHOD_LABELS[c.recovery?.method] ?? '—'}{Number(c.recovery?.amount) > 0 ? ` · ${tk(c.recovery.amount)}` : ''}</p></div>
+                <div className="mt-3 grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
+                  <div><p className="text-muted-foreground">Assessed loss</p><p className="font-medium text-gray-900">{tk(c.assessedLoss)}</p></div>
+                  <div><p className="text-muted-foreground">Responsible</p><p className="font-medium text-gray-900">{c.responsibleEmployeeName ?? '—'}{c.liabilityPct != null && c.responsibleEmployeeName ? ` (${c.liabilityPct}%)` : ''}</p></div>
+                  <div><p className="text-muted-foreground">Recovery</p><p className="font-medium text-gray-900">{RECOVERY_METHOD_LABELS[c.recovery?.method] ?? '—'}{Number(c.recovery?.amount) > 0 ? ` · ${tk(c.recovery.amount)}` : ''}</p></div>
                   <div>
-                    <p className="text-gray-400">Recovered</p>
-                    <p className="text-gray-900 font-medium">{c.recovery?.recoveredAmount != null ? `${tk(c.recovery.recoveredAmount)} · ${fmtDay(c.recovery.recoveredAt)}` : '—'}</p>
+                    <p className="text-muted-foreground">Recovered</p>
+                    <p className="font-medium text-gray-900">{c.recovery?.recoveredAmount != null ? `${tk(c.recovery.recoveredAmount)} · ${fmtDay(c.recovery.recoveredAt)}` : '—'}</p>
                     {c.recovery?.status === 'PENDING' && Number(c.recovery?.recoveredAmount) > 0 && Number(c.recovery?.outstanding) > 0 && (
                       <p className="text-amber-700">Balance {tk(c.recovery.outstanding)}</p>
                     )}
@@ -499,18 +491,18 @@ export function DamagePanel({ cases = [], canResolve, canAssess, onResolve, onAs
                   </div>
                 </div>
               )}
-              {c.enquiryNote && <p className="text-xs text-gray-500 mt-2"><b className="text-gray-600">Enquiry:</b> {c.enquiryNote}</p>}
-              {c.recovery?.note && <p className="text-xs text-gray-500 mt-1"><b className="text-gray-600">Note:</b> {c.recovery.note}</p>}
-              <div className="flex flex-wrap items-center gap-2 mt-2">
+              {c.enquiryNote && <p className="mt-2 text-xs text-muted-foreground"><span className="font-medium text-gray-700">Enquiry:</span> {c.enquiryNote}</p>}
+              {c.recovery?.note && <p className="mt-1 text-xs text-muted-foreground"><span className="font-medium text-gray-700">Note:</span> {c.recovery.note}</p>}
+              <div className="mt-2 flex flex-wrap items-center gap-2">
                 {c.attachments.map((u, k) => (
-                  <a key={`${u}-${k}`} href={safeLinkUrl(u) ?? undefined} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline">
-                    <Paperclip className="w-3 h-3" /> {u.split('/').pop().slice(0, 18)}
+                  <a key={`${u}-${k}`} href={safeLinkUrl(u) ?? undefined} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-gray-600 underline-offset-4 hover:text-gray-900 hover:underline">
+                    <Paperclip className="size-3" /> {u.split('/').pop().slice(0, 18)}
                   </a>
                 ))}
                 <span className="flex-1" />
-                {awaiting && canAssess && <button type="button" className={cn(btnSecondary, 'py-1.5 text-xs')} onClick={() => onAssess(c)}>Assess damage</button>}
+                {awaiting && canAssess && <Button variant="outline" size="xs" onClick={() => onAssess(c)}>Assess damage</Button>}
                 {c.recovery?.status === 'PENDING' && canResolve && (
-                  <button type="button" className={cn(btnSecondary, 'py-1.5 text-xs')} onClick={() => onResolve(c)}>Record recovery / waive</button>
+                  <Button variant="outline" size="xs" onClick={() => onResolve(c)}>Record recovery / waive</Button>
                 )}
               </div>
             </div>
@@ -555,34 +547,32 @@ export function DocumentsPanel({ asset, canManage, onSaved }) {
 
   return (
     <Section title="Photo & documents"
-      actions={editable && !adding && <button type="button" className={cn(btnSecondary, 'py-1.5 text-xs')} onClick={() => setAdding(true)}><Plus className="w-3.5 h-3.5" /> Add</button>}>
+      actions={editable && !adding && <Button variant="outline" size="xs" onClick={() => setAdding(true)}><Plus className="size-3.5" /> Add</Button>}>
       {safeLinkUrl(asset.imageUrl) && <DocPreview url={safeLinkUrl(asset.imageUrl)} label="Photo" className="mb-3" />}
       {docs.length === 0 && !asset.imageUrl && !adding && (
-        <p className="text-sm text-gray-400">No documents yet — attach the invoice, warranty card or hand-over scan.</p>
+        <p className="text-sm text-muted-foreground">No documents yet</p>
       )}
       <ul className="space-y-2">
         {docs.map((d, i) => (
           <li key={`${d.url}-${i}`} className="flex items-center gap-2">
-            <FileText className="w-4 h-4 text-gray-400 shrink-0" />
-            <a href={safeLinkUrl(d.url) ?? undefined} target="_blank" rel="noopener noreferrer" className="flex-1 min-w-0 truncate text-sm text-blue-600 hover:underline">{d.label || d.url.split('/').pop()}</a>
-            <ExternalLink className="w-3.5 h-3.5 text-gray-300" />
+            <FileText className="size-4 shrink-0 text-gray-400" />
+            <a href={safeLinkUrl(d.url) ?? undefined} target="_blank" rel="noopener noreferrer" className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900 underline-offset-4 hover:underline">{d.label || d.url.split('/').pop()}</a>
+            <ExternalLink className="size-3.5 text-gray-300" />
             {editable && (
-              <button type="button" disabled={saving} className="p-1 text-gray-400 hover:text-red-500" onClick={() => remove(i)} aria-label="Remove document">
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
+              <Button variant="ghost" size="icon-xs" disabled={saving} className="text-gray-400 hover:text-red-600" onClick={() => remove(i)} aria-label="Remove document">
+                <Trash2 className="size-3.5" />
+              </Button>
             )}
           </li>
         ))}
       </ul>
       {adding && (
-        <div className="mt-3 space-y-2 border-t border-gray-50 pt-3">
-          <input className={inputCls} placeholder="Label (e.g. Invoice, Warranty card)" value={label} onChange={e => setLabel(e.target.value)} />
+        <div className="mt-3 space-y-2 border-t border-gray-100 pt-3">
+          <Input placeholder="Label, e.g. Invoice" value={label} onChange={e => setLabel(e.target.value)} />
           <FileUpload label={null} value={url} onUploaded={setUrl} bucket="assets" />
           <div className="flex justify-end gap-2">
-            <button type="button" className={cn(btnSecondary, 'py-1.5 text-xs')} onClick={() => { setAdding(false); setUrl(''); setLabel('') }}>Cancel</button>
-            <button type="button" className={cn(btnSecondary, 'py-1.5 text-xs')} disabled={!url || saving} onClick={add}>
-              {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Save
-            </button>
+            <Button variant="outline" size="sm" onClick={() => { setAdding(false); setUrl(''); setLabel('') }}>Cancel</Button>
+            <Button size="sm" disabled={!url} loading={saving} onClick={add}>Save</Button>
           </div>
         </div>
       )}
@@ -609,12 +599,12 @@ export function PurchasePanel({ asset }) {
       <InfoRow label="Available for use">{asset.availableForUseDate ? fmtDay(asset.availableForUseDate) : null}</InfoRow>
       {bill && (
         <InfoRow label="Purchase bill">
-          <Link href={`/admin/inventory/purchases/${bill.id}`} className="text-blue-600 hover:underline">{bill.billNo ?? 'View bill'}</Link>
+          <Link href={`/admin/inventory/purchases/${bill.id}`} className="font-medium text-gray-900 underline-offset-4 hover:underline">{bill.billNo ?? 'View bill'}</Link>
         </InfoRow>
       )}
       {exp && <InfoRow label="Payment">{exp.expenseId} · {String(exp.status).toLowerCase()}</InfoRow>}
       {asset.opening?.isExisting && (
-        <div className="mt-2 rounded-lg bg-indigo-50 text-indigo-800 text-xs px-3 py-2">
+        <div className="mt-2 rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-600">
           Opening register: accumulated depreciation {tk(asset.opening.accumulatedDepreciation)} as of {fmtDay(asset.opening.asOfDate)}
           {asset.opening.taxWdv != null ? ` · tax WDV ${tk(asset.opening.taxWdv)}${asset.opening.taxWdvFiscalYear ? ` (${asset.opening.taxWdvFiscalYear})` : ''}` : ''}
         </div>
@@ -628,11 +618,11 @@ export function DisposalSummary({ asset }) {
   if (!d?.type) return null
   const gain = Number(d.gainLoss) || 0
   return (
-    <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
-      <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
-        <TrendingDown className="w-4 h-4" /> {statusLabel(d.type)} on {fmtDay(d.date)}
+    <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5">
+      <div className="flex items-center gap-2 text-sm font-medium text-gray-900">
+        <TrendingDown className="size-4 text-gray-500" /> {statusLabel(d.type)} on {fmtDay(d.date)}
       </div>
-      <p className="text-sm text-gray-600 mt-1">
+      <p className="mt-1 text-sm text-gray-600">
         {[
           d.buyerName ? `${d.type === 'DONATED' ? 'Recipient' : 'Buyer'}: ${d.buyerName}${d.buyerBin ? ` (BIN ${d.buyerBin})` : ''}` : null,
           d.proceeds != null && Number(d.proceeds) > 0 ? `Proceeds ${tk(d.proceeds)}${Number(d.vatAmount) > 0 ? ` + VAT ${tk(d.vatAmount)}` : ''}` : null,
@@ -641,7 +631,7 @@ export function DisposalSummary({ asset }) {
           d.accountId?.name ? `Received into ${d.accountId.name}` : null,
         ].filter(Boolean).join(' · ')}
       </p>
-      {d.reason && <p className="text-xs text-gray-500 mt-1">Reason: {d.reason}{d.approvedBy?.name ? ` · approved by ${d.approvedBy.name}` : ''}</p>}
+      {d.reason && <p className="mt-1 text-xs text-muted-foreground">Reason: {d.reason}{d.approvedBy?.name ? ` · approved by ${d.approvedBy.name}` : ''}</p>}
     </div>
   )
 }

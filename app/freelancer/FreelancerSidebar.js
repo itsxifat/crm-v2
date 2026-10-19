@@ -1,16 +1,22 @@
 'use client'
 
 import Link from 'next/link'
+import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import { LayoutDashboard, FolderOpen, LogOut, UserCircle, ShieldCheck, X } from 'lucide-react'
 import { signOut } from 'next-auth/react'
+import { cn } from '@/lib/utils'
 
 const NAV = [
   { href: '/freelancer',                   label: 'Dashboard',        icon: LayoutDashboard },
-  { href: '/freelancer/projects',          label: 'My Projects',      icon: FolderOpen },
+  { href: '/freelancer/projects',          label: 'Projects',         icon: FolderOpen },
   { href: '/freelancer/verification',      label: 'Verification',     icon: ShieldCheck },
-  { href: '/freelancer/account',           label: 'My Account',       icon: UserCircle },
+  { href: '/freelancer/account',           label: 'Account',          icon: UserCircle },
 ]
+
+const itemBase = 'group/item flex h-8 items-center gap-2.5 rounded-lg px-2 text-sm transition-colors duration-150 outline-none focus-visible:ring-2 focus-visible:ring-ring/50'
+const itemIdle = 'text-gray-600 hover:bg-sidebar-accent hover:text-gray-900'
+const itemOn   = 'bg-white font-medium text-gray-900 shadow-sm ring-1 ring-gray-200/70'
 
 export default function FreelancerSidebar({ user, portalType = 'FREELANCER', isOpen = false, onClose }) {
   const pathname = usePathname()
@@ -19,77 +25,75 @@ export default function FreelancerSidebar({ user, portalType = 'FREELANCER', isO
   return (
     <>
       {/* Mobile backdrop */}
-      {isOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm lg:hidden"
-          onClick={onClose}
-        />
-      )}
+      <div
+        className={cn(
+          'fixed inset-0 z-40 bg-black/30 backdrop-blur-[2px] transition-opacity lg:hidden',
+          isOpen ? 'opacity-100' : 'pointer-events-none opacity-0'
+        )}
+        onClick={onClose}
+      />
 
       {/* Sidebar */}
       <aside
-        className={`
-          fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-gray-100 flex flex-col shrink-0
-          transition-transform duration-300 ease-in-out
-          lg:static lg:translate-x-0 lg:w-56 lg:z-auto
-          ${isOpen ? 'translate-x-0' : '-translate-x-full'}
-        `}
+        className={cn(
+          'fixed inset-y-0 left-0 z-50 flex w-72 shrink-0 flex-col bg-sidebar shadow-xl transition-transform duration-300 ease-out',
+          'lg:static lg:z-auto lg:h-screen lg:w-64 lg:translate-x-0 lg:shadow-none',
+          isOpen ? 'translate-x-0' : '-translate-x-full'
+        )}
       >
-        {/* Logo */}
-        <div className="h-14 flex items-center justify-between px-5 border-b border-gray-100 shrink-0">
-          <div className="flex items-center gap-2">
-            <span className="text-base font-bold text-gray-900 tracking-tight">En-Tech</span>
-            <span className="text-xs text-gray-400 font-medium bg-gray-100 px-1.5 py-0.5 rounded">
+        {/* Brand */}
+        <div className="flex h-14 shrink-0 items-center justify-between px-4">
+          <Link href="/freelancer" onClick={onClose} className="flex items-center gap-2 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
+            <Image src="/en-logo.png" alt="Enfinito" width={112} height={26} className="h-[22px] w-auto object-contain" priority />
+            <span className="rounded-md border border-gray-200/80 bg-white px-1.5 py-px text-[11px] font-medium text-gray-600">
               {portalType === 'AGENCY' ? 'Agency' : 'Freelancer'}
             </span>
-          </div>
+          </Link>
           {/* Close button – mobile only */}
           <button
             onClick={onClose}
-            className="lg:hidden p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+            className="inline-flex size-8 items-center justify-center rounded-lg text-gray-500 hover:bg-sidebar-accent hover:text-gray-900 lg:hidden"
             aria-label="Close menu"
           >
-            <X className="w-4 h-4" />
+            <X className="size-4" />
           </button>
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 py-4 px-3 space-y-0.5 overflow-y-auto">
-          {NAV.map(({ href, label, icon: Icon, badge }) => {
-            const active = pathname === href || (href !== '/freelancer' && pathname.startsWith(href))
-            const count = badge ? badges[badge] : 0
-            return (
-              <Link
-                key={href}
-                href={href}
-                onClick={onClose}
-                className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors ${
-                  active
-                    ? 'bg-gray-900 text-white font-medium'
-                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                }`}
-              >
-                <Icon className="w-4 h-4 shrink-0" />
-                <span className="flex-1">{label}</span>
-                {count > 0 && (
-                  <span className={`text-xs font-semibold px-1.5 py-0.5 rounded-full leading-none ${
-                    active ? 'bg-white/20 text-white' : 'bg-yellow-100 text-yellow-700'
-                  }`}>
-                    {String(count).padStart(2, '0')}
-                  </span>
-                )}
-              </Link>
-            )
-          })}
+        <nav className="flex-1 overflow-y-auto px-3 pb-4 pt-1">
+          <ul className="space-y-0.5">
+            {NAV.map(({ href, label, icon: Icon, badge }) => {
+              const active = pathname === href || (href !== '/freelancer' && pathname.startsWith(href))
+              const count = badge ? badges[badge] : 0
+              return (
+                <li key={href}>
+                  <Link
+                    href={href}
+                    onClick={onClose}
+                    aria-current={active ? 'page' : undefined}
+                    className={cn(itemBase, active ? itemOn : itemIdle)}
+                  >
+                    <Icon className={cn('size-4 shrink-0', active ? 'text-gray-900' : 'text-gray-500 group-hover/item:text-gray-900')} />
+                    <span className="flex-1 truncate">{label}</span>
+                    {count > 0 && (
+                      <span className="min-w-[18px] rounded-full bg-gray-200/80 px-1.5 text-center text-[11px] font-medium leading-[18px] text-gray-700 tabular-nums">
+                        {String(count).padStart(2, '0')}
+                      </span>
+                    )}
+                  </Link>
+                </li>
+              )
+            })}
+          </ul>
         </nav>
 
         {/* Footer */}
-        <div className="p-3 border-t border-gray-100 shrink-0">
+        <div className="shrink-0 p-3">
           <button
             onClick={() => signOut({ callbackUrl: '/login' })}
-            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-gray-500 hover:bg-gray-50 hover:text-gray-700 transition-colors"
+            className={cn(itemBase, itemIdle, 'w-full')}
           >
-            <LogOut className="w-4 h-4" />
+            <LogOut className="size-4 shrink-0 text-gray-500 group-hover/item:text-gray-900" />
             Sign out
           </button>
         </div>

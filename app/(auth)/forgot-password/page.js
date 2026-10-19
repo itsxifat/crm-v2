@@ -3,8 +3,11 @@
 import { useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { Mail, Loader2, CheckCircle, ArrowLeft } from 'lucide-react'
+import { CheckCircle, ArrowLeft } from 'lucide-react'
 import toast from 'react-hot-toast'
+import Button from '@/components/ui/Button'
+import { Card } from '@/components/ui/Card'
+import { Input, Label } from '@/components/ui/Input'
 
 export default function ForgotPasswordPage() {
   const [email, setEmail]     = useState('')
@@ -32,62 +35,62 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-6">
-          <Image src="/en-logo.png" alt="Enfinito" width={120} height={32} className="h-8 w-auto object-contain mx-auto" />
+    <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4 sm:p-6">
+      <div className="w-full max-w-sm">
+        <div className="mb-6 flex justify-center">
+          <Image src="/en-logo.png" alt="Enfinito" width={120} height={28} className="h-7 w-auto object-contain" priority />
         </div>
 
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-7">
+        <Card className="p-6">
           {sent ? (
-            <div className="text-center py-4">
-              <CheckCircle className="w-10 h-10 text-green-500 mx-auto mb-3" />
-              <p className="font-semibold text-gray-800">Request submitted</p>
-              <p className="text-sm text-gray-500 mt-1">
-                If a client account exists for that email, your password reset request has been sent to our team for review.
-                You&apos;ll receive a reset link by email once it&apos;s approved. Staff, freelancer and vendor accounts should
-                contact their administrator.
+            <div className="text-center">
+              <div className="mx-auto mb-4 flex size-10 items-center justify-center rounded-lg border border-gray-200/80 bg-white shadow-xs">
+                <CheckCircle className="size-5 text-emerald-600" />
+              </div>
+              <h1 className="text-xl font-semibold tracking-tight text-gray-900">Request submitted</h1>
+              <p className="mt-2 text-sm text-muted-foreground">
+                If a client account exists for that email, you&apos;ll get a reset link once our team approves it.
               </p>
-              <Link href="/login" className="inline-flex items-center gap-1.5 mt-5 text-sm font-medium text-blue-600 hover:text-blue-700">
-                <ArrowLeft className="w-4 h-4" /> Back to sign in
-              </Link>
+              <Button href="/login" variant="outline" className="mt-6 w-full">
+                <ArrowLeft /> Back to sign in
+              </Button>
             </div>
           ) : (
             <>
-              <h1 className="text-lg font-semibold text-gray-900">Forgot your password?</h1>
-              <p className="text-sm text-gray-500 mt-1 mb-5">
-                Enter your client account email. For security, a reset link is sent only after our team approves your request.
-              </p>
-              <p className="text-xs text-gray-500 -mt-3 mb-5">
-                Staff, freelancer and vendor accounts can&apos;t self-request a reset. Please contact your administrator instead.
-              </p>
+              <div className="mb-6 text-center">
+                <h1 className="text-xl font-semibold tracking-tight text-gray-900">Forgot password?</h1>
+                <p className="mt-1 text-sm text-muted-foreground">For client accounts only</p>
+              </div>
               <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <input
+                <div>
+                  <Label htmlFor="email">Email</Label>
+                  <Input
+                    id="email"
                     type="email"
                     value={email}
                     onChange={e => setEmail(e.target.value)}
                     placeholder="you@example.com"
-                    className="w-full border border-gray-200 rounded-xl pl-10 pr-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     required
                   />
                 </div>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 disabled:opacity-60 transition-colors"
-                >
-                  {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-                  Submit reset request
-                </button>
+                <Button type="submit" loading={loading} className="w-full">
+                  Request reset link
+                </Button>
               </form>
-              <Link href="/login" className="inline-flex items-center gap-1.5 mt-5 text-sm text-gray-400 hover:text-gray-600">
-                <ArrowLeft className="w-4 h-4" /> Back to sign in
-              </Link>
+              <p className="mt-4 text-center text-xs text-muted-foreground">
+                Staff, freelancers and vendors: contact your administrator.
+              </p>
             </>
           )}
-        </div>
+        </Card>
+
+        {!sent && (
+          <p className="mt-6 text-center text-sm">
+            <Link href="/login" className="inline-flex items-center gap-1.5 text-muted-foreground underline-offset-4 hover:text-gray-900 hover:underline">
+              <ArrowLeft className="size-4" /> Back to sign in
+            </Link>
+          </p>
+        )}
       </div>
     </div>
   )

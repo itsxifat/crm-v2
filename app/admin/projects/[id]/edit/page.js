@@ -2,8 +2,11 @@
 
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, Loader2 } from 'lucide-react'
+import { ArrowLeft, FolderX } from 'lucide-react'
 import CreateProjectForm from '@/components/admin/projects/CreateProjectForm'
+import PageHeader from '@/components/ui/PageHeader'
+import { PageLoader } from '@/components/ui/LoadingSpinner'
+import EmptyState from '@/components/ui/EmptyState'
 
 export default function EditProjectPage() {
   const { id }    = useParams()
@@ -28,33 +31,27 @@ export default function EditProjectPage() {
   }, [id])
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
-        <div className="flex items-center gap-4">
-          <button onClick={() => router.back()}
-            className="w-9 h-9 rounded-xl border border-gray-200 bg-white flex items-center justify-center hover:bg-gray-50 transition-colors shadow-sm">
-            <ArrowLeft className="w-4 h-4 text-gray-500" />
-          </button>
-          <div>
-            <h1 className="text-xl font-bold text-gray-900 tracking-tight">Edit Project</h1>
-            <p className="text-sm text-gray-400 mt-0.5">
-              {loading ? 'Loading…' : (project?.projectCode ?? project?.name ?? '—')}
-            </p>
-          </div>
-        </div>
-
-        {loading ? (
-          <div className="flex items-center justify-center py-24">
-            <Loader2 className="w-8 h-8 text-gray-300 animate-spin" />
-          </div>
-        ) : error ? (
-          <div className="text-center py-24 text-gray-400">{error}</div>
-        ) : project ? (
-          <CreateProjectForm project={project} />
-        ) : (
-          <div className="text-center py-24 text-gray-400">Project not found.</div>
-        )}
+    <div className="mx-auto max-w-3xl space-y-6">
+      <div>
+        <button onClick={() => router.back()}
+          className="mb-2 inline-flex items-center gap-1.5 text-[13px] font-medium text-muted-foreground hover:text-gray-900">
+          <ArrowLeft className="size-3.5" /> Back
+        </button>
+        <PageHeader
+          title="Edit project"
+          description={loading ? 'Loading…' : (project?.projectCode ?? project?.name ?? '—')}
+        />
       </div>
+
+      {loading ? (
+        <PageLoader />
+      ) : error ? (
+        <EmptyState icon={FolderX} title={error} />
+      ) : project ? (
+        <CreateProjectForm project={project} />
+      ) : (
+        <EmptyState icon={FolderX} title="Project not found" />
+      )}
     </div>
   )
 }

@@ -2,20 +2,32 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { Bell, CheckCheck, Trash2, Loader2 } from 'lucide-react'
+import {
+  Bell, CheckCheck, Trash2, ListTodo, FileText, CreditCard, FileSpreadsheet, CalendarDays, Package, Landmark,
+} from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/utils'
+import PageHeader from '@/components/ui/PageHeader'
+import Button from '@/components/ui/Button'
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
+import Tabs from '@/components/ui/Tabs'
+import EmptyState from '@/components/ui/EmptyState'
+import StatsCard from '@/components/ui/StatsCard'
+import Pagination from '@/components/ui/Pagination'
+import LoadingSpinner from '@/components/ui/LoadingSpinner'
 
-const TYPE_COLORS = {
-  TASK:      'bg-purple-100 text-purple-700',
-  INVOICE:   'bg-blue-100 text-blue-700',
-  PAYMENT:   'bg-green-100 text-green-700',
-  QUOTATION: 'bg-teal-100 text-teal-700',
-  LEAVE:     'bg-yellow-100 text-yellow-700',
-  ASSET:     'bg-orange-100 text-orange-700',
-  TAX:       'bg-rose-100 text-rose-700',
-  GENERAL:   'bg-gray-100 text-gray-600',
+const TYPE_ICONS = {
+  TASK:      ListTodo,
+  INVOICE:   FileText,
+  PAYMENT:   CreditCard,
+  QUOTATION: FileSpreadsheet,
+  LEAVE:     CalendarDays,
+  ASSET:     Package,
+  TAX:       Landmark,
+  GENERAL:   Bell,
 }
+
+const typeLabel = (t) => (t ? String(t).replace(/_/g, ' ').toLowerCase().replace(/^\w/, c => c.toUpperCase()) : 'General')
 
 const fmtAgo = (d) => {
   const diff = Date.now() - new Date(d).getTime()
@@ -53,7 +65,7 @@ export default function NotificationsPage() {
       setNotifications(json.data ?? [])
       setTotal(json.meta?.total ?? 0)
       setUnreadCount(json.unreadCount ?? 0)
-    } catch { if (id === reqId.current) toast.error('Failed to load notifications') }
+    } catch { if (id === reqId.current) toast.error('Couldn’t load notifications') }
     finally { if (id === reqId.current) setLoading(false) }
   }, [page, unreadOnly])
 
@@ -85,7 +97,7 @@ export default function NotificationsPage() {
       setNotifications(prev => prev.map(n => ({ ...n, isRead: true })))
       setUnreadCount(0)
       toast.success('All marked as read')
-    } catch { toast.error('Failed') }
+    } catch { toast.error('Couldn’t mark as read') }
     finally { setMarkingAll(false) }
   }
 
@@ -99,157 +111,105 @@ export default function NotificationsPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-gray-900">Notifications</h1>
-          <p className="text-sm text-gray-400 mt-0.5">{total} total{unreadCount > 0 ? ` · ${unreadCount} unread` : ''}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <label className="flex items-center gap-1.5 text-sm text-gray-600 cursor-pointer">
-            <input type="checkbox" checked={unreadOnly} onChange={e => changeUnreadOnly(e.target.checked)}
-              className="rounded border-gray-300" />
-            Unread only
-          </label>
-          {unreadCount > 0 && (
-            <button onClick={markAll} disabled={markingAll}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-200 rounded-xl hover:bg-gray-50 disabled:opacity-50 transition-colors">
-              {markingAll ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCheck className="w-4 h-4" />}
-              Mark all read
-            </button>
-          )}
-        </div>
+      <PageHeader
+        title="Notifications"
+        actions={unreadCount > 0 && (
+          <Button variant="outline" size="sm" onClick={markAll} loading={markingAll}>
+            {!markingAll && <CheckCheck />} Mark all as read
+          </Button>
+        )}
+      />
+
+      <div className="hidden gap-4 sm:grid sm:grid-cols-2 lg:grid-cols-4">
+        <StatsCard title="Total" value={total} />
+        <StatsCard title="Unread" value={unreadCount} />
+        <StatsCard title="Read" value={readCount} />
+        <StatsCard title="Pages" value={pages} />
       </div>
 
-      {/* Two-column layout on PC */}
-      <div className="flex flex-col lg:flex-row gap-6 items-start">
+      <div className="flex flex-wrap items-center gap-2">
+        <Tabs
+          value={unreadOnly ? 'unread' : 'all'}
+          onChange={(v) => changeUnreadOnly(v === 'unread')}
+          tabs={[
+            { value: 'all', label: 'All' },
+            { value: 'unread', label: 'Unread', count: unreadCount > 0 ? unreadCount : undefined },
+          ]}
+        />
+      </div>
 
-        {/* Left – Notifications list */}
-        <div className="flex-1 min-w-0 bg-white border border-gray-100 rounded-xl overflow-hidden">
+      <div className="flex flex-col items-start gap-6 lg:flex-row">
+        <Card className="w-full min-w-0 flex-1 overflow-hidden">
           {loading ? (
-            <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
+            <LoadingSpinner className="py-16" />
           ) : notifications.length === 0 ? (
-            <div className="text-center py-16 text-gray-400">
-              <Bell className="w-10 h-10 mx-auto mb-3 opacity-30" />
-              <p className="text-sm">{unreadOnly ? 'No unread notifications' : 'No notifications yet'}</p>
-            </div>
+            <EmptyState icon={Bell} title={unreadOnly ? 'No unread notifications' : 'No notifications'} />
           ) : (
-            <div className="divide-y divide-gray-50">
-              {notifications.map(n => (
-                <div
-                  key={n.id}
-                  className={cn('flex items-start gap-4 px-5 py-4 hover:bg-gray-50 transition-colors group', !n.isRead && 'bg-blue-50/40')}
-                >
-                  {/* Unread indicator */}
-                  <div className="w-2 h-2 rounded-full mt-2 shrink-0" style={{ background: n.isRead ? 'transparent' : '#3b82f6' }} />
+            <div className="divide-y divide-gray-100">
+              {notifications.map(n => {
+                const Icon = TYPE_ICONS[n.type] ?? Bell
+                return (
+                  <div key={n.id} className="group flex items-start gap-3 px-4 py-3.5 transition-colors hover:bg-gray-50/70">
+                    <span className={cn('mt-3 size-2 shrink-0 rounded-full', n.isRead ? 'bg-transparent' : 'bg-brand')} />
 
-                  {/* Content */}
-                  <div className="flex-1 min-w-0 cursor-pointer" onClick={() => {
-                    if (!n.isRead) markOne(n.id)
-                    if (n.link) router.push(n.link)
-                  }}>
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <span className={cn('text-[10px] font-semibold px-1.5 py-0.5 rounded uppercase tracking-wide', TYPE_COLORS[n.type] ?? TYPE_COLORS.GENERAL)}>
-                        {n.type}
-                      </span>
-                      <p className="text-xs text-gray-400">{fmtAgo(n.createdAt)}</p>
+                    <div className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-gray-200/80 bg-white shadow-xs">
+                      <Icon className="size-4 text-gray-500" />
                     </div>
-                    <p className={cn('text-sm font-medium text-gray-800', !n.isRead && 'text-gray-900')}>{n.title}</p>
-                    <p className="text-sm text-gray-500 mt-0.5">{n.message}</p>
-                  </div>
 
-                  {/* Actions */}
-                  <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shrink-0">
-                    {!n.isRead && (
-                      <button onClick={() => markOne(n.id)} title="Mark as read"
-                        className="p-1 text-gray-400 hover:text-blue-600 rounded">
-                        <CheckCheck className="w-4 h-4" />
-                      </button>
-                    )}
-                    <button onClick={() => deleteOne(n.id)} title="Delete"
-                      className="p-1 text-gray-400 hover:text-red-500 rounded">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    <div className="min-w-0 flex-1 cursor-pointer" onClick={() => {
+                      if (!n.isRead) markOne(n.id)
+                      if (n.link) router.push(n.link)
+                    }}>
+                      <p className={cn('text-sm', n.isRead ? 'text-gray-600' : 'font-medium text-gray-900')}>{n.title}</p>
+                      {n.message && <p className="mt-0.5 text-sm text-muted-foreground">{n.message}</p>}
+                      <p className="mt-1 text-xs text-muted-foreground">{typeLabel(n.type)} · {fmtAgo(n.createdAt)}</p>
+                    </div>
+
+                    <div className="flex shrink-0 items-center gap-0.5 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
+                      {!n.isRead && (
+                        <Button variant="ghost" size="icon-xs" onClick={() => markOne(n.id)} title="Mark as read" aria-label="Mark as read">
+                          <CheckCheck />
+                        </Button>
+                      )}
+                      <Button variant="ghost" size="icon-xs" onClick={() => deleteOne(n.id)} title="Delete" aria-label="Delete"
+                        className="hover:text-red-600">
+                        <Trash2 />
+                      </Button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
 
           {pages > 1 && (
-            <div className="flex items-center justify-between px-5 py-3 border-t border-gray-100">
-              <p className="text-xs text-gray-400">Page {page} of {pages}</p>
-              <div className="flex gap-2">
-                <button disabled={page <= 1} onClick={() => setPage(p => p - 1)}
-                  className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-50">Previous</button>
-                <button disabled={page >= pages} onClick={() => setPage(p => p + 1)}
-                  className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-50">Next</button>
-              </div>
+            <div className="border-t border-gray-100 px-4 py-3">
+              <Pagination page={page} pages={pages} onPageChange={setPage} />
             </div>
           )}
-        </div>
+        </Card>
 
-        {/* Right – Summary panel (PC only) */}
-        <div className="hidden lg:flex flex-col gap-4 w-72 shrink-0">
-
-          {/* Stats */}
-          <div className="bg-white border border-gray-100 rounded-xl p-5 space-y-4">
-            <h2 className="text-sm font-semibold text-gray-700">Overview</h2>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="bg-gray-50 rounded-lg p-3 text-center">
-                <p className="text-2xl font-bold text-gray-900">{total}</p>
-                <p className="text-xs text-gray-400 mt-0.5">Total</p>
-              </div>
-              <div className="bg-blue-50 rounded-lg p-3 text-center">
-                <p className="text-2xl font-bold text-blue-600">{unreadCount}</p>
-                <p className="text-xs text-gray-400 mt-0.5">Unread</p>
-              </div>
-              <div className="bg-green-50 rounded-lg p-3 text-center">
-                <p className="text-2xl font-bold text-green-600">{readCount}</p>
-                <p className="text-xs text-gray-400 mt-0.5">Read</p>
-              </div>
-              <div className="bg-gray-50 rounded-lg p-3 text-center">
-                <p className="text-2xl font-bold text-gray-900">{pages}</p>
-                <p className="text-xs text-gray-400 mt-0.5">Pages</p>
-              </div>
-            </div>
-          </div>
-
-          {/* By type */}
-          {Object.keys(typeBreakdown).length > 0 && (
-            <div className="bg-white border border-gray-100 rounded-xl p-5 space-y-3">
-              <h2 className="text-sm font-semibold text-gray-700">By Type</h2>
-              <div className="space-y-2">
-                {Object.entries(typeBreakdown).map(([type, count]) => (
-                  <div key={type} className="flex items-center justify-between">
-                    <span className={cn('text-[10px] font-semibold px-1.5 py-0.5 rounded uppercase tracking-wide', TYPE_COLORS[type] ?? TYPE_COLORS.GENERAL)}>
-                      {type}
+        {Object.keys(typeBreakdown).length > 0 && (
+          <Card className="hidden w-72 shrink-0 lg:block">
+            <CardHeader>
+              <CardTitle>By type</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2.5">
+              {Object.entries(typeBreakdown).map(([type, count]) => {
+                const Icon = TYPE_ICONS[type] ?? Bell
+                return (
+                  <div key={type} className="flex items-center justify-between gap-3 text-sm">
+                    <span className="inline-flex items-center gap-2 text-gray-700">
+                      <Icon className="size-4 text-gray-400" />
+                      {typeLabel(type)}
                     </span>
-                    <span className="text-sm font-medium text-gray-700">{count}</span>
+                    <span className="font-medium tabular-nums text-gray-900">{count}</span>
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Quick actions */}
-          <div className="bg-white border border-gray-100 rounded-xl p-5 space-y-2">
-            <h2 className="text-sm font-semibold text-gray-700">Quick Actions</h2>
-            {unreadCount > 0 && (
-              <button onClick={markAll} disabled={markingAll}
-                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg disabled:opacity-50 transition-colors">
-                {markingAll ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCheck className="w-4 h-4" />}
-                Mark all as read
-              </button>
-            )}
-            <label className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-600 bg-gray-50 hover:bg-gray-100 rounded-lg cursor-pointer transition-colors">
-              <input type="checkbox" checked={unreadOnly} onChange={e => changeUnreadOnly(e.target.checked)}
-                className="rounded border-gray-300" />
-              Show unread only
-            </label>
-          </div>
-        </div>
-
+                )
+              })}
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   )

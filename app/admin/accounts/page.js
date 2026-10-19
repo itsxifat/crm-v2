@@ -4,10 +4,9 @@ import { useState, useEffect, useRef, useCallback, Suspense, Fragment } from 're
 import { useSession } from 'next-auth/react'
 import { useSearchParams } from 'next/navigation'
 import {
-  TrendingUp, TrendingDown, Wallet, AlertCircle,
-  Plus, Pencil, X, Loader2, Clock, CheckCircle2, XCircle,
-  Paperclip, ExternalLink, ArrowUpRight, ArrowDownRight, BarChart2, Percent, FileText as FileTextIcon, ChevronLeft, Printer,
-  Landmark, Receipt, ChevronDown, ChevronRight, AlertTriangle, Info, Calculator, ArrowLeftRight, RotateCcw,
+  AlertCircle, Plus, Pencil, X, Loader2, CheckCircle2, XCircle,
+  Paperclip, ExternalLink, ArrowUpRight, ArrowDownRight, FileText as FileTextIcon, ChevronLeft, Printer,
+  Landmark, Receipt, ChevronDown, ChevronRight, AlertTriangle, Info, RotateCcw, ArrowLeftRight,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useForm, Controller } from 'react-hook-form'
@@ -21,6 +20,16 @@ import TkAmt from '@/components/ui/TkAmt'
 import Select from '@/components/ui/Select'
 import DatePicker from '@/components/ui/DatePicker'
 import DocPreview from '@/components/ui/DocPreview'
+import Button, { buttonVariants } from '@/components/ui/Button'
+import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card'
+import { Input, Textarea, NativeSelect, Label, inputClass, selectClass } from '@/components/ui/Input'
+import PageHeader from '@/components/ui/PageHeader'
+import Tabs from '@/components/ui/Tabs'
+import { Table, TableHeader, TableBody, TableFooter, TableRow, TableHead, TableCell } from '@/components/ui/Table'
+import Badge from '@/components/ui/Badge'
+import EmptyState from '@/components/ui/EmptyState'
+import LoadingSpinner, { PageLoader } from '@/components/ui/LoadingSpinner'
+import { cn } from '@/lib/utils'
 import MoneyAccountSelect, { useMoneyAccounts, invalidateMoneyAccounts, moneyAccountLabel, accountRequiredOn } from '@/components/finance/MoneyAccountSelect'
 import ReverseClientPaymentModal from '@/components/finance/ReverseClientPaymentModal'
 import WithholdingFields, { emptyWithholding, invoiceAllowsVds } from '@/components/tax/WithholdingFields'
@@ -79,25 +88,20 @@ const fmtMonth = (key) => {
 
 function StatusDot({ status }) {
   const map = {
-    INCOME:               { dot: 'bg-green-500',  label: 'Income' },
-    EXPENSE:              { dot: 'bg-red-500',     label: 'Expense' },
-    PENDING:              { dot: 'bg-yellow-400',  label: 'Pending' },
-    PAID:                 { dot: 'bg-blue-500',    label: 'Paid' },
-    AUTHORIZED:           { dot: 'bg-green-500',   label: 'Authorized' },
-    APPROVED:             { dot: 'bg-blue-500',    label: 'Approved' },
-    REJECTED:             { dot: 'bg-red-500',     label: 'Rejected' },
-    PENDING_CONFIRMATION: { dot: 'bg-yellow-400',  label: 'Pending' },
-    CONFIRMED:            { dot: 'bg-green-500',   label: 'Confirmed' },
-    REVERSING:            { dot: 'bg-amber-400',   label: 'Reversing…' },
-    REVERSED:             { dot: 'bg-gray-400',    label: 'Reversed' },
+    INCOME:               { variant: 'success', label: 'Income' },
+    EXPENSE:              { variant: 'danger',  label: 'Expense' },
+    PENDING:              { variant: 'warning', label: 'Pending' },
+    PAID:                 { variant: 'primary', label: 'Paid' },
+    AUTHORIZED:           { variant: 'success', label: 'Authorized' },
+    APPROVED:             { variant: 'primary', label: 'Approved' },
+    REJECTED:             { variant: 'danger',  label: 'Rejected' },
+    PENDING_CONFIRMATION: { variant: 'warning', label: 'Pending' },
+    CONFIRMED:            { variant: 'success', label: 'Confirmed' },
+    REVERSING:            { variant: 'warning', label: 'Reversing…' },
+    REVERSED:             { variant: 'default', label: 'Reversed' },
   }
-  const s = map[status] ?? { dot: 'bg-gray-400', label: status }
-  return (
-    <span className="inline-flex items-center gap-1.5">
-      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${s.dot}`} />
-      <span className="text-xs text-gray-600">{s.label}</span>
-    </span>
-  )
+  const s = map[status] ?? { variant: 'default', label: status }
+  return <Badge variant={s.variant} dot>{s.label}</Badge>
 }
 
 // Local YYYY-MM-DD (no UTC shift) for the expense date-range presets.
@@ -187,11 +191,11 @@ function KindBadge({ kind }) {
   return (
     <span
       title={nonPl ? 'Cash movement — not income or expense in the P&L' : 'Non-cash P&L entry (no money account)'}
-      className={`inline-flex items-center mt-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${
-        nonPl ? 'bg-gray-100 text-gray-500' : 'bg-violet-50 text-violet-700'
-      }`}
+      className="mt-1 inline-flex"
     >
-      {KIND_LABELS[kind] ?? kind}{nonPl ? ' · not P&L' : ''}
+      <Badge variant={nonPl ? 'default' : 'purple'}>
+        {KIND_LABELS[kind] ?? kind}{nonPl ? ' · not P&L' : ''}
+      </Badge>
     </span>
   )
 }
@@ -407,49 +411,49 @@ function ExpenseTaxSection({
   const tds = Math.max(0, toNum(w.tdsAmount))
   const net = round2(grossNum - vds - tds)
 
-  const lc = 'block text-xs font-medium text-gray-600 mb-1'
-  const ic = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 disabled:bg-gray-50 disabled:text-gray-500'
+  const lc = 'mb-1.5 block text-[13px] font-medium text-gray-900'
+  const cb = 'mt-0.5 size-4 shrink-0 rounded border-gray-300'
 
   return (
     <div className="space-y-3">
-      <div className="bg-white border border-gray-100 rounded-xl">
+      <div className="rounded-lg border border-gray-200/80 bg-white">
         <button type="button" onClick={() => setOpen(o => !o)} aria-expanded={open}
-          className="w-full flex items-center gap-2 px-4 py-3 text-left">
-          <Receipt className="w-4 h-4 text-gray-400 shrink-0" />
+          className="flex w-full items-center gap-2 px-4 py-3 text-left">
+          <Receipt className="size-4 shrink-0 text-gray-400" />
           <span className="text-sm font-medium text-gray-900">VAT in this bill (Mushak-6.3)</span>
           <span className="ml-auto flex items-center gap-2">
             {vat > 0 && (
-              <span className="text-xs text-gray-500 whitespace-nowrap">
+              <span className="whitespace-nowrap text-xs text-muted-foreground tabular-nums">
                 VAT {fmtTk(vat)}{creditable ? ' · input credit' : ''}
               </span>
             )}
-            <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+            <ChevronDown className={cn('size-4 text-gray-400 transition-transform', open && 'rotate-180')} />
           </span>
         </button>
         {open && (
-          <div className="border-t border-gray-100 p-4 space-y-3">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="space-y-4 border-t border-gray-100 p-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <label className={lc}>VAT included in the bill (৳)</label>
+                <label className={lc}>VAT in the bill (৳)</label>
                 <input type="number" min="0" step="0.01" inputMode="decimal" disabled={disabled || vatLocked} readOnly={vatLocked}
                   value={v.vatAmount === null || v.vatAmount === undefined ? '' : v.vatAmount}
                   onChange={e => patch({ vatAmount: e.target.value === '' ? null : Number(e.target.value) })}
                   onBlur={e => { if (e.target.value === '') patch({ vatAmount: 0 }) }}
                   onKeyDown={e => { if (e.key === '-' || e.key === 'e') e.preventDefault() }}
-                  placeholder="0.00" className={ic} />
-                <p className="mt-1 text-[11px] text-gray-400">
-                  {vat > 0
-                    ? <>Value excl. VAT {fmtTk(base)}{vatRate !== null ? ` · rate ≈ ${vatRate}%` : ''}{vatLocked ? ' · set on the purchase bill' : ''}</>
-                    : vatLocked
-                      ? 'Set on the purchase bill — assets were costed on this basis.'
-                      : 'Leave 0 if the bill carries no VAT.'}
-                </p>
-                {vat > grossNum + 0.005 && <p className="mt-1 text-[11px] text-red-600">VAT cannot exceed the bill amount.</p>}
+                  placeholder="0.00" className={inputClass} />
+                {(vat > 0 || vatLocked) && (
+                  <p className="mt-1.5 text-xs text-muted-foreground">
+                    {vat > 0
+                      ? <>Excl. VAT {fmtTk(base)}{vatRate !== null ? ` · ≈ ${vatRate}%` : ''}{vatLocked ? ' · set on the purchase bill' : ''}</>
+                      : 'Set on the purchase bill.'}
+                  </p>
+                )}
+                {vat > grossNum + 0.005 && <p className="mt-1.5 text-xs text-red-600">VAT cannot exceed the bill amount.</p>}
               </div>
               <div>
                 <label className={lc}>Supplier VAT status</label>
                 <select value={v.supplierVatType ?? 'REGISTERED'} disabled={disabled}
-                  onChange={e => patch({ supplierVatType: e.target.value })} className={ic}>
+                  onChange={e => patch({ supplierVatType: e.target.value })} className={selectClass}>
                   {SUPPLIER_VAT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                 </select>
               </div>
@@ -457,79 +461,80 @@ function ExpenseTaxSection({
                 <label className={lc}>Supplier BIN</label>
                 <input value={v.supplierBin ?? ''} disabled={disabled}
                   onChange={e => patch({ supplierBin: e.target.value })}
-                  placeholder="000123456-0101" className={`${ic} ${binBad ? 'border-red-300' : ''}`} />
-                <p className={`mt-1 text-[11px] ${binBad ? 'text-red-600' : 'text-gray-400'}`}>
-                  {binBad ? 'BIN must be 9 or 13 digits.' : 'BIN is 13 digits, e.g. 000123456-0101'}
-                </p>
+                  aria-invalid={binBad || undefined}
+                  placeholder="000123456-0101" className={inputClass} />
+                {binBad && <p className="mt-1.5 text-xs text-red-600">BIN must be 9 or 13 digits.</p>}
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className={lc}>Mushak-6.3 no.</label>
                   <input value={v.mushakNo ?? ''} disabled={disabled}
-                    onChange={e => patch({ mushakNo: e.target.value })} placeholder="Invoice no." className={ic} />
+                    onChange={e => patch({ mushakNo: e.target.value })} placeholder="Invoice no." className={inputClass} />
                 </div>
                 <div>
                   <label className={lc}>Mushak date</label>
                   <input type="date" value={v.mushakDate ?? ''} disabled={disabled}
-                    onChange={e => patch({ mushakDate: e.target.value })} className={ic} />
+                    onChange={e => patch({ mushakDate: e.target.value })} className={inputClass} />
                 </div>
               </div>
             </div>
 
             {vat > 0 && (
-              <div className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2.5 space-y-2">
+              <div className="space-y-2 rounded-lg bg-gray-50 px-3 py-2.5">
                 {!vatLocked && (
-                  <label className="flex items-start gap-2 text-xs text-gray-700">
+                  <label className="flex items-start gap-2 text-[13px] text-gray-700"
+                    title="Office equipment, furniture, vehicles, rent, entertainment">
                     <input type="checkbox" checked={!!v.excludedItem} disabled={disabled}
                       onChange={e => patch({ excludedItem: e.target.checked })}
-                      className="mt-0.5 w-4 h-4 rounded border-gray-300 accent-gray-900" />
-                    <span>Excluded item — office equipment, furniture, vehicles, rent, entertainment (no input credit)</span>
+                      className={cb} />
+                    <span>Excluded item (no input credit)</span>
                   </label>
                 )}
-                <label className="flex items-start gap-2 text-xs text-gray-700">
+                <label className="flex items-start gap-2 text-[13px] text-gray-700">
                   <input type="checkbox" checked={creditable} disabled={disabled || vatLocked || !!v.excludedItem}
                     onChange={e => patch({ vatCreditable: e.target.checked, creditableTouched: true })}
-                    className="mt-0.5 w-4 h-4 rounded border-gray-300 accent-gray-900" />
-                  <span className="font-medium">Claim this VAT as input tax credit</span>
+                    className={cb} />
+                  <span className="font-medium text-gray-900">Claim as input tax credit</span>
                 </label>
                 {vatLocked && (
-                  <p className="flex items-start gap-1.5 text-[11px] text-gray-500">
-                    <Info className="w-3 h-3 mt-0.5 shrink-0" />
-                    <span>Set on the purchase bill — assets were costed on this basis.</span>
+                  <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                    <Info className="mt-0.5 size-3.5 shrink-0" />
+                    <span>Set on the purchase bill.</span>
                   </p>
                 )}
                 {itc.loading && (
-                  <p className="flex items-center gap-1.5 text-[11px] text-gray-400"><Loader2 className="w-3 h-3 animate-spin" /> Checking creditability…</p>
+                  <p className="flex items-center gap-1.5 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" /> Checking creditability…</p>
                 )}
                 {!itc.loading && itc.data && (
-                  <p className={`flex items-start gap-1.5 text-[11px] ${itc.data.creditable ? 'text-emerald-700' : 'text-amber-700'}`}>
-                    {itc.data.creditable ? <CheckCircle2 className="w-3 h-3 mt-0.5 shrink-0" /> : <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />}
+                  <p className={cn('flex items-start gap-1.5 text-xs', itc.data.creditable ? 'text-emerald-700' : 'text-amber-700')}>
+                    {itc.data.creditable ? <CheckCircle2 className="mt-0.5 size-3.5 shrink-0" /> : <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />}
                     <span>
                       {itc.data.creditable
-                        ? 'Creditable — claim it in the VAT return within 6 tax periods.'
+                        ? 'Creditable — claim within 6 tax periods.'
                         : `Not creditable: ${itc.data.reasonLabel ?? itc.data.reason}.`}
-                      {!vatLocked && v.creditableTouched && creditable !== !!itc.data.creditable && ' Your choice overrides this hint.'}
+                      {!vatLocked && v.creditableTouched && creditable !== !!itc.data.creditable && ' Your choice overrides this.'}
                     </span>
                   </p>
                 )}
-                {!itc.loading && itc.error && <p className="text-[11px] text-gray-400">{itc.error}</p>}
+                {!itc.loading && itc.error && <p className="text-xs text-muted-foreground">{itc.error}</p>}
               </div>
             )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-gray-100 pt-3">
+            <div className="grid grid-cols-1 gap-4 border-t border-gray-100 pt-4 sm:grid-cols-2">
               <div>
                 <label className={lc}>Payee type (for TDS)</label>
                 <select value={v.payeeType ?? 'COMPANY'} disabled={disabled}
-                  onChange={e => patch({ payeeType: e.target.value })} className={ic}>
+                  onChange={e => patch({ payeeType: e.target.value })} className={selectClass}>
                   {PAYEE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                 </select>
-                {payeeLoading && <p className="mt-1 text-[11px] text-gray-400">Loading payee profile…</p>}
+                {payeeLoading && <p className="mt-1.5 text-xs text-muted-foreground">Loading payee profile…</p>}
               </div>
-              <label className="flex items-start gap-2 text-xs text-gray-700 sm:pt-6">
+              <label className="flex items-start gap-2 text-[13px] text-gray-700 sm:pt-7"
+                title="Proof of return submission. Without it, TDS is 50% higher (ITA s.264 / s.142).">
                 <input type="checkbox" checked={!!v.hasPsr} disabled={disabled}
                   onChange={e => patch({ hasPsr: e.target.checked })}
-                  className="mt-0.5 w-4 h-4 rounded border-gray-300 accent-gray-900" />
-                <span>Payee showed proof of return submission (PSR)<span className="block text-[11px] text-gray-400">Without PSR, TDS is 50% higher (ITA s.264 / s.142).</span></span>
+                  className={cb} />
+                <span>Payee showed PSR <span className="text-muted-foreground">· else TDS +50%</span></span>
               </label>
             </div>
           </div>
@@ -550,8 +555,8 @@ function ExpenseTaxSection({
         disabled={disabled}
       />
 
-      <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 text-xs">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-gray-600">
+      <div className="rounded-lg bg-gray-50 px-4 py-3 text-xs">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-gray-600 tabular-nums">
           <span>Bill {fmtTk(grossNum)}</span>
           {vat > 0 && <span>incl. VAT {fmtTk(vat)}</span>}
           {vds > 0 && <span>− VDS {fmtTk(vds)}</span>}
@@ -559,7 +564,7 @@ function ExpenseTaxSection({
           <span className="ml-auto text-sm font-semibold text-gray-900">Net payable {fmtTk(net)}</span>
         </div>
         {net < -0.005 && <p className="mt-1 text-red-600">Withholding is more than the bill amount.</p>}
-        {note && <p className="mt-1 text-gray-400">{note}</p>}
+        {note && <p className="mt-1 text-muted-foreground">{note}</p>}
       </div>
     </div>
   )
@@ -582,10 +587,10 @@ function buildExpenseTax(tax, { gross, category, origin = null, cashLike = false
   const errors = []
   // Same rules as lib/expensePayment.buildExpenseTax (the server re-checks them).
   if (vat > grossNum + 0.005) errors.push('VAT cannot exceed the bill amount')
-  if (vds > 0 && !(vat > 0)) errors.push('Enter the VAT in the bill before deducting VDS — VDS cannot exceed the VAT charged')
+  if (vds > 0 && !(vat > 0)) errors.push('Enter the bill VAT before deducting VDS')
   else if (vds > vat + 0.005) errors.push('VDS cannot exceed the VAT on the bill')
   if (tds > round2(grossNum - vat) + 0.005) errors.push('TDS cannot be more than the bill value excluding VAT')
-  if ((vds > 0 || tds > 0) && vds + tds >= grossNum - 0.005) errors.push('VDS + TDS cannot take the whole bill — the net payable must be more than zero')
+  if ((vds > 0 || tds > 0) && vds + tds >= grossNum - 0.005) errors.push('VDS + TDS must leave a net payable above zero')
   if (binRaw && !binRaw.includes('•') && !BIN_REGEX.test(binRaw)) errors.push('Supplier BIN must be 9 or 13 digits')
   if (tds > 0 && !w.tdsSection) errors.push('Select the TDS section for the tax deducted')
 
@@ -636,15 +641,15 @@ function expenseComplianceWarnings({ tax, gross, category, origin = null, facts 
   const tds = toNum(tax?.withholding?.tdsAmount)
   const cashCost = facts.cashLike ? salaryOrRentOf(category, origin) : null
   if (cashCost)
-    out.push({ level: 'warn', text: `${cashCost === 'SALARY' ? 'Salary' : 'Rent'} paid in cash, by open cheque, through another non-bank channel or from a cash account is not an allowable expense for income tax (ITA 2023 s.55) — it will be recorded as non-deductible. Pay it through a bank or mobile-wallet account.` })
+    out.push({ level: 'warn', text: `${cashCost === 'SALARY' ? 'Salary' : 'Rent'} paid outside a bank or mobile wallet is non-deductible (ITA 2023 s.55).` })
   if (vat > 0 && toNum(gross) > ITC_BANKING_THRESHOLD && facts.vatBank === 'no')
-    out.push({ level: 'warn', text: 'Supplies over Tk 1,00,000 paid outside a banking channel lose the input VAT credit (VAT Act s.46).' })
+    out.push({ level: 'warn', text: 'Over Tk 1,00,000 outside a banking channel loses input VAT credit (VAT Act s.46).' })
   if (vat > 0 && toNum(gross) > ITC_BANKING_THRESHOLD && facts.vatBank === 'uncertain')
-    out.push({ level: 'info', text: 'Mobile-wallet / gateway payments may not count as a banking channel for input VAT over Tk 1,00,000 — a bank transfer is safer.' })
+    out.push({ level: 'info', text: 'MFS / gateway may not count as banking for input VAT over Tk 1,00,000.' })
   if ((tds > 0 || tax?.withholding?.tdsSection) && !facts.incomeTaxBank)
-    out.push({ level: 'warn', text: 'Payment not through a bank transfer — TDS is charged 50% higher (ITA s.142).' })
+    out.push({ level: 'warn', text: 'Not a bank transfer — TDS is 50% higher (ITA s.142).' })
   if (tax?.withholding?.tdsSection && !tax?.hasPsr && tax?.payeeType !== 'NON_RESIDENT')
-    out.push({ level: 'info', text: 'Payee has no PSR on file — TDS is 50% higher unless they show proof of return submission.' })
+    out.push({ level: 'info', text: 'No PSR on file — TDS is 50% higher.' })
   return out
 }
 
@@ -662,7 +667,7 @@ function PlainAccountSelect({ value, onChange, currency = null, placeholder = 'A
       value={value ?? ''}
       onChange={e => onChange(e.target.value || null)}
       disabled={disabled || loading}
-      className={`w-full border border-gray-200 rounded-lg px-3 ${size === 'sm' ? 'py-1.5 text-xs' : 'py-2 text-sm'} bg-white focus:outline-none focus:ring-2 focus:ring-gray-900 disabled:bg-gray-50 disabled:text-gray-400`}
+      className={cn(selectClass, size === 'sm' && 'text-[13px]')}
     >
       <option value="">{loading ? 'Loading accounts…' : placeholder}</option>
       {extraOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -681,12 +686,12 @@ function PurchaseBillLink({ expense, compact = false }) {
       href={`/admin/inventory/purchases/${billId}`}
       onClick={e => e.stopPropagation()}
       className={compact
-        ? 'inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-orange-50 text-orange-700 hover:bg-orange-100'
-        : 'inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline'}
+        ? 'mt-1 inline-flex items-center gap-1 rounded-full bg-orange-50 px-2 py-0.5 text-xs font-medium text-orange-700 ring-1 ring-inset ring-orange-600/15 hover:bg-orange-100'
+        : 'inline-flex items-center gap-1 text-xs font-medium text-gray-900 underline-offset-4 hover:underline'}
     >
-      <Receipt className={compact ? 'w-3 h-3' : 'w-3.5 h-3.5'} />
+      <Receipt className="size-3.5 text-current" />
       Purchase bill{billNo ? ` ${billNo}` : ''}
-      {!compact && <ExternalLink className="w-3 h-3" />}
+      {!compact && <ExternalLink className="size-3 text-gray-400" />}
     </Link>
   )
 }
@@ -696,14 +701,40 @@ function WarningList({ items }) {
   return (
     <ul className="space-y-1.5">
       {items.map((w, i) => (
-        <li key={i} className={`flex items-start gap-2 rounded-lg px-3 py-2 text-xs ${
-          w.level === 'warn' ? 'bg-amber-50 text-amber-800 border border-amber-100' : 'bg-gray-50 text-gray-600 border border-gray-100'
-        }`}>
-          {w.level === 'warn' ? <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" /> : <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />}
+        <li key={i} className={cn(
+          'flex items-start gap-2 rounded-lg border px-3 py-2.5 text-[13px]',
+          w.level === 'warn' ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-gray-200/80 bg-gray-50 text-gray-600'
+        )}>
+          {w.level === 'warn' ? <AlertTriangle className="mt-0.5 size-4 shrink-0" /> : <Info className="mt-0.5 size-4 shrink-0" />}
           <span>{w.text}</span>
         </li>
       ))}
     </ul>
+  )
+}
+
+/** Hand-built dialog frame (matches components/ui/Modal) for the page's inline modals. */
+function DialogShell({ title, description, onClose, className, footer, children }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-[2px]">
+      <div className={cn('flex max-h-[92vh] w-full max-w-lg flex-col rounded-2xl border border-gray-200/80 bg-white shadow-2xl', className)}>
+        <div className="flex shrink-0 items-start justify-between gap-4 px-4 pt-5 pb-3 sm:px-6">
+          <div className="min-w-0">
+            <h3 className="text-base font-semibold tracking-tight text-gray-900">{title}</h3>
+            {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
+          </div>
+          <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close" className="-mr-1.5 -mt-0.5 text-gray-400">
+            <X />
+          </Button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-4 pt-1 pb-5 sm:px-6">{children}</div>
+        {footer && (
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 rounded-b-2xl border-t border-gray-100 bg-gray-50/60 px-4 py-3.5 sm:px-6">
+            {footer}
+          </div>
+        )}
+      </div>
+    </div>
   )
 }
 
@@ -877,7 +908,7 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
       }
 
       // Income, or editing an existing transaction → direct ledger entry.
-      if (accountRequired && !accountId) { toast.error('Select the money account (bank / cash / wallet) the money came into'); return }
+      if (accountRequired && !accountId) { toast.error('Select the account the money came into'); return }
       if ((data.currency || BASE_CURRENCY) !== BASE_CURRENCY && !(Number(data.amountBDT) > 0)) {
         toast.error('Enter the BDT-equivalent for a non-BDT transaction'); return
       }
@@ -906,33 +937,33 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
     }
   }
 
-  const ic = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-gray-900'
-  const lc = 'block text-sm font-medium text-gray-700 mb-1'
+  const ic = inputClass
+  const errCls = 'mt-1.5 text-xs text-red-600'
 
   return (
-    <Modal open={open} onOpenChange={onOpenChange} title={isEdit ? 'Edit Transaction' : 'New Transaction'} size="lg">
-      <form id="tx-form" onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+    <Modal open={open} onOpenChange={onOpenChange} title={isEdit ? 'Edit transaction' : 'New transaction'} size="lg">
+      <form id="tx-form" onSubmit={handleSubmit(onSubmit)} className="space-y-5">
         {/* Type */}
         <div>
-          <label className={lc}>Type</label>
-          <div className="flex gap-3">
+          <Label>Type</Label>
+          <div className="grid grid-cols-2 gap-3">
             {['INCOME', 'EXPENSE'].map((t) => (
-              <label key={t} className="flex-1 flex items-center gap-2 p-3 border border-gray-200 rounded-lg cursor-pointer has-[:checked]:border-gray-900 has-[:checked]:bg-gray-50 transition-colors">
-                <input type="radio" value={t} {...register('type')} className="accent-gray-900" />
-                <span className="text-sm font-medium">{t === 'INCOME' ? 'Income' : 'Expense'}</span>
+              <label key={t} className="flex cursor-pointer items-center gap-2 rounded-lg border border-gray-200/80 px-3 py-2.5 shadow-xs transition-colors hover:bg-gray-50/70 has-[:checked]:border-gray-900 has-[:checked]:bg-gray-50">
+                <input type="radio" value={t} {...register('type')} />
+                <span className="text-sm font-medium text-gray-900">{t === 'INCOME' ? 'Income' : 'Expense'}</span>
               </label>
             ))}
           </div>
           {isExpenseRequest && (
-            <p className="mt-2 text-xs text-amber-600">
-              Expenses are submitted as a request — they go through Review → Paid → Authorized before they appear in the ledger.
+            <p className="mt-2 text-xs text-amber-700" title="Review → Paid → Authorized before it reaches the ledger.">
+              Sent as a payment request for review.
             </p>
           )}
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div>
-            <label className={lc}>Category *</label>
+            <Label required>Category</Label>
             <Controller name="category" control={control} render={({ field }) => (
               <Select value={field.value} onChange={v => { field.onChange(v ?? ''); setValue('expenseCategory', '') }}
                 options={categories.map(c => ({ value: c, label: c }))}
@@ -940,66 +971,65 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
                 disabled={baseCategories.length === 0}
               />
             )} />
-            {errors.category && <p className="mt-1 text-xs text-red-500">{errors.category.message}</p>}
+            {errors.category && <p className={errCls}>{errors.category.message}</p>}
             {baseCategories.length === 0 && (
-              <p className="mt-1 text-xs text-amber-600">No {isExpense ? 'expense' : 'income'} categories in Config → Finance.</p>
+              <p className="mt-1.5 text-xs text-amber-700">No {isExpense ? 'expense' : 'income'} categories in Config → Finance.</p>
             )}
           </div>
           <div>
-            <label className={lc}>Subcategory</label>
+            <Label>Subcategory</Label>
             <Controller name="expenseCategory" control={control} render={({ field }) => (
               <Select value={field.value ?? ''} onChange={v => field.onChange(v ?? '')}
                 options={subcategories.map(c => ({ value: c, label: c }))}
-                placeholder={!category ? 'Select category first…' : subcategories.length === 0 ? 'No subcategories' : 'Select…'}
+                placeholder={!category ? 'Pick a category' : subcategories.length === 0 ? 'None' : 'Select…'}
                 disabled={!category || subcategories.length === 0}
               />
             )} />
           </div>
           <div>
-            <label className={lc}>Amount *</label>
-            <input type="number" step="0.01" min="0" placeholder="0.00" {...register('amount')} onKeyDown={e => { if (e.key === '-' || e.key === 'e') e.preventDefault() }}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900" />
-            {errors.amount && <p className="mt-1 text-xs text-red-500">{errors.amount.message}</p>}
+            <Label required>Amount</Label>
+            <Input type="number" step="0.01" min="0" placeholder="0.00" {...register('amount')} onKeyDown={e => { if (e.key === '-' || e.key === 'e') e.preventDefault() }}
+              invalid={!!errors.amount} />
+            {errors.amount && <p className={errCls}>{errors.amount.message}</p>}
           </div>
         </div>
 
         {/* Currency + BDT-equivalent (metrics always roll up in BDT) */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label className={lc}>Currency</label>
+            <Label>Currency</Label>
             <Controller name="currency" control={control} render={({ field }) => (
               <Select value={field.value ?? 'BDT'} onChange={v => field.onChange(v ?? 'BDT')}
-                options={currencyOptions} placeholder="Select currency…" />
+                options={currencyOptions} placeholder="Select…" />
             )} />
           </div>
           {isForeign && (
             <div>
-              <label className={lc}>BDT-equivalent spent/received *</label>
-              <input type="number" step="0.01" min="0" placeholder="0.00" {...register('amountBDT')} onKeyDown={e => { if (e.key === '-' || e.key === 'e') e.preventDefault() }}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900" />
-              <p className="mt-1 text-xs text-gray-400">The actual taka value — used for all finance metrics.</p>
-              {errors.amountBDT && <p className="mt-1 text-xs text-red-500">{errors.amountBDT.message}</p>}
+              <Label required title="The actual taka value — used for all finance metrics.">BDT equivalent</Label>
+              <Input type="number" step="0.01" min="0" placeholder="0.00" {...register('amountBDT')} onKeyDown={e => { if (e.key === '-' || e.key === 'e') e.preventDefault() }}
+                invalid={!!errors.amountBDT} />
+              {errors.amountBDT && <p className={errCls}>{errors.amountBDT.message}</p>}
             </div>
           )}
         </div>
 
         <div>
-          <label className={lc}>Detailed Description *</label>
-          <textarea {...register('description')} rows={2} placeholder="What was this for? Who/where, and any context…" className={`${ic} resize-none`} />
-          {errors.description && <p className="mt-1 text-xs text-red-500">{errors.description.message}</p>}
+          <Label required>Description</Label>
+          <Textarea {...register('description')} rows={2} placeholder="What was this for?" className="resize-none" invalid={!!errors.description} />
+          {errors.description && <p className={errCls}>{errors.description.message}</p>}
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label className={lc}>Date *</label>
+            <Label required>Date</Label>
             {/* Money cannot move on a future day (the ledger refuses it); an expense request may be dated ahead. */}
-            <input type="date" {...register('date')} max={isExpenseRequest ? undefined : dhakaDayKey()} className={ic} />
-            {errors.date && <p className="mt-1 text-xs text-red-500">{errors.date.message}</p>}
+            <Input type="date" {...register('date')} max={isExpenseRequest ? undefined : dhakaDayKey()} invalid={!!errors.date} />
+            {errors.date && <p className={errCls}>{errors.date.message}</p>}
           </div>
           {/* Payment method is recorded when the expense request is Paid, not at submit. */}
           {!isExpenseRequest && (
             <div>
-              <label className={lc}>Payment Method</label>
+              <Label>Payment method</Label>
               <Controller name="paymentMethod" control={control} render={({ field }) => (
                 <Select value={field.value} onChange={v => field.onChange(v ?? '')}
                   options={paymentMethods}
@@ -1013,24 +1043,23 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
         {/* Money account — where the money came in (or went out, for legacy rows). */}
         {!isExpenseRequest && (accountLocked ? (
           <div>
-            <label className={lc}>Money account</label>
-            <div className={`${ic} bg-gray-50 text-gray-700 flex items-center gap-2`}>
-              <Landmark className="w-4 h-4 text-gray-400 shrink-0" />
+            <Label>Money account</Label>
+            <div className={cn(ic, 'items-center gap-2 bg-gray-50 text-gray-700')}>
+              <Landmark className="size-4 shrink-0 text-gray-400" />
               <span className="truncate">
                 {tx?.accountId?.name
                   ? `${tx.accountId.name} · ${accountTypeLabel(tx.accountId.type)}${tx.accountId.last4 ? ` ••${tx.accountId.last4}` : ''}`
                   : (moneyAccounts.find(a => a.id === String(idOf(tx?.accountId)))?.name ?? 'Linked account')}
               </span>
-              {reconciled && <span className="ml-auto text-[11px] text-emerald-700">Reconciled</span>}
+              {reconciled && <Badge variant="success" className="ml-auto">Reconciled</Badge>}
             </div>
-            <p className="mt-1 text-xs text-gray-400">This entry is reconciled with a bank statement, so its account cannot be changed.</p>
+            <p className="mt-1.5 text-xs text-muted-foreground">Reconciled entries keep their account.</p>
           </div>
         ) : showAccountPicker && (
           <div>
-            <label className={lc}>
+            <Label required={accountRequired}>
               {isEdit ? 'Money account' : 'Received into'}
-              {accountRequired ? <span className="text-red-500 ml-0.5">*</span> : <span className="text-gray-400 text-xs ml-1">(optional)</span>}
-            </label>
+            </Label>
             {isEdit ? (
               // No auto-pick here: an entry only gets the account the user chooses.
               // (MoneyAccountSelect also keeps an archived current account visible.)
@@ -1054,16 +1083,16 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
                 date={dateVal || null}
               />
             )}
-            <p className="mt-1 text-xs text-gray-400">
+            <p className="mt-1.5 text-xs text-muted-foreground">
               {isEdit
                 ? (originalAccountId
-                  ? 'Change it only if the entry was posted to the wrong account. Entries linked to invoices or payments keep theirs.'
-                  : 'This older entry has no money account. Set one so it shows in that account’s balance and statement.')
+                  ? 'Change only if posted to the wrong account.'
+                  : 'Older entry — set an account for its balance.')
                 : moneyAccounts.length === 0
-                  ? 'No money accounts yet — add them in Finance → Money Accounts. After go-live every entry needs one.'
+                  ? 'No money accounts yet.'
                   : !accountLive
-                    ? `Dated before go-live (${goLiveDate}) — no money account needed; earlier movements are in the opening balances.`
-                    : 'Picked automatically from the payment method; change it if the money landed elsewhere.'}
+                    ? `Before go-live (${goLiveDate}) — no account needed.`
+                    : 'Auto-picked from the payment method.'}
             </p>
           </div>
         ))}
@@ -1071,15 +1100,15 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
         {/* Account manager + txn id are assigned when the expense is Paid, so they're
             hidden while submitting an expense request. */}
         {!isExpenseRequest && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label className={lc}>Account Manager</label>
-            <div className={`${ic} bg-gray-50 cursor-not-allowed flex items-center justify-between`}>
-              <span className="text-gray-700">
+            <Label>Account manager</Label>
+            <div className={cn(ic, 'cursor-not-allowed items-center justify-between bg-gray-50')}>
+              <span className="truncate text-gray-700">
                 {/* Editing keeps the stored manager, so show that person — not the current user */}
                 {isEdit ? (tx?.accountManager?.name ?? '—') : (currentUser?.name ?? '—')}
                 {!isEdit && currentUser?.role && (
-                  <span className="ml-1.5 text-xs text-gray-400 font-normal">
+                  <span className="ml-1.5 text-xs font-normal text-muted-foreground">
                     {currentUser.role.replace('_', ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase())}
                   </span>
                 )}
@@ -1087,24 +1116,21 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
             </div>
           </div>
           <div>
-            <label className={lc}>
-              Transaction ID
-              <span className="text-gray-400 text-xs ml-1">{isEdit ? '(cannot be changed)' : '(optional — auto-generated if blank)'}</span>
-            </label>
-            <input
+            <Label title={isEdit ? 'Cannot be changed' : undefined}>Transaction ID</Label>
+            <Input
               value={txnIdVal}
               onChange={e => setTxnIdVal(e.target.value)}
-              placeholder="e.g. TXN-REF-001"
+              placeholder={isEdit ? '' : 'Auto-generated if blank'}
               readOnly={isEdit}
-              className={`${ic}${isEdit ? ' bg-gray-50 text-gray-500 cursor-not-allowed' : ''}`}
+              className={isEdit ? 'cursor-not-allowed bg-gray-50 text-gray-500' : undefined}
             />
           </div>
         </div>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label className={lc}>Related Project</label>
+            <Label>Project</Label>
             <Controller name="projectId" control={control} render={({ field }) => (
               <Select value={field.value} onChange={v => field.onChange(v ?? '')}
                 options={projects.map(p => ({ value: p.id, label: p.name }))}
@@ -1113,14 +1139,14 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
             )} />
           </div>
           <div>
-            <label className={lc}>Reference</label>
-            <input {...register('reference')} placeholder="INV-001, PO-123…" className={ic} />
+            <Label>Reference</Label>
+            <Input {...register('reference')} placeholder="INV-001, PO-123…" />
           </div>
         </div>
 
         {type === 'INCOME' && (
           <div>
-            <label className={lc}>Link to Invoice <span className="text-gray-400 font-normal text-xs">(syncs invoice paid amount)</span></label>
+            <Label title="Syncs the invoice's paid amount">Linked invoice</Label>
             <Controller name="invoiceId" control={control} render={({ field }) => (
               <Select value={field.value} onChange={v => field.onChange(v ?? '')}
                 options={invoices.map(inv => ({ value: inv.id, label: `${inv.invoiceNumber} — ${inv.clientId?.userId?.name ?? inv.clientId?.company ?? 'Client'} (due ${formatCurrency(Math.max(0, toNum(inv.total) - toNum(inv.paidAmount)), inv.currency)})` }))}
@@ -1133,13 +1159,13 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
         {/* Expense request: payee vendor + supplier-bill tax (VAT / VDS / TDS). */}
         {isExpenseRequest && Array.isArray(vendors) && vendors.length > 0 && (
           <div>
-            <label className={lc}>Vendor <span className="text-gray-400 font-normal text-xs">(optional — fills BIN, VAT status &amp; TDS defaults)</span></label>
-            <select value={vendorId} onChange={e => chooseVendor(e.target.value)} className={ic}>
+            <Label title="Fills BIN, VAT status & TDS defaults">Vendor</Label>
+            <NativeSelect value={vendorId} onChange={e => chooseVendor(e.target.value)}>
               <option value="">No vendor</option>
               {vendors.map(v => (
                 <option key={v.id} value={v.id}>{v.company}{v.bin && !String(v.bin).includes('•') ? ` · BIN ${v.bin}` : ''}</option>
               ))}
-            </select>
+            </NativeSelect>
           </div>
         )}
         {showExpenseTax && (
@@ -1150,29 +1176,24 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
             bankingForTax
             vatBank="yes"
             date={watch('date') || null}
-            note="Withholding assumes payment through a bank. It is re-checked against the actual account and channel when the payment is recorded."
+            note="Assumes bank payment; re-checked when paid."
           />
         )}
         {isExpenseRequest && !showExpenseTax && (
-          <p className="text-xs text-gray-400">VAT and VDS/TDS are recorded for BDT bills only — enter foreign-currency withholding in Tax &amp; VAT → Tax ledger.</p>
+          <p className="text-xs text-muted-foreground">Tax is recorded on BDT bills only — use the Tax ledger for foreign bills.</p>
         )}
 
         <FileUpload
-          label={receiptUrl ? 'Receipt / Invoice ✓ (optional)' : 'Receipt / Invoice (optional)'}
+          label="Receipt / invoice"
           value={receiptUrl}
           onUploaded={url => setReceiptUrl(url)}
         />
       </form>
       <ModalFooter>
-        <button type="button" onClick={() => onOpenChange(false)}
-          className="px-4 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-          Cancel
-        </button>
-        <button type="submit" form="tx-form" disabled={isSubmitting}
-          className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 disabled:opacity-60 transition-colors flex items-center gap-2">
-          {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
-          {isEdit ? 'Save Changes' : isExpenseRequest ? 'Submit Expense Request' : 'Add Transaction'}
-        </button>
+        <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+        <Button type="submit" form="tx-form" loading={isSubmitting}>
+          {isEdit ? 'Save changes' : isExpenseRequest ? 'Submit request' : 'Add transaction'}
+        </Button>
       </ModalFooter>
     </Modal>
   )
@@ -1270,7 +1291,7 @@ function PaymentModal({ expense, onClose, onDone }) {
       if (!res.ok) throw new Error(apiErrorMessage(json, action === 'pay' ? 'Payment could not be recorded' : 'Could not reject the request'))
       if (action === 'pay') {
         invalidateMoneyAccounts()
-        toast.success('Payment recorded — invoice ready to print & authorize')
+        toast.success('Payment recorded')
         for (const w of Array.isArray(json.warnings) ? json.warnings : []) {
           if (w?.message) toast(w.message, { duration: 7000 })
         }
@@ -1286,131 +1307,119 @@ function PaymentModal({ expense, onClose, onDone }) {
     }
   }
 
-  const ic = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900'
-  const lc = 'block text-sm font-medium text-gray-700 mb-1'
+  const hint = 'mt-1.5 text-xs text-muted-foreground'
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-xl border border-gray-200 w-full max-w-3xl max-h-[92vh] flex flex-col">
-
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-100 shrink-0">
-          <h3 className="text-base font-semibold text-gray-900">Record Payment</h3>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100">
-            <X className="w-5 h-5 text-gray-400" />
-          </button>
-        </div>
-
-        {/* Scrollable body */}
-        <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-5 space-y-5">
-          <p className="text-xs text-gray-500">
-            Record how and from which account the payment was made. This marks the expense <strong>Paid</strong>,
-            posts it to the ledger on the payment date and generates the invoice — print it, get it authorized,
-            then upload the scan to move it to <strong>Authorized</strong>.
-          </p>
-
+    <DialogShell
+      title="Record payment"
+      description="Marks it paid and posts it to the ledger."
+      onClose={onClose}
+      className="max-w-3xl"
+      footer={<>
+        {!canPay && problems[0] && (
+          <p className="flex w-full items-center gap-1.5 text-xs text-amber-700 sm:mr-auto sm:w-auto"><AlertCircle className="size-3.5 shrink-0" /> {problems[0]}</p>
+        )}
+        <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
+        <Button variant="outline" onClick={() => submit('reject')} disabled={saving}>
+          {saving ? <Loader2 className="animate-spin" /> : <XCircle />} Reject
+        </Button>
+        <Button onClick={() => submit('pay')} disabled={saving || !canPay}>
+          {saving ? <Loader2 className="animate-spin" /> : <CheckCircle2 />}
+          {isForeign ? 'Mark paid' : `Mark paid · ${fmtTk(built.net)}`}
+        </Button>
+      </>}
+    >
+        <div className="space-y-5">
           {/* Two-column layout: summary + submitted proof */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="rounded-xl bg-gray-50 border border-gray-100 px-4 py-4 space-y-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5 rounded-lg bg-gray-50 p-4">
               <p className="text-sm font-semibold text-gray-900">{expense.title}</p>
-              <p className="text-xs text-gray-500">{expense.category}{expense.subcategory ? ` / ${expense.subcategory}` : ''} · {fmtDate(expense.date)}</p>
-              <p className="text-xl font-bold text-gray-900">{formatCurrency(expense.amount, expense.currency)}</p>
+              <p className="text-xs text-muted-foreground">{expense.category}{expense.subcategory ? ` / ${expense.subcategory}` : ''} · {fmtDate(expense.date)}</p>
+              <p className="pt-1 text-xl font-semibold tracking-tight text-gray-900 tabular-nums">{formatCurrency(expense.amount, expense.currency)}</p>
               {(payee?.name || expense.paidToName) && (
-                <p className="text-xs text-gray-500">Payee: <span className="font-medium text-gray-700">{payee?.name ?? expense.paidToName}</span></p>
+                <p className="text-xs text-muted-foreground">Payee <span className="font-medium text-gray-700">{payee?.name ?? expense.paidToName}</span></p>
               )}
               {expense.submittedBy?.name && (
-                <p className="text-xs text-gray-500">Submitted by: <span className="font-medium text-gray-700">{expense.submittedBy.name}</span></p>
+                <p className="text-xs text-muted-foreground">Submitted by <span className="font-medium text-gray-700">{expense.submittedBy.name}</span></p>
               )}
               <PurchaseBillLink expense={expense} />
               {expense.notes && (
-                <p className="text-xs text-gray-500 border-t border-gray-200 pt-2 mt-2 whitespace-pre-wrap">{expense.notes}</p>
+                <p className="mt-2 whitespace-pre-wrap border-t border-gray-200/80 pt-2 text-xs text-muted-foreground">{expense.notes}</p>
               )}
             </div>
 
             {docUrl(expense.invoiceUrl) ? (
-              <DocPreview url={docUrl(expense.invoiceUrl)} label="Submitted Proof / Memo" />
+              <DocPreview url={docUrl(expense.invoiceUrl)} label="Submitted proof" />
             ) : (
-              <div className="rounded-xl bg-gray-50 border border-dashed border-gray-200 flex items-center justify-center py-8 text-center px-4">
-                <p className="text-xs text-gray-400">No proof attached — verify the description details above.</p>
+              <div className="flex items-center justify-center rounded-lg border border-dashed border-gray-200 px-4 py-8 text-center">
+                <p className="text-xs text-muted-foreground">No proof attached.</p>
               </div>
             )}
           </div>
 
           {/* Payment: method, account, channel, date, transaction id */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <label className={lc}>Payment method <span className="text-red-500">*</span></label>
-              <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} className={ic}>
-                <option value="">Select method…</option>
+              <Label required>Payment method</Label>
+              <NativeSelect value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}>
+                <option value="">Select…</option>
                 {paymentMethods.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
-              </select>
+              </NativeSelect>
             </div>
             <div>
-              <label className={lc}>
-                Paid from {accountRequired ? <span className="text-red-500">*</span> : <span className="text-gray-400 text-xs ml-1">(optional)</span>}
-              </label>
+              <Label required={accountRequired}>Paid from</Label>
               <MoneyAccountSelect
                 value={accountId}
                 onChange={(id, acc) => { setAccountId(id); setAccount(acc ?? null) }}
                 currency={expense.currency ?? 'BDT'}
                 paymentMethod={paymentMethod || null}
-                placeholder="Select bank / cash / wallet account"
+                placeholder="Select account"
                 required={accountRequired}
                 autoSelect={accountLive}
                 date={paidAt || null}
               />
               {moneyAccounts.length === 0 ? (
-                <p className="mt-1 text-[11px] text-gray-400">No money accounts yet — add them in Finance → Money Accounts. After go-live every payment needs one.</p>
+                <p className={hint}>No money accounts yet.</p>
               ) : !accountLive && (
-                <p className="mt-1 text-[11px] text-gray-400">Paid before go-live ({goLiveDate}) — no money account needed.</p>
+                <p className={hint}>Before go-live ({goLiveDate}) — no account needed.</p>
               )}
               {overdraft && (
-                <p className="mt-1 text-[11px] text-red-600">Only {formatMoney(available, accountObj.currency)} available in this account.</p>
+                <p className="mt-1.5 text-xs text-red-600">Only {formatMoney(available, accountObj.currency)} available in this account.</p>
               )}
             </div>
             <div>
-              <label className={lc}>Channel</label>
-              <select value={effectiveChannel}
-                onChange={e => { setChannel(e.target.value); setChannelTouched(true) }}
-                className={ic}>
-                <option value="">Select channel…</option>
+              <Label>Channel</Label>
+              <NativeSelect value={effectiveChannel}
+                onChange={e => { setChannel(e.target.value); setChannelTouched(true) }}>
+                <option value="">Select…</option>
                 {CHANNEL_OPTIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-              </select>
-              <p className="mt-1 text-[11px] text-gray-400">
+              </NativeSelect>
+              <p className={hint} title={!channelTouched && autoChannel ? 'Set from the method / account' : undefined}>
                 {facts.incomeTaxBank ? 'Banking channel for income tax.' : 'Not a banking channel — cash rules apply.'}
-                {!channelTouched && autoChannel ? ' Set from the method / account.' : ''}
               </p>
             </div>
             <div>
-              <label className={lc}>Payment date <span className="text-red-500">*</span></label>
+              <Label required>Payment date</Label>
               <DatePicker value={paidAt || null} onChange={v => setPaidAt(v ?? '')} clearable={false} />
-              <p className="mt-1 text-[11px] text-gray-400">The ledger entry is dated on this day.</p>
             </div>
             <div className="sm:col-span-2">
-              <label className={lc}>
-                Transaction ID {!proofUrl && <span className="text-red-500">*</span>}
-                {proofUrl && <span className="text-gray-400 text-xs ml-1">(optional)</span>}
-              </label>
-              <input value={txnId} onChange={e => setTxnId(e.target.value)} placeholder="e.g. bank / bKash txn ref, cheque no." className={ic} />
+              <Label required={!proofUrl}>Transaction ID</Label>
+              <Input value={txnId} onChange={e => setTxnId(e.target.value)} placeholder="Bank / bKash ref, cheque no." />
             </div>
           </div>
 
           <FileUpload
-            label={`Payment proof ${txnId.trim() ? '(optional)' : '(required if no transaction ID)'}`}
+            label={txnId.trim() ? 'Payment proof' : 'Payment proof (or transaction ID)'}
             value={proofUrl}
             onUploaded={url => setProofUrl(url)}
           />
-          <p className="text-xs text-gray-400 -mt-3">Proof that the payment was actually made (bank/MFS receipt). Optional if you enter a transaction ID.</p>
 
           {isForeign && (
             <div>
-              <label className={lc}>
-                Actual spend in BDT <span className="text-red-500">*</span>
-                <span className="text-gray-400 text-xs ml-1">({expense.currency} → BDT)</span>
-              </label>
-              <input type="number" value={amtBDT} onChange={e => setAmtBDT(e.target.value)}
-                placeholder="e.g. 12000" className={ic} />
-              <p className="mt-1 text-xs text-gray-400">VAT and VDS/TDS are recorded on BDT bills only — enter withholding on foreign payments in Tax &amp; VAT → Tax ledger.</p>
+              <Label required>Amount in BDT</Label>
+              <Input type="number" value={amtBDT} onChange={e => setAmtBDT(e.target.value)}
+                placeholder={`${expense.currency} → BDT`} />
+              <p className={hint}>Tax is recorded on BDT bills only — use the Tax ledger for foreign bills.</p>
             </div>
           )}
 
@@ -1433,36 +1442,12 @@ function PaymentModal({ expense, onClose, onDone }) {
 
           {/* Note */}
           <div>
-            <label className={lc}>Note (optional)</label>
-            <textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
-              placeholder="Add a note for the requester…"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 resize-none" />
+            <Label>Note</Label>
+            <Textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
+              placeholder="Note for the requester…" className="resize-none" />
           </div>
         </div>
-
-        {/* Footer */}
-        <div className="flex flex-wrap items-center gap-2 justify-end px-4 sm:px-6 py-4 border-t border-gray-100 shrink-0">
-          {!canPay && problems[0] && (
-            <p className="w-full sm:w-auto sm:mr-auto text-xs text-amber-700 flex items-center gap-1.5"><AlertCircle className="w-3.5 h-3.5 shrink-0" /> {problems[0]}</p>
-          )}
-          <button onClick={onClose} disabled={saving}
-            className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">
-            Cancel
-          </button>
-          <button onClick={() => submit('reject')} disabled={saving}
-            className="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-60 flex items-center gap-1.5">
-            {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-            <XCircle className="w-4 h-4" /> Reject
-          </button>
-          <button onClick={() => submit('pay')} disabled={saving || !canPay}
-            className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 disabled:opacity-60 flex items-center gap-1.5">
-            {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-            <CheckCircle2 className="w-4 h-4" />
-            {isForeign ? 'Mark Paid' : `Mark Paid · ${fmtTk(built.net)}`}
-          </button>
-        </div>
-      </div>
-    </div>
+    </DialogShell>
   )
 }
 
@@ -1477,7 +1462,7 @@ function AuthorizeModal({ expense, onClose, onDone }) {
   const methodLabel = paymentMethods.find(m => m.value === expense.paymentMethod)?.label ?? expense.paymentMethod ?? '—'
 
   async function submit() {
-    if (!scanUrl) { toast.error('Upload the scan of the authorized invoice'); return }
+    if (!scanUrl) { toast.error('Upload the signed invoice'); return }
     setSaving(true)
     try {
       const res  = await fetch(`/api/expenses/${expense.id}`, {
@@ -1498,50 +1483,38 @@ function AuthorizeModal({ expense, onClose, onDone }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-xl border border-gray-200 w-full max-w-2xl max-h-[90vh] flex flex-col">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
-          <h3 className="text-base font-semibold text-gray-900">Authorize Invoice — {expense.expenseId ?? expense.expenseInvoiceNo ?? ''}</h3>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100">
-            <X className="w-5 h-5 text-gray-400" />
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
-          <div className="rounded-xl bg-gray-50 border border-gray-100 px-4 py-4 flex items-center justify-between gap-4">
-            <div>
+    <DialogShell
+      title={`Authorize invoice${expense.expenseId ?? expense.expenseInvoiceNo ? ` — ${expense.expenseId ?? expense.expenseInvoiceNo}` : ''}`}
+      onClose={onClose}
+      className="max-w-2xl"
+      footer={<>
+        <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
+        <Button onClick={submit} disabled={saving || !scanUrl}>
+          {saving ? <Loader2 className="animate-spin" /> : <CheckCircle2 />} Authorize
+        </Button>
+      </>}
+    >
+        <div className="space-y-5">
+          <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg bg-gray-50 p-4">
+            <div className="min-w-0">
               <p className="text-sm font-semibold text-gray-900">{expense.title}</p>
-              <p className="text-xs text-gray-500">{expense.category}{expense.subcategory ? ` / ${expense.subcategory}` : ''} · {fmtDate(expense.date)}</p>
-              <p className="text-lg font-bold text-gray-900 mt-1">{formatCurrency(expense.amount, expense.currency)}</p>
-              <p className="text-xs text-gray-500 mt-1">Paid via <span className="font-medium text-gray-700">{methodLabel}</span>{expense.paymentTxnId ? ` · Txn ${expense.paymentTxnId}` : ''}</p>
+              <p className="text-xs text-muted-foreground">{expense.category}{expense.subcategory ? ` / ${expense.subcategory}` : ''} · {fmtDate(expense.date)}</p>
+              <p className="mt-1 text-lg font-semibold tracking-tight text-gray-900 tabular-nums">{formatCurrency(expense.amount, expense.currency)}</p>
+              <p className="mt-1 text-xs text-muted-foreground">Paid via <span className="font-medium text-gray-700">{methodLabel}</span>{expense.paymentTxnId ? ` · Txn ${expense.paymentTxnId}` : ''}</p>
             </div>
             <a href={`/api/expenses/${expense.id}/voucher`} target="_blank" rel="noreferrer"
-              className="px-3 py-2 text-xs font-medium border border-gray-200 rounded-lg hover:bg-white flex items-center gap-1.5 shrink-0">
-              <Printer className="w-4 h-4" /> Print Invoice
+              className={buttonVariants({ variant: 'outline', size: 'sm' })}>
+              <Printer /> Print invoice
             </a>
           </div>
 
           <FileUpload
-            label="Authorized invoice scan (required)"
+            label="Signed & sealed invoice scan"
             value={scanUrl}
             onUploaded={url => setScanUrl(url)}
           />
-          <p className="text-xs text-gray-400 -mt-3">Upload the printed invoice after it has been signed by the account manager / authorized signatory and stamped with the company seal.</p>
         </div>
-
-        <div className="flex gap-2 justify-end px-6 py-4 border-t border-gray-100 shrink-0">
-          <button onClick={onClose} disabled={saving}
-            className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">
-            Cancel
-          </button>
-          <button onClick={submit} disabled={saving || !scanUrl}
-            className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-60 flex items-center gap-1.5">
-            {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-            <CheckCircle2 className="w-4 h-4" /> Authorize
-          </button>
-        </div>
-      </div>
-    </div>
+    </DialogShell>
   )
 }
 
@@ -1568,7 +1541,7 @@ function ReversePaymentModal({ expense, onClose, onDone }) {
       const json = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(apiErrorMessage(json, 'The payment could not be reversed'))
       invalidateMoneyAccounts()   // the reversal moves money back into the account
-      toast.success('Payment reversed — the request is back to Pending')
+      toast.success('Payment reversed — back to Pending')
       for (const w of Array.isArray(json.warnings) ? json.warnings : []) {
         if (w?.message) toast(w.message, { duration: 7000 })
       }
@@ -1582,45 +1555,35 @@ function ReversePaymentModal({ expense, onClose, onDone }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-xl border border-gray-200 w-full max-w-lg max-h-[90vh] flex flex-col">
-        <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-100 shrink-0">
-          <h3 className="text-base font-semibold text-gray-900">Reverse payment{expense.expenseInvoiceNo ? ` — ${expense.expenseInvoiceNo}` : ''}</h3>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100">
-            <X className="w-5 h-5 text-gray-400" />
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-5 space-y-4">
-          <div className="rounded-xl bg-gray-50 border border-gray-100 px-4 py-3">
+    <DialogShell
+      title={`Reverse payment${expense.expenseInvoiceNo ? ` — ${expense.expenseInvoiceNo}` : ''}`}
+      onClose={onClose}
+      footer={<>
+        <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
+        <Button variant="destructive" onClick={submit} disabled={saving || trimmed.length < 5}>
+          {saving ? <Loader2 className="animate-spin" /> : <RotateCcw />} Reverse payment
+        </Button>
+      </>}
+    >
+        <div className="space-y-4">
+          <div className="rounded-lg bg-gray-50 p-4">
             <p className="text-sm font-semibold text-gray-900">{expense.title}</p>
-            <p className="text-xs text-gray-500">{expense.category}{expense.subcategory ? ` / ${expense.subcategory}` : ''} · {fmtDate(expense.date)}</p>
-            <p className="text-lg font-bold text-gray-900 mt-1">{formatCurrency(expense.amount, expense.currency)}</p>
+            <p className="text-xs text-muted-foreground">{expense.category}{expense.subcategory ? ` / ${expense.subcategory}` : ''} · {fmtDate(expense.date)}</p>
+            <p className="mt-1 text-lg font-semibold tracking-tight text-gray-900 tabular-nums">{formatCurrency(expense.amount, expense.currency)}</p>
           </div>
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 space-y-1">
-            <p>This posts a reversing entry for the payment (dated today), voids the VAT / VDS / TDS entries it created and puts the request back to <strong>Pending</strong>, so it can be paid again with the right details.</p>
-            <p>It is refused while a tax entry is in a filed return, deposited by challan or has an issued certificate, or when the books are locked.</p>
+          <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-[13px] text-amber-800"
+            title="Refused while a tax entry is in a filed return, deposited by challan or has an issued certificate, or when the books are locked.">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+            <p>Posts a reversing entry today, voids its VAT / VDS / TDS entries and returns the request to <strong className="font-medium">Pending</strong>.</p>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Reason <span className="text-red-500">*</span></label>
-            <textarea value={reason} onChange={e => setReason(e.target.value)} rows={3} maxLength={300}
-              placeholder="e.g. VDS withheld on a service that is not on the VDS list"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-gray-900" />
+            <Label required>Reason</Label>
+            <Textarea value={reason} onChange={e => setReason(e.target.value)} rows={3} maxLength={300}
+              placeholder="e.g. VDS withheld on a non-VDS service"
+              className="resize-none" />
           </div>
         </div>
-
-        <div className="flex gap-2 justify-end px-4 sm:px-6 py-4 border-t border-gray-100 shrink-0">
-          <button onClick={onClose} disabled={saving}
-            className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">
-            Cancel
-          </button>
-          <button onClick={submit} disabled={saving || trimmed.length < 5}
-            className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-60 flex items-center gap-1.5">
-            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />} Reverse payment
-          </button>
-        </div>
-      </div>
-    </div>
+    </DialogShell>
   )
 }
 
@@ -1636,7 +1599,7 @@ function BatchAuthorizeModal({ ids, expenses, onClose, onDone }) {
   const idsParam = ids.join(',')
 
   async function submit() {
-    if (!scanUrl) { toast.error('Upload the scan of the authorized combined invoice first'); return }
+    if (!scanUrl) { toast.error('Upload the signed combined invoice'); return }
     setSaving(true)
     try {
       const res  = await fetch('/api/expenses/batch-authorize', {
@@ -1657,48 +1620,37 @@ function BatchAuthorizeModal({ ids, expenses, onClose, onDone }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-xl border border-gray-200 w-full max-w-2xl max-h-[90vh] flex flex-col">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
-          <h3 className="text-base font-semibold text-gray-900">Authorize {ids.length} expense{ids.length > 1 ? 's' : ''} — combined invoice</h3>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100">
-            <X className="w-5 h-5 text-gray-400" />
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
-          <div className="rounded-xl bg-gray-50 border border-gray-100 px-4 py-4 flex items-center justify-between gap-4">
+    <DialogShell
+      title={`Authorize ${ids.length} expense${ids.length > 1 ? 's' : ''}`}
+      description="One signed combined invoice covers all of them."
+      onClose={onClose}
+      className="max-w-2xl"
+      footer={<>
+        <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
+        <Button onClick={submit} disabled={saving || !scanUrl}>
+          {saving ? <Loader2 className="animate-spin" /> : <CheckCircle2 />} Authorize {ids.length}
+        </Button>
+      </>}
+    >
+        <div className="space-y-5">
+          <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg bg-gray-50 p-4">
             <div>
               <p className="text-sm font-semibold text-gray-900">{ids.length} paid expense{ids.length > 1 ? 's' : ''}</p>
-              <p className="text-lg font-bold text-gray-900 mt-1">Total <TkAmt value={totalBDT} decimals={2} /> <span className="text-xs font-normal text-gray-400">BDT</span></p>
+              <p className="mt-1 text-lg font-semibold tracking-tight text-gray-900 tabular-nums">Total <TkAmt value={totalBDT} decimals={2} /> <span className="text-xs font-normal text-muted-foreground">BDT</span></p>
             </div>
             <a href={`/api/expenses/combined-voucher?ids=${idsParam}`} target="_blank" rel="noreferrer"
-              className="px-3 py-2 text-xs font-medium border border-gray-200 rounded-lg hover:bg-white flex items-center gap-1.5 shrink-0">
-              <Printer className="w-4 h-4" /> Print Combined Invoice
+              className={buttonVariants({ variant: 'outline', size: 'sm' })}>
+              <Printer /> Print combined invoice
             </a>
           </div>
 
           <FileUpload
-            label="Authorized combined invoice scan (required)"
+            label="Signed & sealed combined invoice scan"
             value={scanUrl}
             onUploaded={url => setScanUrl(url)}
           />
-          <p className="text-xs text-gray-400 -mt-3">Print the combined invoice, get it signed &amp; sealed, then upload the scan — one authorized invoice authorizes all {ids.length} expense(s) together.</p>
         </div>
-
-        <div className="flex gap-2 justify-end px-6 py-4 border-t border-gray-100 shrink-0">
-          <button onClick={onClose} disabled={saving}
-            className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">
-            Cancel
-          </button>
-          <button onClick={submit} disabled={saving || !scanUrl}
-            className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-60 flex items-center gap-1.5">
-            {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-            <CheckCircle2 className="w-4 h-4" /> Authorize {ids.length}
-          </button>
-        </div>
-      </div>
-    </div>
+    </DialogShell>
   )
 }
 
@@ -1723,40 +1675,35 @@ function ExpenseDetailModal({ expense, onClose }) {
     : (expense.status === 'PENDING' && expense.tax?.vatCreditable ? ' (input credit requested)' : '')
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-xl border border-gray-200 w-full max-w-2xl max-h-[90vh] flex flex-col">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
-          <h3 className="text-base font-semibold text-gray-900">Expense — {expense.expenseId ?? expense.expenseInvoiceNo ?? ''}</h3>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100"><X className="w-5 h-5 text-gray-400" /></button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+    <DialogShell
+      title={`Expense${expense.expenseId ?? expense.expenseInvoiceNo ? ` — ${expense.expenseId ?? expense.expenseInvoiceNo}` : ''}`}
+      onClose={onClose}
+      className="max-w-2xl"
+      footer={<Button variant="outline" onClick={onClose}>Close</Button>}
+    >
+        <div className="space-y-5">
           {/* Summary */}
-          <div className="rounded-xl bg-gray-50 border border-gray-100 px-4 py-4 space-y-2">
+          <div className="space-y-1.5 rounded-lg bg-gray-50 p-4">
             <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-2">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
                   <p className="text-sm font-semibold text-gray-900">{expense.title}</p>
-                  {expense.origin === 'REIMBURSEMENT' && (
-                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-indigo-50 text-indigo-700">
-                      Reimbursement
-                    </span>
-                  )}
+                  {expense.origin === 'REIMBURSEMENT' && <Badge variant="indigo">Reimbursement</Badge>}
                 </div>
-                <p className="text-xs text-gray-500">{expense.category}{expense.subcategory ? ` / ${expense.subcategory}` : ''} · {fmtDate(expense.date)}</p>
+                <p className="text-xs text-muted-foreground">{expense.category}{expense.subcategory ? ` / ${expense.subcategory}` : ''} · {fmtDate(expense.date)}</p>
               </div>
               <StatusDot status={expense.status} />
             </div>
-            <p className="text-xl font-bold text-gray-900">
+            <p className="pt-1 text-xl font-semibold tracking-tight text-gray-900 tabular-nums">
               {formatCurrency(expense.amount, expense.currency)}
-              {isForeign && <span className="text-xs font-normal text-gray-400 ml-2">≈ {formatCurrency(expense.amountBDT ?? 0, 'BDT')}</span>}
+              {isForeign && <span className="ml-2 text-xs font-normal text-muted-foreground">≈ {formatCurrency(expense.amountBDT ?? 0, 'BDT')}</span>}
             </p>
             {expense.submittedBy?.name && (
-              <p className="text-xs text-gray-500">Submitted by: <span className="font-medium text-gray-700">{expense.submittedBy.name}</span></p>
+              <p className="text-xs text-muted-foreground">Submitted by <span className="font-medium text-gray-700">{expense.submittedBy.name}</span></p>
             )}
             <PurchaseBillLink expense={expense} />
             {settled && (
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted-foreground">
                 Paid via <span className="font-medium text-gray-700">{methodLabel ?? '—'}</span>
                 {expense.accountId?.name ? <> from <span className="font-medium text-gray-700">{expense.accountId.name}</span></> : ''}
                 {expense.paidAt ? ` on ${fmtDate(expense.paidAt)}` : ''}
@@ -1764,7 +1711,7 @@ function ExpenseDetailModal({ expense, onClose }) {
               </p>
             )}
             {expense.tax && (toNum(expense.tax.vatAmount) > 0 || toNum(expense.tax.vdsAmount) > 0 || toNum(expense.tax.tdsAmount) > 0) && (
-              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 border-t border-gray-200 pt-2 mt-2">
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 border-t border-gray-200/80 pt-2 text-xs text-muted-foreground tabular-nums">
                 {toNum(expense.tax.vatAmount) > 0 && (
                   <span>VAT {fmtTk(expense.tax.vatAmount)}{vatCreditText}</span>
                 )}
@@ -1778,35 +1725,32 @@ function ExpenseDetailModal({ expense, onClose }) {
               </div>
             )}
             {expense.notes && (
-              <p className="text-xs text-gray-500 border-t border-gray-200 pt-2 mt-2 whitespace-pre-wrap">{expense.notes}</p>
+              <p className="mt-2 whitespace-pre-wrap border-t border-gray-200/80 pt-2 text-xs text-muted-foreground">{expense.notes}</p>
             )}
           </div>
 
           {/* Documents */}
           <div className="space-y-3">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Documents</p>
-            {hasInvoice && (
-              <a href={`/api/expenses/${expense.id ?? expense._id}/voucher`} target="_blank" rel="noreferrer"
-                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium border border-gray-200 rounded-lg hover:bg-gray-50">
-                <Printer className="w-4 h-4" /> Open main invoice
-              </a>
-            )}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {docUrl(expense.signedInvoiceUrl) && <DocPreview url={docUrl(expense.signedInvoiceUrl)} label="Authorized Invoice" />}
-              {docUrl(expense.paymentProofUrl)  && <DocPreview url={docUrl(expense.paymentProofUrl)}  label="Payment Proof" />}
-              {docUrl(expense.invoiceUrl)       && <DocPreview url={docUrl(expense.invoiceUrl)}       label="Submitted Proof / Memo" />}
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-semibold text-gray-900">Documents</p>
+              {hasInvoice && (
+                <a href={`/api/expenses/${expense.id ?? expense._id}/voucher`} target="_blank" rel="noreferrer"
+                  className={buttonVariants({ variant: 'outline', size: 'sm' })}>
+                  <Printer /> Main invoice
+                </a>
+              )}
+            </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {docUrl(expense.signedInvoiceUrl) && <DocPreview url={docUrl(expense.signedInvoiceUrl)} label="Authorized invoice" />}
+              {docUrl(expense.paymentProofUrl)  && <DocPreview url={docUrl(expense.paymentProofUrl)}  label="Payment proof" />}
+              {docUrl(expense.invoiceUrl)       && <DocPreview url={docUrl(expense.invoiceUrl)}       label="Submitted proof" />}
             </div>
             {!hasInvoice && !docUrl(expense.signedInvoiceUrl) && !docUrl(expense.paymentProofUrl) && !docUrl(expense.invoiceUrl) && (
-              <p className="text-xs text-gray-400">No documents yet.</p>
+              <p className="text-xs text-muted-foreground">No documents yet.</p>
             )}
           </div>
         </div>
-
-        <div className="flex justify-end px-6 py-4 border-t border-gray-100 shrink-0">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">Close</button>
-        </div>
-      </div>
-    </div>
+    </DialogShell>
   )
 }
 
@@ -1926,7 +1870,7 @@ function ConfirmPaymentModal({ payment, currentUser, onClose, onDone }) {
       const json = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(apiErrorMessage(json, action === 'confirm' ? 'Payment could not be confirmed' : 'Could not reject the payment'))
       if (action === 'confirm') invalidateMoneyAccounts()
-      toast.success(action === 'confirm' ? 'Payment confirmed & added to income' : 'Payment rejected')
+      toast.success(action === 'confirm' ? 'Payment confirmed' : 'Payment rejected')
       onDone()
       onClose()
     } catch (err) {
@@ -1938,29 +1882,39 @@ function ConfirmPaymentModal({ payment, currentUser, onClose, onDone }) {
 
   const project = payment.projectId
   const client  = payment.clientId?.userId
-  const ic = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900'
+  const hint = 'mt-1.5 text-xs text-muted-foreground'
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-xl border border-gray-200 w-full max-w-2xl max-h-[92vh] flex flex-col">
-        <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-100 shrink-0">
-          <h3 className="text-base font-semibold text-gray-900">Confirm Payment</h3>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100"><X className="w-5 h-5 text-gray-400" /></button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-5 space-y-4">
+    <DialogShell
+      title="Confirm payment"
+      onClose={onClose}
+      className="max-w-2xl"
+      footer={<>
+        {problems[0] && (
+          <p className="flex w-full items-center gap-1.5 text-xs text-amber-700 sm:mr-auto sm:w-auto"><AlertCircle className="size-3.5 shrink-0" /> {problems[0]}</p>
+        )}
+        <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
+        <Button variant="outline" onClick={() => submit('reject')} disabled={saving}>
+          {saving ? <Loader2 className="animate-spin" /> : <XCircle />} Reject
+        </Button>
+        <Button onClick={() => submit('confirm')} disabled={saving || problems.length > 0}>
+          {saving ? <Loader2 className="animate-spin" /> : <CheckCircle2 />} Confirm
+        </Button>
+      </>}
+    >
+        <div className="space-y-5">
           {/* Summary */}
-          <div className="rounded-lg bg-gray-50 border border-gray-100 px-4 py-3 space-y-1.5">
+          <div className="space-y-1.5 rounded-lg bg-gray-50 p-4">
             {project?.name && (
               <p className="text-sm font-semibold text-gray-900">
                 {project.projectCode ? `[${project.projectCode}] ` : ''}{project.name}
               </p>
             )}
             {client?.name && (
-              <p className="text-xs text-gray-500">Client: {client.name}</p>
+              <p className="text-xs text-muted-foreground">Client <span className="font-medium text-gray-700">{client.name}</span></p>
             )}
             {invoice?.invoiceNumber && (
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted-foreground">
                 Invoice {invoice.invoiceNumber}
                 {invDue !== null && <> · balance <span className="font-medium text-gray-700">{formatCurrency(invDue, payment.currency ?? 'BDT')}</span></>}
                 {toNum(invoice.vatAmount) > 0 && <> · incl. VAT {formatCurrency(invoice.vatAmount, payment.currency ?? 'BDT')}</>}
@@ -1969,72 +1923,68 @@ function ConfirmPaymentModal({ payment, currentUser, onClose, onDone }) {
             {payment.description && (
               <p className="text-xs text-gray-600">{payment.description}</p>
             )}
-            <p className="text-xl font-bold text-gray-900">
+            <p className="pt-1 text-xl font-semibold tracking-tight text-gray-900 tabular-nums">
               {payment.currency} {Number(payment.amount).toLocaleString()}
             </p>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-muted-foreground">
               {fmtMethod(payment.paymentMethod)} · {fmtDate(payment.paymentDate)}
+              {payment.submittedBy?.name && <> · by {payment.submittedBy.name}</>}
             </p>
-            {payment.submittedBy?.name && (
-              <p className="text-xs text-gray-400">Recorded by: {payment.submittedBy.name}</p>
-            )}
             {payment.notes && (
-              <p className="text-xs text-gray-500 italic">{payment.notes}</p>
+              <p className="text-xs italic text-muted-foreground">{payment.notes}</p>
             )}
             {docUrl(payment.receiptUrl) && (
               <DocPreview url={docUrl(payment.receiptUrl)} compact />
             )}
           </div>
 
-          <div className="rounded-lg border border-gray-100 bg-gray-50 px-4 py-2.5 text-xs text-gray-600">
-            Confirming will create an <strong>INCOME transaction</strong> in the ledger for {payment.currency ?? 'BDT'} {Number(payment.amount).toLocaleString('en-BD', { minimumFractionDigits: 2 })}
+          <p className="text-[13px] text-gray-600">
+            Posts <span className="font-medium text-gray-900 tabular-nums">{payment.currency ?? 'BDT'} {Number(payment.amount).toLocaleString('en-BD', { minimumFractionDigits: 2 })}</span> as income
             {vds + tds > 0 && invoice?.invoiceNumber && (
-              <> and settle <strong>{fmtTk(settled)}</strong> of invoice {invoice.invoiceNumber} — VDS / TDS the client withheld count as paid and become tax credits.</>
+              <span title="VDS / TDS the client withheld count as paid and become tax credits."> and settles <span className="font-medium text-gray-900 tabular-nums">{fmtTk(settled)}</span> of {invoice.invoiceNumber}</span>
             )}
-            {!(vds + tds > 0) && '.'}
-          </div>
+            .
+          </p>
 
           {/* Money account + channel */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Received into {accountRequired ? <span className="text-red-500">*</span> : <span className="text-gray-400 text-xs ml-1">(optional)</span>}
-              </label>
+              <Label required={accountRequired}>Received into</Label>
               <MoneyAccountSelect
                 value={accountId}
                 onChange={(id, acc) => { setAccountId(id); setAccount(acc ?? null) }}
                 currency={payment.currency ?? 'BDT'}
                 paymentMethod={payment.paymentMethod || null}
-                placeholder={cash > 0 ? 'Select bank / cash / wallet account' : 'No cash — withholding only'}
+                placeholder={cash > 0 ? 'Select account' : 'No cash — withholding only'}
                 required={accountRequired}
                 disabled={!(cash > 0)}
                 autoSelect={accountLive}
                 date={paymentDay || null}
               />
               {moneyAccounts.length === 0 ? (
-                <p className="mt-1 text-[11px] text-gray-400">No money accounts yet — add them in Finance → Money Accounts. After go-live every receipt needs one.</p>
+                <p className={hint}>No money accounts yet.</p>
               ) : cash > 0 && !accountLive && (
-                <p className="mt-1 text-[11px] text-gray-400">Received before go-live ({goLiveDate}) — no money account needed; leave it empty.</p>
+                <p className={hint}>Before go-live ({goLiveDate}) — leave it empty.</p>
               )}
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Channel</label>
-              <select value={effectiveChannel} onChange={e => { setChannel(e.target.value); setChannelTouched(true) }} className={ic}>
-                <option value="">Select channel…</option>
+              <Label>Channel</Label>
+              <NativeSelect value={effectiveChannel} onChange={e => { setChannel(e.target.value); setChannelTouched(true) }}>
+                <option value="">Select…</option>
                 {CHANNEL_OPTIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-              </select>
+              </NativeSelect>
             </div>
           </div>
 
           {/* Account Manager + TxnId */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Account Manager</label>
-              <div className={`${ic} bg-gray-50 cursor-not-allowed flex items-center`}>
-                <span className="text-gray-700">
+              <Label>Account manager</Label>
+              <div className={cn(inputClass, 'cursor-not-allowed items-center bg-gray-50')}>
+                <span className="truncate text-gray-700">
                   {currentUser?.name ?? '—'}
                   {currentUser?.role && (
-                    <span className="ml-1.5 text-xs text-gray-400 font-normal">
+                    <span className="ml-1.5 text-xs font-normal text-muted-foreground">
                       {currentUser.role.replace('_', ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase())}
                     </span>
                   )}
@@ -2042,28 +1992,20 @@ function ConfirmPaymentModal({ payment, currentUser, onClose, onDone }) {
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Transaction ID
-                {!payment.receiptUrl && <span className="text-red-500 ml-1">*</span>}
-                {payment.receiptUrl && <span className="text-gray-400 text-xs ml-1">(optional)</span>}
-              </label>
-              <input value={txnId} onChange={e => setTxnId(e.target.value)}
-                placeholder="e.g. TXN-REF-001"
-                className={ic} />
+              <Label required={!payment.receiptUrl}>Transaction ID</Label>
+              <Input value={txnId} onChange={e => setTxnId(e.target.value)}
+                placeholder="e.g. TXN-REF-001" />
               {!payment.receiptUrl && !txnId && (
-                <p className="text-xs text-amber-600 mt-1">Required — no receipt attached</p>
+                <p className="mt-1.5 text-xs text-amber-700">Required — no receipt attached</p>
               )}
             </div>
           </div>
 
           {isForeign && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                BDT received <span className="text-red-500 ml-1">*</span>
-              </label>
-              <input type="number" step="0.01" min="0" value={amountBDT} onChange={e => setAmountBDT(e.target.value)}
-                placeholder={`BDT equivalent of ${payment.currency} ${Number(payment.amount).toLocaleString()}`}
-                className={ic} />
+              <Label required>BDT received</Label>
+              <Input type="number" step="0.01" min="0" value={amountBDT} onChange={e => setAmountBDT(e.target.value)}
+                placeholder={`${payment.currency} ${Number(payment.amount).toLocaleString()} in BDT`} />
             </div>
           )}
 
@@ -2082,53 +2024,32 @@ function ConfirmPaymentModal({ payment, currentUser, onClose, onDone }) {
                 vdsAllowed={invoiceAllowsVds(invoice)}
               />
               {vds + tds > 0 && (
-                <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 text-xs flex flex-wrap items-center gap-x-4 gap-y-1 text-gray-600">
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg bg-gray-50 px-4 py-3 text-xs text-gray-600 tabular-nums">
                   <span>Cash {fmtTk(cash)}</span>
                   {vds > 0 && <span>+ VDS {fmtTk(vds)}</span>}
                   {tds > 0 && <span>+ TDS {fmtTk(tds)}</span>}
-                  <span className={`ml-auto text-sm font-semibold ${overDue ? 'text-red-600' : 'text-gray-900'}`}>Settles {fmtTk(settled)}</span>
-                  {invDue !== null && <span className="w-full text-gray-400">Invoice balance {fmtTk(invDue)}{overDue ? ' — reduce the amounts withheld' : ''}</span>}
+                  <span className={cn('ml-auto text-sm font-semibold', overDue ? 'text-red-600' : 'text-gray-900')}>Settles {fmtTk(settled)}</span>
+                  {invDue !== null && <span className="w-full text-muted-foreground">Invoice balance {fmtTk(invDue)}{overDue ? ' — reduce the amounts withheld' : ''}</span>}
                 </div>
               )}
             </>
           ) : (
-            <p className="text-xs text-gray-400">
+            <p className="text-xs text-muted-foreground">
               {!invoiceKey
-                ? 'VDS / TDS withheld by the client can be recorded when the payment is linked to an invoice.'
-                : 'VDS / TDS withholding is recorded on BDT invoices only.'}
+                ? 'Link an invoice to record VDS / TDS withheld.'
+                : 'VDS / TDS apply to BDT invoices only.'}
             </p>
           )}
 
           {/* Note */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Note (optional — required if rejecting)</label>
-            <textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
-              placeholder="Add a note…"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 resize-none" />
+            <Label>Note</Label>
+            <Textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
+              placeholder="Required when rejecting"
+              className="resize-none" />
           </div>
         </div>
-
-        <div className="flex flex-wrap items-center gap-2 justify-end px-4 sm:px-6 py-4 border-t border-gray-100 shrink-0">
-          {problems[0] && (
-            <p className="w-full sm:w-auto sm:mr-auto text-xs text-amber-700 flex items-center gap-1.5"><AlertCircle className="w-3.5 h-3.5 shrink-0" /> {problems[0]}</p>
-          )}
-          <button onClick={onClose} disabled={saving}
-            className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">
-            Cancel
-          </button>
-          <button onClick={() => submit('reject')} disabled={saving}
-            className="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-60 flex items-center gap-1.5">
-            {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-            <XCircle className="w-4 h-4" /> Reject
-          </button>
-          <button onClick={() => submit('confirm')} disabled={saving || problems.length > 0}
-            className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 disabled:opacity-60 flex items-center gap-1.5">
-            {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-            <CheckCircle2 className="w-4 h-4" /> Confirm
-          </button>
-        </div>
-      </div>
-    </div>
+    </DialogShell>
   )
 }
 
@@ -2150,7 +2071,7 @@ function RequestEditModal({ expense, onClose, onSubmitted }) {
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error)
-      toast.success('Edit request submitted. Waiting for owner approval.')
+      toast.success('Edit request sent')
       onSubmitted && onSubmitted()
       onClose()
     } catch (err) {
@@ -2161,45 +2082,34 @@ function RequestEditModal({ expense, onClose, onSubmitted }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-xl border border-gray-200 w-full max-w-md p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-base font-semibold text-gray-900">Request Edit Access</h3>
-          <button onClick={onClose}><X className="w-5 h-5 text-gray-400" /></button>
-        </div>
-        <div className="rounded-lg bg-gray-50 border border-gray-100 px-4 py-3 space-y-1">
-          <p className="text-sm font-semibold text-gray-900">{expense.title}</p>
-          <p className="text-xs text-gray-500">{expense.category}{expense.subcategory ? ` / ${expense.subcategory}` : ''} · {fmtDate(expense.date)}</p>
-          <p className="text-sm font-bold text-gray-900"><TkAmt value={expense.amount} decimals={2} /></p>
-        </div>
-        <p className="text-xs text-gray-500">
-          This expense is <strong>{expense.status}</strong>. Editing is locked. Submit a request and the owner will generate a one-time OTP to grant you temporary edit access.
-        </p>
-        <form onSubmit={submit} className="space-y-3">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Reason for edit <span className="text-red-500">*</span></label>
-            <textarea
+    <DialogShell
+      title="Request edit access"
+      description={`This expense is ${expense.status} and locked. The owner will send a one-time OTP.`}
+      onClose={onClose}
+      className="max-w-md"
+      footer={<>
+        <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
+        <Button type="submit" form="edit-request-form" loading={saving}>Submit request</Button>
+      </>}
+    >
+        <div className="space-y-4">
+          <div className="space-y-1 rounded-lg bg-gray-50 p-4">
+            <p className="text-sm font-semibold text-gray-900">{expense.title}</p>
+            <p className="text-xs text-muted-foreground">{expense.category}{expense.subcategory ? ` / ${expense.subcategory}` : ''} · {fmtDate(expense.date)}</p>
+            <p className="text-sm font-semibold text-gray-900 tabular-nums"><TkAmt value={expense.amount} decimals={2} /></p>
+          </div>
+          <form id="edit-request-form" onSubmit={submit}>
+            <Label required>Reason</Label>
+            <Textarea
               value={reason}
               onChange={e => setReason(e.target.value)}
               rows={3}
-              placeholder="Describe why this expense needs to be edited…"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 resize-none"
+              placeholder="Why does this need editing?"
+              className="resize-none"
             />
-          </div>
-          <div className="flex gap-2 justify-end">
-            <button type="button" onClick={onClose} disabled={saving}
-              className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">
-              Cancel
-            </button>
-            <button type="submit" disabled={saving}
-              className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 disabled:opacity-60 flex items-center gap-2">
-              {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-              Submit Request
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+          </form>
+        </div>
+    </DialogShell>
   )
 }
 
@@ -2223,7 +2133,7 @@ function OtpVerifyModal({ requestId, expenseId, onVerified, onClose }) {
       })
       const json = await res.json()
       if (!res.ok || !json.valid) throw new Error(json.error ?? 'Invalid or expired OTP')
-      toast.success('OTP verified — edit access granted')
+      toast.success('Edit access granted')
       onVerified(expenseId)
       onClose()
     } catch (err) {
@@ -2234,36 +2144,30 @@ function OtpVerifyModal({ requestId, expenseId, onVerified, onClose }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-xl border border-gray-200 w-full max-w-sm p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-base font-semibold text-gray-900">Enter OTP</h3>
-          <button onClick={onClose}><X className="w-5 h-5 text-gray-400" /></button>
-        </div>
-        <p className="text-xs text-gray-500">Enter the 6-digit OTP provided by the owner to unlock edit access for this expense.</p>
-        <form onSubmit={verify} className="space-y-3">
-          <input
+    <DialogShell
+      title="Enter OTP"
+      description="Use the 6-digit code from the owner."
+      onClose={onClose}
+      className="max-w-sm"
+      footer={<>
+        <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
+        <Button type="submit" form="otp-verify-form" loading={saving} disabled={otp.length !== 6}>Verify</Button>
+      </>}
+    >
+        <form id="otp-verify-form" onSubmit={verify} className="space-y-2">
+          <Input
             value={otp}
             onChange={e => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-            placeholder="6-digit OTP"
+            placeholder="000000"
             maxLength={6}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-center text-xl font-mono tracking-[0.4em] focus:outline-none focus:ring-2 focus:ring-gray-900"
+            inputMode="numeric"
+            aria-label="6-digit OTP"
+            invalid={!!errMsg}
+            className="h-11 text-center font-mono text-xl tracking-[0.4em]"
           />
-          {errMsg && <p className="text-xs text-red-500 text-center">{errMsg}</p>}
-          <div className="flex gap-2 justify-end">
-            <button type="button" onClick={onClose} disabled={saving}
-              className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">
-              Cancel
-            </button>
-            <button type="submit" disabled={saving || otp.length !== 6}
-              className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 disabled:opacity-60 flex items-center gap-2">
-              {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-              Verify OTP
-            </button>
-          </div>
+          {errMsg && <p className="text-center text-xs text-red-600">{errMsg}</p>}
         </form>
-      </div>
-    </div>
+    </DialogShell>
   )
 }
 
@@ -2309,64 +2213,60 @@ function CalendarDrillDown({ drillKey, onClose }) {
   }, [drillKey])
 
   return (
-    <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
-      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+    <Card className="overflow-hidden">
+      <div className="flex items-center justify-between gap-3 border-b border-gray-100 px-5 py-3">
         <div className="flex items-center gap-2">
-          <button onClick={onClose} className="p-1 rounded hover:bg-gray-100 transition-colors">
-            <ChevronLeft className="w-4 h-4 text-gray-500" />
-          </button>
-          <h3 className="font-semibold text-gray-900">{label} — Daily Breakdown</h3>
+          <Button variant="ghost" size="icon-xs" onClick={onClose} aria-label="Close daily breakdown" className="text-gray-500">
+            <ChevronLeft />
+          </Button>
+          <CardTitle>{label} daily breakdown</CardTitle>
         </div>
-        <span className="text-xs text-gray-400">{daysInMonth} days</span>
+        <span className="text-xs text-muted-foreground">{daysInMonth} days</span>
       </div>
 
       {loading ? (
-        <div className="flex justify-center py-12">
-          <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-        </div>
+        <LoadingSpinner className="py-12" />
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[600px]">
-            <thead>
-              <tr className="bg-gray-50/70 border-b border-gray-100">
-                <th className="px-5 py-2.5 text-left text-xs font-medium text-gray-400 uppercase tracking-wide w-28">Day</th>
-                <th className="px-5 py-2.5 text-right text-xs font-medium text-gray-400 uppercase tracking-wide">Income</th>
-                <th className="px-5 py-2.5 text-right text-xs font-medium text-gray-400 uppercase tracking-wide">Expense</th>
-                <th className="px-5 py-2.5 text-right text-xs font-medium text-gray-400 uppercase tracking-wide">Net Profit</th>
-                <th className="px-5 py-2.5 text-right text-xs font-medium text-gray-400 uppercase tracking-wide">Transactions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {(data ?? []).map(row => {
-                const hasActivity = row.txCount > 0
-                return (
-                  <tr key={row.day} className={`transition-colors ${hasActivity ? 'hover:bg-blue-50/30' : 'opacity-40'}`}>
-                    <td className="px-5 py-2.5 font-medium text-gray-700">
-                      {String(row.day).padStart(2, '0')}{' '}
-                      <span className="text-gray-400 font-normal">{MONTH_NAMES[mo - 1].slice(0, 3)}</span>
-                    </td>
-                    <td className="px-5 py-2.5 text-right text-green-600 font-medium">
-                      {row.income > 0 ? fmtAmt(row.income) : '—'}
-                    </td>
-                    <td className="px-5 py-2.5 text-right text-red-500">
-                      {row.expense > 0 ? fmtAmt(row.expense) : '—'}
-                    </td>
-                    <td className={`px-5 py-2.5 text-right font-medium ${
-                      row.profit > 0 ? 'text-gray-900' : row.profit < 0 ? 'text-red-500' : 'text-gray-300'
-                    }`}>
-                      {row.txCount > 0 ? fmtAmt(row.profit) : '—'}
-                    </td>
-                    <td className="px-5 py-2.5 text-right text-gray-400">
-                      {row.txCount > 0 ? row.txCount : '—'}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
+        <Table className="min-w-[600px]">
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-28">Day</TableHead>
+              <TableHead className="text-right">Income</TableHead>
+              <TableHead className="text-right">Expense</TableHead>
+              <TableHead className="text-right">Net profit</TableHead>
+              <TableHead className="text-right">Transactions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {(data ?? []).map(row => {
+              const hasActivity = row.txCount > 0
+              return (
+                <TableRow key={row.day} className={cn(!hasActivity && 'opacity-40')}>
+                  <TableCell className="py-2.5 font-medium text-gray-900">
+                    {String(row.day).padStart(2, '0')}{' '}
+                    <span className="font-normal text-muted-foreground">{MONTH_NAMES[mo - 1].slice(0, 3)}</span>
+                  </TableCell>
+                  <TableCell className="py-2.5 text-right font-medium text-emerald-600 tabular-nums">
+                    {row.income > 0 ? fmtAmt(row.income) : '—'}
+                  </TableCell>
+                  <TableCell className="py-2.5 text-right text-red-600 tabular-nums">
+                    {row.expense > 0 ? fmtAmt(row.expense) : '—'}
+                  </TableCell>
+                  <TableCell className={cn('py-2.5 text-right font-medium tabular-nums',
+                    row.profit > 0 ? 'text-gray-900' : row.profit < 0 ? 'text-red-600' : 'text-gray-300'
+                  )}>
+                    {row.txCount > 0 ? fmtAmt(row.profit) : '—'}
+                  </TableCell>
+                  <TableCell className="py-2.5 text-right text-muted-foreground tabular-nums">
+                    {row.txCount > 0 ? row.txCount : '—'}
+                  </TableCell>
+                </TableRow>
+              )
+            })}
+          </TableBody>
+        </Table>
       )}
-    </div>
+    </Card>
   )
 }
 
@@ -2374,26 +2274,21 @@ function CalendarDrillDown({ drillKey, onClose }) {
 
 function OwnerOtpModal({ otp, requesterName, onClose }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-xl border border-gray-200 w-full max-w-sm p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-base font-semibold text-gray-900">Edit Request Approved</h3>
-          <button onClick={onClose}><X className="w-5 h-5 text-gray-400" /></button>
+    <DialogShell
+      title="Edit request approved"
+      onClose={onClose}
+      className="max-w-sm"
+      footer={<Button onClick={onClose} className="w-full sm:w-auto">Done</Button>}
+    >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">
+            Share this OTP with <span className="font-medium text-gray-900">{requesterName ?? 'the manager'}</span>. Single use, expires in 30 minutes.
+          </p>
+          <div className="rounded-lg border border-gray-200/80 bg-gray-50 px-6 py-5 text-center">
+            <p className="font-mono text-4xl font-semibold tracking-[0.3em] text-gray-900">{otp}</p>
+          </div>
         </div>
-        <p className="text-sm text-gray-600">
-          Share this OTP with <strong>{requesterName ?? 'the manager'}</strong>. It expires in 30 minutes and can only be used once.
-        </p>
-        <div className="rounded-xl bg-yellow-50 border-2 border-yellow-300 px-6 py-5 text-center">
-          <p className="text-xs text-yellow-700 font-medium uppercase tracking-wide mb-2">One-Time Password</p>
-          <p className="text-4xl font-mono font-bold tracking-[0.3em] text-yellow-900">{otp}</p>
-          <p className="text-xs text-yellow-600 mt-2">Valid for 30 minutes</p>
-        </div>
-        <button onClick={onClose}
-          className="w-full px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 transition-colors">
-          Done
-        </button>
-      </div>
-    </div>
+    </DialogShell>
   )
 }
 
@@ -2437,11 +2332,11 @@ function TxBreakdown({ tx, nonPl, plVal, cashBDT }) {
   if (tx.transferId) rows.push(['Transfer', tx.counterAccountId?.name ? `${isIncome ? 'From' : 'To'} ${tx.counterAccountId.name}` : 'Between own accounts'])
   if (tx.reversalOf) rows.push(['Reversal', 'Cancels an earlier entry'])
   return (
-    <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-2">
+    <dl className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
       {rows.map(([label, value]) => (
         <div key={label} className="min-w-0">
-          <dt className="text-[11px] uppercase tracking-wide text-gray-400">{label}</dt>
-          <dd className="text-xs text-gray-700 break-words">{value}</dd>
+          <dt className="text-xs text-muted-foreground">{label}</dt>
+          <dd className="mt-0.5 break-words text-[13px] text-gray-900">{value}</dd>
         </div>
       ))}
     </dl>
@@ -2508,27 +2403,24 @@ function FundsTaxStrip({ funds, taxPosition, session }) {
     { key: 'itc',     label: 'Unclaimed input VAT',       v: tp.inputVatUnclaimed },
   ].filter(r => toNum(r.v?.count) > 0)
 
+  const linkCls = 'inline-flex items-center gap-0.5 text-[13px] font-medium text-gray-900 underline-offset-4 hover:underline'
+
   return (
-    <div className={`grid grid-cols-1 gap-4 ${showFunds && showTax ? 'lg:grid-cols-3' : ''}`}>
+    <div className={cn('grid grid-cols-1 gap-4', showFunds && showTax && 'lg:grid-cols-3')}>
       {showFunds && (
-        <div className={`bg-white border border-gray-100 rounded-xl p-5 min-w-0 ${showTax ? 'lg:col-span-2' : ''}`}>
-          <div className="flex items-start justify-between gap-3 mb-4">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="w-9 h-9 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
-                <Landmark className="w-4 h-4 text-emerald-600" />
-              </div>
-              <div className="min-w-0">
-                <h3 className="text-sm font-semibold text-gray-900">Funds</h3>
-                <p className="text-xs text-gray-400">
-                  {data?.asOf ? `Balances at the end of ${fmtDate(data.asOf)}` : 'Current balances'} across bank, cash and wallets
-                </p>
-              </div>
+        <Card className={cn('min-w-0 p-5', showTax && 'lg:col-span-2')}>
+          <div className="mb-4 flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <CardTitle>Funds</CardTitle>
+              <CardDescription>
+                {data?.asOf ? `As of ${fmtDate(data.asOf)}` : 'Current balances'}
+              </CardDescription>
             </div>
-            <div className="text-right shrink-0">
-              {data && data.count > 0 && <p className="text-lg font-bold text-gray-900">{fmtTk(data.totalBDT)}</p>}
+            <div className="shrink-0 text-right">
+              {data && data.count > 0 && <p className="text-lg font-semibold tracking-tight text-gray-900 tabular-nums">{fmtTk(data.totalBDT)}</p>}
               {canManageAccounts && (
-                <Link href="/admin/finance/accounts" className="text-xs text-blue-600 hover:underline inline-flex items-center gap-0.5">
-                  Money accounts <ChevronRight className="w-3 h-3" />
+                <Link href="/admin/finance/accounts" className={linkCls}>
+                  Money accounts <ChevronRight className="size-3.5 text-gray-400" />
                 </Link>
               )}
             </div>
@@ -2536,81 +2428,76 @@ function FundsTaxStrip({ funds, taxPosition, session }) {
 
           {!data ? (
             optLoading && canPickAccounts ? (
-              <p className="text-xs text-gray-400 flex items-center gap-1.5"><Loader2 className="w-3 h-3 animate-spin" /> Loading balances…</p>
+              <p className="flex items-center gap-1.5 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" /> Loading balances…</p>
             ) : (
-              <p className="text-sm text-gray-500">No money accounts yet. Add your bank, cash and mobile-wallet accounts to track balances and post every payment to an account.</p>
+              <p className="text-sm text-muted-foreground">No money accounts yet.</p>
             )
           ) : data.count === 0 ? (
-            <p className="text-sm text-gray-500">No money accounts yet. Add your bank, cash and mobile-wallet accounts to track balances and post every payment to an account.</p>
+            <p className="text-sm text-muted-foreground">No money accounts yet.</p>
           ) : (
             <>
-              <div className="flex flex-wrap gap-2 mb-3">
+              <div className="mb-3 flex flex-wrap gap-2">
                 {FUND_GROUPS.filter(g => g.key !== 'other' || toNum(data.byGroup?.other) !== 0).map(g => (
-                  <span key={g.key} className="inline-flex items-center gap-1.5 rounded-lg bg-gray-50 border border-gray-100 px-2.5 py-1 text-xs">
-                    <span className="text-gray-500">{g.label}</span>
-                    <span className={`font-semibold ${toNum(data.byGroup?.[g.key]) < 0 ? 'text-red-600' : 'text-gray-900'}`}>{fmtTk(data.byGroup?.[g.key])}</span>
+                  <span key={g.key} className="inline-flex items-center gap-1.5 rounded-md bg-gray-50 px-2.5 py-1 text-xs">
+                    <span className="text-muted-foreground">{g.label}</span>
+                    <span className={cn('font-medium tabular-nums', toNum(data.byGroup?.[g.key]) < 0 ? 'text-red-600' : 'text-gray-900')}>{fmtTk(data.byGroup?.[g.key])}</span>
                   </span>
                 ))}
                 {(data.foreign ?? []).map(f => (
-                  <span key={f.currency} className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 border border-amber-100 px-2.5 py-1 text-xs">
-                    <span className="text-amber-700">{f.currency}</span>
-                    <span className="font-semibold text-amber-900">{formatMoney(f.balance, f.currency)}</span>
+                  <span key={f.currency} className="inline-flex items-center gap-1.5 rounded-md bg-gray-50 px-2.5 py-1 text-xs">
+                    <span className="font-mono text-[11px] text-muted-foreground">{f.currency}</span>
+                    <span className="font-medium text-gray-900 tabular-nums">{formatMoney(f.balance, f.currency)}</span>
                   </span>
                 ))}
               </div>
-              <div className="flex gap-3 overflow-x-auto pb-1 -mx-1 px-1">
+              <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-1">
                 {data.accounts.map(a => (
-                  <div key={a.id} className="min-w-[170px] max-w-[220px] shrink-0 rounded-lg border border-gray-100 px-3 py-2.5">
-                    <p className="text-xs font-medium text-gray-900 truncate" title={a.name}>{a.name}</p>
-                    <p className="text-[11px] text-gray-400 truncate">
+                  <div key={a.id} className="min-w-[170px] max-w-[220px] shrink-0 rounded-lg border border-gray-200/80 px-3 py-2.5">
+                    <p className="truncate text-[13px] font-medium text-gray-900" title={a.name}>{a.name}</p>
+                    <p className="truncate text-xs text-muted-foreground">
                       {accountTypeLabel(a.type)}{a.last4 ? ` ••${a.last4}` : ''}{a.currency && a.currency !== BASE_CURRENCY ? ` · ${a.currency}` : ''}
                     </p>
-                    <p className={`text-sm font-semibold mt-1 ${toNum(a.balance) < 0 ? 'text-red-600' : 'text-gray-900'}`}>{money(a.balance, a.currency)}</p>
+                    <p className={cn('mt-1 text-sm font-semibold tabular-nums', toNum(a.balance) < 0 ? 'text-red-600' : 'text-gray-900')}>{money(a.balance, a.currency)}</p>
                     {toNum(a.unclearedCount) > 0 && (
-                      <p className="text-[10px] text-gray-400">{a.unclearedCount} uncleared</p>
+                      <p className="text-[11px] text-muted-foreground">{a.unclearedCount} uncleared</p>
                     )}
                   </div>
                 ))}
               </div>
             </>
           )}
-        </div>
+        </Card>
       )}
 
       {showTax && (
-        <div className="bg-white border border-gray-100 rounded-xl p-5 min-w-0">
-          <div className="flex items-start justify-between gap-3 mb-4">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-rose-50 flex items-center justify-center shrink-0">
-                <Calculator className="w-4 h-4 text-rose-600" />
-              </div>
-              <div>
-                <h3 className="text-sm font-semibold text-gray-900">Tax position</h3>
-                <p className="text-xs text-gray-400">Open VAT / VDS / TDS items</p>
-              </div>
+        <Card className="min-w-0 p-5">
+          <div className="mb-3 flex items-start justify-between gap-3">
+            <div>
+              <CardTitle>Tax position</CardTitle>
+              <CardDescription>Open VAT / VDS / TDS items</CardDescription>
             </div>
             {canSeeTax && (
-              <Link href="/admin/tax" className="text-xs text-blue-600 hover:underline inline-flex items-center gap-0.5 shrink-0">
-                Tax dashboard <ChevronRight className="w-3 h-3" />
+              <Link href="/admin/tax" className={cn(linkCls, 'shrink-0')}>
+                Tax dashboard <ChevronRight className="size-3.5 text-gray-400" />
               </Link>
             )}
           </div>
           {taxRows.length === 0 ? (
-            <p className="text-sm text-gray-500">No open tax items — nothing to deposit, issue or collect.</p>
+            <p className="text-sm text-muted-foreground">No open tax items.</p>
           ) : (
-            <ul className="divide-y divide-gray-50">
+            <ul className="divide-y divide-gray-100">
               {taxRows.map(r => (
-                <li key={r.key} className="flex items-center justify-between gap-3 py-2 text-xs">
-                  <span className="text-gray-600 min-w-0">
-                    {r.label} <span className="text-gray-400">({r.v.count})</span>
-                    {r.overdue && <span className="ml-1.5 inline-flex px-1.5 py-0.5 rounded bg-red-50 text-red-600 text-[10px] font-medium">{r.overdue}</span>}
+                <li key={r.key} className="flex items-center justify-between gap-3 py-2 text-[13px]">
+                  <span className="min-w-0 text-gray-600">
+                    {r.label} <span className="text-muted-foreground tabular-nums">({r.v.count})</span>
+                    {r.overdue && <Badge variant="danger" className="ml-1.5">{r.overdue}</Badge>}
                   </span>
-                  <span className="font-semibold text-gray-900 whitespace-nowrap">{fmtTk(r.v.amount)}</span>
+                  <span className="whitespace-nowrap font-medium text-gray-900 tabular-nums">{fmtTk(r.v.amount)}</span>
                 </li>
               ))}
             </ul>
           )}
-        </div>
+        </Card>
       )}
     </div>
   )
@@ -2623,13 +2510,14 @@ function TrendPill({ change, invert = false }) {
   const positive = invert ? change < 0 : change > 0
   const neutral  = change === 0
   return (
-    <span className={`inline-flex items-center gap-0.5 text-xs font-medium px-1.5 py-0.5 rounded-full ${
-      neutral  ? 'bg-gray-100 text-gray-500' :
-      positive ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-500'
-    }`}>
+    <span className={cn(
+      'inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-xs font-medium ring-1 ring-inset tabular-nums',
+      neutral  ? 'bg-gray-100 text-gray-600 ring-gray-500/10' :
+      positive ? 'bg-emerald-50 text-emerald-700 ring-emerald-600/15' : 'bg-red-50 text-red-700 ring-red-600/15'
+    )}>
       {!neutral && (positive
-        ? <ArrowUpRight className="w-3 h-3" />
-        : <ArrowDownRight className="w-3 h-3" />)}
+        ? <ArrowUpRight className="size-3" />
+        : <ArrowDownRight className="size-3" />)}
       {neutral ? 'No change' : `${Math.abs(change)}%`}
     </span>
   )
@@ -2939,7 +2827,7 @@ function AccountsContent() {
 
   function handleSaved(meta = {}) {
     if (meta.expenseRequest) {
-      toast.success('Expense request submitted — review it in the Requests tab')
+      toast.success('Expense request submitted')
       loadPaymentRequests()
     } else {
       toast.success(editingTx ? 'Transaction updated' : 'Transaction added')
@@ -2951,20 +2839,18 @@ function AccountsContent() {
 
   // ── Spinner ───────────────────────────────────────────────────────────────
 
-  const Spinner = () => (
-    <div className="flex items-center justify-center h-40">
-      <div className="w-7 h-7 border-2 border-gray-300 border-t-gray-700 rounded-full animate-spin" />
-    </div>
-  )
+  const Spinner = () => <LoadingSpinner className="h-40" />
 
   // ── Render ────────────────────────────────────────────────────────────────
 
-  const tabBtnCls = (t) =>
-    `px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
-      activeTab === t
-        ? 'bg-gray-900 text-white border-gray-900'
-        : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400 hover:text-gray-800'
-    }`
+  const PAGE_TITLES = {
+    overview:      'Finance overview',
+    transactions:  'Transactions',
+    confirmations: 'Payment confirmations',
+    requests:      'Payment requests',
+    withdrawals:   'Withdrawals',
+    pl:            'Profit & loss',
+  }
 
   // Nested taxonomy — subcategory options follow the chosen parent category
   const txCatGroups = txType === 'INCOME'
@@ -2979,38 +2865,27 @@ function AccountsContent() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Accounts</h1>
-          <p className="text-sm text-gray-400 mt-0.5">Track income, expenses and financial health</p>
-        </div>
-        {(activeTab === 'overview' || activeTab === 'transactions') && canDo(session, 'finance.transactions.create') && (
-          <button
-            onClick={() => { setEditingTx(null); setModalOpen(true) }}
-            className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 transition-colors"
-          >
-            <Plus className="w-4 h-4" /> Add Transaction
-          </button>
-        )}
-      </div>
+      <PageHeader
+        title={PAGE_TITLES[activeTab] ?? 'Accounts'}
+        actions={(activeTab === 'overview' || activeTab === 'transactions') && canDo(session, 'finance.transactions.create') ? (
+          <Button onClick={() => { setEditingTx(null); setModalOpen(true) }}>
+            <Plus /> New transaction
+          </Button>
+        ) : null}
+      />
 
       {/* ── OVERVIEW tab ── */}
       {activeTab === 'overview' && (
         <div className="space-y-6">
           {/* Date range selector */}
-          <div className="flex items-center gap-3 flex-wrap">
-            <span className="text-sm text-gray-500 font-medium">Period</span>
+          <div className="flex flex-wrap items-center gap-2">
             <DatePicker value={startDate || null} onChange={v => setStartDate(v ?? '')} />
-            <span className="text-gray-400 text-sm">to</span>
+            <span className="text-sm text-muted-foreground">to</span>
             <DatePicker value={endDate || null} onChange={v => setEndDate(v ?? '')} />
             {(startDate || endDate) && (
-              <button
-                onClick={() => { setStartDate(''); setEndDate('') }}
-                className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1.5 rounded hover:bg-gray-100 transition-colors"
-              >
+              <Button variant="ghost" size="sm" onClick={() => { setStartDate(''); setEndDate('') }}>
                 Clear
-              </button>
+              </Button>
             )}
           </div>
 
@@ -3020,116 +2895,117 @@ function AccountsContent() {
                 const f = dashStats?.financials ?? {}
                 const fmtVal = (n) => n == null ? '—' : `BDT ${Number(n).toLocaleString('en-BD', { minimumFractionDigits: 0 })}`
                 const CARDS = [
-                  { label: 'Monthly Income',  value: fmtVal(f.income?.value),  prev: `vs ${fmtVal(f.income?.prevValue)} last month`,  change: f.income?.change,  icon: TrendingUp,   bg: 'bg-green-50',  color: 'text-green-600' },
-                  { label: 'Monthly Expense', value: fmtVal(f.expense?.value), prev: `vs ${fmtVal(f.expense?.prevValue)} last month`, change: f.expense?.change, invert: true, icon: TrendingDown, bg: 'bg-red-50',    color: 'text-red-500' },
-                  { label: 'Net Profit',      value: fmtVal(f.profit?.value),  prev: `vs ${fmtVal(f.profit?.prevValue)} last month`,  change: f.profit?.change,  icon: Wallet,   bg: 'bg-blue-50',   color: 'text-blue-600' },
-                  { label: 'Gross Margin',    value: `${f.grossMargin?.value ?? 0}%`,  prev: `was ${f.grossMargin?.prevValue ?? 0}% last month`,  change: f.grossMargin?.value  != null && f.grossMargin?.prevValue  != null ? (f.grossMargin.value  - f.grossMargin.prevValue)  : null, icon: Percent,      bg: 'bg-purple-50', color: 'text-purple-600' },
-                  { label: 'Expense Ratio',   value: `${f.expenseRatio?.value ?? 0}%`, prev: `was ${f.expenseRatio?.prevValue ?? 0}% last month`, change: f.expenseRatio?.value != null && f.expenseRatio?.prevValue != null ? (f.expenseRatio.value - f.expenseRatio.prevValue) : null, invert: true, icon: BarChart2, bg: 'bg-orange-50', color: 'text-orange-500' },
-                  { label: 'Transactions',    value: f.transactions?.value ?? 0,       prev: `${f.transactions?.prevValue ?? 0} last month`,      change: f.transactions?.change,  icon: FileTextIcon, bg: 'bg-indigo-50', color: 'text-indigo-600' },
+                  { label: 'Monthly income',  value: fmtVal(f.income?.value),  prev: `vs ${fmtVal(f.income?.prevValue)} last month`,  change: f.income?.change },
+                  { label: 'Monthly expense', value: fmtVal(f.expense?.value), prev: `vs ${fmtVal(f.expense?.prevValue)} last month`, change: f.expense?.change, invert: true },
+                  { label: 'Net profit',      value: fmtVal(f.profit?.value),  prev: `vs ${fmtVal(f.profit?.prevValue)} last month`,  change: f.profit?.change },
+                  { label: 'Gross margin',    value: `${f.grossMargin?.value ?? 0}%`,  prev: `was ${f.grossMargin?.prevValue ?? 0}% last month`,  change: f.grossMargin?.value  != null && f.grossMargin?.prevValue  != null ? (f.grossMargin.value  - f.grossMargin.prevValue)  : null },
+                  { label: 'Expense ratio',   value: `${f.expenseRatio?.value ?? 0}%`, prev: `was ${f.expenseRatio?.prevValue ?? 0}% last month`, change: f.expenseRatio?.value != null && f.expenseRatio?.prevValue != null ? (f.expenseRatio.value - f.expenseRatio.prevValue) : null, invert: true },
+                  { label: 'Transactions',    value: f.transactions?.value ?? 0,       prev: `${f.transactions?.prevValue ?? 0} last month`,      change: f.transactions?.change },
                 ]
                 const monthOptions = Array.from({ length: 6 }, (_, i) => ({ key: getDrillKey(i), label: getMonthLabel(i) }))
                 return (
                   <>
                     <FundsTaxStrip funds={summary?.funds ?? null} taxPosition={summary?.taxPosition ?? null} session={session} />
 
-                    <div className="grid grid-cols-2 xl:grid-cols-3 gap-4">
-                      {CARDS.map(card => {
-                        const Icon = card.icon
-                        return (
-                          <div key={card.label} className="bg-white border border-gray-100 rounded-xl p-5">
-                            <div className="flex items-start justify-between mb-3">
-                              <div className={`w-9 h-9 rounded-lg ${card.bg} flex items-center justify-center`}>
-                                <Icon className={`w-4 h-4 ${card.color}`} />
-                              </div>
+                    <div className="space-y-2">
+                      <div className="grid grid-cols-2 gap-4 xl:grid-cols-3">
+                        {CARDS.map(card => (
+                          <Card key={card.label} className="p-5">
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="truncate text-[13px] font-medium text-muted-foreground">{card.label}</p>
                               <TrendPill change={card.change} invert={card.invert} />
                             </div>
-                            <p className="text-xl font-bold text-gray-900">{card.value}</p>
-                            <p className="text-sm font-medium text-gray-600 mt-0.5">{card.label}</p>
-                            <p className="text-xs text-gray-400 mt-1">{card.prev}</p>
-                          </div>
-                        )
-                      })}
+                            <p className="mt-2 text-2xl font-semibold tracking-tight text-gray-900 tabular-nums">{card.value}</p>
+                            <p className="mt-1 text-xs text-muted-foreground">{card.prev}</p>
+                          </Card>
+                        ))}
+                      </div>
+                      <p
+                        className="inline-flex cursor-help items-center gap-1.5 text-xs text-muted-foreground"
+                        title="Client receipts count net of VAT, depreciation counts as an expense, and transfers, capital, loans, tax deposits and asset purchases are left out."
+                      >
+                        <Info className="size-3.5 shrink-0" />
+                        Profit-and-loss basis
+                      </p>
                     </div>
-                    <p className="text-xs text-gray-400 -mt-2 flex items-start gap-1.5">
-                      <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                      Income and expense are profit-and-loss figures: client receipts count net of VAT, depreciation counts as an expense,
-                      and transfers, capital, loans, tax deposits and asset purchases are left out.
-                    </p>
 
                     {/* Cash movements in the period that are not income or expense */}
                     {summary?.nonPlMovements?.length > 0 && (
-                      <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
-                        <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-2">
-                          <ArrowLeftRight className="w-4 h-4 text-gray-400" />
+                      <Card className="overflow-hidden">
+                        <CardHeader className="border-b border-gray-100 pb-4">
                           <div>
-                            <h3 className="text-sm font-semibold text-gray-900">Other money movements</h3>
-                            <p className="text-xs text-gray-400 mt-0.5">In the selected period — they change balances but not profit.</p>
+                            <CardTitle>Other money movements</CardTitle>
+                            <CardDescription>Change balances, not profit.</CardDescription>
                           </div>
-                        </div>
-                        <div className="overflow-x-auto">
-                          <table className="w-full min-w-[480px]">
-                            <thead>
-                              <tr className="border-b border-gray-100 bg-gray-50">
-                                {['Kind', 'Entries', 'Money in', 'Money out'].map(h => (
-                                  <th key={h} className="px-5 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-50">
-                              {summary.nonPlMovements.map(m => (
-                                <tr key={m.kind} className="hover:bg-gray-50/50">
-                                  <td className="px-5 py-2.5 text-sm font-medium text-gray-900">{m.label}</td>
-                                  <td className="px-5 py-2.5 text-sm text-gray-600">{m.count}</td>
-                                  <td className="px-5 py-2.5 text-sm text-gray-700">{m.inflow ? fmt(m.inflow) : '—'}</td>
-                                  <td className="px-5 py-2.5 text-sm text-gray-700">{m.outflow ? fmt(m.outflow) : '—'}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
+                          <ArrowLeftRight className="size-4 text-gray-400" />
+                        </CardHeader>
+                        <Table className="min-w-[480px]">
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Kind</TableHead>
+                              <TableHead className="text-right">Entries</TableHead>
+                              <TableHead className="text-right">Money in</TableHead>
+                              <TableHead className="text-right">Money out</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {summary.nonPlMovements.map(m => (
+                              <TableRow key={m.kind}>
+                                <TableCell className="font-medium text-gray-900">{m.label}</TableCell>
+                                <TableCell className="text-right tabular-nums">{m.count}</TableCell>
+                                <TableCell className="text-right tabular-nums">{m.inflow ? fmt(m.inflow) : '—'}</TableCell>
+                                <TableCell className="text-right tabular-nums">{m.outflow ? fmt(m.outflow) : '—'}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </Card>
                     )}
 
                     {/* By-currency breakdown — original totals + their BDT-equivalent */}
                     {summary?.currencyBreakdown?.length > 0 && (
-                      <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
-                        <div className="px-5 py-3 border-b border-gray-100">
-                          <h3 className="text-sm font-semibold text-gray-900">By currency</h3>
-                          <p className="text-xs text-gray-400 mt-0.5">All metrics above roll up in BDT. This shows the original currencies behind them.</p>
-                        </div>
-                        <div className="overflow-x-auto">
-                          <table className="w-full min-w-[640px]">
-                            <thead>
-                              <tr className="border-b border-gray-100 bg-gray-50">
-                                {['Currency', 'Transactions', 'Income (orig.)', 'Expense (orig.)', 'Income (BDT)', 'Expense (BDT)'].map(h => (
-                                  <th key={h} className="px-5 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-50">
-                              {summary.currencyBreakdown.map(c => (
-                                <tr key={c.currency} className="hover:bg-gray-50/50">
-                                  <td className="px-5 py-2.5 text-sm font-medium text-gray-900">{c.currency}</td>
-                                  <td className="px-5 py-2.5 text-sm text-gray-600">{c.count}</td>
-                                  <td className="px-5 py-2.5 text-sm text-gray-700">{c.incomeOriginal ? formatCurrency(c.incomeOriginal, c.currency) : '—'}</td>
-                                  <td className="px-5 py-2.5 text-sm text-gray-700">{c.expenseOriginal ? formatCurrency(c.expenseOriginal, c.currency) : '—'}</td>
-                                  <td className="px-5 py-2.5 text-sm text-green-600">{c.incomeBDT ? fmt(c.incomeBDT) : '—'}</td>
-                                  <td className="px-5 py-2.5 text-sm text-red-500">{c.expenseBDT ? fmt(c.expenseBDT) : '—'}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
+                      <Card className="overflow-hidden">
+                        <CardHeader className="border-b border-gray-100 pb-4">
+                          <div>
+                            <CardTitle>By currency</CardTitle>
+                            <CardDescription>Original amounts behind the BDT totals.</CardDescription>
+                          </div>
+                        </CardHeader>
+                        <Table className="min-w-[640px]">
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Currency</TableHead>
+                              <TableHead className="text-right">Transactions</TableHead>
+                              <TableHead className="text-right">Income (orig.)</TableHead>
+                              <TableHead className="text-right">Expense (orig.)</TableHead>
+                              <TableHead className="text-right">Income (BDT)</TableHead>
+                              <TableHead className="text-right">Expense (BDT)</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {summary.currencyBreakdown.map(c => (
+                              <TableRow key={c.currency}>
+                                <TableCell className="font-mono text-xs font-medium text-gray-900">{c.currency}</TableCell>
+                                <TableCell className="text-right tabular-nums">{c.count}</TableCell>
+                                <TableCell className="text-right tabular-nums">{c.incomeOriginal ? formatCurrency(c.incomeOriginal, c.currency) : '—'}</TableCell>
+                                <TableCell className="text-right tabular-nums">{c.expenseOriginal ? formatCurrency(c.expenseOriginal, c.currency) : '—'}</TableCell>
+                                <TableCell className="text-right text-emerald-600 tabular-nums">{c.incomeBDT ? fmt(c.incomeBDT) : '—'}</TableCell>
+                                <TableCell className="text-right text-red-600 tabular-nums">{c.expenseBDT ? fmt(c.expenseBDT) : '—'}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </Card>
                     )}
 
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs text-gray-400 mr-1">Drill down by month:</span>
-                      {monthOptions.map(m => (
-                        <button key={m.key} onClick={() => setDrillKey(prev => prev === m.key ? null : m.key)} className={tabBtnCls(drillKey === m.key ? 'overview' : '__none__')}>
-                          {m.label}
-                        </button>
-                      ))}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[13px] text-muted-foreground">Daily breakdown</span>
+                      <Tabs
+                        size="sm"
+                        value={drillKey}
+                        onChange={v => setDrillKey(prev => prev === v ? null : v)}
+                        tabs={monthOptions.map(m => ({ value: m.key, label: m.label }))}
+                      />
                     </div>
                     {drillKey && <CalendarDrillDown drillKey={drillKey} onClose={() => setDrillKey(null)} />}
                   </>
@@ -3144,15 +3020,22 @@ function AccountsContent() {
       {activeTab === 'transactions' && (
         <div className="space-y-4">
           {/* Filters */}
-          <div className="flex items-center gap-3 flex-wrap">
-            <span className="text-sm text-gray-500 font-medium">Period</span>
+          <div className="flex flex-wrap items-center gap-2">
             <DatePicker value={startDate || null} onChange={v => { setStartDate(v ?? ''); setTxPage(1) }} />
-            <span className="text-gray-400 text-sm">to</span>
+            <span className="text-sm text-muted-foreground">to</span>
             <DatePicker value={endDate || null} onChange={v => { setEndDate(v ?? ''); setTxPage(1) }} />
             {(startDate || endDate) && (
-              <button onClick={() => { setStartDate(''); setEndDate(''); setTxPage(1) }} className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1.5 rounded hover:bg-gray-100 transition-colors">Clear</button>
+              <Button variant="ghost" size="sm" onClick={() => { setStartDate(''); setEndDate(''); setTxPage(1) }}>Clear</Button>
             )}
-            <div className="w-48">
+            <Tabs
+              className="ml-auto"
+              value={txType}
+              onChange={v => { setTxType(v); setTxCategory(''); setTxSubcategory(''); setTxPage(1) }}
+              tabs={[{ value: '', label: 'All' }, { value: 'INCOME', label: 'Income' }, { value: 'EXPENSE', label: 'Expense' }]}
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="w-full sm:w-44">
               <Select
                 value={txCategory}
                 onChange={v => { setTxCategory(v ?? ''); setTxSubcategory(''); setTxPage(1) }}
@@ -3160,7 +3043,7 @@ function AccountsContent() {
                 placeholder="All categories"
               />
             </div>
-            <div className="w-48">
+            <div className="w-full sm:w-44">
               <Select
                 value={txSubcategory}
                 onChange={v => { setTxSubcategory(v ?? ''); setTxPage(1) }}
@@ -3179,52 +3062,41 @@ function AccountsContent() {
                 extraOptions={[{ value: 'none', label: 'No account (older entries)' }]}
               />
             </div>
-            <div className="w-full sm:w-44">
-              <select value={txKind} onChange={e => { setTxKind(e.target.value); setTxPage(1) }}
-                className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-gray-900">
+            <div className="w-full sm:w-48">
+              <NativeSelect value={txKind} onChange={e => { setTxKind(e.target.value); setTxPage(1) }} className="text-[13px]">
                 <option value="">All kinds</option>
                 <option value={PL_KINDS.join(',')}>In P&amp;L (operating + non-cash)</option>
                 <option value={NON_PL_KINDS.join(',')}>Not in P&amp;L (all)</option>
                 {KIND_OPTIONS.map(k => <option key={k.value} value={k.value}>{k.label}{PL_KINDS.includes(k.value) ? '' : ' (not P&L)'}</option>)}
-              </select>
+              </NativeSelect>
             </div>
             {(txAccount || txKind) && (
-              <button onClick={() => { setTxAccount(''); setTxKind(''); setTxPage(1) }}
-                className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1.5 rounded hover:bg-gray-100 transition-colors">
-                Clear account / kind
-              </button>
+              <Button variant="ghost" size="sm" onClick={() => { setTxAccount(''); setTxKind(''); setTxPage(1) }}>
+                <X /> Clear account / kind
+              </Button>
             )}
-            <div className="flex gap-1 ml-auto">
-              {[['', 'All'], ['INCOME', 'Income'], ['EXPENSE', 'Expense']].map(([v, l]) => (
-                <button key={v} onClick={() => { setTxType(v); setTxCategory(''); setTxSubcategory(''); setTxPage(1) }}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${txType === v ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'}`}>
-                  {l}
-                </button>
-              ))}
-            </div>
           </div>
 
-          <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+          <Card className="overflow-hidden">
             {txLoading ? <Spinner /> : txList.length === 0 ? (
-              <div className="text-center py-16 text-gray-400 text-sm">No transactions found</div>
+              <EmptyState title="No transactions" description="Try another period or filter." />
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm min-w-[860px]">
-                  <thead>
-                    <tr className="bg-gray-50 border-b border-gray-100">
-                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Date</th>
-                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Type</th>
-                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Category</th>
-                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Source / Paid to</th>
-                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Description</th>
-                      <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">Amount</th>
-                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Account</th>
-                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Method</th>
-                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Ref</th>
-                      <th className="px-4 py-3" />
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
+                <Table className="min-w-[860px]">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Category</TableHead>
+                      <TableHead>Source / paid to</TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead className="text-right">Amount</TableHead>
+                      <TableHead>Account</TableHead>
+                      <TableHead>Method</TableHead>
+                      <TableHead>Ref</TableHead>
+                      <TableHead><span className="sr-only">Actions</span></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {txList.map(tx => {
                       const rowId    = tx.id ?? tx._id
                       const kind     = tx.kind || 'OPERATING'
@@ -3247,194 +3119,191 @@ function AccountsContent() {
                         canDo(session, 'finance.payments.confirm')
                       return (
                         <Fragment key={rowId}>
-                          <tr className={`hover:bg-gray-50/50 transition-colors ${nonPl ? 'bg-gray-50/40' : ''}`}>
-                            <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtDate(tx.date)}</td>
-                            <td className="px-4 py-3">
+                          <TableRow className={cn(nonPl && 'bg-gray-50/40', expanded && 'border-b-0')}>
+                            <TableCell className="whitespace-nowrap text-xs text-muted-foreground tabular-nums">{fmtDate(tx.date)}</TableCell>
+                            <TableCell>
                               <StatusDot status={tx.type} />
                               <div><KindBadge kind={kind} /></div>
-                            </td>
-                            <td className="px-4 py-3 text-xs text-gray-600">
+                            </TableCell>
+                            <TableCell className="text-[13px]">
                               <span>{tx.category}</span>
-                              {tx.expenseCategory && <span className="block text-[11px] text-gray-400">{tx.expenseCategory}</span>}
-                            </td>
-                            <td className="px-4 py-3 text-xs text-gray-600 max-w-[160px] truncate">
+                              {tx.expenseCategory && <span className="block text-xs text-muted-foreground">{tx.expenseCategory}</span>}
+                            </TableCell>
+                            <TableCell className="max-w-[160px] truncate text-[13px]">
                               {tx.paidToName ?? tx.vendor ?? tx.projectId?.name ?? tx.paidBy?.name ?? (tx.counterAccountId?.name ? `↔ ${tx.counterAccountId.name}` : '—')}
-                            </td>
-                            <td className="px-4 py-3 text-xs text-gray-700 max-w-[200px] truncate" title={tx.description}>{tx.description}</td>
-                            <td className={`px-4 py-3 text-right text-sm font-semibold whitespace-nowrap ${
-                              nonPl ? 'text-gray-400' : tx.type === 'INCOME' ? 'text-green-600' : 'text-red-500'
-                            }`} title={nonPl ? 'Not counted in profit & loss' : undefined}>
+                            </TableCell>
+                            <TableCell className="max-w-[200px] truncate text-[13px] text-gray-900" title={tx.description}>{tx.description}</TableCell>
+                            <TableCell className={cn('whitespace-nowrap text-right font-medium tabular-nums',
+                              nonPl ? 'text-gray-400' : tx.type === 'INCOME' ? 'text-emerald-600' : 'text-red-600'
+                            )} title={nonPl ? 'Not counted in profit & loss' : undefined}>
                               {tx.type === 'INCOME' ? '+' : '-'}{formatCurrency(tx.amount, tx.currency)}
                               {plDiffers && (
-                                <span className="block text-[11px] font-normal text-gray-400">P&amp;L {fmtTk(plVal)}</span>
+                                <span className="block text-xs font-normal text-muted-foreground">P&amp;L {fmtTk(plVal)}</span>
                               )}
                               {tx.reversedBy && (
-                                <span className="block text-[11px] font-normal text-amber-600">Reversed by {tx.reversedBy}</span>
+                                <span className="block text-xs font-normal text-amber-700">Reversed by {tx.reversedBy}</span>
                               )}
-                            </td>
-                            <td className="px-4 py-3 text-xs text-gray-600 max-w-[150px]">
+                            </TableCell>
+                            <TableCell className="max-w-[150px] text-[13px]">
                               {acctInfo ? (
                                 <span className="block truncate" title={acctInfo.name}>
                                   {acctInfo.name}
-                                  <span className="block text-[11px] text-gray-400">{accountTypeLabel(acctInfo.type)}{acctInfo.last4 ? ` ••${acctInfo.last4}` : ''}</span>
+                                  <span className="block text-xs text-muted-foreground">{accountTypeLabel(acctInfo.type)}{acctInfo.last4 ? ` ••${acctInfo.last4}` : ''}</span>
                                 </span>
                               ) : acctId ? (
-                                <span className="text-gray-400">Linked account</span>
+                                <span className="text-muted-foreground">Linked account</span>
                               ) : kind === 'NON_CASH' ? (
-                                <span className="text-gray-400">Non-cash</span>
+                                <span className="text-muted-foreground">Non-cash</span>
                               ) : (
                                 <span className="text-gray-300" title="Recorded before money accounts — edit to set one">—</span>
                               )}
-                            </td>
-                            <td className="px-4 py-3 text-xs text-gray-500">
+                            </TableCell>
+                            <TableCell className="text-[13px]">
                               {fmtMethod(tx.paymentMethod)}
-                              {tx.channel && <span className="block text-[11px] text-gray-400">{PAYMENT_CHANNEL_LABELS[tx.channel] ?? tx.channel}</span>}
-                            </td>
-                            <td className="px-4 py-3 text-xs text-gray-500">
+                              {tx.channel && <span className="block text-xs text-muted-foreground">{PAYMENT_CHANNEL_LABELS[tx.channel] ?? tx.channel}</span>}
+                            </TableCell>
+                            <TableCell className="text-[13px]">
                               {docUrl(tx.receiptUrl) ? (
-                                <a href={docUrl(tx.receiptUrl)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-blue-600 hover:underline">
-                                  <Paperclip className="w-3 h-3" /> Receipt
+                                <a href={docUrl(tx.receiptUrl)} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-medium text-gray-900 underline-offset-4 hover:underline">
+                                  <Paperclip className="size-3.5 text-gray-400" /> Receipt
                                 </a>
                               ) : tx.txnId ? (
                                 <span className="font-mono text-xs">{tx.txnId}</span>
                               ) : '—'}
-                            </td>
-                            <td className="px-4 py-3">
-                              <div className="flex items-center gap-1 justify-end">
+                            </TableCell>
+                            <TableCell className="py-2">
+                              <div className="flex items-center justify-end gap-0.5">
                                 {canExpand && (
-                                  <button onClick={() => setTxExpanded(expanded ? null : rowId)}
+                                  <Button variant="ghost" size="icon-sm" onClick={() => setTxExpanded(expanded ? null : rowId)}
                                     title={expanded ? 'Hide details' : 'Tax & P&L details'}
+                                    aria-label={expanded ? 'Hide details' : 'Tax & P&L details'}
                                     aria-expanded={expanded}
-                                    className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">
-                                    <ChevronDown className={`w-3.5 h-3.5 transition-transform ${expanded ? 'rotate-180' : ''}`} />
-                                  </button>
+                                    className="text-gray-400">
+                                    <ChevronDown className={cn('size-4 transition-transform', expanded && 'rotate-180')} />
+                                  </Button>
                                 )}
                                 {reversible && (
-                                  <button onClick={() => setReversingTx(tx)} title="Reverse this client receipt (wrong amount, account or date)"
+                                  <Button variant="ghost" size="icon-sm" onClick={() => setReversingTx(tx)} title="Reverse this client receipt (wrong amount, account or date)"
                                     aria-label="Reverse receipt"
-                                    className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-600 transition-colors">
-                                    <RotateCcw className="w-3.5 h-3.5" />
-                                  </button>
+                                    className="text-gray-400 hover:bg-red-50 hover:text-red-600">
+                                    <RotateCcw />
+                                  </Button>
                                 )}
                                 {editable ? (
-                                  <button onClick={() => { setEditingTx(tx); setModalOpen(true) }} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">
-                                    <Pencil className="w-3.5 h-3.5" />
-                                  </button>
+                                  <Button variant="ghost" size="icon-sm" onClick={() => { setEditingTx(tx); setModalOpen(true) }}
+                                    aria-label="Edit transaction" className="text-gray-400">
+                                    <Pencil />
+                                  </Button>
                                 ) : (
-                                  <span className="p-1.5 w-6" aria-hidden="true" />
+                                  <span className="size-8" aria-hidden="true" />
                                 )}
                               </div>
-                            </td>
-                          </tr>
+                            </TableCell>
+                          </TableRow>
                           {expanded && (
-                            <tr className="bg-gray-50/60">
-                              <td colSpan={10} className="px-4 py-3">
+                            <TableRow className="bg-gray-50/60 hover:bg-gray-50/60">
+                              <TableCell colSpan={10} className="px-4 py-3">
                                 <TxBreakdown tx={tx} nonPl={nonPl} plVal={plVal} cashBDT={cashBDT} />
-                              </td>
-                            </tr>
+                              </TableCell>
+                            </TableRow>
                           )}
                         </Fragment>
                       )
                     })}
-                  </tbody>
-                </table>
-              </div>
+                  </TableBody>
+                </Table>
             )}
             {txMeta.pages > 1 && (
-              <div className="px-4 py-3 border-t border-gray-100">
+              <div className="border-t border-gray-100 px-4 py-3">
                 <Pagination meta={txMeta} page={txPage} onPageChange={setTxPage} />
               </div>
             )}
-          </div>
+          </Card>
         </div>
       )}
 
       {/* ── PAYMENT CONFIRMATIONS tab ── */}
       {activeTab === 'confirmations' && (
         <div className="space-y-4">
-          <div className="flex gap-2 flex-wrap">
-            {[['PENDING_CONFIRMATION', 'Pending'], ['CONFIRMED', 'Confirmed'], ['REJECTED', 'Rejected'], ['REVERSED', 'Reversed'], ['', 'All']].map(([v, l]) => (
-              <button key={v} onClick={() => { setPcStatus(v); setPcPage(1) }}
-                className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${pcStatus === v ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'}`}>
-                {l}
-              </button>
-            ))}
-          </div>
+          <Tabs
+            value={pcStatus}
+            onChange={v => { setPcStatus(v); setPcPage(1) }}
+            tabs={[['PENDING_CONFIRMATION', 'Pending'], ['CONFIRMED', 'Confirmed'], ['REJECTED', 'Rejected'], ['REVERSED', 'Reversed'], ['', 'All']].map(([v, l]) => ({ value: v, label: l }))}
+          />
 
-          <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+          <Card className="overflow-hidden">
             {pcLoading ? <Spinner /> : pcList.length === 0 ? (
-              <div className="text-center py-16 text-gray-400 text-sm">No payment confirmations found</div>
+              <EmptyState title="No payment confirmations" />
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm min-w-[600px]">
-                  <thead>
-                    <tr className="bg-gray-50 border-b border-gray-100">
-                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Project</th>
-                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Client</th>
-                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Invoice</th>
-                      <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">Amount</th>
-                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Status</th>
-                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Submitted By</th>
-                      <th className="px-4 py-3" />
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
+                <Table className="min-w-[600px]">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Project</TableHead>
+                      <TableHead>Client</TableHead>
+                      <TableHead>Invoice</TableHead>
+                      <TableHead className="text-right">Amount</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Submitted by</TableHead>
+                      <TableHead><span className="sr-only">Actions</span></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {pcList.map(pc => (
-                      <tr key={pc.id ?? pc._id} className="hover:bg-gray-50/50 transition-colors">
-                        <td className="px-4 py-3">
-                          <p className="text-xs font-medium text-gray-800">{pc.projectId?.name ?? '—'}</p>
+                      <TableRow key={pc.id ?? pc._id}>
+                        <TableCell>
+                          <p className="text-[13px] font-medium text-gray-900">{pc.projectId?.name ?? '—'}</p>
                           {pc.projectId?.projectCode && (
-                            <p className="text-xs text-gray-400 font-mono">{pc.projectId.projectCode}</p>
+                            <p className="font-mono text-xs text-muted-foreground">{pc.projectId.projectCode}</p>
                           )}
-                        </td>
-                        <td className="px-4 py-3 text-xs text-gray-600">{pc.clientId?.userId?.name ?? '—'}</td>
-                        <td className="px-4 py-3 text-xs text-gray-500">{pc.invoiceId?.invoiceNumber ?? '—'}</td>
-                        <td className="px-4 py-3 text-right text-sm font-semibold text-gray-800 whitespace-nowrap">
+                        </TableCell>
+                        <TableCell className="text-[13px]">{pc.clientId?.userId?.name ?? '—'}</TableCell>
+                        <TableCell className="text-[13px] text-muted-foreground">{pc.invoiceId?.invoiceNumber ?? '—'}</TableCell>
+                        <TableCell className="whitespace-nowrap text-right font-medium text-gray-900 tabular-nums">
                           {formatCurrency(pc.amount, pc.currency)}
                           {(toNum(pc.vdsAmount) > 0 || toNum(pc.tdsAmount) > 0) && (
-                            <span className="block text-[11px] font-normal text-gray-400">
+                            <span className="block text-xs font-normal text-muted-foreground">
                               {toNum(pc.vdsAmount) > 0 ? `+ VDS ${fmtTk(pc.vdsAmount)}` : ''}
                               {toNum(pc.vdsAmount) > 0 && toNum(pc.tdsAmount) > 0 ? ' · ' : ''}
                               {toNum(pc.tdsAmount) > 0 ? `+ TDS ${fmtTk(pc.tdsAmount)}` : ''}
                             </span>
                           )}
-                          {pc.accountId?.name && <span className="block text-[11px] font-normal text-gray-400">into {pc.accountId.name}</span>}
-                        </td>
-                        <td className="px-4 py-3">
+                          {pc.accountId?.name && <span className="block text-xs font-normal text-muted-foreground">into {pc.accountId.name}</span>}
+                        </TableCell>
+                        <TableCell>
                           <StatusDot status={pc.status} />
                           {pc.status === 'REVERSED' && (
-                            <span className="block mt-0.5 text-[11px] text-gray-400 max-w-[200px] truncate" title={pc.reversalReason ?? undefined}>
+                            <span className="mt-1 block max-w-[200px] truncate text-xs text-muted-foreground" title={pc.reversalReason ?? undefined}>
                               {pc.reversedBy?.name ? `by ${pc.reversedBy.name}` : ''}{pc.reversedBy?.name && pc.reversalReason ? ' — ' : ''}{pc.reversalReason ?? ''}
                             </span>
                           )}
-                        </td>
-                        <td className="px-4 py-3 text-xs text-gray-500">{pc.submittedBy?.name ?? '—'}</td>
-                        <td className="px-4 py-3">
-                          {pc.status === 'PENDING_CONFIRMATION' && (
-                            <button onClick={() => setConfirmingPc(pc)}
-                              className="px-3 py-1.5 text-xs font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors">
-                              Review
-                            </button>
-                          )}
-                          {pc.status === 'CONFIRMED' && canDo(session, 'finance.payments.confirm') && (
-                            <button onClick={() => setReversingPc(pc)} title="Reverse this payment (wrong amount, account, VDS / TDS or date)"
-                              className="px-3 py-1.5 text-xs font-medium border border-red-200 text-red-600 rounded-lg hover:bg-red-50 flex items-center gap-1.5 whitespace-nowrap">
-                              <RotateCcw className="w-3.5 h-3.5" /> Reverse payment
-                            </button>
-                          )}
-                        </td>
-                      </tr>
+                        </TableCell>
+                        <TableCell className="text-[13px] text-muted-foreground">{pc.submittedBy?.name ?? '—'}</TableCell>
+                        <TableCell className="py-2">
+                          <div className="flex items-center justify-end gap-2">
+                            {pc.status === 'PENDING_CONFIRMATION' && (
+                              <Button size="xs" variant="outline" onClick={() => setConfirmingPc(pc)}>
+                                Review
+                              </Button>
+                            )}
+                            {pc.status === 'CONFIRMED' && canDo(session, 'finance.payments.confirm') && (
+                              <Button size="xs" variant="outline" onClick={() => setReversingPc(pc)} title="Reverse this payment (wrong amount, account, VDS / TDS or date)"
+                                className="text-red-600 hover:bg-red-50 hover:text-red-700">
+                                <RotateCcw /> Reverse payment
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
                     ))}
-                  </tbody>
-                </table>
-              </div>
+                  </TableBody>
+                </Table>
             )}
             {pcMeta.pages > 1 && (
-              <div className="px-4 py-3 border-t border-gray-100">
+              <div className="border-t border-gray-100 px-4 py-3">
                 <Pagination meta={pcMeta} page={pcPage} onPageChange={setPcPage} />
               </div>
             )}
-          </div>
+          </Card>
         </div>
       )}
 
@@ -3451,222 +3320,217 @@ function AccountsContent() {
         const setCustom     = (which, v) => { setPrPreset(''); setPrPage(1); which === 'start' ? setPrStart(v ?? '') : setPrEnd(v ?? '') }
         const toggleAll     = () => setPrSelected(allSelected ? [] : selectableIds)
         const toggleOne     = (id) => setPrSelected(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id])
+        // '' = "All dates" (no range); a hand-picked range highlights no preset.
+        const presetValue   = prPreset ? prPreset : (!prStart && !prEnd ? '' : '__custom__')
+        const filterLabel   = 'mb-1.5 block text-xs text-muted-foreground'
+        const cb            = 'size-4 rounded border-gray-300'
         return (
         <div className="space-y-4">
           {/* Status filter */}
-          <div className="flex gap-2 flex-wrap">
-            {[['PENDING', 'Pending'], ['PAID', 'Paid'], ['AUTHORIZED', 'Authorized'], ['REJECTED', 'Rejected'], ['', 'All']].map(([v, l]) => (
-              <button key={v} onClick={() => { setPrStatus(v); setPrPage(1); setPrSelected([]) }}
-                className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${prStatus === v ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'}`}>
-                {l}
-              </button>
-            ))}
-          </div>
+          <Tabs
+            value={prStatus}
+            onChange={v => { setPrStatus(v); setPrPage(1); setPrSelected([]) }}
+            tabs={[['PENDING', 'Pending'], ['PAID', 'Paid'], ['AUTHORIZED', 'Authorized'], ['REJECTED', 'Rejected'], ['', 'All']].map(([v, l]) => ({ value: v, label: l }))}
+          />
 
           {/* Date + category filters */}
-          <div className="flex flex-wrap items-end gap-3 bg-white rounded-xl border border-gray-100 p-3">
-            <div className="flex gap-1.5 flex-wrap">
-              {[['today', 'Today'], ['yesterday', 'Yesterday'], ['7d', 'Last 7 days'], ['month', 'This month'], ['', 'All dates']].map(([v, l]) => (
-                <button key={v || 'all'} onClick={() => selectPreset(v)}
-                  className={`px-2.5 py-1.5 text-xs font-medium rounded-lg border transition-colors ${prPreset === v && (v || (!prStart && !prEnd)) ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'}`}>
-                  {l}
-                </button>
-              ))}
-            </div>
+          <Card className="flex flex-wrap items-end gap-3 p-3">
+            <Tabs
+              size="sm"
+              className="self-end"
+              value={presetValue}
+              onChange={selectPreset}
+              tabs={[['today', 'Today'], ['yesterday', 'Yesterday'], ['7d', 'Last 7 days'], ['month', 'This month'], ['', 'All dates']].map(([v, l]) => ({ value: v, label: l }))}
+            />
             <div className="flex items-end gap-2">
               <div>
-                <label className="block text-[11px] text-gray-400 mb-1">From</label>
+                <label className={filterLabel}>From</label>
                 <DatePicker value={prStart || null} onChange={v => setCustom('start', v)} />
               </div>
               <div>
-                <label className="block text-[11px] text-gray-400 mb-1">To</label>
+                <label className={filterLabel}>To</label>
                 <DatePicker value={prEnd || null} onChange={v => setCustom('end', v)} />
               </div>
             </div>
-            <div className="min-w-[150px]">
-              <label className="block text-[11px] text-gray-400 mb-1">Category</label>
-              <select value={prCategory} onChange={e => { setPrCategory(e.target.value); setPrSubcategory(''); setPrPage(1) }}
-                className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-gray-900">
+            <div className="min-w-[160px]">
+              <label className={filterLabel}>Category</label>
+              <NativeSelect value={prCategory} onChange={e => { setPrCategory(e.target.value); setPrSubcategory(''); setPrPage(1) }} className="text-[13px]">
                 <option value="">All categories</option>
                 {expenseCategories.map(c => <option key={c.id ?? c.label} value={c.label}>{c.label}</option>)}
-              </select>
+              </NativeSelect>
             </div>
-            <div className="min-w-[150px]">
-              <label className="block text-[11px] text-gray-400 mb-1">Subcategory</label>
-              <select value={prSubcategory} onChange={e => { setPrSubcategory(e.target.value); setPrPage(1) }}
-                disabled={!prCategory || subOptions.length === 0}
-                className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-gray-900 disabled:bg-gray-50 disabled:text-gray-400">
+            <div className="min-w-[160px]">
+              <label className={filterLabel}>Subcategory</label>
+              <NativeSelect value={prSubcategory} onChange={e => { setPrSubcategory(e.target.value); setPrPage(1) }}
+                disabled={!prCategory || subOptions.length === 0} className="text-[13px]">
                 <option value="">All subcategories</option>
                 {subOptions.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
+              </NativeSelect>
             </div>
             {(prCategory || prSubcategory || prStart || prEnd) && (
-              <button onClick={() => { setPrCategory(''); setPrSubcategory(''); setPrStart(''); setPrEnd(''); setPrPreset(''); setPrPage(1) }}
-                className="px-2.5 py-1.5 text-xs font-medium text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50">
+              <Button variant="ghost" onClick={() => { setPrCategory(''); setPrSubcategory(''); setPrStart(''); setPrEnd(''); setPrPreset(''); setPrPage(1) }}>
                 Clear
-              </button>
+              </Button>
             )}
-          </div>
+          </Card>
 
           {/* Batch action bar (paid + confirmer) — authorize a group with one combined invoice */}
           {showBatch && prSelected.length > 0 && (
-            <div className="flex flex-wrap items-center justify-between gap-3 bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-3">
-              <p className="text-sm text-indigo-900">
-                <strong>{prSelected.length}</strong> selected · Total <TkAmt value={selectedTotal} decimals={2} /> BDT
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200/80 bg-gray-50 px-4 py-3">
+              <p className="text-sm text-gray-700">
+                <span className="font-semibold text-gray-900">{prSelected.length}</span> selected · Total <span className="font-medium text-gray-900 tabular-nums"><TkAmt value={selectedTotal} decimals={2} /> BDT</span>
               </p>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <a href={`/api/expenses/combined-voucher?ids=${prSelected.join(',')}`} target="_blank" rel="noreferrer"
-                  className="px-3 py-1.5 text-xs font-medium border border-indigo-300 text-indigo-700 bg-white rounded-lg hover:bg-indigo-50 flex items-center gap-1.5">
-                  <Printer className="w-3.5 h-3.5" /> Generate Combined Invoice
+                  className={buttonVariants({ variant: 'outline', size: 'sm' })}>
+                  <Printer /> Combined invoice
                 </a>
-                <button onClick={() => setBatchAuthorizing(true)}
-                  className="px-3 py-1.5 text-xs font-medium bg-green-600 text-white rounded-lg hover:bg-green-700">
-                  Authorize Selected
-                </button>
+                <Button size="sm" onClick={() => setBatchAuthorizing(true)}>
+                  <CheckCircle2 /> Authorize selected
+                </Button>
               </div>
             </div>
           )}
 
-          <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+          <Card className="overflow-hidden">
             {prLoading ? <Spinner /> : prList.length === 0 ? (
-              <div className="text-center py-16 text-gray-400 text-sm">No payment requests found</div>
+              <EmptyState title="No payment requests" />
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm min-w-[640px]">
-                  <thead>
-                    <tr className="bg-gray-50 border-b border-gray-100">
+                <Table className="min-w-[640px]">
+                  <TableHeader>
+                    <TableRow>
                       {showBatch && (
-                        <th className="px-4 py-3 w-9">
+                        <TableHead className="w-9">
                           <input type="checkbox" checked={allSelected} onChange={toggleAll}
                             disabled={selectableIds.length === 0}
-                            className="w-4 h-4 rounded border-gray-300 accent-indigo-600" />
-                        </th>
+                            aria-label="Select all paid"
+                            className={cb} />
+                        </TableHead>
                       )}
-                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Title</th>
-                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Category</th>
-                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Project</th>
-                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Voucher</th>
-                      <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">Amount</th>
-                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Status</th>
-                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Submitted By</th>
-                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Date</th>
-                      <th className="px-4 py-3" />
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
+                      <TableHead>Title</TableHead>
+                      <TableHead>Category</TableHead>
+                      <TableHead>Project</TableHead>
+                      <TableHead>Voucher</TableHead>
+                      <TableHead className="text-right">Amount</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Submitted by</TableHead>
+                      <TableHead>Date</TableHead>
+                      <TableHead><span className="sr-only">Actions</span></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {prList.map(pr => (
-                      <tr key={pr.id ?? pr._id} className="hover:bg-gray-50/50 transition-colors">
+                      <TableRow key={pr.id ?? pr._id}>
                         {showBatch && (
-                          <td className="px-4 py-3">
+                          <TableCell>
                             {pr.status === 'PAID' && (
                               <input type="checkbox" checked={prSelected.includes(pr.id ?? pr._id)}
                                 onChange={() => toggleOne(pr.id ?? pr._id)}
-                                className="w-4 h-4 rounded border-gray-300 accent-indigo-600" />
+                                aria-label="Select request"
+                                className={cb} />
                             )}
-                          </td>
+                          </TableCell>
                         )}
-                        <td className="px-4 py-3 max-w-[160px]">
+                        <TableCell className="max-w-[180px]">
                           <button onClick={() => setDetailPr(pr)}
-                            className="text-xs font-medium text-gray-800 hover:text-blue-600 hover:underline truncate block text-left w-full">
+                            className="block w-full truncate text-left text-[13px] font-medium text-gray-900 underline-offset-4 hover:underline">
                             {pr.title ?? pr.description ?? '—'}
                           </button>
                           {pr.origin === 'REIMBURSEMENT' && (
-                            <span className="inline-flex items-center mt-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-indigo-50 text-indigo-700">
-                              Reimbursement
-                            </span>
+                            <Badge variant="indigo" className="mt-1">Reimbursement</Badge>
                           )}
                           <PurchaseBillLink expense={pr} compact />
-                        </td>
-                        <td className="px-4 py-3 text-xs text-gray-600">
+                        </TableCell>
+                        <TableCell className="text-[13px]">
                           <span>{pr.category ?? '—'}</span>
-                          {pr.subcategory && <span className="block text-[11px] text-gray-400">{pr.subcategory}</span>}
-                        </td>
-                        <td className="px-4 py-3 text-xs text-gray-500">{pr.projectId?.name ?? (pr.origin === 'SALARY' ? 'Salary' : '—')}</td>
-                        <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{pr.expenseInvoiceNo ?? '—'}</td>
-                        <td className="px-4 py-3 text-right text-sm font-semibold text-gray-800 whitespace-nowrap">{formatCurrency(pr.amount, pr.currency)}</td>
-                        <td className="px-4 py-3"><StatusDot status={pr.status} /></td>
-                        <td className="px-4 py-3 text-xs text-gray-500">{pr.submittedBy?.name ?? (pr.origin === 'SALARY' ? 'System' : '—')}</td>
-                        <td className="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">{fmtDate(pr.date ?? pr.createdAt)}</td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center justify-end gap-2">
+                          {pr.subcategory && <span className="block text-xs text-muted-foreground">{pr.subcategory}</span>}
+                        </TableCell>
+                        <TableCell className="text-[13px] text-muted-foreground">{pr.projectId?.name ?? (pr.origin === 'SALARY' ? 'Salary' : '—')}</TableCell>
+                        <TableCell className="whitespace-nowrap font-mono text-xs text-muted-foreground">{pr.expenseInvoiceNo ?? '—'}</TableCell>
+                        <TableCell className="whitespace-nowrap text-right font-medium text-gray-900 tabular-nums">{formatCurrency(pr.amount, pr.currency)}</TableCell>
+                        <TableCell><StatusDot status={pr.status} /></TableCell>
+                        <TableCell className="text-[13px] text-muted-foreground">{pr.submittedBy?.name ?? (pr.origin === 'SALARY' ? 'System' : '—')}</TableCell>
+                        <TableCell className="whitespace-nowrap text-xs text-muted-foreground tabular-nums">{fmtDate(pr.date ?? pr.createdAt)}</TableCell>
+                        <TableCell className="py-2">
+                          <div className="flex items-center justify-end gap-1.5">
                             {pr.status === 'PENDING' && (
-                              <button onClick={() => setPayingPr(pr)}
-                                className="px-3 py-1.5 text-xs font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors">
+                              <Button size="xs" variant="outline" onClick={() => setPayingPr(pr)}>
                                 Review
-                              </button>
+                              </Button>
                             )}
                             {pr.status === 'PAID' && (
                               <>
                                 <a href={`/api/expenses/${pr.id ?? pr._id}/voucher`} target="_blank" rel="noreferrer"
-                                  className="px-3 py-1.5 text-xs font-medium border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 flex items-center gap-1.5">
-                                  <Printer className="w-3.5 h-3.5" /> Invoice
+                                  className={buttonVariants({ variant: 'ghost', size: 'xs' })}>
+                                  <Printer /> Invoice
                                 </a>
-                                <button onClick={() => setAuthorizingPr(pr)}
-                                  className="px-3 py-1.5 text-xs font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
+                                <Button size="xs" variant="outline" onClick={() => setAuthorizingPr(pr)}>
                                   Authorize
-                                </button>
+                                </Button>
                               </>
                             )}
                             {canConfirm && (pr.status === 'PAID' || pr.status === 'AUTHORIZED') && (
-                              <button onClick={() => setReversingPr(pr)} title="Reverse this payment (wrong amount, account, VDS or TDS)"
-                                className="px-3 py-1.5 text-xs font-medium border border-red-200 text-red-600 rounded-lg hover:bg-red-50 flex items-center gap-1.5 whitespace-nowrap">
-                                <RotateCcw className="w-3.5 h-3.5" /> Reverse payment
-                              </button>
+                              <Button size="xs" variant="outline" onClick={() => setReversingPr(pr)} title="Reverse this payment (wrong amount, account, VDS or TDS)"
+                                className="text-red-600 hover:bg-red-50 hover:text-red-700">
+                                <RotateCcw /> Reverse payment
+                              </Button>
                             )}
                             {pr.status === 'AUTHORIZED' && (
                               <>
                                 <a href={`/api/expenses/${pr.id ?? pr._id}/voucher`} target="_blank" rel="noreferrer"
-                                  className="px-3 py-1.5 text-xs font-medium border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 flex items-center gap-1.5">
-                                  <Printer className="w-3.5 h-3.5" /> Invoice
+                                  className={buttonVariants({ variant: 'ghost', size: 'xs' })}>
+                                  <Printer /> Invoice
                                 </a>
                                 {docUrl(pr.signedInvoiceUrl) && (
                                   <a href={docUrl(pr.signedInvoiceUrl)} target="_blank" rel="noopener noreferrer"
-                                    className="px-3 py-1.5 text-xs font-medium border border-green-200 text-green-700 bg-green-50 rounded-lg hover:bg-green-100 flex items-center gap-1.5">
-                                    <FileTextIcon className="w-3.5 h-3.5" /> Authorized
+                                    className={cn(buttonVariants({ variant: 'ghost', size: 'xs' }), 'text-emerald-700 hover:text-emerald-800')}>
+                                    <FileTextIcon /> Authorized
                                   </a>
                                 )}
                               </>
                             )}
                           </div>
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     ))}
-                  </tbody>
-                </table>
-              </div>
+                  </TableBody>
+                </Table>
             )}
             {prMeta.pages > 1 && (
-              <div className="px-4 py-3 border-t border-gray-100">
+              <div className="border-t border-gray-100 px-4 py-3">
                 <Pagination meta={prMeta} page={prPage} onPageChange={setPrPage} />
               </div>
             )}
-          </div>
+          </Card>
 
           {/* Edit Requests section for owners */}
           {editRequests.length > 0 && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-              <p className="text-sm font-semibold text-amber-800 mb-3">Pending Edit Requests ({editRequests.length})</p>
-              <div className="space-y-2">
+            <Card className="overflow-hidden">
+              <CardHeader className="border-b border-gray-100 pb-4">
+                <div className="flex items-center gap-2">
+                  <CardTitle>Pending edit requests</CardTitle>
+                  <Badge variant="warning">{editRequests.length}</Badge>
+                </div>
+              </CardHeader>
+              <div className="divide-y divide-gray-100">
                 {editRequests.map(er => (
-                  <div key={er.id ?? er._id} className="bg-white rounded-lg border border-amber-100 px-4 py-3 flex items-center justify-between gap-4">
-                    <div>
-                      <p className="text-sm font-medium text-gray-800">{er.requesterId?.name ?? '—'} wants to edit an expense</p>
-                      {er.reason && <p className="text-xs text-gray-500 mt-0.5">{er.reason}</p>}
+                  <div key={er.id ?? er._id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-900">{er.requesterId?.name ?? '—'} wants to edit an expense</p>
+                      {er.reason && <p className="mt-0.5 text-xs text-muted-foreground">{er.reason}</p>}
                     </div>
-                    <div className="flex gap-2 shrink-0">
-                      <button onClick={() => handleApproveEditRequest(er)}
-                        className="px-3 py-1.5 text-xs font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-800">
-                        Approve
-                      </button>
-                      <button onClick={() => setRejectingEr(er)}
-                        className="px-3 py-1.5 text-xs font-medium border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50">
+                    <div className="flex shrink-0 gap-2">
+                      <Button size="sm" variant="ghost" onClick={() => setRejectingEr(er)}>
                         Reject
-                      </button>
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => handleApproveEditRequest(er)}>
+                        <CheckCircle2 /> Approve
+                      </Button>
                     </div>
                   </div>
                 ))}
               </div>
-            </div>
+            </Card>
           )}
         </div>
         )
@@ -3674,148 +3538,147 @@ function AccountsContent() {
 
       {/* ── WITHDRAWALS tab (removed — freelancer payments settle via Payment Requests) ── */}
       {activeTab === 'withdrawals' && (
-        <div className="bg-white border border-gray-100 rounded-xl p-10 text-center">
-          <p className="text-sm text-gray-500">
-            Wallet withdrawals were removed. Freelancer &amp; agency payments are now settled directly via{' '}
-            <Link href="/admin/accounts?tab=requests" className="text-blue-600 hover:underline">Payment Requests</Link>.
-          </p>
-        </div>
+        <Card>
+          <EmptyState
+            title="Withdrawals moved"
+            description="Freelancer & agency payments are settled in Payment requests."
+            action={<Button variant="outline" size="sm" href="/admin/accounts?tab=requests">Open payment requests</Button>}
+          />
+        </Card>
       )}
 
       {/* ── P&L REPORT tab ── */}
       {activeTab === 'pl' && (
         <div className="space-y-6">
           {/* Date range */}
-          <div className="flex items-center gap-3 flex-wrap">
-            <span className="text-sm text-gray-500 font-medium">Period</span>
+          <div className="flex flex-wrap items-center gap-2">
             <DatePicker value={plStart || null} onChange={v => setPlStart(v ?? '')} />
-            <span className="text-gray-400 text-sm">to</span>
+            <span className="text-sm text-muted-foreground">to</span>
             <DatePicker value={plEnd || null} onChange={v => setPlEnd(v ?? '')} />
-            <button onClick={loadPL}
-              className="px-3 py-1.5 text-xs font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors">
-              Apply
-            </button>
+            <Button onClick={loadPL}>Apply</Button>
           </div>
 
           {plLoading ? <Spinner /> : plReport ? (
             <>
               {/* Summary cards */}
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                {[
-                  { label: 'Total Income',  value: fmt(plReport.summary?.totalIncome),  color: 'text-green-600', bg: 'bg-green-50', icon: TrendingUp },
-                  { label: 'Total Expense', value: fmt(plReport.summary?.totalExpense), color: 'text-red-500',   bg: 'bg-red-50',   icon: TrendingDown },
-                  { label: 'Net Profit',    value: fmt(plReport.summary?.netProfit),    color: plReport.summary?.netProfit >= 0 ? 'text-blue-600' : 'text-red-600', bg: 'bg-blue-50', icon: Wallet },
-                  { label: 'Margin',        value: `${(plReport.summary?.margin ?? 0).toFixed(1)}%`, color: 'text-purple-600', bg: 'bg-purple-50', icon: Percent },
-                ].map(c => {
-                  const Icon = c.icon
-                  return (
-                    <div key={c.label} className="bg-white border border-gray-100 rounded-xl p-5">
-                      <div className={`w-9 h-9 rounded-lg ${c.bg} flex items-center justify-center mb-3`}>
-                        <Icon className={`w-4 h-4 ${c.color}`} />
-                      </div>
-                      <p className={`text-xl font-bold ${c.color}`}>{c.value}</p>
-                      <p className="text-sm text-gray-500 mt-0.5">{c.label}</p>
-                    </div>
-                  )
-                })}
-              </div>
-              <div className="flex flex-wrap items-start gap-x-6 gap-y-1 text-xs text-gray-400 -mt-2">
-                <span className="flex items-start gap-1.5">
-                  <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                  Receipts count net of VAT; transfers, capital, loans, tax deposits and asset purchases are not income or expense.
-                </span>
-                {toNum(plReport.summary?.depreciation) > 0 && (
-                  <span>Depreciation {fmt(plReport.summary.depreciation)} · EBITDA {fmt(plReport.summary.ebitda)}</span>
-                )}
-                {toNum(plReport.summary?.unconvertedCount) > 0 && (
-                  <span className="text-amber-600">{plReport.summary.unconvertedCount} foreign-currency entr{plReport.summary.unconvertedCount === 1 ? 'y has' : 'ies have'} no BDT amount and {plReport.summary.unconvertedCount === 1 ? 'is' : 'are'} left out.</span>
-                )}
+              <div className="space-y-2">
+                <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+                  {[
+                    { label: 'Total income',  value: fmt(plReport.summary?.totalIncome) },
+                    { label: 'Total expense', value: fmt(plReport.summary?.totalExpense) },
+                    { label: 'Net profit',    value: fmt(plReport.summary?.netProfit), negative: plReport.summary?.netProfit < 0 },
+                    { label: 'Margin',        value: `${(plReport.summary?.margin ?? 0).toFixed(1)}%` },
+                  ].map(c => (
+                    <Card key={c.label} className="p-5">
+                      <p className="truncate text-[13px] font-medium text-muted-foreground">{c.label}</p>
+                      <p className={cn('mt-2 text-2xl font-semibold tracking-tight tabular-nums', c.negative ? 'text-red-600' : 'text-gray-900')}>{c.value}</p>
+                    </Card>
+                  ))}
+                </div>
+                <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-muted-foreground">
+                  <span
+                    className="inline-flex cursor-help items-center gap-1.5"
+                    title="Receipts count net of VAT; transfers, capital, loans, tax deposits and asset purchases are not income or expense."
+                  >
+                    <Info className="size-3.5 shrink-0" />
+                    Profit-and-loss basis
+                  </span>
+                  {toNum(plReport.summary?.depreciation) > 0 && (
+                    <span className="tabular-nums">Depreciation {fmt(plReport.summary.depreciation)} · EBITDA {fmt(plReport.summary.ebitda)}</span>
+                  )}
+                  {toNum(plReport.summary?.unconvertedCount) > 0 && (
+                    <span className="inline-flex items-center gap-1.5 text-amber-700">
+                      <AlertTriangle className="size-3.5 shrink-0" />
+                      {plReport.summary.unconvertedCount} foreign-currency entr{plReport.summary.unconvertedCount === 1 ? 'y has' : 'ies have'} no BDT amount and {plReport.summary.unconvertedCount === 1 ? 'is' : 'are'} left out.
+                    </span>
+                  )}
+                </div>
               </div>
 
               {/* Monthly breakdown */}
               {plReport.rows?.length > 0 && (
-                <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-                  <div className="px-4 py-3 border-b border-gray-100">
-                    <p className="text-sm font-semibold text-gray-800">Monthly Breakdown</p>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="bg-gray-50 border-b border-gray-100">
-                          <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Month</th>
-                          <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">Income</th>
-                          <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">Expense</th>
-                          <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">Net Profit</th>
-                          <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">Margin</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-50">
-                        {plReport.rows.map(row => {
-                          const margin = row.totalIncome > 0 ? ((row.netProfit / row.totalIncome) * 100).toFixed(1) : '0.0'
-                          return (
-                            <tr key={row.month} className="hover:bg-gray-50/50">
-                              <td className="px-4 py-3 text-sm font-medium text-gray-700">{fmtMonth(row.month)}</td>
-                              <td className="px-4 py-3 text-right text-sm font-semibold text-green-600">{fmt(row.totalIncome)}</td>
-                              <td className="px-4 py-3 text-right text-sm font-semibold text-red-500">{fmt(row.totalExpense)}</td>
-                              <td className={`px-4 py-3 text-right text-sm font-bold ${row.netProfit >= 0 ? 'text-blue-600' : 'text-red-600'}`}>{fmt(row.netProfit)}</td>
-                              <td className="px-4 py-3 text-right text-xs text-gray-500">{margin}%</td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                      <tfoot>
-                        <tr className="bg-gray-50 border-t-2 border-gray-200">
-                          <td className="px-4 py-3 text-sm font-bold text-gray-800">Total</td>
-                          <td className="px-4 py-3 text-right text-sm font-bold text-green-600">{fmt(plReport.summary?.totalIncome)}</td>
-                          <td className="px-4 py-3 text-right text-sm font-bold text-red-500">{fmt(plReport.summary?.totalExpense)}</td>
-                          <td className={`px-4 py-3 text-right text-sm font-bold ${plReport.summary?.netProfit >= 0 ? 'text-blue-600' : 'text-red-600'}`}>{fmt(plReport.summary?.netProfit)}</td>
-                          <td className="px-4 py-3 text-right text-xs text-gray-500">{(plReport.summary?.margin ?? 0).toFixed(1)}%</td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-                </div>
+                <Card className="overflow-hidden">
+                  <CardHeader className="border-b border-gray-100 pb-4">
+                    <CardTitle>Monthly breakdown</CardTitle>
+                  </CardHeader>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Month</TableHead>
+                        <TableHead className="text-right">Income</TableHead>
+                        <TableHead className="text-right">Expense</TableHead>
+                        <TableHead className="text-right">Net profit</TableHead>
+                        <TableHead className="text-right">Margin</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {plReport.rows.map(row => {
+                        const margin = row.totalIncome > 0 ? ((row.netProfit / row.totalIncome) * 100).toFixed(1) : '0.0'
+                        return (
+                          <TableRow key={row.month}>
+                            <TableCell className="font-medium text-gray-900">{fmtMonth(row.month)}</TableCell>
+                            <TableCell className="text-right text-emerald-600 tabular-nums">{fmt(row.totalIncome)}</TableCell>
+                            <TableCell className="text-right text-red-600 tabular-nums">{fmt(row.totalExpense)}</TableCell>
+                            <TableCell className={cn('text-right font-medium tabular-nums', row.netProfit >= 0 ? 'text-gray-900' : 'text-red-600')}>{fmt(row.netProfit)}</TableCell>
+                            <TableCell className="text-right text-xs text-muted-foreground tabular-nums">{margin}%</TableCell>
+                          </TableRow>
+                        )
+                      })}
+                    </TableBody>
+                    <TableFooter>
+                      <TableRow className="hover:bg-transparent">
+                        <TableCell className="font-semibold text-gray-900">Total</TableCell>
+                        <TableCell className="text-right font-semibold text-emerald-600 tabular-nums">{fmt(plReport.summary?.totalIncome)}</TableCell>
+                        <TableCell className="text-right font-semibold text-red-600 tabular-nums">{fmt(plReport.summary?.totalExpense)}</TableCell>
+                        <TableCell className={cn('text-right font-semibold tabular-nums', plReport.summary?.netProfit >= 0 ? 'text-gray-900' : 'text-red-600')}>{fmt(plReport.summary?.netProfit)}</TableCell>
+                        <TableCell className="text-right text-xs text-muted-foreground tabular-nums">{(plReport.summary?.margin ?? 0).toFixed(1)}%</TableCell>
+                      </TableRow>
+                    </TableFooter>
+                  </Table>
+                </Card>
               )}
               {plReport.rows?.length === 0 && (
-                <div className="bg-white rounded-xl border border-gray-100 text-center py-12 text-gray-400 text-sm">
-                  No income or expense in this period.
-                </div>
+                <Card>
+                  <EmptyState title="No income or expense in this period" />
+                </Card>
               )}
 
               {/* Cash movements excluded from the P&L */}
               {plReport.nonPl?.length > 0 && (
-                <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-                  <div className="px-4 py-3 border-b border-gray-100">
-                    <p className="text-sm font-semibold text-gray-800">Not in profit &amp; loss</p>
-                    <p className="text-xs text-gray-400 mt-0.5">Money that moved in this period without being income or expense.</p>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm min-w-[420px]">
-                      <thead>
-                        <tr className="bg-gray-50 border-b border-gray-100">
-                          <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Kind</th>
-                          <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">Entries</th>
-                          <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">Money in</th>
-                          <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">Money out</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-50">
-                        {plReport.nonPl.map(m => (
-                          <tr key={m.kind} className="hover:bg-gray-50/50">
-                            <td className="px-4 py-3 text-sm text-gray-700">{m.label}</td>
-                            <td className="px-4 py-3 text-right text-sm text-gray-500">{m.count}</td>
-                            <td className="px-4 py-3 text-right text-sm text-gray-700">{m.inflow ? fmt(m.inflow) : '—'}</td>
-                            <td className="px-4 py-3 text-right text-sm text-gray-700">{m.outflow ? fmt(m.outflow) : '—'}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
+                <Card className="overflow-hidden">
+                  <CardHeader className="border-b border-gray-100 pb-4">
+                    <div>
+                      <CardTitle>Not in profit &amp; loss</CardTitle>
+                      <CardDescription>Money moved, not income or expense.</CardDescription>
+                    </div>
+                  </CardHeader>
+                  <Table className="min-w-[420px]">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Kind</TableHead>
+                        <TableHead className="text-right">Entries</TableHead>
+                        <TableHead className="text-right">Money in</TableHead>
+                        <TableHead className="text-right">Money out</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {plReport.nonPl.map(m => (
+                        <TableRow key={m.kind}>
+                          <TableCell className="text-gray-900">{m.label}</TableCell>
+                          <TableCell className="text-right text-muted-foreground tabular-nums">{m.count}</TableCell>
+                          <TableCell className="text-right tabular-nums">{m.inflow ? fmt(m.inflow) : '—'}</TableCell>
+                          <TableCell className="text-right tabular-nums">{m.outflow ? fmt(m.outflow) : '—'}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </Card>
               )}
             </>
           ) : (
-            <div className="text-center py-16 text-gray-400 text-sm">Select a date range and click Apply to generate the report</div>
+            <Card>
+              <EmptyState title="No report yet" description="Pick a period and apply." />
+            </Card>
           )}
         </div>
       )}
@@ -3918,21 +3781,20 @@ function AccountsContent() {
       )}
 
       {rejectingEr && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-xl border border-gray-200 w-full max-w-sm p-6 space-y-4">
-            <h3 className="text-base font-semibold text-gray-900">Reject Edit Request</h3>
-            <textarea value={rejectNote} onChange={e => setRejectNote(e.target.value)} rows={3}
-              placeholder="Reason for rejection (optional)…"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 resize-none" />
-            <div className="flex gap-2 justify-end">
-              <button onClick={() => { setRejectingEr(null); setRejectNote('') }} className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
-              <button onClick={() => handleRejectEditRequest(rejectingEr, rejectNote)}
-                className="px-4 py-2 text-sm font-medium bg-red-600 text-white rounded-lg hover:bg-red-700">
-                Reject
-              </button>
-            </div>
-          </div>
-        </div>
+        <DialogShell
+          title="Reject edit request"
+          onClose={() => { setRejectingEr(null); setRejectNote('') }}
+          className="max-w-sm"
+          footer={<>
+            <Button variant="outline" onClick={() => { setRejectingEr(null); setRejectNote('') }}>Cancel</Button>
+            <Button variant="destructive" onClick={() => handleRejectEditRequest(rejectingEr, rejectNote)}>Reject</Button>
+          </>}
+        >
+          <Label>Reason</Label>
+          <Textarea value={rejectNote} onChange={e => setRejectNote(e.target.value)} rows={3}
+            placeholder="Optional"
+            className="resize-none" />
+        </DialogShell>
       )}
 
     </div>
@@ -3941,7 +3803,7 @@ function AccountsContent() {
 
 export default function AccountsPage() {
   return (
-    <Suspense fallback={<div className="flex items-center justify-center min-h-[60vh]"><div className="w-7 h-7 border-2 border-gray-300 border-t-gray-700 rounded-full animate-spin" /></div>}>
+    <Suspense fallback={<PageLoader />}>
       <AccountsContent />
     </Suspense>
   )

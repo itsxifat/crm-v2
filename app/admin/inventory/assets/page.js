@@ -1,7 +1,6 @@
 'use client'
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import {
   Laptop, Plus, Download, Printer, X, UserCheck, Undo2, ArrowLeftRight, Eye, FileText, Package, Wrench,
@@ -14,23 +13,27 @@ import FilterSelect from '@/components/ui/FilterSelect'
 import StatsCard from '@/components/ui/StatsCard'
 import ActionMenu from '@/components/ui/ActionMenu'
 import EmptyState from '@/components/ui/EmptyState'
+import PageHeader from '@/components/ui/PageHeader'
+import Badge from '@/components/ui/Badge'
+import Button, { buttonVariants } from '@/components/ui/Button'
+import { Card } from '@/components/ui/Card'
+import { PageLoader } from '@/components/ui/LoadingSpinner'
 import AssetStatusBadge, { AssetConditionBadge } from '@/components/inventory/AssetStatusBadge'
 import { usePermission } from '@/components/auth/Can'
-import { cn } from '@/lib/utils'
 import { STATUS_OPTIONS, CONDITION_OPTIONS, STATUS_META } from '@/lib/inventory/constants'
 import { availableAssetActions, returnActionLabel } from '@/lib/inventory/actions'
 import AssetFormModal from './_components/AssetFormModal'
 import AssetActionModal from './_components/AssetActionModal'
 import LabelPrintModal from './_components/LabelPrintModal'
 import {
-  btnPrimary, btnSecondary, cardCls, tk, holderName, apiJson, useAssetOptions, openPrint, labelsUrl,
+  tk, holderName, apiJson, useAssetOptions, openPrint, labelsUrl,
 } from './_components/shared'
 
 const VIEW_OPTIONS = [
-  { value: 'ACTIVE', label: 'Active (not disposed)' },
+  { value: 'ACTIVE', label: 'Active' },
   ...STATUS_OPTIONS,
-  { value: 'DISPOSED', label: 'Disposed (sold, scrapped…)' },
-  { value: 'ALL', label: 'Everything' },
+  { value: 'DISPOSED', label: 'Disposed' },
+  { value: 'ALL', label: 'All statuses' },
 ]
 const WARRANTY_OPTIONS = [
   { value: '30', label: 'Warranty ends ≤ 30 days' },
@@ -40,7 +43,7 @@ const WARRANTY_OPTIONS = [
 ]
 const CAP_OPTIONS = [
   { value: 'true', label: 'Capitalized' },
-  { value: 'false', label: 'Expensed (tracked only)' },
+  { value: 'false', label: 'Expensed' },
 ]
 const ACK_FILTER_LABELS = { PENDING: 'Awaiting acknowledgement', DECLINED: 'Hand-over declined', ACCEPTED: 'Acknowledged' }
 const SORT_VALUES = ['-createdAt', 'tag', '-tag', 'name', '-name', 'cost', '-cost', 'status', 'warranty', 'createdAt', 'purchaseDate', '-purchaseDate']
@@ -228,14 +231,14 @@ function AssetsPage() {
     },
     {
       key: 'assetTag', label: 'Tag', sortable: true,
-      render: (row) => <span className="font-mono text-xs font-semibold text-gray-900 whitespace-nowrap">{row.assetTag}</span>,
+      render: (row) => <span className="whitespace-nowrap font-mono text-xs font-medium text-gray-900">{row.assetTag}</span>,
     },
     {
       key: 'name', label: 'Asset', sortable: true,
       render: (row) => (
         <div className="min-w-[180px] max-w-[280px]">
-          <p className="font-medium text-gray-900 truncate">{row.name}</p>
-          <p className="text-xs text-gray-400 truncate">{[row.brand, row.model, row.serialNumber ? `S/N ${row.serialNumber}` : null].filter(Boolean).join(' · ') || '—'}</p>
+          <p className="truncate font-medium text-gray-900">{row.name}</p>
+          <p className="truncate text-xs text-muted-foreground">{[row.brand, row.model, row.serialNumber ? `S/N ${row.serialNumber}` : null].filter(Boolean).join(' · ') || '—'}</p>
         </div>
       ),
     },
@@ -245,8 +248,8 @@ function AssetsPage() {
       render: (row) => (
         <div className="flex flex-col items-start gap-1">
           <AssetStatusBadge status={row.status} />
-          {row.acknowledgement?.status === 'PENDING' && <span className="text-[11px] text-amber-600 whitespace-nowrap">awaiting acknowledgement</span>}
-          {row.acknowledgement?.status === 'DECLINED' && <span className="text-[11px] text-red-600 whitespace-nowrap">hand-over declined</span>}
+          {row.acknowledgement?.status === 'PENDING' && <span className="whitespace-nowrap text-[11px] text-amber-600">Awaiting acknowledgement</span>}
+          {row.acknowledgement?.status === 'DECLINED' && <span className="whitespace-nowrap text-[11px] text-red-600">Hand-over declined</span>}
         </div>
       ),
     },
@@ -258,20 +261,20 @@ function AssetsPage() {
         if (!name) return <span className="text-gray-300">—</span>
         return (
           <div className="min-w-[120px]">
-            <p className="text-gray-900 truncate">{name}</p>
-            {row.assignedEmployeeId?.employeeId && <p className="text-xs text-gray-400">{row.assignedEmployeeId.employeeId}</p>}
+            <p className="truncate text-gray-900">{name}</p>
+            {row.assignedEmployeeId?.employeeId && <p className="text-xs text-muted-foreground">{row.assignedEmployeeId.employeeId}</p>}
           </div>
         )
       },
     },
     { key: 'location', label: 'Location', render: (row) => <span className="whitespace-nowrap">{row.locationId?.name ?? '—'}</span> },
     {
-      key: 'cost', label: 'Cost', sortable: true, className: 'text-right', cellClassName: 'text-right tabular-nums whitespace-nowrap',
+      key: 'cost', label: 'Cost', sortable: true, className: 'text-right [&>div]:justify-end', cellClassName: 'text-right tabular-nums whitespace-nowrap',
       render: (row) => tk(row.cost),
     },
     {
-      key: 'bookValue', label: 'Book value', sortable: true, className: 'text-right', cellClassName: 'text-right tabular-nums whitespace-nowrap',
-      render: (row) => (row.isCapitalized === false ? <span className="text-xs text-gray-400">expensed</span> : tk(row.bookValue)),
+      key: 'bookValue', label: 'Book value', sortable: true, className: 'text-right [&>div]:justify-end', cellClassName: 'text-right tabular-nums whitespace-nowrap',
+      render: (row) => (row.isCapitalized === false ? <span className="text-xs text-gray-400">Expensed</span> : tk(row.bookValue)),
     },
     {
       key: 'actions', label: '', className: 'w-10',
@@ -281,132 +284,139 @@ function AssetsPage() {
 
   const noAssetsAtAll = summary && summary.total === 0 && !filtersActive
 
+  const statBtn = 'rounded-xl text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50'
+  const statCard = 'h-full p-4 transition-colors hover:border-gray-300'
+  const repairCount = count('IN_REPAIR', 'DAMAGED')
+  const lostCount = count('LOST', 'STOLEN')
+
   return (
-    <div className="space-y-5">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-gray-900">Assets</h1>
-          <p className="text-sm text-gray-500">Fixed-asset register — tags, custody, condition, value and depreciation.</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <a href={csvHref()} className={btnSecondary}><Download className="w-4 h-4" /> Export CSV</a>
-          {ready && can('inventory.purchase') && (
-            <Link href="/admin/inventory/purchases/new" className={btnSecondary}><ShoppingCart className="w-4 h-4" /> New purchase</Link>
-          )}
-          {ready && can('inventory.manage') && (
-            <button type="button" className={btnPrimary} onClick={() => setCreateOpen(true)}><Plus className="w-4 h-4" /> Add existing asset</button>
-          )}
-        </div>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Assets"
+        actions={(
+          <>
+            <a href={csvHref()} className={buttonVariants({ variant: 'outline' })}><Download /> Export CSV</a>
+            {ready && can('inventory.purchase') && (
+              <Button variant="outline" href="/admin/inventory/purchases/new"><ShoppingCart /> New purchase</Button>
+            )}
+            {ready && can('inventory.manage') && (
+              <Button onClick={() => setCreateOpen(true)}><Plus /> Add existing asset</Button>
+            )}
+          </>
+        )}
+      />
 
       {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
-        <button type="button" className="text-left" onClick={() => setView('ACTIVE')}>
-          <StatsCard title="Active assets" value={summary ? summary.active.toLocaleString() : '—'} icon={Package} color="blue" className="p-4 hover:shadow-md transition-shadow" />
-        </button>
-        <button type="button" className="text-left" onClick={() => setView('ASSIGNED')}>
-          <StatsCard title="Assigned" value={summary ? count('ASSIGNED') : '—'} icon={UserCheck} color="indigo" className="p-4 hover:shadow-md transition-shadow" />
-        </button>
-        <button type="button" className="text-left" onClick={() => setView('IN_STOCK')}>
-          <StatsCard title="In stock" value={summary ? count('IN_STOCK') : '—'} icon={Laptop} color="green" className="p-4 hover:shadow-md transition-shadow" />
-        </button>
-        <button type="button" className="text-left" onClick={() => setView(count('IN_REPAIR') >= count('DAMAGED') ? 'IN_REPAIR' : 'DAMAGED')}>
-          <StatsCard title="Repair / damaged" value={summary ? count('IN_REPAIR', 'DAMAGED') : '—'} icon={Wrench} color="orange" className="p-4 hover:shadow-md transition-shadow" />
-        </button>
-        <button type="button" className="text-left" onClick={() => setView(count('LOST') >= count('STOLEN') ? 'LOST' : 'STOLEN')}>
-          <StatsCard title="Lost / stolen" value={summary ? count('LOST', 'STOLEN') : '—'} icon={ShieldAlert} color="red" className="p-4 hover:shadow-md transition-shadow" />
-        </button>
-        <StatsCard title="Net book value" value={summary ? tk(summary.bookValue) : '—'} icon={Wallet} color="teal" className="p-4" />
+      <div className="space-y-2">
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6">
+          <button type="button" className={statBtn} onClick={() => setView('ACTIVE')}>
+            <StatsCard title="Active assets" value={summary ? summary.active.toLocaleString() : '—'} icon={Package} className={statCard} />
+          </button>
+          <button type="button" className={statBtn} onClick={() => setView('ASSIGNED')}>
+            <StatsCard title="Assigned" value={summary ? count('ASSIGNED') : '—'} icon={UserCheck} className={statCard} />
+          </button>
+          <button type="button" className={statBtn} onClick={() => setView('IN_STOCK')}>
+            <StatsCard title="In stock" value={summary ? count('IN_STOCK') : '—'} icon={Laptop} className={statCard} />
+          </button>
+          <button type="button" className={statBtn} onClick={() => setView(count('IN_REPAIR') >= count('DAMAGED') ? 'IN_REPAIR' : 'DAMAGED')}>
+            <StatsCard title="Repair / damaged" value={summary ? repairCount : '—'} icon={Wrench} color={repairCount ? 'orange' : 'gray'} className={statCard} />
+          </button>
+          <button type="button" className={statBtn} onClick={() => setView(count('LOST') >= count('STOLEN') ? 'LOST' : 'STOLEN')}>
+            <StatsCard title="Lost / stolen" value={summary ? lostCount : '—'} icon={ShieldAlert} color={lostCount ? 'red' : 'gray'} className={statCard} />
+          </button>
+          <StatsCard title="Net book value" value={summary ? tk(summary.bookValue) : '—'} icon={Wallet} className="h-full p-4" />
+        </div>
+        {summary?.pendingAck > 0 && (
+          <button type="button" onClick={() => setAck('PENDING')} className="text-left text-[13px] font-medium text-amber-700 underline-offset-4 hover:underline">
+            {summary.pendingAck} hand-over{summary.pendingAck === 1 ? '' : 's'} awaiting acknowledgement
+          </button>
+        )}
       </div>
-      {summary?.pendingAck > 0 && (
-        <button type="button" onClick={() => setAck('PENDING')} className="text-xs text-amber-700 hover:underline text-left">
-          {summary.pendingAck} hand-over{summary.pendingAck === 1 ? ' is' : 's are'} waiting for the employee&apos;s acknowledgement.
-        </button>
-      )}
 
       {justCreated && (
-        <div className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-xl border border-green-100 bg-green-50 px-4 py-3 text-sm text-green-800">
-          <CheckCircle2 className="w-4 h-4 shrink-0" />
-          <span className="flex-1">Added {justCreated.length} assets: {justCreated[0].assetTag} – {justCreated[justCreated.length - 1].assetTag}. Stick a label on each before handing them out.</span>
-          <div className="flex gap-2">
-            <button type="button" className={btnSecondary} onClick={() => setLabelIds(justCreated.map(a => a.id))}><Printer className="w-4 h-4" /> Print labels</button>
-            <button type="button" className="p-2 text-green-700 hover:text-green-900" onClick={() => setJustCreated(null)} aria-label="Dismiss"><X className="w-4 h-4" /></button>
+        <div className="flex flex-col gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-800 sm:flex-row sm:items-center sm:gap-3">
+          <div className="flex flex-1 items-center gap-2">
+            <CheckCircle2 className="size-4 shrink-0" />
+            <span>Added {justCreated.length} assets: {justCreated[0].assetTag} – {justCreated[justCreated.length - 1].assetTag}. Label each before hand-out.</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <Button variant="outline" size="sm" onClick={() => setLabelIds(justCreated.map(a => a.id))}><Printer /> Print labels</Button>
+            <Button variant="ghost" size="icon-sm" className="text-emerald-700 hover:bg-emerald-100 hover:text-emerald-900" onClick={() => setJustCreated(null)} aria-label="Dismiss"><X /></Button>
           </div>
         </div>
       )}
 
       {/* Filters */}
-      <div className={cn(cardCls, 'p-4 flex flex-wrap items-center gap-3')}>
-        <SearchInput value={search} onChange={setSearch} placeholder="Tag, name, serial, brand, holder…" className="w-full sm:w-72" />
-        <FilterSelect value={view} onChange={v => setView(v || 'ACTIVE')} options={viewOptions} placeholder="Active (not disposed)" className="w-full sm:w-52" />
-        <FilterSelect value={categoryId} onChange={v => setCategoryId(v || '')} options={categories.map(c => ({ value: c.id, label: c.name }))} placeholder="All categories" className="w-full sm:w-48" />
+      <div className="flex flex-wrap items-center gap-2">
+        <SearchInput value={search} onChange={setSearch} placeholder="Search assets…" className="w-full sm:w-64" />
+        <FilterSelect value={view} onChange={v => setView(v || 'ACTIVE')} options={viewOptions} placeholder="Active" className="w-full sm:w-44" />
+        <FilterSelect value={categoryId} onChange={v => setCategoryId(v || '')} options={categories.map(c => ({ value: c.id, label: c.name }))} placeholder="All categories" className="w-full sm:w-44" />
         <FilterSelect value={locationId} onChange={v => setLocationId(v || '')} options={locations.map(l => ({ value: l.id, label: l.name }))} placeholder="All locations" className="w-full sm:w-40" />
         <FilterSelect value={condition} onChange={v => setCondition(v || '')} options={CONDITION_OPTIONS} placeholder="Any condition" className="w-full sm:w-36" />
         <FilterSelect value={warranty} onChange={v => setWarranty(v || '')} options={WARRANTY_OPTIONS} placeholder="Any warranty" className="w-full sm:w-48" />
-        <FilterSelect value={capitalized} onChange={v => setCapitalized(v || '')} options={CAP_OPTIONS} placeholder="Capitalized or not" className="w-full sm:w-44" />
+        <FilterSelect value={capitalized} onChange={v => setCapitalized(v || '')} options={CAP_OPTIONS} placeholder="Capitalization" className="w-full sm:w-40" />
         <FilterSelect value={sort} onChange={v => setSort(v || '-createdAt')} options={SORT_OPTIONS} placeholder="Newest first" className="w-full sm:w-44" />
-        {filtersActive && <button type="button" onClick={resetFilters} className="text-sm text-gray-500 hover:text-gray-900">Reset</button>}
-        {employeeId && <span className="text-xs bg-blue-50 text-blue-700 rounded-md px-2 py-1">Filtered to one employee</span>}
+        {employeeId && <Badge>Filtered to one employee</Badge>}
         {ack && (
-          <span className="inline-flex items-center gap-1 text-xs bg-amber-50 text-amber-700 rounded-md px-2 py-1">
+          <Badge variant="warning" className="pr-1">
             {ack.split(',').map(a => ACK_FILTER_LABELS[a] ?? a).join(' / ')}
-            <button type="button" onClick={() => setAck('')} aria-label="Clear acknowledgement filter" className="hover:text-amber-900"><X className="w-3 h-3" /></button>
-          </span>
+            <button type="button" onClick={() => setAck('')} aria-label="Clear acknowledgement filter" className="rounded-full p-0.5 hover:bg-amber-100 hover:text-amber-900"><X className="size-3" /></button>
+          </Badge>
         )}
+        {filtersActive && <Button variant="ghost" size="sm" onClick={resetFilters}>Reset</Button>}
       </div>
 
       {/* Bulk bar */}
       {selected.size > 0 && (
-        <div className="sticky top-2 z-20 flex flex-wrap items-center gap-2 rounded-xl bg-gray-900 text-white px-4 py-2.5 shadow-lg">
-          <span className="text-sm font-medium">{selected.size} selected</span>
+        <div className="sticky top-2 z-20 flex flex-wrap items-center gap-2 rounded-xl border border-gray-200/80 bg-white px-3 py-2 shadow-lg">
+          <span className="px-1 text-sm font-medium text-gray-900">{selected.size} selected</span>
           <span className="flex-1" />
-          <button type="button" className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 hover:bg-white/20 px-3 py-1.5 text-sm" onClick={() => setLabelIds([...selected.keys()])}>
-            <Printer className="w-4 h-4" /> Print labels
-          </button>
-          <a href={csvHref([...selected.keys()])} className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 hover:bg-white/20 px-3 py-1.5 text-sm">
-            <Download className="w-4 h-4" /> Export CSV
+          <Button variant="outline" size="sm" onClick={() => setLabelIds([...selected.keys()])}>
+            <Printer /> Print labels
+          </Button>
+          <a href={csvHref([...selected.keys()])} className={buttonVariants({ variant: 'outline', size: 'sm' })}>
+            <Download /> Export CSV
           </a>
-          <button type="button" className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-sm text-white/70 hover:text-white" onClick={() => setSelected(new Map())}>
-            <X className="w-4 h-4" /> Clear
-          </button>
+          <Button variant="ghost" size="sm" onClick={() => setSelected(new Map())}>
+            <X /> Clear
+          </Button>
         </div>
       )}
 
       {/* Table */}
       {error && !rows.length ? (
-        <div className={cardCls}>
-          <EmptyState icon={ShieldAlert} title="Could not load assets" description={error}
-            action={<button type="button" className={btnPrimary} onClick={load}><RefreshCw className="w-4 h-4" /> Retry</button>} />
-        </div>
+        <Card>
+          <EmptyState icon={ShieldAlert} title="Couldn't load assets" description={error}
+            action={<Button onClick={load}><RefreshCw /> Retry</Button>} />
+        </Card>
       ) : noAssetsAtAll ? (
-        <div className={cardCls}>
+        <Card>
           <EmptyState icon={Laptop} title="No assets yet"
-            description="Record a purchase bill to receive new equipment, or add the equipment you already own (with its opening value) to start the register."
+            description="Record a purchase or add equipment you own."
             action={(
-              <div className="flex flex-wrap gap-2 justify-center">
-                {can('inventory.purchase') && <Link href="/admin/inventory/purchases/new" className={btnSecondary}><ShoppingCart className="w-4 h-4" /> New purchase</Link>}
-                {can('inventory.manage') && <button type="button" className={btnPrimary} onClick={() => setCreateOpen(true)}><Plus className="w-4 h-4" /> Add existing asset</button>}
+              <div className="flex flex-wrap justify-center gap-2">
+                {can('inventory.purchase') && <Button variant="outline" href="/admin/inventory/purchases/new"><ShoppingCart /> New purchase</Button>}
+                {can('inventory.manage') && <Button variant="outline" onClick={() => setCreateOpen(true)}><Plus /> Add existing asset</Button>}
               </div>
             )} />
-        </div>
+        </Card>
       ) : (
-        <div className={cn(cardCls, 'overflow-hidden')}>
+        <Card className="overflow-hidden">
           <DataTable
             columns={columns}
             data={rows}
             loading={loading && !rows.length}
-            emptyTitle="No assets match"
+            emptyTitle="No results"
             emptyDescription="Try another search or clear the filters."
             emptyIcon={Laptop}
             onRowClick={(row) => router.push(`/admin/inventory/assets/${row.id}`)}
           />
           {meta && meta.pages > 1 && (
-            <div className="px-4 py-3 border-t border-gray-100">
+            <div className="border-t border-gray-100 px-4 py-3">
               <Pagination meta={meta} onPageChange={setPage} />
             </div>
           )}
-        </div>
+        </Card>
       )}
 
       {/* Modals */}
@@ -429,7 +439,7 @@ function AssetsPage() {
 
 export default function AssetsPageWrapper() {
   return (
-    <Suspense fallback={<div className="flex items-center justify-center min-h-[60vh]"><div className="w-7 h-7 border-2 border-gray-300 border-t-gray-700 rounded-full animate-spin" /></div>}>
+    <Suspense fallback={<PageLoader />}>
       <AssetsPage />
     </Suspense>
   )

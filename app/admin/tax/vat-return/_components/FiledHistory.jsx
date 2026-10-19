@@ -2,26 +2,32 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
-import { History, Pencil, Paperclip, Loader2, RefreshCw } from 'lucide-react'
+import { FileSpreadsheet, Pencil, Paperclip, RefreshCw, AlertTriangle } from 'lucide-react'
 import Modal, { ModalFooter } from '@/components/ui/Modal'
 import Pagination from '@/components/ui/Pagination'
 import FileUpload from '@/components/ui/FileUpload'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
+import EmptyState from '@/components/ui/EmptyState'
+import Badge from '@/components/ui/Badge'
+import Button from '@/components/ui/Button'
+import { Card, CardHeader, CardTitle, CardAction } from '@/components/ui/Card'
+import { Input, Textarea, Field } from '@/components/ui/Input'
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table'
 import { cn } from '@/lib/utils'
-import { fmtAmount, fmtDay, readJson, RETURN_TYPE_LABELS, inputCls, labelCls, btnPrimary, btnGhost } from '../_lib/format'
+import { fmtAmount, fmtDay, readJson, RETURN_TYPE_LABELS } from '../_lib/format'
 
-const STATUS_STYLES = {
-  FILED:   'bg-emerald-50 text-emerald-700',
-  AMENDED: 'bg-indigo-50 text-indigo-700',
-  DRAFT:   'bg-amber-50 text-amber-700',
+const STATUS_VARIANTS = {
+  FILED:   'success',
+  AMENDED: 'indigo',
+  DRAFT:   'warning',
 }
 
 export function FilingStatusBadge({ status }) {
   if (!status) return null
   return (
-    <span className={cn('inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold', STATUS_STYLES[status] ?? 'bg-gray-100 text-gray-600')}>
+    <Badge variant={STATUS_VARIANTS[status] ?? 'default'}>
       {status === 'FILED' ? 'Filed' : status === 'AMENDED' ? 'Amended' : status === 'DRAFT' ? 'Draft' : status}
-    </span>
+    </Badge>
   )
 }
 
@@ -65,25 +71,26 @@ export function FilingEditModal({ filing, onClose, onSaved }) {
       open={!!filing}
       onOpenChange={(v) => { if (!v && !saving) onClose() }}
       title="Filing details"
-      description={filing ? `${filing.periodKey} · the figures stay as filed` : undefined}
+      description={filing ? `${filing.periodKey} · figures stay as filed` : undefined}
     >
       <div className="space-y-4">
-        <div>
-          <label className={labelCls}>eVAT acknowledgement / submission no.</label>
-          <input className={inputCls} value={ackNo} maxLength={80} onChange={e => setAckNo(e.target.value)} />
-        </div>
+        <Field label="eVAT acknowledgement / submission no.">
+          <Input value={ackNo} maxLength={80} onChange={e => setAckNo(e.target.value)} />
+        </Field>
         <FileUpload value={attachmentUrl} onUploaded={setAttachmentUrl} label="Return copy / acknowledgement (PDF or image)" bucket="tax" />
-        <div>
-          <label className={labelCls}>Notes</label>
-          <textarea rows={3} className={`${inputCls} resize-none`} value={notes} maxLength={2000} onChange={e => setNotes(e.target.value)} />
-        </div>
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        <Field label="Notes">
+          <Textarea rows={3} className="resize-none" value={notes} maxLength={2000} onChange={e => setNotes(e.target.value)} />
+        </Field>
+        {error && (
+          <div className="flex gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-800">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-red-600" />
+            <p>{error}</p>
+          </div>
+        )}
       </div>
-      <ModalFooter className="-mx-4 sm:-mx-6 -mb-4 mt-5">
-        <button type="button" onClick={onClose} disabled={saving} className={btnGhost}>Cancel</button>
-        <button type="button" onClick={save} disabled={saving} className={btnPrimary}>
-          {saving && <Loader2 className="w-4 h-4 animate-spin" />} Save
-        </button>
+      <ModalFooter>
+        <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
+        <Button onClick={save} loading={saving}>Save</Button>
       </ModalFooter>
     </Modal>
   )
@@ -119,85 +126,87 @@ export default function FiledHistory({ refreshKey, currentKey, canFile, onSelect
   useEffect(() => { load() }, [load, refreshKey])
 
   return (
-    <section className="bg-white border border-gray-100 rounded-xl overflow-hidden">
-      <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <History className="w-4 h-4 text-gray-400" />
-          <h2 className="text-sm font-semibold text-gray-900">Returns recorded</h2>
-        </div>
-        <button type="button" onClick={load} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-50" aria-label="Refresh">
-          <RefreshCw className="w-4 h-4" />
-        </button>
-      </div>
+    <Card as="section" className="overflow-hidden">
+      <CardHeader className="items-center pb-4">
+        <CardTitle as="h2">Returns recorded</CardTitle>
+        <CardAction>
+          <Button variant="ghost" size="icon-sm" onClick={load} className="text-gray-500" aria-label="Refresh" title="Refresh">
+            <RefreshCw className={cn('size-4', loading && 'animate-spin')} />
+          </Button>
+        </CardAction>
+      </CardHeader>
       {loading && !rows.length ? (
-        <LoadingSpinner className="py-10" />
+        <LoadingSpinner className="border-t border-gray-100 py-10" />
       ) : error ? (
-        <div className="px-4 py-8 text-center text-sm text-red-600">
-          {error} <button type="button" onClick={load} className="ml-2 underline">Retry</button>
+        <div className="border-t border-gray-100 px-5 py-8 text-center text-sm text-red-600">
+          {error} <button type="button" onClick={load} className="ml-2 font-medium text-gray-900 underline underline-offset-4">Retry</button>
         </div>
       ) : rows.length === 0 ? (
-        <p className="px-4 py-8 text-center text-sm text-gray-500">
-          No VAT returns recorded yet. After submitting a return on the eVAT portal, use <span className="font-medium">File return</span> to record it here.
-        </p>
+        <EmptyState
+          icon={FileSpreadsheet}
+          title="No returns recorded yet"
+          description="Use File return after submitting on eVAT."
+          className="border-t border-gray-100"
+        />
       ) : (
         <>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[720px]">
-              <thead>
-                <tr className="text-xs text-gray-500 border-b border-gray-100">
-                  <th className="text-left font-medium px-4 py-2">Period</th>
-                  <th className="text-left font-medium px-3 py-2">Status</th>
-                  <th className="text-left font-medium px-3 py-2">Type</th>
-                  <th className="text-left font-medium px-3 py-2">Filed on</th>
-                  <th className="text-left font-medium px-3 py-2">Acknowledgement</th>
-                  <th className="text-right font-medium px-3 py-2">Net payable (50)</th>
-                  <th className="text-right font-medium px-3 py-2">Closing (65)</th>
-                  <th className="w-20" />
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map(f => (
-                  <tr
-                    key={f.id}
-                    className={cn('border-b border-gray-50 hover:bg-gray-50/60 cursor-pointer', f.periodKey === currentKey && 'bg-blue-50/40')}
-                    onClick={() => onSelect?.(f.periodStart, f.periodEnd)}
-                  >
-                    <td className="px-4 py-2 font-medium text-gray-900 whitespace-nowrap">{f.periodKey}</td>
-                    <td className="px-3 py-2"><FilingStatusBadge status={f.status} /></td>
-                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
-                      {f.status === 'DRAFT' ? '—' : (RETURN_TYPE_LABELS[f.returnType] ?? f.returnType)}
-                      {f.historyCount > 0 && <span className="ml-1 text-[11px] text-gray-400">({f.historyCount} earlier)</span>}
-                    </td>
-                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{f.filedAt ? fmtDay(f.filedAt) : '—'}</td>
-                    <td className="px-3 py-2 text-gray-600">
-                      <span className="font-mono text-xs">{f.acknowledgementNo || '—'}</span>
-                      {f.attachmentUrl && (
-                        <a href={f.attachmentUrl} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="ml-2 inline-flex text-gray-400 hover:text-gray-700" aria-label="Open attachment">
-                          <Paperclip className="w-3.5 h-3.5" />
-                        </a>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">{fmtAmount(f.netPayable)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{fmtAmount(Math.max(0, (Number(f.closingBalance) || 0) - (Number(f.refundRequested) || 0)))}</td>
-                    <td className="px-3 py-2 text-right">
-                      {canFile && f.status !== 'DRAFT' && (
-                        <button
-                          type="button"
-                          onClick={e => { e.stopPropagation(); setEditing(f) }}
-                          className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100"
-                          aria-label="Edit acknowledgement"
-                        >
-                          <Pencil className="w-4 h-4" />
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <Table className="min-w-[720px]" wrapperClassName="border-t border-gray-100">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Period</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Filed on</TableHead>
+                <TableHead>Acknowledgement</TableHead>
+                <TableHead className="text-right">Net payable (50)</TableHead>
+                <TableHead className="text-right">Closing (65)</TableHead>
+                <TableHead className="w-16" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map(f => (
+                <TableRow
+                  key={f.id}
+                  className={cn('cursor-pointer', f.periodKey === currentKey && 'bg-gray-50')}
+                  onClick={() => onSelect?.(f.periodStart, f.periodEnd)}
+                >
+                  <TableCell className="whitespace-nowrap font-medium text-gray-900">{f.periodKey}</TableCell>
+                  <TableCell><FilingStatusBadge status={f.status} /></TableCell>
+                  <TableCell className="whitespace-nowrap text-gray-600">
+                    {f.status === 'DRAFT' ? '—' : (RETURN_TYPE_LABELS[f.returnType] ?? f.returnType)}
+                    {f.historyCount > 0 && <span className="ml-1 text-xs text-muted-foreground">({f.historyCount} earlier)</span>}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-gray-600">{f.filedAt ? fmtDay(f.filedAt) : '—'}</TableCell>
+                  <TableCell className="text-gray-600">
+                    <span className="font-mono text-xs">{f.acknowledgementNo || '—'}</span>
+                    {f.attachmentUrl && (
+                      <a href={f.attachmentUrl} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="ml-2 inline-flex align-middle text-gray-400 hover:text-gray-900" aria-label="Open attachment">
+                        <Paperclip className="size-3.5" />
+                      </a>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums text-gray-900">{fmtAmount(f.netPayable)}</TableCell>
+                  <TableCell className="text-right tabular-nums text-gray-900">{fmtAmount(Math.max(0, (Number(f.closingBalance) || 0) - (Number(f.refundRequested) || 0)))}</TableCell>
+                  <TableCell className="py-2 text-right">
+                    {canFile && f.status !== 'DRAFT' && (
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={e => { e.stopPropagation(); setEditing(f) }}
+                        className="text-gray-500"
+                        aria-label="Edit acknowledgement"
+                        title="Edit acknowledgement"
+                      >
+                        <Pencil />
+                      </Button>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
           {meta?.pages > 1 && (
-            <div className="px-4 py-3 border-t border-gray-100">
+            <div className="border-t border-gray-100 px-4 py-3">
               <Pagination meta={meta} onPageChange={setPage} />
             </div>
           )}
@@ -208,6 +217,6 @@ export default function FiledHistory({ refreshKey, currentKey, canFile, onSelect
         onClose={() => setEditing(null)}
         onSaved={() => { setEditing(null); load(); onChanged?.() }}
       />
-    </section>
+    </Card>
   )
 }

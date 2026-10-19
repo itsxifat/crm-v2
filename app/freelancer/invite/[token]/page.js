@@ -2,9 +2,35 @@
 
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import Link from 'next/link'
+import Image from 'next/image'
+import { Loader2, XCircle, CheckCircle2 } from 'lucide-react'
 import toast, { Toaster } from 'react-hot-toast'
 import { validateStrongPassword } from '@/lib/passwordPolicy'
+import Button from '@/components/ui/Button'
+import Badge from '@/components/ui/Badge'
+import { Card } from '@/components/ui/Card'
+import { Input, Field } from '@/components/ui/Input'
+
+function AuthFrame({ children }) {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4 sm:p-6">
+      <div className="w-full max-w-sm">
+        <div className="mb-6 flex justify-center">
+          <Image src="/en-logo.png" alt="Enfinito" width={120} height={28} className="h-7 w-auto object-contain" priority />
+        </div>
+        <Card className="p-6">{children}</Card>
+      </div>
+    </div>
+  )
+}
+
+function StateIcon({ icon: Icon, className }) {
+  return (
+    <div className="mx-auto mb-4 flex size-10 items-center justify-center rounded-lg border border-gray-200/80 bg-white shadow-xs">
+      <Icon className={`size-5 ${className}`} />
+    </div>
+  )
+}
 
 export default function FreelancerInvitePage() {
   const { token }   = useParams()
@@ -63,142 +89,95 @@ export default function FreelancerInvitePage() {
 
   if (status === 'loading') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
-        <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+      <div className="flex min-h-screen items-center justify-center bg-gray-50">
+        <Loader2 className="size-5 animate-spin text-gray-400" />
       </div>
     )
   }
 
   if (status === 'invalid') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center px-4">
+      <AuthFrame>
         <Toaster position="top-center" />
-        <div className="bg-white rounded-2xl shadow-xl overflow-hidden w-full max-w-md">
-          <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-8 py-8 text-center">
-            <p className="text-white font-bold text-xl">Enfinito</p>
-            <p className="text-blue-200 text-sm mt-1">Panel Invitation</p>
-          </div>
-          <div className="px-8 py-10 text-center">
-            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <svg className="w-8 h-8 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </div>
-            <h2 className="text-xl font-bold text-gray-900 mb-2">Link Invalid or Expired</h2>
-            <p className="text-gray-500 text-sm leading-relaxed">
-              This invitation link is either invalid or has expired. Invitation links are valid for 48 hours.
-              Please contact your administrator to resend the invitation.
-            </p>
-          </div>
+        <div className="text-center">
+          <StateIcon icon={XCircle} className="text-red-500" />
+          <h1 className="text-xl font-semibold tracking-tight text-gray-900">Link invalid or expired</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Invitation links are valid for 48 hours. Ask your administrator to resend it.
+          </p>
         </div>
-      </div>
+      </AuthFrame>
     )
   }
 
   if (status === 'success') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center px-4">
-        <div className="bg-white rounded-2xl shadow-xl overflow-hidden w-full max-w-md">
-          <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-8 py-8 text-center">
-            <p className="text-white font-bold text-xl">Enfinito</p>
-            <p className="text-blue-200 text-sm mt-1">Account Activated</p>
-          </div>
-          <div className="px-8 py-10 text-center">
-            <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <svg className="w-8 h-8 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-            </div>
-            <h2 className="text-xl font-bold text-gray-900 mb-2">Account Activated!</h2>
-            <p className="text-gray-500 text-sm leading-relaxed mb-6">
-              Your account has been activated. You can now log in and access the Enfinito Panel.
-            </p>
-            <Link
-              href="/login"
-              className="inline-block px-6 py-3 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 transition-colors text-sm"
-            >
-              Go to Login →
-            </Link>
-          </div>
+      <AuthFrame>
+        <div className="text-center">
+          <StateIcon icon={CheckCircle2} className="text-emerald-600" />
+          <h1 className="text-xl font-semibold tracking-tight text-gray-900">Account activated</h1>
+          <p className="mt-2 text-sm text-muted-foreground">You can now sign in to the Enfinito Panel.</p>
+          <Button href="/login" className="mt-6 w-full">Go to sign in</Button>
         </div>
-      </div>
+      </AuthFrame>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center px-4">
+    <AuthFrame>
       <Toaster position="top-center" />
-      <div className="bg-white rounded-2xl shadow-xl overflow-hidden w-full max-w-md">
-        {/* Header */}
-        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-8 py-8 text-center">
-          <p className="text-white font-bold text-xl">Enfinito</p>
-          <p className="text-blue-200 text-sm mt-1">
-            {info?.type === 'AGENCY' ? 'Agency Partner' : 'Freelancer'} Panel
-          </p>
-        </div>
 
-        {/* Form */}
-        <div className="px-8 py-8">
-          <h1 className="text-2xl font-bold text-gray-900 mb-1">Welcome to Enfinito Panel</h1>
-          <p className="text-gray-500 text-sm mb-6">
-            Hi <strong>{info?.name}</strong>, set your password to activate your account.
-          </p>
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Email (readonly) */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-              <input
-                type="email"
-                value={info?.email ?? ''}
-                readOnly
-                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm bg-gray-50 text-gray-500 cursor-not-allowed focus:outline-none"
-              />
-            </div>
-
-            {/* Password */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Password <span className="text-red-500">*</span></label>
-              <input
-                type="password"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                placeholder="Min 8 chars: upper, lower, number, symbol"
-                required
-                minLength={8}
-                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
-              />
-            </div>
-
-            {/* Confirm Password */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Confirm Password <span className="text-red-500">*</span></label>
-              <input
-                type="password"
-                value={confirm}
-                onChange={e => setConfirm(e.target.value)}
-                placeholder="Re-enter your password"
-                required
-                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={submitting}
-              className="w-full py-3 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 disabled:opacity-60 transition-colors text-sm flex items-center justify-center gap-2 mt-2"
-            >
-              {submitting && (
-                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                </svg>
-              )}
-              {submitting ? 'Activating…' : 'Activate Account'}
-            </button>
-          </form>
-        </div>
+      <div className="mb-6 text-center">
+        <Badge variant="outline" className="mb-3">
+          {info?.type === 'AGENCY' ? 'Agency partner' : 'Freelancer'} panel
+        </Badge>
+        <h1 className="text-xl font-semibold tracking-tight text-gray-900">Activate your account</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Hi <span className="font-medium text-gray-900">{info?.name}</span>, set your password
+        </p>
       </div>
-    </div>
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Email (readonly) */}
+        <Field label="Email" htmlFor="invite-email">
+          <Input
+            id="invite-email"
+            type="email"
+            value={info?.email ?? ''}
+            readOnly
+            className="cursor-not-allowed bg-gray-50 text-gray-500"
+          />
+        </Field>
+
+        <Field label="Password" htmlFor="invite-password" required hint="8+ characters: upper, lower, number, symbol">
+          <Input
+            id="invite-password"
+            type="password"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            placeholder="••••••••"
+            autoComplete="new-password"
+            required
+            minLength={8}
+          />
+        </Field>
+
+        <Field label="Confirm password" htmlFor="invite-confirm" required>
+          <Input
+            id="invite-confirm"
+            type="password"
+            value={confirm}
+            onChange={e => setConfirm(e.target.value)}
+            placeholder="••••••••"
+            autoComplete="new-password"
+            required
+          />
+        </Field>
+
+        <Button type="submit" loading={submitting} className="w-full">
+          {submitting ? 'Activating…' : 'Activate account'}
+        </Button>
+      </form>
+    </AuthFrame>
   )
 }

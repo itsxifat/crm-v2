@@ -3,11 +3,16 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   ChevronLeft, ChevronRight, Users, Clock, CheckCircle2, FileWarning,
-  Plus, Trash2, X, Loader2, Printer, Ban, ExternalLink, Banknote, AlertTriangle,
+  Plus, Trash2, X, Printer, Ban, ExternalLink, Banknote, AlertTriangle,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import Link from 'next/link'
 import Avatar from '@/components/ui/Avatar'
+import Badge from '@/components/ui/Badge'
+import Button from '@/components/ui/Button'
+import { Card } from '@/components/ui/Card'
+import PageHeader from '@/components/ui/PageHeader'
+import { Input, Label, Textarea, inputClass } from '@/components/ui/Input'
 import TkAmt from '@/components/ui/TkAmt'
 import DataTable from '@/components/ui/DataTable'
 import Pagination from '@/components/ui/Pagination'
@@ -21,7 +26,7 @@ import { Can, usePermission } from '@/components/auth/Can'
 import { useConfig } from '@/lib/useConfig'
 import { currencyOptions, BASE_CURRENCY } from '@/lib/currencies'
 import { amountToWords } from '@/lib/numberToWords'
-import { formatCurrency } from '@/lib/utils'
+import { cn, formatCurrency } from '@/lib/utils'
 import { dhakaDayKey } from '@/lib/dhakaTime'
 
 // ─── Period helpers ────────────────────────────────────────────────────────────
@@ -45,21 +50,16 @@ function shiftPeriod(period, delta) {
 // ─── Status badge ──────────────────────────────────────────────────────────────
 
 const STATUS_META = {
-  NOT_GENERATED: { label: 'Not Generated', bg: 'bg-gray-100',  text: 'text-gray-500',  dot: 'bg-gray-400'  },
-  PENDING:       { label: 'Pending',       bg: 'bg-amber-50',  text: 'text-amber-700', dot: 'bg-amber-400' },
-  PAID:          { label: 'Paid',          bg: 'bg-blue-50',   text: 'text-blue-700',  dot: 'bg-blue-500'  },
-  AUTHORIZED:    { label: 'Authorized',    bg: 'bg-green-50',  text: 'text-green-700', dot: 'bg-green-500' },
-  REJECTED:      { label: 'Rejected',      bg: 'bg-red-50',    text: 'text-red-700',   dot: 'bg-red-500'   },
+  NOT_GENERATED: { label: 'Not generated', variant: 'default' },
+  PENDING:       { label: 'Pending',       variant: 'warning' },
+  PAID:          { label: 'Paid',          variant: 'primary' },
+  AUTHORIZED:    { label: 'Authorized',    variant: 'success' },
+  REJECTED:      { label: 'Rejected',      variant: 'danger'  },
 }
 
 function StatusBadge({ status }) {
   const m = STATUS_META[status] ?? STATUS_META.NOT_GENERATED
-  return (
-    <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium ${m.bg} ${m.text}`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${m.dot}`} />
-      {m.label}
-    </span>
-  )
+  return <Badge variant={m.variant} dot>{m.label}</Badge>
 }
 
 // ─── Generate Salary Modal ────────────────────────────────────────────────────
@@ -144,60 +144,58 @@ function GenerateSalaryModal({ open, onClose, employee, period, onGenerated }) {
     }
   }
 
-  const ic = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900'
-  // Same styling as `ic` but without a baked-in width, for inputs that sit side
-  // by side in a flex row (ic's `w-full` would fight any w-* appended after it).
-  const icRow = 'border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900'
+  // Row inputs sit side by side in a flex row; cn() lets the width override inputClass's w-full.
+  const icRow = (extra) => cn(inputClass, extra)
 
   return (
-    <Modal open={open} onOpenChange={(v) => !v && onClose()} title="Generate Salary Slip" size="lg"
+    <Modal open={open} onOpenChange={(v) => !v && onClose()} title="Generate salary slip" size="lg"
       description={`${employee.name} · ${periodLabel(period)}`}>
       <div className="space-y-5">
         {/* Employee summary */}
-        <div className="rounded-xl bg-gray-50 border border-gray-100 px-4 py-4 flex items-center justify-between gap-4 flex-wrap">
-          <div className="flex items-center gap-3 min-w-0">
+        <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg bg-gray-50 px-4 py-3">
+          <div className="flex min-w-0 items-center gap-3">
             <Avatar name={employee.name} src={employee.avatar} size="md" />
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-gray-900 truncate">{employee.name}</p>
-              <p className="text-xs text-gray-500 truncate">
+              <p className="truncate text-sm font-semibold text-gray-900">{employee.name}</p>
+              <p className="truncate text-xs text-muted-foreground">
                 {employee.employeeId ?? '—'} · {employee.designation ?? employee.position ?? '—'}
               </p>
             </div>
           </div>
           <div className="text-right">
-            <p className="text-[11px] text-gray-400 uppercase tracking-wide">Base Salary</p>
-            <p className="text-base font-bold text-gray-900">
-              {baseSalary > 0 ? formatCurrency(baseSalary) : <span className="text-amber-600 font-medium text-sm">Not set</span>}
+            <p className="text-xs text-muted-foreground">Base salary</p>
+            <p className="text-base font-semibold tabular-nums text-gray-900">
+              {baseSalary > 0 ? formatCurrency(baseSalary) : <span className="text-sm font-medium text-amber-700">Not set</span>}
             </p>
           </div>
         </div>
         {baseSalary <= 0 && (
-          <p className="text-xs text-amber-600 -mt-3">
-            This employee has no base salary set on their profile. Add it as a custom earning below, or set it on their profile first.
+          <p className="-mt-3 text-xs text-amber-700">
+            No base salary on their profile — add it as an earning below or set it on the profile first.
           </p>
         )}
 
         {/* Earnings */}
         <div>
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Earnings <span className="text-gray-400 normal-case">(bonus, commission, allowance…)</span></p>
-            <button onClick={() => addItem('EARNING')} className="text-xs font-medium text-green-700 hover:text-green-800 flex items-center gap-1">
-              <Plus className="w-3.5 h-3.5" /> Add earning
-            </button>
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-sm font-medium text-gray-900">Earnings</p>
+            <Button variant="ghost" size="xs" onClick={() => addItem('EARNING')}>
+              <Plus /> Add earning
+            </Button>
           </div>
           <div className="space-y-2">
             {items.filter(i => i.type === 'EARNING').length === 0 && (
-              <p className="text-xs text-gray-400 italic">No extra earnings added.</p>
+              <p className="text-xs text-muted-foreground">No earnings added</p>
             )}
             {items.filter(i => i.type === 'EARNING').map(item => (
               <div key={item.key} className="flex items-center gap-2">
                 <input value={item.label} onChange={e => updateItem(item.key, { label: e.target.value })}
-                  placeholder="e.g. Performance Bonus" className={icRow + ' flex-1 min-w-0'} />
+                  placeholder="e.g. Performance bonus" className={icRow('min-w-0 flex-1')} />
                 <input type="number" value={item.amount} onChange={e => updateItem(item.key, { amount: e.target.value })}
-                  placeholder="Amount" className={icRow + ' w-32 shrink-0'} />
-                <button onClick={() => removeItem(item.key)} className="p-2 text-gray-400 hover:text-red-500 shrink-0">
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                  placeholder="0.00" className={icRow('w-32 shrink-0')} />
+                <Button variant="ghost" size="icon-sm" onClick={() => removeItem(item.key)} aria-label="Remove earning" className="text-gray-400 hover:text-red-600">
+                  <Trash2 />
+                </Button>
               </div>
             ))}
           </div>
@@ -205,120 +203,118 @@ function GenerateSalaryModal({ open, onClose, employee, period, onGenerated }) {
 
         {/* Deductions */}
         <div>
-          <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Deductions <span className="text-gray-400 normal-case">(advance, penalty, income tax…)</span></p>
-            <div className="flex items-center gap-3">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-medium text-gray-900">Deductions</p>
+            <div className="flex items-center gap-1">
               {!items.some(i => i.type === 'DEDUCTION' && i.isTax) && (
-                <button type="button" onClick={addTaxItem} className="text-xs font-medium text-amber-700 hover:text-amber-800 flex items-center gap-1">
-                  <Plus className="w-3.5 h-3.5" /> Income tax
-                </button>
+                <Button variant="ghost" size="xs" onClick={addTaxItem}>
+                  <Plus /> Income tax
+                </Button>
               )}
-              <button type="button" onClick={() => addItem('DEDUCTION')} className="text-xs font-medium text-red-700 hover:text-red-800 flex items-center gap-1">
-                <Plus className="w-3.5 h-3.5" /> Add deduction
-              </button>
+              <Button variant="ghost" size="xs" onClick={() => addItem('DEDUCTION')}>
+                <Plus /> Add deduction
+              </Button>
             </div>
           </div>
           <div className="space-y-2">
             {items.filter(i => i.type === 'DEDUCTION').length === 0 && (
-              <p className="text-xs text-gray-400 italic">No deductions added.</p>
+              <p className="text-xs text-muted-foreground">No deductions added</p>
             )}
             {items.filter(i => i.type === 'DEDUCTION').map(item => (
-              <div key={item.key} className="flex flex-wrap sm:flex-nowrap items-center gap-2">
+              <div key={item.key} className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
                 <input value={item.label} onChange={e => updateItem(item.key, { label: e.target.value })}
-                  placeholder="e.g. Salary Advance" aria-label="Deduction label"
-                  className={icRow + ' w-full sm:w-auto sm:flex-1 min-w-0'} />
+                  placeholder="e.g. Salary advance" aria-label="Deduction label"
+                  className={icRow('w-full min-w-0 sm:w-auto sm:flex-1')} />
                 <input type="number" min="0" step="0.01" value={item.amount} onChange={e => updateItem(item.key, { amount: e.target.value })}
-                  placeholder="Amount" aria-label="Deduction amount" className={icRow + ' w-32 shrink-0'} />
-                <label className={`flex items-center gap-1.5 px-2 py-2 rounded-lg border text-xs font-medium cursor-pointer shrink-0 select-none ${
-                  item.isTax ? 'border-amber-300 bg-amber-50 text-amber-800' : 'border-gray-200 text-gray-500 hover:bg-gray-50'}`}
+                  placeholder="0.00" aria-label="Deduction amount" className={icRow('w-32 shrink-0')} />
+                <label className={cn(
+                  'flex h-9 shrink-0 cursor-pointer select-none items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium transition-colors',
+                  item.isTax ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-input text-gray-600 hover:bg-gray-50',
+                )}
                   title="Income tax deducted at source on salary (ITA 2023 s.86) — recorded as TDS payable to the government">
                   <input type="checkbox" checked={!!item.isTax} onChange={e => updateItem(item.key, { isTax: e.target.checked })}
-                    className="w-3.5 h-3.5 rounded border-gray-300 accent-amber-600" />
+                    className="size-3.5 rounded" />
                   Income tax (TDS)
                 </label>
-                <button type="button" onClick={() => removeItem(item.key)} aria-label="Remove deduction"
-                  className="p-2 text-gray-400 hover:text-red-500 shrink-0 ml-auto sm:ml-0">
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                <Button variant="ghost" size="icon-sm" onClick={() => removeItem(item.key)} aria-label="Remove deduction"
+                  className="ml-auto text-gray-400 hover:text-red-600 sm:ml-0">
+                  <Trash2 />
+                </Button>
               </div>
             ))}
           </div>
           {taxTotal > 0 && (
-            <p className="mt-2 text-[11px] text-gray-500">
-              Income tax is withheld under ITA 2023 s.86. When the salary is paid it is recorded as TDS payable — deposit it by challan from Tax &amp; VAT → Withholding.
+            <p className="mt-2 text-xs text-muted-foreground">
+              Recorded as TDS payable (ITA 2023 s.86) when paid — deposit it from Tax &amp; VAT → Withholding.
             </p>
           )}
           {missingTin && (
-            <p className="mt-1.5 text-[11px] text-amber-700 flex items-start gap-1.5">
-              <AlertTriangle className="w-3.5 h-3.5 mt-px shrink-0" />
-              No e-TIN on file for this employee. Add it to their profile so the salary tax certificate (Tofsil-1) can be issued.
+            <p className="mt-1.5 flex items-start gap-1.5 text-xs text-amber-700">
+              <AlertTriangle className="mt-px size-3.5 shrink-0" />
+              No e-TIN on file — add it to their profile so the Tofsil-1 certificate can be issued.
             </p>
           )}
         </div>
 
         {/* Currency */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Currency</label>
+            <Label>Currency</Label>
             <Select value={currency} onChange={v => setCurrency(v ?? BASE_CURRENCY)} options={currencyOptions} />
           </div>
           {isForeign && baseSalary > 0 && (
             <p className="text-xs text-red-600 sm:col-span-2">
-              The base salary is in BDT, so this slip must be generated in BDT. Foreign currency is only for employees with no base salary.
+              Base salary is in BDT — generate this slip in BDT.
             </p>
           )}
           {isForeign && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Net pay in BDT <span className="text-red-500">*</span>
-              </label>
-              <input type="number" value={amtBDT} onChange={e => setAmtBDT(e.target.value)} placeholder="e.g. 50000" className={ic} />
+              <Label required>Net pay in BDT</Label>
+              <Input type="number" value={amtBDT} onChange={e => setAmtBDT(e.target.value)} placeholder="0.00" />
             </div>
           )}
         </div>
 
         {/* Note */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Note (optional)</label>
-          <textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
-            placeholder="Internal note for this payslip…" className={ic + ' resize-none'} />
+          <Label>Note</Label>
+          <Textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
+            placeholder="Internal note…" className="min-h-0 resize-none" />
         </div>
 
         {/* Totals */}
-        <div className="rounded-xl border border-gray-100 overflow-hidden">
-          <div className="px-4 py-2.5 flex justify-between text-sm border-b border-gray-50">
-            <span className="text-gray-500">Gross Earnings</span>
-            <span className="font-medium text-gray-800">{formatCurrency(gross, currency)}</span>
+        <div className="divide-y divide-gray-100 overflow-hidden rounded-lg border border-gray-200/80">
+          <div className="flex justify-between px-4 py-2.5 text-sm">
+            <span className="text-muted-foreground">Gross earnings</span>
+            <span className="font-medium tabular-nums text-gray-900">{formatCurrency(gross, currency)}</span>
           </div>
-          <div className="px-4 py-2.5 flex justify-between text-sm border-b border-gray-50">
-            <span className="text-gray-500">Total Deductions</span>
-            <span className="font-medium text-red-600">−{formatCurrency(deductionsTotal, currency)}</span>
+          <div className="flex justify-between px-4 py-2.5 text-sm">
+            <span className="text-muted-foreground">Total deductions</span>
+            <span className="font-medium tabular-nums text-red-600">−{formatCurrency(deductionsTotal, currency)}</span>
           </div>
           {taxTotal > 0 && (
-            <div className="px-4 py-2 flex justify-between gap-3 text-xs border-b border-gray-50 bg-amber-50/50">
-              <span className="text-amber-800">of which income tax deducted (TDS, s.86)</span>
-              <span className="font-medium text-amber-800">{formatCurrency(taxTotal, currency)}</span>
+            <div className="flex justify-between gap-3 bg-amber-50/50 px-4 py-2 text-xs">
+              <span className="text-amber-800">of which income tax (TDS, s.86)</span>
+              <span className="font-medium tabular-nums text-amber-800">{formatCurrency(taxTotal, currency)}</span>
             </div>
           )}
-          <div className="px-4 py-3 flex justify-between items-center bg-green-50">
-            <span className="text-sm font-bold text-green-800">Net Pay</span>
-            <span className="text-lg font-extrabold text-green-800">{formatCurrency(net, currency)}</span>
+          <div className="flex items-center justify-between bg-gray-50 px-4 py-3">
+            <span className="text-sm font-semibold text-gray-900">Net pay</span>
+            <span className="text-lg font-semibold tabular-nums text-gray-900">{formatCurrency(net, currency)}</span>
           </div>
           {netWords && (
-            <p className="px-4 py-2 text-[11px] text-gray-500 italic bg-green-50/60 border-t border-green-100">{netWords}</p>
+            <p className="bg-gray-50 px-4 py-2 text-xs italic text-muted-foreground">{netWords}</p>
           )}
         </div>
       </div>
 
       <ModalFooter>
-        <button onClick={onClose} disabled={saving} className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">
+        <Button variant="outline" onClick={onClose} disabled={saving}>
           Cancel
-        </button>
-        <button onClick={submit} disabled={saving || net <= 0 || (isForeign && baseSalary > 0)}
-          className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 disabled:opacity-60 flex items-center gap-1.5">
-          {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-          <Banknote className="w-4 h-4" /> Generate Slip
-        </button>
+        </Button>
+        <Button onClick={submit} loading={saving} disabled={net <= 0 || (isForeign && baseSalary > 0)}>
+          {!saving && <Banknote />} Generate slip
+        </Button>
       </ModalFooter>
     </Modal>
   )
@@ -411,38 +407,40 @@ export default function SalaryPage() {
     {
       key: 'name', label: 'Employee',
       render: (row) => (
-        <Link href={`/admin/employees/${row.id}`} className="flex items-center gap-3 hover:opacity-80">
+        <Link href={`/admin/employees/${row.id}`} className="group/emp flex items-center gap-3">
           <Avatar name={row.name} src={row.avatar} size="sm" />
           <div className="min-w-0">
-            <p className="text-sm font-medium text-gray-900 truncate">{row.name}</p>
-            <p className="text-xs text-gray-400 truncate">{row.employeeId ?? '—'}</p>
+            <p className="truncate text-sm font-medium text-gray-900 underline-offset-4 group-hover/emp:underline">{row.name}</p>
+            <p className="truncate text-xs text-muted-foreground">{row.employeeId ?? '—'}</p>
           </div>
         </Link>
       ),
     },
     {
-      key: 'department', label: 'Department / Role',
+      key: 'department', label: 'Department / role',
       render: (row) => (
         <div>
           <p className="text-sm text-gray-700">{row.department ?? '—'}</p>
-          <p className="text-xs text-gray-400">{row.designation ?? row.position ?? '—'}</p>
+          <p className="text-xs text-muted-foreground">{row.designation ?? row.position ?? '—'}</p>
         </div>
       ),
     },
     {
-      key: 'baseSalary', label: 'Base Salary',
+      key: 'baseSalary', label: 'Base salary',
+      className: 'text-right [&>div]:justify-end', cellClassName: 'text-right tabular-nums',
       render: (row) => typeof row.baseSalary === 'string'
         ? <span className="text-gray-400">{row.baseSalary}</span>
         : row.baseSalary > 0 ? <TkAmt value={row.baseSalary} /> : <span className="text-gray-300">—</span>,
     },
     {
-      key: 'netPay', label: 'Net Pay',
+      key: 'netPay', label: 'Net pay',
+      className: 'text-right [&>div]:justify-end', cellClassName: 'text-right tabular-nums',
       render: (row) => row.slip
         ? (
           <div>
             <span className="font-semibold text-gray-900">{formatCurrency(row.slip.netPay, row.slip.currency)}</span>
             {Number(row.slip.taxDeduction) > 0 && (
-              <p className="text-[11px] text-amber-700" title="Income tax deducted at source (ITA 2023 s.86)">
+              <p className="text-xs text-amber-700" title="Income tax deducted at source (ITA 2023 s.86)">
                 TDS {formatCurrency(row.slip.taxDeduction, row.slip.currency)}
               </p>
             )}
@@ -460,18 +458,18 @@ export default function SalaryPage() {
       render: (row) => (
         <ActionMenu items={[
           row.salaryStatus === 'NOT_GENERATED' && canPay && {
-            label: 'Generate Slip', icon: Banknote, onClick: () => setGenFor(row),
+            label: 'Generate slip', icon: Banknote, onClick: () => setGenFor(row),
           },
           row.slip && {
-            label: 'View / Print Slip', icon: Printer,
+            label: 'View / print slip', icon: Printer,
             onClick: () => window.open(`/api/salary/${row.slip.id}/slip`, '_blank'),
           },
           row.salaryStatus === 'PENDING' && canPay && {
-            label: 'Pay in Accounts →', icon: ExternalLink,
+            label: 'Pay in accounts', icon: ExternalLink,
             href: '/admin/accounts?tab=requests',
           },
           row.salaryStatus === 'PENDING' && canPay && {
-            label: 'Cancel Slip', icon: Ban, danger: true, onClick: () => cancelSlip(row),
+            label: 'Cancel slip', icon: Ban, danger: true, onClick: () => cancelSlip(row),
           },
         ]} />
       ),
@@ -480,54 +478,50 @@ export default function SalaryPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-gray-900">Salary</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Manage and pay employee salaries for the selected period.</p>
-        </div>
-        <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg px-1 py-1">
-          <button onClick={() => setPeriod(p => shiftPeriod(p, -1))} className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500">
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-          <span className="text-sm font-medium text-gray-800 px-2 min-w-[130px] text-center">{periodLabel(period)}</span>
-          <button onClick={() => setPeriod(p => shiftPeriod(p, 1))} disabled={period >= currentPeriodKey()}
-            className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500 disabled:opacity-30 disabled:cursor-not-allowed">
-            <ChevronRight className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title="Salary"
+        actions={
+          <div className="inline-flex h-9 items-center gap-0.5 rounded-lg border border-input bg-white px-0.5 shadow-xs">
+            <Button variant="ghost" size="icon-sm" className="size-7" onClick={() => setPeriod(p => shiftPeriod(p, -1))} aria-label="Previous month">
+              <ChevronLeft />
+            </Button>
+            <span className="min-w-[130px] px-2 text-center text-sm font-medium text-gray-900">{periodLabel(period)}</span>
+            <Button variant="ghost" size="icon-sm" className="size-7" onClick={() => setPeriod(p => shiftPeriod(p, 1))} disabled={period >= currentPeriodKey()} aria-label="Next month">
+              <ChevronRight />
+            </Button>
+          </div>
+        }
+      />
 
       {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatsCard title="Employees" value={summary.totalEmployees ?? 0} icon={Users} color="blue" />
-        <StatsCard title="Not Generated" value={summary.notGenerated ?? 0} icon={FileWarning} color="orange" />
-        <StatsCard title="Awaiting Payment" value={summary.pending ?? 0} icon={Clock} color="yellow" />
-        <StatsCard title="Paid This Period" value={formatCurrency(summary.paidAmountBDT ?? 0)}
+        <StatsCard title="Not generated" value={summary.notGenerated ?? 0} icon={FileWarning} color="orange" />
+        <StatsCard title="Awaiting payment" value={summary.pending ?? 0} icon={Clock} color="yellow" />
+        <StatsCard title="Paid this period" value={formatCurrency(summary.paidAmountBDT ?? 0)}
           changeLabel={`${summary.paidCount ?? 0} employee(s)${Number(summary.taxDeductedBDT) > 0 ? ` · TDS ${formatCurrency(summary.taxDeductedBDT)}` : ''}`}
           icon={CheckCircle2} color="green" />
       </div>
 
       {/* Filters */}
-      <div className="bg-white border border-gray-100 rounded-xl p-4 flex flex-wrap items-center gap-3">
-        <SearchInput value={search} onChange={setSearch} placeholder="Search employee…" className="w-full sm:w-64" />
+      <div className="flex flex-wrap items-center gap-2">
+        <SearchInput value={search} onChange={setSearch} placeholder="Search…" className="w-full sm:w-64" />
         <FilterSelect value={department} onChange={v => setDepartment(v ?? '')}
-          options={departments.map(d => ({ value: d.shortCode, label: d.name }))} placeholder="All Departments" />
+          options={departments.map(d => ({ value: d.shortCode, label: d.name }))} placeholder="All departments" />
         <FilterSelect value={venture} onChange={v => setVenture(v ?? '')}
-          options={ventureOptions} placeholder="All Ventures" />
+          options={ventureOptions} placeholder="All ventures" />
         <FilterSelect value={status} onChange={v => setStatus(v ?? '')}
           options={Object.entries(STATUS_META).map(([value, m]) => ({ value, label: m.label }))}
-          placeholder="All Statuses" />
+          placeholder="All statuses" />
         {(search || department || venture || status) && (
-          <button onClick={() => { setSearch(''); setDepartment(''); setVenture(''); setStatus('') }}
-            className="text-xs font-medium text-gray-500 hover:text-gray-800 flex items-center gap-1">
-            <X className="w-3.5 h-3.5" /> Reset
-          </button>
+          <Button variant="ghost" size="sm" onClick={() => { setSearch(''); setDepartment(''); setVenture(''); setStatus('') }}>
+            <X /> Reset
+          </Button>
         )}
       </div>
 
       {/* Table */}
-      <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+      <Card className="overflow-hidden">
         <DataTable
           columns={columns}
           data={rows}
@@ -536,11 +530,11 @@ export default function SalaryPage() {
           emptyIcon={Banknote}
         />
         {meta.total > 0 && (
-          <div className="px-4 py-3 border-t border-gray-50">
+          <div className="border-t border-gray-100 px-4 py-3">
             <Pagination page={page} pages={meta.pages} total={meta.total} limit={limit} onPageChange={setPage} />
           </div>
         )}
-      </div>
+      </Card>
 
       <Can perm="finance.salary.pay">
         <GenerateSalaryModal

@@ -1,8 +1,10 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { AlertTriangle, ChevronDown, Info, Loader2, Percent, Sparkles } from 'lucide-react'
+import { AlertTriangle, ChevronDown, Info, Loader2, Sparkles } from 'lucide-react'
 import DatePicker from '@/components/ui/DatePicker'
+import Badge from '@/components/ui/Badge'
+import { Input, Label } from '@/components/ui/Input'
 import { cn } from '@/lib/utils'
 import { round2 } from '@/lib/tax/catalog'
 import TaxCodeSelect from './TaxCodeSelect'
@@ -117,8 +119,8 @@ function Reasons({ reasons }) {
         const warn = r.startsWith('+50%') || /not |no |cannot|deactivated|verify/i.test(r)
         const Icon = warn ? AlertTriangle : Info
         return (
-          <li key={i} className={cn('flex items-start gap-1.5 text-[11px] leading-snug', warn ? 'text-amber-700' : 'text-gray-500')}>
-            <Icon className="w-3 h-3 mt-0.5 shrink-0" />
+          <li key={i} className={cn('flex items-start gap-1.5 text-xs leading-snug', warn ? 'text-amber-700' : 'text-muted-foreground')}>
+            <Icon className="mt-px size-3.5 shrink-0" />
             <span>{r}</span>
           </li>
         )
@@ -130,28 +132,28 @@ function Reasons({ reasons }) {
 function SuggestionLine({ state, current, onUse, disabled, label }) {
   if (state.loading) {
     return (
-      <p className="mt-1.5 flex items-center gap-1.5 text-[11px] text-gray-400">
-        <Loader2 className="w-3 h-3 animate-spin" /> Calculating suggested {label}…
+      <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Loader2 className="size-3.5 animate-spin" /> Calculating {label}…
       </p>
     )
   }
-  if (state.error) return <p className="mt-1.5 text-[11px] text-red-600">{state.error}</p>
+  if (state.error) return <p className="mt-2 text-xs text-red-600">{state.error}</p>
   const s = state.data
   if (!s) return null
   const showUse = differs(s.amount, current.amount) || (s.rate !== null && s.rate !== undefined && differs(s.rate, current.rate))
   return (
-    <div className="mt-1.5 rounded-lg bg-gray-50 border border-gray-100 px-2.5 py-1.5">
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-gray-600">
-        <Sparkles className="w-3 h-3 text-gray-400" />
+    <div className="mt-2 rounded-lg bg-gray-50 px-3 py-2">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-600">
+        <Sparkles className="size-3.5 text-gray-400" />
         <span>
-          Suggested{s.rate !== null && s.rate !== undefined ? ` ${s.rate}%` : ''} → <span className="font-medium text-gray-900">৳ {fmt(s.amount)}</span>
+          Suggested{s.rate !== null && s.rate !== undefined ? ` ${s.rate}%` : ''} → <span className="font-medium text-gray-900 tabular-nums">৳ {fmt(s.amount)}</span>
           {s.appliedBasis === 'COMMISSION' ? ' (on commission)' : ''}
         </span>
         {showUse && !disabled && (
           <button
             type="button"
             onClick={onUse}
-            className="ml-auto text-[11px] font-medium text-gray-900 underline underline-offset-2 hover:text-gray-600"
+            className="ml-auto text-xs font-medium text-gray-900 underline-offset-4 hover:underline"
           >
             Use suggested
           </button>
@@ -165,7 +167,7 @@ function SuggestionLine({ state, current, onUse, disabled, label }) {
 function AmountInput({ value, onChange, disabled, placeholder = '0.00', suffix, compact, zeroOnBlur = true }) {
   return (
     <div className="relative">
-      <input
+      <Input
         type="number"
         inputMode="decimal"
         min="0"
@@ -175,14 +177,9 @@ function AmountInput({ value, onChange, disabled, placeholder = '0.00', suffix, 
         disabled={disabled}
         onChange={e => onChange(e.target.value === '' ? null : Number(e.target.value))}
         onBlur={e => { if (zeroOnBlur && e.target.value === '') onChange(0, true) }}
-        className={cn(
-          'w-full border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-900',
-          'disabled:bg-gray-50 disabled:text-gray-500',
-          compact ? 'px-2.5 py-1.5' : 'px-3 py-2',
-          suffix ? 'pr-8' : '',
-        )}
+        className={cn('tabular-nums', compact && 'h-8 px-2.5 text-[13px]', suffix && 'pr-7')}
       />
-      {suffix && <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">{suffix}</span>}
+      {suffix && <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-gray-400">{suffix}</span>}
     </div>
   )
 }
@@ -333,51 +330,52 @@ export default function WithholdingFields({
   const overBase = base > 0 && total > round2(base + (vat ?? 0)) + 0.005
   const vdsOverVat = vat !== null && vdsAmount > vat + 0.005
 
-  const lc = 'block text-xs font-medium text-gray-600 mb-1'
-  const ic = cn(
-    'w-full border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 disabled:bg-gray-50 disabled:text-gray-500',
-    compact ? 'px-2.5 py-1.5' : 'px-3 py-2',
-  )
+  const lc = compact ? 'mb-1.5 text-xs' : undefined
+  const ic = compact ? 'h-8 px-2.5 text-[13px]' : undefined
+  // TaxCodeSelect keeps pr-9 for the chevron, so only trim the left padding.
+  const sc = compact ? 'py-[5px] pl-2.5 text-[13px] leading-5' : undefined
   const pad = compact ? 'p-3' : 'p-4'
   const gap = compact ? 'gap-2' : 'gap-3'
+  const sectionTitle = 'mb-2.5 text-[13px] font-medium text-gray-900'
 
   return (
-    <div className="bg-white border border-gray-100 rounded-xl">
+    <div className="rounded-lg border border-gray-200/80 bg-white">
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        className={cn('w-full flex items-center gap-2 text-left', compact ? 'px-3 py-2.5' : 'px-4 py-3')}
+        className={cn('flex w-full items-center gap-2 rounded-lg text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50', compact ? 'px-3 py-2.5' : 'px-4 py-3')}
         aria-expanded={open}
+        title={isCustomer
+          ? 'Amounts the client deducted from this payment. They settle the invoice like cash; collect the Mushak-6.6 (VDS) and TDS certificate to claim the credit.'
+          : 'Amounts we deduct from this payment. TDS is deposited by challan; VDS is paid through our VAT return (note 24). We must issue Mushak-6.6 / TDS certificates.'}
       >
-        <Percent className="w-4 h-4 text-gray-400 shrink-0" />
         <span className="text-sm font-medium text-gray-900">Tax withholding (VDS / TDS)</span>
         <span className="ml-auto flex items-center gap-2">
           {total > 0 && (
-            <span className="text-xs text-gray-500 whitespace-nowrap">
+            <span className="whitespace-nowrap text-xs text-muted-foreground tabular-nums">
               {vdsAmount > 0 && <>VDS ৳ {fmt(vdsAmount)}</>}
               {vdsAmount > 0 && tdsAmount > 0 && ' · '}
               {tdsAmount > 0 && <>TDS ৳ {fmt(tdsAmount)}</>}
             </span>
           )}
-          <ChevronDown className={cn('w-4 h-4 text-gray-400 transition-transform', open && 'rotate-180')} />
+          <ChevronDown className={cn('size-4 text-gray-400 transition-transform', open && 'rotate-180')} />
         </span>
       </button>
 
       {open && (
-        <div className={cn('border-t border-gray-100 space-y-4', pad)}>
-          <p className="text-xs text-gray-500">
-            {isCustomer
-              ? 'Amounts the client deducted from this payment. They settle the invoice like cash; collect the Mushak-6.6 (VDS) and the TDS certificate to claim the credit.'
-              : 'Amounts we deduct from this payment. TDS is deposited by challan; VDS is paid through our VAT return (note 24). We must issue Mushak-6.6 / TDS certificates.'}
-            {base > 0 && <> Base (excl. VAT): <span className="font-medium text-gray-700">৳ {fmt(base)}</span>.</>}
-          </p>
+        <div className={cn('space-y-5 border-t border-gray-100', pad)}>
+          {base > 0 && (
+            <p className="text-xs text-muted-foreground">
+              Base (excl. VAT) <span className="font-medium text-gray-900 tabular-nums">৳ {fmt(base)}</span>
+            </p>
+          )}
 
           {/* TDS */}
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2">Income tax (TDS / AIT)</p>
+            <h4 className={sectionTitle}>Income tax (TDS / AIT)</h4>
             <div className={cn('grid grid-cols-1 sm:grid-cols-6', gap)}>
               <div className="sm:col-span-4">
-                <label className={lc}>TDS section</label>
+                <Label className={lc}>TDS section</Label>
                 <TaxCodeSelect
                   kind="TDS_SECTION"
                   value={v.tdsSection}
@@ -385,15 +383,15 @@ export default function WithholdingFields({
                   placeholder="No TDS"
                   disabled={disabled}
                   asOf={date}
-                  className={compact ? 'px-2.5 py-1.5' : undefined}
+                  className={sc}
                 />
               </div>
               <div className="sm:col-span-1">
-                <label className={lc}>Rate</label>
+                <Label className={lc}>Rate</Label>
                 <AmountInput value={v.tdsRate} onChange={onTdsRate} disabled={disabled || !v.tdsSection} placeholder="0" suffix="%" compact={compact} zeroOnBlur={false} />
               </div>
               <div className="sm:col-span-1">
-                <label className={lc}>TDS amount</label>
+                <Label className={lc}>TDS amount</Label>
                 <AmountInput value={v.tdsAmount} onChange={onTdsAmount} disabled={disabled || (!v.tdsSection && !isCustomer)} compact={compact} />
               </div>
             </div>
@@ -407,18 +405,18 @@ export default function WithholdingFields({
               />
             )}
             {v.tdsSection && base <= 0 && (
-              <p className="mt-1.5 text-[11px] text-gray-400">Enter the amount first to calculate TDS.</p>
+              <p className="mt-2 text-xs text-muted-foreground">Enter the amount to calculate TDS.</p>
             )}
             {v.higherRateApplied && (
-              <span className="inline-flex mt-1.5 items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
-                <AlertTriangle className="w-3 h-3" /> Higher rate (+50%) applied
-              </span>
+              <Badge variant="warning" className="mt-2 gap-1">
+                <AlertTriangle className="size-3" /> Higher rate (+50%) applied
+              </Badge>
             )}
             {isCustomer && (tdsAmount > 0 || v.tdsSection) && (
-              <div className={cn('grid grid-cols-1 sm:grid-cols-2 mt-2', gap)}>
+              <div className={cn('mt-3 grid grid-cols-1 sm:grid-cols-2', gap)}>
                 <div>
-                  <label className={lc}>TDS certificate no.</label>
-                  <input
+                  <Label className={lc}>TDS certificate no.</Label>
+                  <Input
                     type="text"
                     value={v.tdsCertificateNo ?? ''}
                     onChange={e => emit({ tdsCertificateNo: e.target.value || null })}
@@ -428,13 +426,13 @@ export default function WithholdingFields({
                   />
                 </div>
                 <div>
-                  <label className={lc}>Certificate date</label>
+                  <Label className={lc}>Certificate date</Label>
                   <DatePicker
                     value={v.tdsCertificateDate}
                     onChange={d => emit({ tdsCertificateDate: d })}
                     disabled={disabled}
                     size={compact ? 'sm' : 'md'}
-                    placeholder="Pick a date…"
+                    placeholder="Pick a date"
                   />
                 </div>
               </div>
@@ -443,10 +441,10 @@ export default function WithholdingFields({
 
           {/* VDS */}
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2">VAT deducted at source (VDS)</p>
+            <h4 className={sectionTitle}>VAT deducted at source (VDS)</h4>
             <div className={cn('grid grid-cols-1 sm:grid-cols-6', gap)}>
               <div className="sm:col-span-4">
-                <label className={lc}>VAT service code</label>
+                <Label className={lc}>VAT service code</Label>
                 <TaxCodeSelect
                   kind="VAT_SERVICE"
                   value={v.vatServiceCode}
@@ -454,21 +452,21 @@ export default function WithholdingFields({
                   placeholder={isCustomer ? 'Invoice service code (default)' : 'No VDS'}
                   disabled={vdsLocked}
                   asOf={date}
-                  className={compact ? 'px-2.5 py-1.5' : undefined}
+                  className={sc}
                 />
               </div>
               <div className="sm:col-span-1">
-                <label className={lc}>Rate</label>
+                <Label className={lc}>Rate</Label>
                 <AmountInput value={v.vdsRate} onChange={onVdsRate} disabled={vdsLocked || (!v.vatServiceCode && !isCustomer)} placeholder="0" suffix="%" compact={compact} zeroOnBlur={false} />
               </div>
               <div className="sm:col-span-1">
-                <label className={lc}>VDS amount</label>
+                <Label className={lc}>VDS amount</Label>
                 <AmountInput value={v.vdsAmount} onChange={onVdsAmount} disabled={vdsLocked || (!v.vatServiceCode && !isCustomer)} compact={compact} />
               </div>
             </div>
             {!vdsAllowed && (
-              <p className="mt-1.5 flex items-center gap-1.5 text-[11px] text-gray-500">
-                <Info className="w-3 h-3" /> This invoice carries no VAT, so no VDS can be withheld from it.
+              <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Info className="size-3.5" /> No VAT on this invoice, so no VDS.
               </p>
             )}
             {vdsEnabled && (
@@ -481,15 +479,15 @@ export default function WithholdingFields({
               />
             )}
             {vdsOverVat && (
-              <p className="mt-1.5 flex items-center gap-1.5 text-[11px] text-amber-700">
-                <AlertTriangle className="w-3 h-3" /> VDS is more than the VAT on the bill (৳ {fmt(vat)}).
+              <p className="mt-2 flex items-center gap-1.5 text-xs text-amber-700">
+                <AlertTriangle className="size-3.5" /> VDS is more than the VAT on the bill (৳ {fmt(vat)}).
               </p>
             )}
             {isCustomer && vdsAllowed && (vdsAmount > 0 || v.vatServiceCode) && (
-              <div className={cn('grid grid-cols-1 sm:grid-cols-2 mt-2', gap)}>
+              <div className={cn('mt-3 grid grid-cols-1 sm:grid-cols-2', gap)}>
                 <div>
-                  <label className={lc}>Mushak-6.6 certificate no.</label>
-                  <input
+                  <Label className={lc}>Mushak-6.6 certificate no.</Label>
+                  <Input
                     type="text"
                     value={v.vdsCertificateNo ?? ''}
                     onChange={e => emit({ vdsCertificateNo: e.target.value || null })}
@@ -499,13 +497,13 @@ export default function WithholdingFields({
                   />
                 </div>
                 <div>
-                  <label className={lc}>Certificate date</label>
+                  <Label className={lc}>Certificate date</Label>
                   <DatePicker
                     value={v.vdsCertificateDate}
                     onChange={d => emit({ vdsCertificateDate: d })}
                     disabled={disabled}
                     size={compact ? 'sm' : 'md'}
-                    placeholder="Pick a date…"
+                    placeholder="Pick a date"
                   />
                 </div>
               </div>
@@ -513,13 +511,13 @@ export default function WithholdingFields({
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 pt-3">
-            <span className="text-xs text-gray-500">
+            <span className="text-[13px] text-muted-foreground">
               {isCustomer ? 'Settled by withholding' : 'Total withheld'}
             </span>
-            <span className="text-sm font-semibold text-gray-900">৳ {fmt(total)}</span>
+            <span className="text-sm font-semibold text-gray-900 tabular-nums">৳ {fmt(total)}</span>
             {overBase && (
-              <p className="w-full flex items-center gap-1.5 text-[11px] text-red-600">
-                <AlertTriangle className="w-3 h-3" /> Withholding is more than the bill amount.
+              <p className="flex w-full items-center gap-1.5 text-xs text-red-600">
+                <AlertTriangle className="size-3.5" /> Withholding is more than the bill amount.
               </p>
             )}
           </div>

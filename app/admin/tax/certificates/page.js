@@ -3,10 +3,15 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { ArrowLeft, Download, FileCheck, Printer, RefreshCw, Eye, FileSearch } from 'lucide-react'
+import { Download, FileCheck, Printer, RefreshCw, Eye, FileSearch } from 'lucide-react'
 import { usePermission } from '@/components/auth/Can'
 import SearchInput from '@/components/ui/SearchInput'
 import Pagination from '@/components/ui/Pagination'
+import Button, { buttonVariants } from '@/components/ui/Button'
+import { Card } from '@/components/ui/Card'
+import { NativeSelect } from '@/components/ui/Input'
+import PageHeader from '@/components/ui/PageHeader'
+import { PageLoader } from '@/components/ui/LoadingSpinner'
 import SelectTable, { SelectionBar } from '@/components/tax/SelectTable'
 import CertificateModal from '@/components/tax/CertificateModal'
 import TaxEntryDetailModal from '@/components/tax/TaxEntryDetailModal'
@@ -14,14 +19,14 @@ import { CertificateBadge, DepositBadge, DaysLeftBadge, TaxPill } from '@/compon
 import toast from 'react-hot-toast'
 import { useTaxData, usePrintThenReload, issueCertificateThenPrint } from '@/components/tax/useTaxData'
 import {
-  tk, fmtDay, fmtPeriod, btnPrimary, btnGhost, cardCls, inputCls, sumAmount, partyKeyOf, fiscalYearOptions,
+  tk, fmtDay, fmtPeriod, sumAmount, partyKeyOf, fiscalYearOptions,
 } from '@/components/tax/taxUi'
 import { cn } from '@/lib/utils'
 
 const DIRECTIONS = [
   { value: 'all', label: 'All certificates' },
-  { value: 'collect', label: 'To collect (from customers)' },
-  { value: 'issue', label: 'To issue (to suppliers / payees)' },
+  { value: 'collect', label: 'To collect (customers)' },
+  { value: 'issue', label: 'To issue (suppliers / payees)' },
 ]
 const TYPES = [
   { value: 'all', label: 'VDS & TDS' },
@@ -37,10 +42,10 @@ const STATUSES = [
 
 function SummaryCard({ title, pending, extra, href }) {
   return (
-    <Link href={href} className={cn(cardCls, 'p-4 hover:border-gray-200 transition-colors')}>
-      <p className="text-xs font-medium text-gray-500">{title}</p>
-      <p className="mt-1 text-lg font-semibold text-gray-900">{pending?.count ?? 0} <span className="text-sm font-normal text-gray-500">· {tk(pending?.amount)}</span></p>
-      <div className="mt-1 flex flex-wrap gap-1.5 min-h-[20px]">{extra}</div>
+    <Link href={href} className="block rounded-xl border border-gray-200/80 bg-white p-5 shadow-xs transition-colors hover:border-gray-300">
+      <p className="text-[13px] font-medium text-muted-foreground">{title}</p>
+      <p className="mt-1.5 text-lg font-semibold tabular-nums text-gray-900">{pending?.count ?? 0} <span className="text-sm font-normal text-muted-foreground">· {tk(pending?.amount)}</span></p>
+      <div className="mt-2 flex min-h-[20px] flex-wrap gap-1.5">{extra}</div>
     </Link>
   )
 }
@@ -110,25 +115,25 @@ function CertificatesTracker() {
   csvParams.delete('page'); csvParams.delete('limit'); csvParams.set('format', 'csv')
 
   const columns = [
-    { key: 'date', label: 'Deducted', render: r => <div><p className="whitespace-nowrap text-gray-900">{fmtDay(r.date)}</p><p className="text-[11px] font-mono text-gray-400">{r.entryNo}</p></div> },
+    { key: 'date', label: 'Deducted', render: r => <div><p className="whitespace-nowrap text-gray-900">{fmtDay(r.date)}</p><p className="font-mono text-xs text-muted-foreground">{r.entryNo}</p></div> },
     { key: 'kind', label: 'Certificate', render: r => (
       <div className="space-y-0.5">
         <TaxPill label={r.direction === 'COLLECT' ? 'Collect' : 'Issue'} color={r.direction === 'COLLECT' ? 'indigo' : 'orange'} dot={false} />
-        <p className="text-[11px] text-gray-500 whitespace-nowrap">{r.certType === 'VDS' ? 'Mushak-6.6 (VDS)' : r.direction === 'COLLECT' ? 'TDS / AIT certificate' : 'TDS certificate'}</p>
+        <p className="whitespace-nowrap text-xs text-muted-foreground">{r.certType === 'VDS' ? 'Mushak-6.6 (VDS)' : r.direction === 'COLLECT' ? 'TDS / AIT certificate' : 'TDS certificate'}</p>
       </div>
     ) },
     { key: 'party', label: 'Party', render: r => (
       <div className="min-w-[150px]">
         <p className="font-medium text-gray-900">{r.partyName || '—'}</p>
-        <p className="text-[11px] font-mono text-gray-500">{r.certType === 'VDS' ? (r.partyBin ? `BIN ${r.partyBin}` : '') : (r.partyTin ? `TIN ${r.partyTin}` : '')}</p>
+        <p className="font-mono text-xs text-muted-foreground">{r.certType === 'VDS' ? (r.partyBin ? `BIN ${r.partyBin}` : '') : (r.partyTin ? `TIN ${r.partyTin}` : '')}</p>
       </div>
     ) },
     { key: 'doc', label: 'Document', render: r => <span className="text-xs text-gray-600">{r.documentNo || '—'}</span> },
-    { key: 'amount', label: 'Withheld', className: 'text-right', cellClassName: 'text-right whitespace-nowrap font-semibold text-gray-900', render: r => tk(r.amount) },
+    { key: 'amount', label: 'Withheld', className: 'text-right', cellClassName: 'text-right whitespace-nowrap tabular-nums font-semibold text-gray-900', render: r => tk(r.amount) },
     { key: 'cert', label: 'Status', render: r => (
       <div className="space-y-0.5">
         <CertificateBadge certificate={r.certificate} />
-        {r.certificate?.number && <p className="text-[11px] font-mono text-gray-600">{r.certificate.number}</p>}
+        {r.certificate?.number && <p className="font-mono text-xs text-gray-600">{r.certificate.number}</p>}
       </div>
     ) },
     { key: 'due', label: 'Due / claim by', render: r => {
@@ -138,26 +143,28 @@ function CertificatesTracker() {
     } },
     { key: 'deposit', label: 'Deposit', render: r => r.direction === 'ISSUE' ? <DepositBadge deposit={r.deposit} /> : <span className="text-xs text-gray-300">—</span> },
     { key: 'view', label: '', cellClassName: 'text-right', render: r => (
-      <button type="button" className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100" onClick={(e) => { e.stopPropagation(); setDetailId(r.id) }} aria-label="View entry"><Eye className="w-4 h-4" /></button>
+      <Button variant="ghost" size="icon-sm" className="text-gray-500" onClick={(e) => { e.stopPropagation(); setDetailId(r.id) }} aria-label="View entry" title="View entry"><Eye /></Button>
     ) },
   ]
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <Link href="/admin/tax" className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800"><ArrowLeft className="w-3.5 h-3.5" /> Tax dashboard</Link>
-          <h1 className="text-xl font-semibold text-gray-900">Certificates</h1>
-          <p className="text-sm text-gray-500">Mushak-6.6 and TDS certificates — the ones you must collect from customers and the ones you must issue.</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <a href={`/api/tax/certificates?${csvParams.toString()}`} className={btnGhost}><Download className="w-4 h-4" /> CSV</a>
-          <button type="button" className={btnGhost} onClick={refresh} aria-label="Refresh"><RefreshCw className={cn('w-4 h-4', loading && 'animate-spin')} /></button>
-        </div>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Certificates"
+        back="/admin/tax"
+        backLabel="Tax & VAT"
+        actions={
+          <>
+            <a href={`/api/tax/certificates?${csvParams.toString()}`} className={buttonVariants({ variant: 'outline' })}><Download /> CSV</a>
+            <Button variant="outline" size="icon" onClick={refresh} aria-label="Refresh" title="Refresh">
+              <RefreshCw className={cn('size-4', loading && 'animate-spin')} />
+            </Button>
+          </>
+        }
+      />
 
       {summary && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <SummaryCard title="Mushak-6.6 to collect" pending={summary.collect.VDS.pending} href="/admin/tax/withholding?tab=vds-receivable"
             extra={<>
               {summary.collect.VDS.expiring.count > 0 && <TaxPill label={`${summary.collect.VDS.expiring.count} expiring`} color="orange" />}
@@ -178,27 +185,27 @@ function CertificatesTracker() {
         </div>
       )}
 
-      <div className="bg-white border border-gray-100 rounded-xl p-4 flex flex-wrap items-center gap-3">
-        <SearchInput value={search} onChange={setSearch} placeholder="Party, BIN, document or certificate no." className="w-full sm:w-72" />
-        <select className={cn(inputCls, 'w-full sm:w-auto')} value={direction} onChange={e => setDirection(e.target.value)} aria-label="Direction">
+      <div className="flex flex-wrap items-center gap-2">
+        <SearchInput value={search} onChange={setSearch} placeholder="Search…" className="w-full sm:w-64" />
+        <NativeSelect className="w-full sm:w-auto" value={direction} onChange={e => setDirection(e.target.value)} aria-label="Direction">
           {DIRECTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-        <select className={cn(inputCls, 'w-full sm:w-auto')} value={type} onChange={e => setType(e.target.value)} aria-label="Type">
+        </NativeSelect>
+        <NativeSelect className="w-full sm:w-auto" value={type} onChange={e => setType(e.target.value)} aria-label="Type">
           {TYPES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-        <select className={cn(inputCls, 'w-full sm:w-auto')} value={status} onChange={e => setStatus(e.target.value)} aria-label="Status">
+        </NativeSelect>
+        <NativeSelect className="w-full sm:w-auto" value={status} onChange={e => setStatus(e.target.value)} aria-label="Status">
           {STATUSES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-        <select className={cn(inputCls, 'w-full sm:w-auto')} value={fy} onChange={e => setFy(e.target.value)} aria-label="Income year">
+        </NativeSelect>
+        <NativeSelect className="w-full sm:w-auto" value={fy} onChange={e => setFy(e.target.value)} aria-label="Income year">
           <option value="">All income years</option>
           {fyOptions.map(f => <option key={f} value={f}>FY {f}</option>)}
-        </select>
+        </NativeSelect>
         {(direction !== 'all' || type !== 'all' || status !== 'PENDING' || fy || search) && (
-          <button type="button" className="text-sm text-gray-500 hover:text-gray-800 underline" onClick={() => { setDirection('all'); setType('all'); setStatus('PENDING'); setFy(''); setSearch('') }}>Reset</button>
+          <Button variant="ghost" onClick={() => { setDirection('all'); setType('all'); setStatus('PENDING'); setFy(''); setSearch('') }}>Reset</Button>
         )}
       </div>
 
-      <div className={cn(cardCls, 'overflow-hidden')}>
+      <Card className="overflow-hidden">
         {error ? <p className="px-4 py-6 text-sm text-red-600">{error}</p> : (
           <SelectTable
             columns={columns}
@@ -208,26 +215,26 @@ function CertificatesTracker() {
             canSelect={canSelect}
             loading={loading}
             emptyIcon={FileSearch}
-            emptyTitle={status === 'PENDING' ? 'No certificates pending' : 'No certificates match these filters'}
-            emptyDescription={status === 'PENDING' ? 'Everything you deducted or had deducted has its certificate.' : 'Try another filter or income year.'}
+            emptyTitle={status === 'PENDING' ? 'No certificates pending' : 'No results'}
+            emptyDescription={status === 'PENDING' ? 'Every deduction has its certificate.' : 'Try another filter or income year.'}
             onRowClick={r => setDetailId(r.id)}
           />
         )}
-        {json?.meta?.pages > 1 && <div className="px-4 py-3 border-t border-gray-100"><Pagination meta={json.meta} onPageChange={setPage} /></div>}
-      </div>
+        {json?.meta?.pages > 1 && <div className="border-t border-gray-100 px-4 py-3"><Pagination meta={json.meta} onPageChange={setPage} /></div>}
+      </Card>
 
       <SelectionBar count={selectedRows.length} amount={sumAmount(selectedRows)} onClear={() => setSelected(new Set())}>
         {first?.direction === 'COLLECT' && canManage && (
-          <button type="button" className={btnPrimary} onClick={() => setCertOpen(true)}><FileCheck className="w-4 h-4" /> Record certificate</button>
+          <Button size="sm" onClick={() => setCertOpen(true)}><FileCheck /> Record certificate</Button>
         )}
         {first?.direction === 'ISSUE' && (
           <>
-            {!numbered && canManage && <button type="button" className={btnGhost} onClick={() => setCertOpen(true)}><FileCheck className="w-4 h-4" /> Record issued manually</button>}
+            {!numbered && canManage && <Button variant="outline" size="sm" onClick={() => setCertOpen(true)}><FileCheck /> Record issued manually</Button>}
             {numbered
-              ? <button type="button" className={btnPrimary} onClick={() => print(false)}><Printer className="w-4 h-4" /> Reprint {numbered}</button>
+              ? <Button size="sm" onClick={() => print(false)}><Printer /> Reprint {numbered}</Button>
               : selectedRows.every(r => r.readiness?.ready) && canManage
-                ? <button type="button" className={btnPrimary} onClick={() => print(false)}><Printer className="w-4 h-4" /> Issue certificate</button>
-                : <button type="button" className={btnPrimary} onClick={() => print(true)}><Printer className="w-4 h-4" /> Preview draft</button>}
+                ? <Button size="sm" onClick={() => print(false)}><Printer /> Issue certificate</Button>
+                : <Button size="sm" onClick={() => print(true)}><Printer /> Preview draft</Button>}
           </>
         )}
       </SelectionBar>
@@ -240,7 +247,7 @@ function CertificatesTracker() {
 
 export default function CertificatesPage() {
   return (
-    <Suspense fallback={<div className="py-24 text-center text-sm text-gray-400">Loading…</div>}>
+    <Suspense fallback={<PageLoader />}>
       <CertificatesTracker />
     </Suspense>
   )

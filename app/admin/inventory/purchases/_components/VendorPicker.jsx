@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { Building2, ChevronDown, Loader2, Search, X, UserPlus } from 'lucide-react'
+import Button from '@/components/ui/Button'
+import { inputClass } from '@/components/ui/Input'
 import { cn } from '@/lib/utils'
 
 const VAT_LABEL = {
@@ -59,13 +61,13 @@ export default function VendorPicker({ value, onChange, onOneOff, disabled = fal
         if (id !== reqId.current) return
         if (!res.ok) {
           setResults([])
-          setError(res.status === 403 ? 'You cannot browse vendors — type the supplier name as a one-off instead.' : (json.error || 'Could not load vendors'))
+          setError(res.status === 403 ? "You can't browse vendors — type the name as a one-off." : (json.error || "Couldn't load vendors"))
         } else {
           setError(null)
           setResults((json.data ?? []).map(pickVendorFields))
         }
       } catch {
-        if (id === reqId.current) { setResults([]); setError('Could not load vendors') }
+        if (id === reqId.current) { setResults([]); setError("Couldn't load vendors") }
       } finally {
         if (id === reqId.current) setLoading(false)
       }
@@ -93,20 +95,20 @@ export default function VendorPicker({ value, onChange, onOneOff, disabled = fal
 
   if (value) {
     return (
-      <div className="flex items-start justify-between gap-2 w-full border border-gray-200 rounded-lg px-3 py-2 bg-white">
-        <div className="flex items-start gap-2 min-w-0">
-          <Building2 className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
+      <div className="flex w-full items-start justify-between gap-2 rounded-lg border border-input bg-white px-3 py-2 shadow-xs">
+        <div className="flex min-w-0 items-start gap-2">
+          <Building2 className="mt-0.5 size-4 shrink-0 text-gray-400" />
           <div className="min-w-0">
-            <p className="text-sm font-medium text-gray-900 truncate">{value.company}</p>
-            <p className="text-xs text-gray-500 truncate">
+            <p className="truncate text-sm font-medium text-gray-900">{value.company}</p>
+            <p className="truncate text-xs text-muted-foreground">
               {[value.bin ? `BIN ${value.bin}` : 'No BIN on file', VAT_LABEL[value.vatRegistrationType] ?? null, PAYEE_LABEL[value.payeeType] ?? null, value.hasPsr ? 'PSR shown' : 'No PSR'].filter(Boolean).join(' · ')}
             </p>
           </div>
         </div>
         {!disabled && (
-          <button type="button" onClick={() => onChange?.(null)} className="p-1 text-gray-400 hover:text-gray-600 shrink-0" aria-label="Clear vendor">
-            <X className="w-4 h-4" />
-          </button>
+          <Button variant="ghost" size="icon-xs" onClick={() => onChange?.(null)} className="-mr-1 text-gray-400" aria-label="Clear vendor">
+            <X />
+          </Button>
         )}
       </div>
     )
@@ -118,43 +120,41 @@ export default function VendorPicker({ value, onChange, onOneOff, disabled = fal
         type="button"
         disabled={disabled}
         onClick={() => setOpen(o => !o)}
-        className="flex items-center justify-between gap-2 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-500 bg-white hover:border-gray-300 disabled:bg-gray-50"
+        className={cn(inputClass, 'items-center justify-between gap-2 text-left text-gray-500 hover:bg-gray-50/60')}
       >
-        <span className="flex items-center gap-2"><Search className="w-4 h-4" /> {placeholder}</span>
-        <ChevronDown className="w-4 h-4" />
+        <span className="flex min-w-0 items-center gap-2 truncate"><Search className="size-4 shrink-0 text-gray-400" /> {placeholder}</span>
+        <ChevronDown className="size-4 shrink-0 text-gray-400" />
       </button>
 
       {open && (
-        <div className="absolute z-40 mt-1 w-full bg-white border border-gray-100 rounded-xl shadow-lg overflow-hidden">
-          <div className="p-2 border-b border-gray-50">
-            <div className="flex items-center gap-2 px-2 py-1.5 bg-gray-50 rounded-lg">
-              <Search className="w-4 h-4 text-gray-400" />
-              <input
-                autoFocus
-                value={q}
-                onChange={e => setQ(e.target.value)}
-                placeholder="Vendor name or BIN…"
-                className="flex-1 bg-transparent text-sm outline-none"
-              />
-              {loading && <Loader2 className="w-4 h-4 animate-spin text-gray-400" />}
-            </div>
+        <div className="absolute z-40 mt-1 w-full overflow-hidden rounded-xl border border-gray-200/80 bg-white shadow-lg">
+          <div className="flex items-center gap-2 border-b border-gray-100 px-3">
+            <Search className="size-4 shrink-0 text-gray-400" />
+            <input
+              autoFocus
+              value={q}
+              onChange={e => setQ(e.target.value)}
+              placeholder="Name or BIN…"
+              className="h-10 flex-1 bg-transparent text-sm outline-none placeholder:text-gray-400"
+            />
+            {loading && <Loader2 className="size-4 animate-spin text-gray-400" />}
           </div>
-          <div className="max-h-64 overflow-y-auto py-1">
-            {error && <p className="px-4 py-3 text-xs text-amber-700">{error}</p>}
+          <div className="max-h-64 overflow-y-auto p-1">
+            {error && <p className="px-3 py-2.5 text-xs text-amber-700">{error}</p>}
             {!error && !loading && results.length === 0 && (
-              <p className="px-4 py-5 text-center text-sm text-gray-400">{q ? 'No vendors match' : 'No vendors yet'}</p>
+              <p className="px-3 py-5 text-center text-sm text-muted-foreground">{q ? 'No results' : 'No vendors yet'}</p>
             )}
             {results.map(v => (
               <button
                 type="button"
                 key={v.id}
                 onClick={() => pick(v)}
-                className="w-full flex items-start gap-2.5 px-3 py-2 hover:bg-gray-50 text-left"
+                className="flex w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left hover:bg-gray-100"
               >
-                <Building2 className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
+                <Building2 className="mt-0.5 size-4 shrink-0 text-gray-400" />
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-gray-900 truncate">{v.company}</p>
-                  <p className="text-xs text-gray-400 truncate">
+                  <p className="truncate text-sm font-medium text-gray-900">{v.company}</p>
+                  <p className="truncate text-xs text-muted-foreground">
                     {[v.bin ? `BIN ${v.bin}` : null, VAT_LABEL[v.vatRegistrationType] ?? null].filter(Boolean).join(' · ') || 'No tax details'}
                   </p>
                 </div>
@@ -164,9 +164,9 @@ export default function VendorPicker({ value, onChange, onOneOff, disabled = fal
               <button
                 type="button"
                 onClick={() => { onOneOff(q.trim()); setOpen(false); setQ('') }}
-                className={cn('w-full flex items-center gap-2 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50', results.length && 'border-t border-gray-50')}
+                className={cn('flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-gray-700 hover:bg-gray-100', results.length && 'mt-1 border-t border-gray-100')}
               >
-                <UserPlus className="w-4 h-4 text-gray-400" />
+                <UserPlus className="size-4 shrink-0 text-gray-400" />
                 Use “{q.trim()}” as a one-off supplier
               </button>
             )}

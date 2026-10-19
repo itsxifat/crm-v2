@@ -4,10 +4,12 @@ import { useEffect } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Loader2, Info } from 'lucide-react'
 import toast from 'react-hot-toast'
 import Modal, { ModalFooter } from '@/components/ui/Modal'
 import Select from '@/components/ui/Select'
+import Button from '@/components/ui/Button'
+import { Label, inputClass, textareaClass, selectClass } from '@/components/ui/Input'
+import { cn } from '@/lib/utils'
 import { currencyOptions } from '@/lib/currencies'
 import { BIN_REGEX, TIN_REGEX, normalizeBin } from '@/lib/tax/catalog'
 
@@ -91,12 +93,14 @@ function taxPayload(data, initialTin) {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function Field({ label, error, children }) {
+function Field({ label, required, error, hint, className, children }) {
   return (
-    <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+    <div className={className}>
+      <Label required={required}>{label}</Label>
       {children}
-      {error && <p className="mt-1 text-xs text-red-500">{error}</p>}
+      {error
+        ? <p className="mt-1.5 text-xs text-red-600">{error}</p>
+        : hint ? <p className="mt-1.5 text-xs text-muted-foreground">{hint}</p> : null}
     </div>
   )
 }
@@ -108,8 +112,17 @@ function Input({ register, name, type = 'text', placeholder, className = '', rea
       placeholder={placeholder}
       readOnly={readOnly}
       {...register(name)}
-      className={`w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition ${readOnly ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''} ${className}`}
+      className={cn(inputClass, readOnly && 'cursor-not-allowed bg-gray-50 text-gray-500', className)}
     />
+  )
+}
+
+function Section({ title, children }) {
+  return (
+    <div className="space-y-4 border-t border-gray-100 pt-5 first:border-t-0 first:pt-0">
+      <h4 className="text-sm font-semibold text-gray-900">{title}</h4>
+      {children}
+    </div>
   )
 }
 
@@ -250,163 +263,128 @@ export default function FreelancerModal({ open, onOpenChange, freelancer, onSave
   }
 
   const title = isEdit
-    ? `Edit ${isAgency ? 'Agency' : 'Freelancer'}`
-    : `Add ${isAgency ? 'Agency' : 'Freelancer'}`
-  const description = isEdit
-    ? `Update ${isAgency ? 'agency' : 'freelancer'} profile`
-    : `Create a new ${isAgency ? 'agency partner' : 'freelancer'} account`
+    ? `Edit ${isAgency ? 'agency' : 'freelancer'}`
+    : `New ${isAgency ? 'agency' : 'freelancer'}`
 
   return (
-    <Modal open={open} onOpenChange={onOpenChange} title={title} description={description} size="lg">
+    <Modal open={open} onOpenChange={onOpenChange} title={title} size="lg">
       <form id="fl-form" onSubmit={handleSubmit(onSubmit)} className="space-y-5">
 
         {isAgency ? (
           <>
-            <div className="space-y-1">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide pt-1">Agency Information</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-                <div className="sm:col-span-2">
-                  <Field label="Agency Email *" error={errors.email?.message}>
-                    <Input register={register} name="email" type="email" placeholder="agency@example.com" readOnly={isEdit} />
-                    {isEdit && <p className="mt-1 text-xs text-gray-400">The login email can&apos;t be changed here.</p>}
-                  </Field>
-                </div>
-                <div className="sm:col-span-2">
-                  <Field label="Agency Name *" error={errors.agencyName?.message}>
-                    <Input register={register} name="agencyName" placeholder="Acme Production House" />
-                  </Field>
-                </div>
+            <Section title="Agency">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Agency email" required error={errors.email?.message}
+                  hint={isEdit ? 'Login email can\'t be changed' : undefined} className="sm:col-span-2">
+                  <Input register={register} name="email" type="email" placeholder="agency@example.com" readOnly={isEdit} />
+                </Field>
+                <Field label="Agency name" required error={errors.agencyName?.message} className="sm:col-span-2">
+                  <Input register={register} name="agencyName" placeholder="Acme Production House" />
+                </Field>
                 <Field label="Phone" error={errors.agencyPhone?.message}>
                   <Input register={register} name="agencyPhone" placeholder="+880 1XXX XXXXXX" />
                 </Field>
-                <Field label="Agency Type" error={errors.agencyType?.message}>
+                <Field label="Agency type" error={errors.agencyType?.message}>
                   <Controller name="agencyType" control={control} render={({ field }) => (
                     <Select value={field.value} onChange={v => field.onChange(v ?? '')}
                       options={AGENCY_TYPES.map(t => ({ value: t, label: t }))} placeholder="Select…" />
                   )} />
                 </Field>
-                <div className="sm:col-span-2">
-                  <Field label="Address" error={errors.agencyAddress?.message}>
-                    <Input register={register} name="agencyAddress" placeholder="123 Main Street, Dhaka" />
-                  </Field>
-                </div>
+                <Field label="Address" error={errors.agencyAddress?.message} className="sm:col-span-2">
+                  <Input register={register} name="agencyAddress" placeholder="123 Main Street, Dhaka" />
+                </Field>
               </div>
-            </div>
+            </Section>
 
-            <div className="border-t border-gray-100 pt-4 space-y-1">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Contact Person / Owner</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-                <Field label="Contact Name *" error={errors.contactName?.message}>
-                  <Input register={register} name="contactName" placeholder="Full Name" />
+            <Section title="Contact person">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Contact name" required error={errors.contactName?.message}>
+                  <Input register={register} name="contactName" placeholder="Full name" />
                 </Field>
                 <Field label="Designation" error={errors.contactDesignation?.message}>
-                  <Input register={register} name="contactDesignation" placeholder="e.g. CEO, Manager" />
+                  <Input register={register} name="contactDesignation" placeholder="e.g. CEO" />
                 </Field>
-                <Field label="Contact Phone" error={errors.contactPhone?.message}>
+                <Field label="Contact phone" error={errors.contactPhone?.message}>
                   <Input register={register} name="contactPhone" placeholder="+880 1XXX XXXXXX" />
                 </Field>
-                <Field label="Contact Email" error={errors.contactEmail?.message}>
+                <Field label="Contact email" error={errors.contactEmail?.message}>
                   <Input register={register} name="contactEmail" type="email" placeholder="contact@example.com" />
                 </Field>
               </div>
-            </div>
+            </Section>
           </>
         ) : (
-          <>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field label="Full Name *" error={errors.name?.message}>
+          <Section title="Profile">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Full name" required error={errors.name?.message}>
                 <Input register={register} name="name" placeholder="John Doe" />
               </Field>
-              <Field label="Email *" error={errors.email?.message}>
+              <Field label="Email" required error={errors.email?.message}
+                hint={isEdit ? 'Login email can\'t be changed' : undefined}>
                 <Input register={register} name="email" type="email" placeholder="john@example.com" readOnly={isEdit} />
-                {isEdit && <p className="mt-1 text-xs text-gray-400">The login email can&apos;t be changed here.</p>}
               </Field>
-              <div className="sm:col-span-2">
-                <Field label="Phone" error={errors.phone?.message}>
-                  <Input register={register} name="phone" placeholder="+880 1XXX XXXXXX" />
-                </Field>
-              </div>
+              <Field label="Phone" error={errors.phone?.message} className="sm:col-span-2">
+                <Input register={register} name="phone" placeholder="+880 1XXX XXXXXX" />
+              </Field>
+              <Field label="Skills" error={errors.skills?.message} className="sm:col-span-2">
+                <Input register={register} name="skills" placeholder="React, Node.js, UI design…" />
+              </Field>
+              <Field label="Bio" error={errors.bio?.message} className="sm:col-span-2">
+                <textarea rows={3} placeholder="Short bio…" {...register('bio')}
+                  className={cn(textareaClass, 'resize-none')} />
+              </Field>
             </div>
-
-            <Field label="Skills" error={errors.skills?.message}>
-              <Input register={register} name="skills" placeholder="React, Node.js, UI Design…" />
-            </Field>
-
-            <Field label="Bio" error={errors.bio?.message}>
-              <textarea rows={3} placeholder="Short bio…" {...register('bio')}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition resize-none" />
-            </Field>
-
-            {!isEdit && (
-              <div className="flex items-start gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
-                <Info className="w-4 h-4 text-blue-500 flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-blue-700 leading-relaxed">
-                  No rate is set here — pay is agreed per project/task when you engage them.
-                  An invitation email lets the freelancer set their own password.
-                </p>
-              </div>
-            )}
-          </>
+          </Section>
         )}
 
         {/* Tax identity — drives TDS when this person / agency is paid */}
-        <div className="border-t border-gray-100 pt-4 space-y-3">
-          <div>
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Tax identity</p>
-            <p className="text-xs text-gray-400 mt-0.5">Used to work out income tax deducted at source (TDS) when you pay {isAgency ? 'this agency' : 'this freelancer'}.</p>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="TIN (e-TIN)" error={errors.tin?.message}>
+        <Section title="Tax identity">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="TIN (e-TIN)" error={errors.tin?.message}
+              hint={isMasked(initialTin) ? 'Hidden — clear it to enter a new one' : undefined}>
               <Input register={register} name="tin" placeholder="12-digit e-TIN" className="font-mono" />
-              {!errors.tin && isMasked(initialTin) && (
-                <p className="mt-1 text-xs text-gray-400">Hidden for privacy. Leave as is, or clear it and type the new number.</p>
-              )}
             </Field>
             <Field label={isAgency ? 'BIN' : 'BIN (if VAT registered)'} error={errors.bin?.message}>
               <Input register={register} name="bin" placeholder="000123456-0101" className="font-mono" />
             </Field>
-            <Field label="Payee type (for TDS rate)" error={errors.payeeType?.message}>
-              <select {...register('payeeType')}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition bg-white">
+            <Field label="Payee type" error={errors.payeeType?.message}
+              hint={payeeTypeValue === 'NON_RESIDENT' ? 's.119 non-resident TDS rates apply' : undefined}>
+              <select {...register('payeeType')} className={selectClass} title="Sets the TDS rate">
                 {PAYEE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
               </select>
-              {payeeTypeValue === 'NON_RESIDENT' && (
-                <p className="mt-1 text-xs text-gray-400">Payments abroad fall under s.119 (non-resident) rates.</p>
-              )}
             </Field>
             <div className="flex items-end">
-              <label className="flex items-start gap-2 cursor-pointer pb-1">
+              <label className="flex cursor-pointer items-start gap-2.5 pb-1">
                 <input type="checkbox" {...register('hasPsr')}
-                  className="mt-0.5 w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                  className="mt-0.5 size-4 rounded border-gray-300" />
                 <span>
-                  <span className="block text-sm font-medium text-gray-800">PSR on file</span>
-                  <span className={`block text-xs ${hasPsrValue ? 'text-gray-400' : 'text-amber-600'}`}>
-                    Proof of return submission. Without it TDS is deducted at 1.5× the normal rate.
+                  <span className="block text-sm font-medium text-gray-900" title="Proof of return submission">PSR on file</span>
+                  <span className={`block text-xs ${hasPsrValue ? 'text-muted-foreground' : 'text-amber-600'}`}>
+                    Without PSR, TDS is 1.5× the normal rate.
                   </span>
                 </span>
               </label>
             </div>
           </div>
-        </div>
+        </Section>
 
         {/* Engagement & currency */}
-        <div className="border-t border-gray-100 pt-4 space-y-4">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Engagement</p>
-
+        <Section title="Engagement">
           {!isAgency && (
-            <Field label="How is this freelancer paid?">
+            <Field label="Payment basis">
               <Controller name="employmentMode" control={control} render={({ field }) => (
                 <div className="grid grid-cols-2 gap-2">
                   {[
-                    ['PROJECT', 'Per project/task', 'Fixed amount agreed at assignment'],
-                    ['SALARY',  'Monthly salary',   'Temporary salary-based hire'],
+                    ['PROJECT', 'Per project/task', 'Fixed amount per assignment'],
+                    ['SALARY',  'Monthly salary',   'Temporary salaried hire'],
                   ].map(([val, label, hint]) => (
                     <button type="button" key={val} onClick={() => field.onChange(val)}
-                      className={`text-left px-3 py-2.5 rounded-xl border transition-colors ${
-                        field.value === val ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'
-                      }`}>
+                      className={cn(
+                        'rounded-lg border px-3 py-2.5 text-left transition-colors',
+                        field.value === val ? 'border-gray-900 bg-gray-50 ring-1 ring-gray-900' : 'border-gray-200 hover:bg-gray-50'
+                      )}>
                       <p className="text-sm font-medium text-gray-900">{label}</p>
-                      <p className="text-xs text-gray-400">{hint}</p>
+                      <p className="text-xs text-muted-foreground">{hint}</p>
                     </button>
                   ))}
                 </div>
@@ -417,49 +395,44 @@ export default function FreelancerModal({ open, onOpenChange, freelancer, onSave
           <Field label="Default payment currency" error={errors.paymentCurrency?.message}>
             <Controller name="paymentCurrency" control={control} render={({ field }) => (
               <Select value={field.value} onChange={v => field.onChange(v ?? 'BDT')}
-                options={currencyOptions} placeholder="Select currency…" />
+                options={currencyOptions} placeholder="Select…" />
             )} />
           </Field>
 
           {!isAgency && employmentMode === 'SALARY' && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-indigo-50/50 border border-indigo-100 rounded-xl p-4">
-              <Field label="Salary amount *" error={errors.salaryAmount?.message}>
+            <div className="grid gap-4 rounded-lg bg-gray-50 p-4 sm:grid-cols-2">
+              <Field label="Salary amount" required error={errors.salaryAmount?.message}>
                 <Input register={register} name="salaryAmount" type="number" placeholder="0.00" />
               </Field>
               <Field label="Salary currency" error={errors.salaryCurrency?.message}>
                 <Controller name="salaryCurrency" control={control} render={({ field }) => (
                   <Select value={field.value} onChange={v => field.onChange(v ?? '')}
-                    options={currencyOptions} placeholder="Same as payment currency" />
+                    options={currencyOptions} placeholder="Same as payment" />
                 )} />
               </Field>
-              <Field label="Pay on day of month *" error={errors.salaryDay?.message}>
+              <Field label="Pay day of month" required error={errors.salaryDay?.message}>
                 <Input register={register} name="salaryDay" type="number" placeholder="1–28" />
               </Field>
-              <div />
+              <div className="hidden sm:block" />
               <Field label="Start date" error={errors.salaryStartDate?.message}>
                 <Input register={register} name="salaryStartDate" type="date" />
               </Field>
-              <Field label="End date (temporary)" error={errors.salaryEndDate?.message}>
+              <Field label="End date" error={errors.salaryEndDate?.message}>
                 <Input register={register} name="salaryEndDate" type="date" />
               </Field>
             </div>
           )}
-        </div>
+        </Section>
       </form>
 
       <ModalFooter>
-        <button type="button" onClick={() => onOpenChange(false)}
-          className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-          Cancel
-        </button>
+        <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
         {/* Invoke the submit handler directly instead of relying on the
             `form="fl-form"` association across the Radix Dialog portal — that
             link is what silently failed, making the button appear to do nothing. */}
-        <button type="button" onClick={handleSubmit(onSubmit)} disabled={isSubmitting}
-          className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-60 transition-colors flex items-center gap-2">
-          {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
-          {isEdit ? 'Save Changes' : 'Send Invitation'}
-        </button>
+        <Button onClick={handleSubmit(onSubmit)} loading={isSubmitting}>
+          {isEdit ? 'Save' : 'Send invitation'}
+        </Button>
       </ModalFooter>
     </Modal>
   )

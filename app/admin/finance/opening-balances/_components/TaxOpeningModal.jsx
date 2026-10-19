@@ -1,9 +1,10 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Loader2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import Modal, { ModalFooter } from '@/components/ui/Modal'
+import Button from '@/components/ui/Button'
+import { Field, Input, Label, NativeSelect, Textarea, selectClass } from '@/components/ui/Input'
 import DatePicker from '@/components/ui/DatePicker'
 import TaxCodeSelect from '@/components/tax/TaxCodeSelect'
 import { addPeriods, dayKeyLabel, periodLabel, taxPeriodOf, tdsDepositDueDate } from '@/lib/finance/fiscal'
@@ -12,7 +13,7 @@ import { cn } from '@/lib/utils'
 import {
   CERTIFICATE_STATUS_LABELS, INPUT_TREATMENT_OPTIONS, OPENING_TAX_META, PAYEE_TYPE_OPTIONS,
 } from '../_lib/meta'
-import { Callout, FieldError, Guidance, apiFetch, btnGhost, btnPrimary, fieldErrorsOf, inputCls, labelCls, parseAmount } from './shared'
+import { Callout, Guidance, apiFetch, fieldErrorsOf, parseAmount } from './shared'
 
 function initialForm(entryType, entry, defaults) {
   if (entry) {
@@ -167,25 +168,25 @@ export default function TaxOpeningModal({ open, onOpenChange, entryType, entry =
       open={open}
       onOpenChange={onOpenChange}
       title={`${entry ? 'Edit' : 'Add'} — ${meta.title}`}
-      description={asOf ? `Opening balance as at the end of ${dayKeyLabel(asOf)}` : undefined}
+      description={asOf ? `As at end of ${dayKeyLabel(asOf)}` : undefined}
       size="lg"
     >
       <form id="tax-opening-form" onSubmit={submit} className="space-y-4">
         <Guidance what={meta.what} where={meta.where} />
 
         {figuresLocked && (
-          <Callout tone="warning" title={`Books are locked up to ${dayKeyLabel(booksLock)}`}>
-            This balance is dated in the locked period, so its amount and date cannot be changed. You can still correct the notes, party, document and certificate details.
+          <Callout tone="warning" title={`Books locked to ${dayKeyLabel(booksLock)}`}>
+            Amount and date are fixed; other details stay editable.
           </Callout>
         )}
 
         {entryType === 'VAT_BALANCE_BF' && (
           <div>
-            <span className={labelCls}>Which way is the balance?</span>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <Label>Balance side</Label>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {[
-                { v: 'CREDIT', t: 'Credit carried forward', d: 'You paid more than due — it reduces your next return (note 52).' },
-                { v: 'PAYABLE', t: 'VAT still owed', d: 'VAT from earlier returns that you have not paid yet.' },
+                { v: 'CREDIT', t: 'Credit carried forward', d: 'Reduces your next return (note 52)' },
+                { v: 'PAYABLE', t: 'VAT still owed', d: 'Unpaid VAT from earlier returns' },
               ].map(o => (
                 <button
                   type="button"
@@ -193,12 +194,12 @@ export default function TaxOpeningModal({ open, onOpenChange, entryType, entry =
                   onClick={() => set('balanceSide', o.v)}
                   disabled={figuresLocked}
                   className={cn(
-                    'text-left rounded-lg border px-3 py-2.5 transition-colors disabled:opacity-60 disabled:cursor-not-allowed',
-                    form.balanceSide === o.v ? 'border-gray-900 ring-1 ring-gray-900 bg-gray-50' : 'border-gray-200 hover:border-gray-300',
+                    'rounded-lg border px-3 py-2.5 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60',
+                    form.balanceSide === o.v ? 'border-gray-900 bg-gray-50 ring-1 ring-gray-900' : 'border-input hover:bg-gray-50',
                   )}
                 >
                   <span className="block text-sm font-medium text-gray-900">{o.t}</span>
-                  <span className="block text-xs text-gray-500">{o.d}</span>
+                  <span className="mt-0.5 block text-xs text-muted-foreground">{o.d}</span>
                 </button>
               ))}
             </div>
@@ -206,111 +207,100 @@ export default function TaxOpeningModal({ open, onOpenChange, entryType, entry =
         )}
 
         {has('party') && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className={cn(!has('bin') && !has('tin') && 'sm:col-span-2')}>
-              <label className={labelCls} htmlFor="ot-party">{meta.partyLabel} name</label>
-              <input id="ot-party" className={inputCls} value={form.partyName} maxLength={200} onChange={e => set('partyName', e.target.value)} />
-              <FieldError message={errors.partyName} />
-            </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label={`${meta.partyLabel} name`} htmlFor="ot-party" required error={errors.partyName} className={cn(!has('bin') && !has('tin') && 'sm:col-span-2')}>
+              <Input id="ot-party" value={form.partyName} maxLength={200} onChange={e => set('partyName', e.target.value)} />
+            </Field>
             {has('bin') && (
-              <div>
-                <label className={labelCls} htmlFor="ot-bin">{meta.partyLabel} BIN <span className="text-gray-400 font-normal">(optional)</span></label>
-                <input id="ot-bin" className={inputCls} value={form.partyBin} maxLength={20} placeholder="000123456-0101" onChange={e => set('partyBin', e.target.value)} />
-                <p className="text-[11px] text-gray-400 mt-1">BIN is 9 or 13 digits, e.g. 000123456-0101</p>
-                <FieldError message={errors.partyBin} />
-              </div>
+              <Field label={`${meta.partyLabel} BIN`} htmlFor="ot-bin" error={errors.partyBin}>
+                <Input id="ot-bin" value={form.partyBin} maxLength={20} placeholder="e.g. 000123456-0101" title="9 or 13 digits" onChange={e => set('partyBin', e.target.value)} />
+              </Field>
             )}
             {has('tin') && (
-              <div>
-                <label className={labelCls} htmlFor="ot-tin">{meta.partyLabel} e-TIN <span className="text-gray-400 font-normal">(optional)</span></label>
-                <input id="ot-tin" className={inputCls} value={form.partyTin} maxLength={20} placeholder="12 digits" onChange={e => set('partyTin', e.target.value)} />
-                <FieldError message={errors.partyTin} />
-              </div>
+              <Field label={`${meta.partyLabel} e-TIN`} htmlFor="ot-tin" error={errors.partyTin}>
+                <Input id="ot-tin" value={form.partyTin} maxLength={20} placeholder="12 digits" onChange={e => set('partyTin', e.target.value)} />
+              </Field>
             )}
           </div>
         )}
 
         {(has('payeeType') || has('section')) && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {has('payeeType') && (
-              <div>
-                <label className={labelCls} htmlFor="ot-payee">Payee type</label>
-                <select id="ot-payee" className={inputCls} value={form.payeeType} disabled={figuresLocked} onChange={e => set('payeeType', e.target.value)}>
+              <Field label="Payee type" htmlFor="ot-payee" hint="Sets the challan code">
+                <NativeSelect
+                  id="ot-payee"
+                  value={form.payeeType}
+                  disabled={figuresLocked}
+                  title="Company 1112101, others 1111101"
+                  onChange={e => set('payeeType', e.target.value)}
+                >
                   {PAYEE_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
-                <p className="text-[11px] text-gray-400 mt-1">Decides the challan code (company 1112101, others 1111101).</p>
-              </div>
+                </NativeSelect>
+              </Field>
             )}
             {has('section') && (
-              <div className={cn(!has('payeeType') && 'sm:col-span-2')}>
-                <label className={labelCls}>TDS section {entryType === 'TDS_RECEIVABLE' && <span className="text-gray-400 font-normal">(optional)</span>}</label>
+              <Field label="TDS section" required={entryType === 'TDS_PAYABLE'} error={errors.section} className={cn(!has('payeeType') && 'sm:col-span-2')}>
                 <TaxCodeSelect
                   kind="TDS_SECTION"
                   value={form.section}
                   onChange={(code) => set('section', code)}
-                  placeholder="Choose section"
-                  className={inputCls}
+                  placeholder="Select…"
+                  className={selectClass}
                   asOf={form.date || undefined}
                   disabled={figuresLocked}
                 />
-                <FieldError message={errors.section} />
-              </div>
+              </Field>
             )}
           </div>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className={labelCls}>{meta.dateLabel}</label>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field label={meta.dateLabel} required hint={meta.dateHint} error={errors.date || hints.dateError}>
             <DatePicker value={form.date} onChange={v => set('date', v)} clearable={false} disabled={figuresLocked} />
-            <p className="text-[11px] text-gray-400 mt-1">{meta.dateHint}</p>
-            <FieldError message={errors.date || hints.dateError} />
-          </div>
+          </Field>
           {has('documentNo') && (
-            <div>
-              <label className={labelCls} htmlFor="ot-doc">{meta.documentLabel} <span className="text-gray-400 font-normal">(optional)</span></label>
-              <input id="ot-doc" className={inputCls} value={form.documentNo} maxLength={80} onChange={e => set('documentNo', e.target.value)} />
-              <FieldError message={errors.documentNo} />
-            </div>
+            <Field label={meta.documentLabel} htmlFor="ot-doc" error={errors.documentNo}>
+              <Input id="ot-doc" value={form.documentNo} maxLength={80} onChange={e => set('documentNo', e.target.value)} />
+            </Field>
           )}
         </div>
 
         {has('treatment') && (
-          <div>
-            <label className={labelCls} htmlFor="ot-treat">VAT rate on the bill</label>
-            <select id="ot-treat" className={inputCls} value={form.treatment} disabled={figuresLocked} onChange={e => set('treatment', e.target.value)}>
+          <Field label="VAT rate on the bill" htmlFor="ot-treat">
+            <NativeSelect id="ot-treat" value={form.treatment} disabled={figuresLocked} onChange={e => set('treatment', e.target.value)}>
               {INPUT_TREATMENT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-          </div>
+            </NativeSelect>
+          </Field>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {has('baseAmount') && (
-            <div>
-              <label className={labelCls} htmlFor="ot-base">{meta.baseLabel} <span className="text-gray-400 font-normal">(optional)</span></label>
-              <input id="ot-base" type="number" inputMode="decimal" step="0.01" min="0" className={inputCls} value={form.baseAmount} disabled={figuresLocked} onChange={e => set('baseAmount', e.target.value)} />
-              <FieldError message={errors.baseAmount} />
-            </div>
+            <Field label={meta.baseLabel} htmlFor="ot-base" error={errors.baseAmount}>
+              <Input id="ot-base" type="number" inputMode="decimal" step="0.01" min="0" placeholder="0.00" value={form.baseAmount} disabled={figuresLocked} onChange={e => set('baseAmount', e.target.value)} />
+            </Field>
           )}
-          <div className={cn(!has('baseAmount') && !has('sdAmount') && 'sm:col-span-2')}>
-            <label className={labelCls} htmlFor="ot-amount">{meta.amountLabel} (৳)</label>
-            <input id="ot-amount" type="number" inputMode="decimal" step="0.01" min="0" className={inputCls} value={form.amount} disabled={figuresLocked} onChange={e => set('amount', e.target.value)} />
-            {hints.rate != null && <p className="text-[11px] text-gray-400 mt-1">Works out to {hints.rate}% of the value.</p>}
-            <FieldError message={errors.amount} />
-          </div>
+          <Field
+            label={`${meta.amountLabel} (৳)`}
+            htmlFor="ot-amount"
+            required
+            hint={hints.rate != null ? `${hints.rate}% of the value` : undefined}
+            error={errors.amount}
+            className={cn(!has('baseAmount') && !has('sdAmount') && 'sm:col-span-2')}
+          >
+            <Input id="ot-amount" type="number" inputMode="decimal" step="0.01" min="0" placeholder="0.00" value={form.amount} disabled={figuresLocked} onChange={e => set('amount', e.target.value)} />
+          </Field>
           {has('sdAmount') && (
-            <div>
-              <label className={labelCls} htmlFor="ot-sd">SD balance (note 66) <span className="text-gray-400 font-normal">(optional)</span></label>
-              <input id="ot-sd" type="number" inputMode="decimal" step="0.01" min="0" className={inputCls} value={form.sdAmount} disabled={figuresLocked} onChange={e => set('sdAmount', e.target.value)} />
-              <FieldError message={errors.sdAmount} />
-            </div>
+            <Field label="SD balance (note 66)" htmlFor="ot-sd" error={errors.sdAmount}>
+              <Input id="ot-sd" type="number" inputMode="decimal" step="0.01" min="0" placeholder="0.00" value={form.sdAmount} disabled={figuresLocked} onChange={e => set('sdAmount', e.target.value)} />
+            </Field>
           )}
         </div>
 
         {hints.claim && (
           hints.claim.expired
-            ? <Callout tone="error">This can only be claimed up to the {periodLabel(hints.claim.deadline)} return, which is before go-live — it is no longer claimable and will be refused.</Callout>
-            : <Callout tone="info">Claimable up to the {periodLabel(hints.claim.deadline)} return. The tax ledger warns before the window closes.</Callout>
+            ? <Callout tone="error">Only claimable up to the {periodLabel(hints.claim.deadline)} return, before go-live — it will be refused.</Callout>
+            : <Callout tone="info">Claimable up to the {periodLabel(hints.claim.deadline)} return.</Callout>
         )}
         {hints.depositDue && (
           <Callout tone={hints.depositOverdue ? 'warning' : 'info'}>
@@ -320,40 +310,33 @@ export default function TaxOpeningModal({ open, onOpenChange, entryType, entry =
         )}
 
         {has('certificate') && (
-          <div className="rounded-lg border border-gray-100 p-3 space-y-3">
-            <p className="text-sm font-medium text-gray-900">{meta.certificateLabel}</p>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div>
-                <label className={labelCls} htmlFor="ot-cs">Status</label>
-                <select id="ot-cs" className={inputCls} value={form.certStatus} onChange={e => set('certStatus', e.target.value)}>
+          <div className="space-y-3 rounded-lg border border-gray-200/80 p-4">
+            <p className="text-sm font-semibold text-gray-900">{meta.certificateLabel}</p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <Field label="Status" htmlFor="ot-cs" error={errors.certStatus}>
+                <NativeSelect id="ot-cs" value={form.certStatus} onChange={e => set('certStatus', e.target.value)}>
                   {certStatuses.map(s => <option key={s} value={s}>{CERTIFICATE_STATUS_LABELS[s]}</option>)}
-                </select>
-                <FieldError message={errors.certStatus} />
-              </div>
-              <div>
-                <label className={labelCls} htmlFor="ot-cn">Certificate no.</label>
-                <input id="ot-cn" className={inputCls} value={form.certNumber} maxLength={60} onChange={e => set('certNumber', e.target.value)} />
-              </div>
-              <div>
-                <label className={labelCls}>Certificate date</label>
+                </NativeSelect>
+              </Field>
+              <Field label="Certificate no." htmlFor="ot-cn">
+                <Input id="ot-cn" value={form.certNumber} maxLength={60} onChange={e => set('certNumber', e.target.value)} />
+              </Field>
+              <Field label="Certificate date" error={errors.certDate || hints.certDateError}>
                 <DatePicker value={form.certDate} onChange={v => set('certDate', v)} disabled={form.certStatus === 'PENDING'} size="md" />
-                <FieldError message={errors.certDate || hints.certDateError} />
-              </div>
+              </Field>
             </div>
           </div>
         )}
 
-        <div>
-          <label className={labelCls} htmlFor="ot-notes">Notes <span className="text-gray-400 font-normal">(optional)</span></label>
-          <textarea id="ot-notes" rows={2} className={inputCls} value={form.notes} maxLength={1000} onChange={e => set('notes', e.target.value)} />
-        </div>
+        <Field label="Notes" htmlFor="ot-notes">
+          <Textarea id="ot-notes" rows={2} className="min-h-0" value={form.notes} maxLength={1000} onChange={e => set('notes', e.target.value)} />
+        </Field>
       </form>
-      <ModalFooter className="-mx-4 sm:-mx-6 -mb-4 mt-4">
-        <button type="button" className={btnGhost} onClick={() => onOpenChange(false)} disabled={saving}>Cancel</button>
-        <button type="submit" form="tax-opening-form" className={btnPrimary} disabled={saving}>
-          {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+      <ModalFooter>
+        <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
+        <Button type="submit" form="tax-opening-form" loading={saving}>
           {entry ? 'Save changes' : 'Add balance'}
-        </button>
+        </Button>
       </ModalFooter>
     </Modal>
   )

@@ -5,7 +5,7 @@ import Image from 'next/image'
 import { cn, getInitials } from '@/lib/utils'
 
 const sizeStyles = {
-  xs:  'w-6 h-6 text-xs',
+  xs:  'w-6 h-6 text-[10px]',
   sm:  'w-8 h-8 text-xs',
   md:  'w-10 h-10 text-sm',
   lg:  'w-12 h-12 text-base',
@@ -14,14 +14,14 @@ const sizeStyles = {
 }
 
 const colorVariants = [
-  'bg-blue-500',
-  'bg-purple-500',
-  'bg-green-500',
-  'bg-orange-500',
-  'bg-pink-500',
-  'bg-teal-500',
-  'bg-indigo-500',
-  'bg-red-500',
+  'bg-blue-100 text-blue-700',
+  'bg-violet-100 text-violet-700',
+  'bg-emerald-100 text-emerald-700',
+  'bg-amber-100 text-amber-800',
+  'bg-pink-100 text-pink-700',
+  'bg-teal-100 text-teal-700',
+  'bg-indigo-100 text-indigo-700',
+  'bg-rose-100 text-rose-700',
 ]
 
 function getColorFromName(name = '') {
@@ -40,7 +40,7 @@ export default function Avatar({ src, name = '', size = 'md', className }) {
 
   if (src && !imgError) {
     return (
-      <div className={cn('relative rounded-full overflow-hidden shrink-0', sizeClass, className)}>
+      <div className={cn('relative rounded-full overflow-hidden shrink-0 ring-1 ring-black/5', sizeClass, className)}>
         <Image
           src={src}
           alt={name}
@@ -56,7 +56,7 @@ export default function Avatar({ src, name = '', size = 'md', className }) {
   return (
     <div
       className={cn(
-        'rounded-full shrink-0 flex items-center justify-center font-semibold text-white',
+        'rounded-full shrink-0 flex items-center justify-center font-semibold ring-1 ring-inset ring-black/5',
         sizeClass,
         color,
         className

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { inputClass } from '@/components/ui/Input'
 
 export const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100
 export const num = (v) => {
@@ -16,8 +17,8 @@ export function qtyText(n) {
   return num(n).toLocaleString('en-BD', { maximumFractionDigits: 4 })
 }
 
-export const ic = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-gray-900 disabled:bg-gray-50'
-export const lc = 'block text-xs font-medium text-gray-600 mb-1'
+export const ic = inputClass
+export const lc = 'mb-2 block text-sm font-medium leading-none text-gray-900'
 
 export const ITEM_STATUS_META = {
   OK:       { label: 'In stock',     color: 'green' },

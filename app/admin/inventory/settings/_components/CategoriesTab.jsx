@@ -2,20 +2,20 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
-import { Plus, Pencil, Trash2, Archive, ArchiveRestore, Loader2, Tags, Info } from 'lucide-react'
+import { Plus, Pencil, Trash2, Archive, ArchiveRestore, Loader2, Tags } from 'lucide-react'
 import Modal, { ModalFooter } from '@/components/ui/Modal'
 import ActionMenu from '@/components/ui/ActionMenu'
 import EmptyState from '@/components/ui/EmptyState'
+import Button from '@/components/ui/Button'
+import Badge from '@/components/ui/Badge'
+import Tabs from '@/components/ui/Tabs'
+import { Card } from '@/components/ui/Card'
+import { Input, NativeSelect, Field } from '@/components/ui/Input'
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table'
 import { TAX_DEPRECIATION_CLASSES } from '@/lib/tax/catalog'
 import { DEPRECIATION_METHOD_LABELS, CATEGORY_TYPE_LABELS } from '@/lib/inventory/constants'
 import { cn } from '@/lib/utils'
 import { fetchJson, errorText } from '../../reports/_components/format'
-
-const inputCls = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-gray-900'
-const labelCls = 'block text-xs font-medium text-gray-600 mb-1'
-const hintCls = 'mt-1 text-xs text-gray-400'
-const btnPrimary = 'inline-flex items-center justify-center gap-1.5 bg-gray-900 text-white hover:bg-gray-800 rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50'
-const btnGhost = 'inline-flex items-center justify-center gap-1.5 border border-gray-200 text-gray-700 hover:bg-gray-50 rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50'
 
 const CLASS_KEYS = Object.keys(TAX_DEPRECIATION_CLASSES)
 
@@ -33,9 +33,21 @@ const EMPTY = {
 
 function Flag({ on, label }) {
   return (
-    <span className={cn('inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium', on ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-400 line-through')}>
+    <Badge variant={on ? 'success' : 'outline'} className={cn(!on && 'text-gray-400 line-through')}>
       {label}
-    </span>
+    </Badge>
+  )
+}
+
+function CheckOption({ checked, onChange, label, sub, title }) {
+  return (
+    <label className="flex items-start gap-2.5 text-sm text-gray-900" title={title}>
+      <input type="checkbox" className="mt-0.5 rounded border-gray-300" checked={checked} onChange={onChange} />
+      <span>
+        <span className="font-medium">{label}</span>
+        {sub && <span className="mt-0.5 block text-xs text-muted-foreground">{sub}</span>}
+      </span>
+    </label>
   )
 }
 
@@ -108,112 +120,94 @@ function CategoryModal({ open, onOpenChange, category, onSaved }) {
   }
 
   return (
-    <Modal open={open} onOpenChange={onOpenChange} title={editing ? `Edit ${category.name}` : 'New category'}
-      description="How items in this category are tracked, depreciated and taxed" size="lg">
-      <div className="space-y-4">
+    <Modal open={open} onOpenChange={onOpenChange} title={editing ? `Edit ${category.name}` : 'New category'} size="lg">
+      <div className="space-y-5">
         <div className="grid gap-4 sm:grid-cols-3">
-          <div className="sm:col-span-2">
-            <label className={labelCls}>Name</label>
-            <input className={inputCls} value={form.name} maxLength={80} onChange={e => set('name', e.target.value)} placeholder="e.g. Laptop" />
-          </div>
-          <div>
-            <label className={labelCls}>Code</label>
-            <input className={cn(inputCls, 'font-mono uppercase')} value={form.code} maxLength={6}
+          <Field label="Name" required className="sm:col-span-2">
+            <Input value={form.name} maxLength={80} onChange={e => set('name', e.target.value)} placeholder="e.g. Laptop" />
+          </Field>
+          <Field label="Code" required
+            hint={editing && usedAssets > 0 ? 'Locked — used in asset tags' : 'Used in tags, e.g. EN-LAP-00042'}>
+            <Input className="font-mono uppercase" value={form.code} maxLength={6}
               disabled={editing && usedAssets > 0}
               onChange={e => set('code', e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))} placeholder="LAP" />
-            <p className={hintCls}>{editing && usedAssets > 0 ? 'Used in asset tags — cannot change' : 'Used in asset tags, e.g. EN-LAP-00042'}</p>
-          </div>
+          </Field>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label className={labelCls}>Tracked as</label>
-            <select className={inputCls} value={form.type} disabled={editing && ((category?.assetCount ?? 0) > 0 || (category?.stockItemCount ?? 0) > 0)}
+          <Field label="Tracked as">
+            <NativeSelect value={form.type} disabled={editing && ((category?.assetCount ?? 0) > 0 || (category?.stockItemCount ?? 0) > 0)}
               onChange={e => set('type', e.target.value)}>
               {Object.entries(CATEGORY_TYPE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className={labelCls}>Tax class (Income Tax Act 2023, Third Schedule)</label>
-            <select className={inputCls} value={form.taxClass} onChange={e => set('taxClass', e.target.value)}>
+            </NativeSelect>
+          </Field>
+          <Field label="Tax class (Third Schedule)"
+            hint={cls ? `${cls.rate}% ${cls.method === 'SL' ? 'of cost' : 'of WDV'} a year${cls.costCap ? ` · cost capped at Tk ${cls.costCap.toLocaleString('en-IN')}` : ''} · new assets only` : null}>
+            <NativeSelect value={form.taxClass} onChange={e => set('taxClass', e.target.value)} title="Income Tax Act 2023, Third Schedule">
               {CLASS_KEYS.map(k => <option key={k} value={k}>{classText(k)}</option>)}
-            </select>
-            {cls && <p className={hintCls}>Tax allowance {cls.rate}% {cls.method === 'SL' ? 'of cost a year' : 'of written-down value a year'}{cls.costCap ? ` · cost capped at Tk ${cls.costCap.toLocaleString('en-IN')}` : ''}. Changes apply to assets added from now on.</p>}
-          </div>
+            </NativeSelect>
+          </Field>
         </div>
 
         {!consumable && (
-          <div className="rounded-xl border border-gray-100 p-4 space-y-4">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Book depreciation</p>
+          <div className="space-y-4 rounded-lg bg-gray-50 p-4">
+            <p className="text-sm font-semibold text-gray-900">Book depreciation</p>
             <div className="grid gap-4 sm:grid-cols-3">
-              <div>
-                <label className={labelCls}>Method</label>
-                <select className={inputCls} value={form.depreciationMethod} onChange={e => set('depreciationMethod', e.target.value)}>
+              <Field label="Method">
+                <NativeSelect value={form.depreciationMethod} onChange={e => set('depreciationMethod', e.target.value)}>
                   {Object.entries(DEPRECIATION_METHOD_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className={labelCls}>Useful life (months)</label>
-                <input type="number" min="1" max="1200" step="1" className={inputCls} value={form.usefulLifeMonths}
+                </NativeSelect>
+              </Field>
+              <Field label="Useful life (months)" hint={`Blank = ${cls?.bookLifeMonths ?? 60} months`}>
+                <Input type="number" min="1" max="1200" step="1" value={form.usefulLifeMonths}
                   disabled={form.depreciationMethod === 'NONE'}
                   onChange={e => set('usefulLifeMonths', e.target.value)} placeholder={cls ? String(cls.bookLifeMonths) : '60'} />
-                <p className={hintCls}>Blank = {cls?.bookLifeMonths ?? 60} months (class default)</p>
-              </div>
-              <div>
-                <label className={labelCls}>Residual value %</label>
-                <input type="number" min="0" max="99" step="0.5" className={inputCls} value={form.residualPct}
+              </Field>
+              <Field label="Residual value %">
+                <Input type="number" min="0" max="99" step="0.5" value={form.residualPct}
                   disabled={form.depreciationMethod === 'NONE'} onChange={e => set('residualPct', e.target.value)} />
-              </div>
+              </Field>
               {form.depreciationMethod === 'DECLINING_BALANCE' && (
-                <div>
-                  <label className={labelCls}>Declining rate % a year</label>
-                  <input type="number" min="0.1" max="100" step="0.5" className={inputCls} value={form.decliningRatePct}
-                    onChange={e => set('decliningRatePct', e.target.value)} placeholder="Double-declining if blank" />
-                </div>
+                <Field label="Declining rate % a year">
+                  <Input type="number" min="0.1" max="100" step="0.5" value={form.decliningRatePct}
+                    onChange={e => set('decliningRatePct', e.target.value)} placeholder="Blank = double-declining" />
+                </Field>
               )}
             </div>
           </div>
         )}
 
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-2">
           {!consumable && (
             <>
-              <label className="flex items-start gap-2.5 text-sm text-gray-700">
-                <input type="checkbox" className="mt-0.5 rounded border-gray-300" checked={form.capitalize} onChange={e => set('capitalize', e.target.checked)} />
-                <span>Capitalise<span className="block text-xs text-gray-400">Carried as an asset when the cost reaches the capitalisation threshold; otherwise expensed and tracked for custody only.</span></span>
-              </label>
-              <label className="flex items-start gap-2.5 text-sm text-gray-700">
-                <input type="checkbox" className="mt-0.5 rounded border-gray-300" checked={form.requiresAcknowledgement} onChange={e => set('requiresAcknowledgement', e.target.checked)} />
-                <span>Employee acknowledges hand-over<span className="block text-xs text-gray-400">The assignee confirms receipt in My Assets.</span></span>
-              </label>
+              <CheckOption checked={form.capitalize} onChange={e => set('capitalize', e.target.checked)}
+                label="Capitalise" sub="When cost reaches the threshold"
+                title="Carried as an asset when the cost reaches the capitalisation threshold; otherwise expensed and tracked for custody only." />
+              <CheckOption checked={form.requiresAcknowledgement} onChange={e => set('requiresAcknowledgement', e.target.checked)}
+                label="Employee acknowledges hand-over" title="The assignee confirms receipt in My Assets." />
             </>
           )}
-          <label className="flex items-start gap-2.5 text-sm text-gray-700">
-            <input type="checkbox" className="mt-0.5 rounded border-gray-300" checked={form.inputVatCreditable} onChange={e => set('inputVatCreditable', e.target.checked)} />
-            <span>Input VAT creditable<span className="block text-xs text-gray-400">Leave off for office equipment, furniture, ACs, vehicles and stationery — VAT Act s.2(18A) excludes them from &quot;input&quot;, so their VAT is added to cost.</span></span>
-          </label>
-          <label className="flex items-start gap-2.5 text-sm text-gray-700">
-            <input type="checkbox" className="mt-0.5 rounded border-gray-300" checked={form.isActive} onChange={e => set('isActive', e.target.checked)} />
-            <span>Active<span className="block text-xs text-gray-400">Inactive categories can’t be used for new items.</span></span>
-          </label>
+          <CheckOption checked={form.inputVatCreditable} onChange={e => set('inputVatCreditable', e.target.checked)}
+            label="Input VAT creditable" sub="Off for office equipment, furniture, ACs, vehicles (VAT Act s.2(18A))"
+            title={'VAT Act s.2(18A) excludes office equipment, furniture, ACs, vehicles and stationery from "input", so their VAT is added to cost.'} />
+          <CheckOption checked={form.isActive} onChange={e => set('isActive', e.target.checked)}
+            label="Active" title="Inactive categories can’t be used for new items." />
         </div>
 
         <div className="grid gap-4 sm:grid-cols-3">
-          <div className="sm:col-span-2">
-            <label className={labelCls}>Description</label>
-            <input className={inputCls} value={form.description} maxLength={500} onChange={e => set('description', e.target.value)} placeholder="Optional" />
-          </div>
-          <div>
-            <label className={labelCls}>Sort order</label>
-            <input type="number" min="0" step="10" className={inputCls} value={form.sortOrder} onChange={e => set('sortOrder', e.target.value)} placeholder="Auto" />
-          </div>
+          <Field label="Description" className="sm:col-span-2">
+            <Input value={form.description} maxLength={500} onChange={e => set('description', e.target.value)} placeholder="Optional" />
+          </Field>
+          <Field label="Sort order">
+            <Input type="number" min="0" step="10" value={form.sortOrder} onChange={e => set('sortOrder', e.target.value)} placeholder="Auto" />
+          </Field>
         </div>
       </div>
-      <ModalFooter className="-mx-4 sm:-mx-6 -mb-4 mt-5">
-        <button className={btnGhost} onClick={() => onOpenChange(false)} disabled={saving}>Cancel</button>
-        <button className={btnPrimary} onClick={save} disabled={saving}>
-          {saving && <Loader2 className="w-4 h-4 animate-spin" />} {editing ? 'Save changes' : 'Add category'}
-        </button>
+      <ModalFooter>
+        <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
+        <Button onClick={save} loading={saving}>
+          {editing ? 'Save changes' : 'Add category'}
+        </Button>
       </ModalFooter>
     </Modal>
   )
@@ -262,8 +256,8 @@ export default function CategoriesTab() {
   async function remove(c) {
     const inUse = (c.assetCount || 0) + (c.stockItemCount || 0) > 0
     const msg = inUse
-      ? `"${c.name}" is in use, so it will be deactivated instead of deleted. Continue?`
-      : `Delete the category "${c.name}"? This cannot be undone.`
+      ? `"${c.name}" is in use, so it will be deactivated instead. Continue?`
+      : `Delete "${c.name}"? This can't be undone.`
     if (!window.confirm(msg)) return
     try {
       const json = await fetchJson(`/api/inventory/categories/${c.id}`, { method: 'DELETE' })
@@ -276,100 +270,90 @@ export default function CategoriesTab() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          {[['ALL', 'All'], ['ASSET', 'Assets'], ['CONSUMABLE', 'Consumables']].map(([v, l]) => (
-            <button key={v} onClick={() => setFilter(v)}
-              className={cn('px-3 py-1.5 rounded-lg text-sm font-medium border', filter === v ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50')}>
-              {l}
-            </button>
-          ))}
-          {inactiveCount > 0 && (
-            <label className="flex items-center gap-2 text-sm text-gray-600 ml-1">
-              <input type="checkbox" className="rounded border-gray-300" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
-              Show inactive ({inactiveCount})
-            </label>
-          )}
-        </div>
-        <button className={btnPrimary} onClick={() => setModal({ open: true, category: null })}>
-          <Plus className="w-4 h-4" /> New category
-        </button>
+      <div className="flex flex-wrap items-center gap-2">
+        <Tabs
+          value={filter}
+          onChange={setFilter}
+          tabs={[{ value: 'ALL', label: 'All' }, { value: 'ASSET', label: 'Assets' }, { value: 'CONSUMABLE', label: 'Consumables' }]}
+        />
+        {inactiveCount > 0 && (
+          <label className="ml-1 flex items-center gap-2 text-sm text-gray-700">
+            <input type="checkbox" className="rounded border-gray-300" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
+            Show inactive ({inactiveCount})
+          </label>
+        )}
+        <Button className="ml-auto" onClick={() => setModal({ open: true, category: null })}>
+          <Plus /> New category
+        </Button>
       </div>
 
-      <div className="flex items-start gap-2 text-xs text-gray-500 bg-gray-50 border border-gray-100 rounded-xl p-3">
-        <Info className="w-4 h-4 shrink-0 text-gray-400" />
-        <span>The tax class sets the Third Schedule rate used in the tax depreciation schedule; the book method and life drive the monthly depreciation run. Existing assets keep the settings they were created with.</span>
-      </div>
-
-      <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+      <Card className="overflow-hidden">
         {error ? (
           <EmptyState title="Couldn't load categories" description={error}
-            action={<button className={btnPrimary} onClick={load}>Try again</button>} />
+            action={<Button variant="outline" onClick={load}>Try again</Button>} />
         ) : loading && !rows.length ? (
-          <div className="py-16 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
+          <div className="flex justify-center py-16"><Loader2 className="size-5 animate-spin text-gray-400" /></div>
         ) : visible.length === 0 ? (
-          <EmptyState icon={Tags} title="No categories" description="Add categories to group assets and consumables and set how they depreciate." />
+          <EmptyState icon={Tags} title="No categories yet" />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-100 bg-gray-50/60 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                  <th className="px-4 py-3">Category</th>
-                  <th className="px-3 py-3">Tax class</th>
-                  <th className="px-3 py-3">Book depreciation</th>
-                  <th className="px-3 py-3">Rules</th>
-                  <th className="px-3 py-3 text-right">In use</th>
-                  <th className="px-3 py-3" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {visible.map(c => (
-                  <tr key={c.id} className={cn('hover:bg-gray-50/60 align-top', !c.isActive && 'opacity-60')}>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs bg-gray-100 text-gray-700 rounded px-1.5 py-0.5">{c.code}</span>
-                        <span className="font-medium text-gray-900">{c.name}</span>
-                        {!c.isActive && <span className="text-xs text-gray-400">(inactive)</span>}
-                      </div>
-                      <p className="text-xs text-gray-500 mt-1">{c.type === 'CONSUMABLE' ? 'Consumable' : 'Asset'}{c.description ? ` · ${c.description}` : ''}</p>
-                    </td>
-                    <td className="px-3 py-3 text-gray-700">
-                      <p className="whitespace-nowrap">{c.taxClassLabel}</p>
-                      <p className="text-xs text-gray-500">{c.taxRate}% {c.taxMethod === 'SL' ? 'straight-line' : 'WDV'}</p>
-                    </td>
-                    <td className="px-3 py-3 text-gray-700 whitespace-nowrap">
-                      {c.type === 'CONSUMABLE' || c.depreciationMethod === 'NONE' ? <span className="text-gray-400">—</span> : (
-                        <>
-                          <p>{DEPRECIATION_METHOD_LABELS[c.depreciationMethod]}</p>
-                          <p className="text-xs text-gray-500">{c.usefulLifeMonths} months{c.residualPct ? ` · ${c.residualPct}% residual` : ''}{c.decliningRatePct ? ` · ${c.decliningRatePct}%/yr` : ''}</p>
-                        </>
-                      )}
-                    </td>
-                    <td className="px-3 py-3">
-                      <div className="flex flex-wrap gap-1">
-                        {c.type !== 'CONSUMABLE' && <Flag on={c.capitalize} label="Capitalise" />}
-                        {c.type !== 'CONSUMABLE' && <Flag on={c.requiresAcknowledgement} label="Acknowledge" />}
-                        <Flag on={c.inputVatCreditable} label="Input VAT" />
-                      </div>
-                    </td>
-                    <td className="px-3 py-3 text-right text-gray-700 whitespace-nowrap">
-                      {c.type === 'CONSUMABLE' ? `${c.stockItemCount} item${c.stockItemCount === 1 ? '' : 's'}` : `${c.heldCount} held`}
-                      {c.type !== 'CONSUMABLE' && c.assetCount > c.heldCount && <p className="text-xs text-gray-400">{c.assetCount - c.heldCount} disposed</p>}
-                    </td>
-                    <td className="px-3 py-3 text-right">
-                      <ActionMenu items={[
-                        { label: 'Edit', icon: Pencil, onClick: () => setModal({ open: true, category: c }) },
-                        { label: c.isActive ? 'Deactivate' : 'Reactivate', icon: c.isActive ? Archive : ArchiveRestore, onClick: () => toggleActive(c) },
-                        { label: 'Delete', icon: Trash2, danger: true, onClick: () => remove(c) },
-                      ]} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Category</TableHead>
+                <TableHead title="Sets the Third Schedule rate for the tax depreciation schedule">Tax class</TableHead>
+                <TableHead title="Drives the monthly depreciation run. Existing assets keep their settings.">Book depreciation</TableHead>
+                <TableHead>Rules</TableHead>
+                <TableHead className="text-right">In use</TableHead>
+                <TableHead />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {visible.map(c => (
+                <TableRow key={c.id} className={cn('align-top', !c.isActive && 'opacity-60')}>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <span className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs text-gray-700">{c.code}</span>
+                      <span className="font-medium text-gray-900">{c.name}</span>
+                      {!c.isActive && <span className="text-xs text-gray-400">(inactive)</span>}
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">{c.type === 'CONSUMABLE' ? 'Consumable' : 'Asset'}{c.description ? ` · ${c.description}` : ''}</p>
+                  </TableCell>
+                  <TableCell>
+                    <p className="whitespace-nowrap">{c.taxClassLabel}</p>
+                    <p className="text-xs text-muted-foreground">{c.taxRate}% {c.taxMethod === 'SL' ? 'straight-line' : 'WDV'}</p>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {c.type === 'CONSUMABLE' || c.depreciationMethod === 'NONE' ? <span className="text-gray-400">—</span> : (
+                      <>
+                        <p>{DEPRECIATION_METHOD_LABELS[c.depreciationMethod]}</p>
+                        <p className="text-xs text-muted-foreground">{c.usefulLifeMonths} months{c.residualPct ? ` · ${c.residualPct}% residual` : ''}{c.decliningRatePct ? ` · ${c.decliningRatePct}%/yr` : ''}</p>
+                      </>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap gap-1">
+                      {c.type !== 'CONSUMABLE' && <Flag on={c.capitalize} label="Capitalise" />}
+                      {c.type !== 'CONSUMABLE' && <Flag on={c.requiresAcknowledgement} label="Acknowledge" />}
+                      <Flag on={c.inputVatCreditable} label="Input VAT" />
+                    </div>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-right tabular-nums">
+                    {c.type === 'CONSUMABLE' ? `${c.stockItemCount} item${c.stockItemCount === 1 ? '' : 's'}` : `${c.heldCount} held`}
+                    {c.type !== 'CONSUMABLE' && c.assetCount > c.heldCount && <p className="text-xs text-gray-400">{c.assetCount - c.heldCount} disposed</p>}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <ActionMenu items={[
+                      { label: 'Edit', icon: Pencil, onClick: () => setModal({ open: true, category: c }) },
+                      { label: c.isActive ? 'Deactivate' : 'Reactivate', icon: c.isActive ? Archive : ArchiveRestore, onClick: () => toggleActive(c) },
+                      { label: 'Delete', icon: Trash2, danger: true, onClick: () => remove(c) },
+                    ]} />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         )}
-      </div>
+      </Card>
 
       <CategoryModal open={modal.open} category={modal.category}
         onOpenChange={o => setModal(m => ({ ...m, open: o }))} onSaved={load} />

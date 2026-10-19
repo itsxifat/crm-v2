@@ -1,10 +1,10 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { Loader2, PackageX, ShieldAlert, ScanLine } from 'lucide-react'
-import { btnPrimary, btnSecondary, cardCls } from '../../_components/shared'
+import Button from '@/components/ui/Button'
+import { Card } from '@/components/ui/Card'
 
 /**
  * Target of the QR code on asset labels: /admin/inventory/assets/tag/{tag}.
@@ -41,36 +41,36 @@ export default function AssetTagResolverPage() {
 
   if (state.status === 'loading') {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[50vh] gap-3 text-gray-500">
-        <Loader2 className="w-7 h-7 animate-spin" />
-        <p className="text-sm">Opening <span className="font-mono font-semibold text-gray-900">{label}</span>…</p>
+      <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3 text-muted-foreground">
+        <Loader2 className="size-5 animate-spin" />
+        <p className="text-sm">Opening <span className="font-mono font-medium text-gray-900">{label}</span>…</p>
       </div>
     )
   }
 
   const Icon = state.status === 'forbidden' ? ShieldAlert : state.status === 'missing' ? PackageX : ScanLine
   const title = state.status === 'forbidden'
-    ? 'This equipment is not assigned to you'
-    : state.status === 'missing' ? 'Unknown asset tag' : 'Could not open the asset'
+    ? 'Not assigned to you'
+    : state.status === 'missing' ? 'Unknown asset tag' : "Couldn't open the asset"
 
   return (
-    <div className="max-w-md mx-auto px-4 py-10">
-      <div className={`${cardCls} p-6 text-center`}>
-        <div className="w-14 h-14 rounded-2xl bg-gray-100 flex items-center justify-center mx-auto mb-4">
-          <Icon className="w-7 h-7 text-gray-500" />
+    <div className="mx-auto max-w-md pt-6 sm:pt-10">
+      <Card className="p-6 text-center">
+        <div className="mx-auto mb-4 flex size-11 items-center justify-center rounded-xl border border-gray-200/80 bg-white shadow-xs">
+          <Icon className="size-5 text-gray-500" />
         </div>
-        <p className="font-mono text-sm font-semibold text-gray-900 mb-1">{label}</p>
-        <h1 className="text-lg font-semibold text-gray-900">{title}</h1>
-        <p className="text-sm text-gray-500 mt-1">
+        <p className="mb-1 font-mono text-[13px] font-medium text-muted-foreground">{label}</p>
+        <h1 className="text-base font-semibold text-gray-900">{title}</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
           {state.status === 'forbidden'
-            ? 'Only the person holding it and the inventory team can open it. If you found it, please hand it to the admin desk.'
+            ? 'Only its holder and the inventory team can open it. Found it? Hand it to the admin desk.'
             : state.message}
         </p>
-        <div className="flex flex-wrap justify-center gap-2 mt-5">
-          <Link href="/admin/my-assets" className={btnSecondary}>My assets</Link>
-          <Link href="/admin" className={btnPrimary}>Dashboard</Link>
+        <div className="mt-5 flex flex-wrap justify-center gap-2">
+          <Button variant="outline" href="/admin/my-assets">My assets</Button>
+          <Button href="/admin">Dashboard</Button>
         </div>
-      </div>
+      </Card>
     </div>
   )
 }

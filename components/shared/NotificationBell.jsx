@@ -4,6 +4,8 @@ import { useState, useEffect, useRef } from 'react'
 import { Bell, X, CheckCheck, Loader2 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { cn } from '@/lib/utils'
+import Button, { buttonVariants } from '@/components/ui/Button'
 
 export default function NotificationBell() {
   const [open, setOpen] = useState(false)
@@ -63,53 +65,47 @@ export default function NotificationBell() {
     }
   }
 
-  const typeColors = {
-    info:    'bg-blue-100 text-blue-600',
-    success: 'bg-green-100 text-green-600',
-    warning: 'bg-yellow-100 text-yellow-600',
-    error:   'bg-red-100 text-red-600',
-  }
-
   return (
     <div className="relative" ref={dropdownRef}>
       <button
+        type="button"
         onClick={() => setOpen(!open)}
-        className="relative w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
+        aria-label="Notifications"
+        className={cn(
+          'relative flex size-9 items-center justify-center rounded-lg text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900',
+          open && 'bg-gray-100 text-gray-900'
+        )}
       >
-        <Bell className="w-5 h-5 text-gray-600" />
+        <Bell className="size-4" />
         {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+          <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-none text-white ring-2 ring-white tabular-nums">
             {unreadCount > 9 ? '9+' : unreadCount}
           </span>
         )}
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-80 bg-white rounded-2xl shadow-xl border border-gray-100 z-50 overflow-hidden">
+        <div className="absolute right-0 z-50 mt-2 w-80 overflow-hidden rounded-xl border border-gray-200/80 bg-white shadow-lg">
           {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-            <div>
-              <h3 className="text-sm font-semibold text-gray-800">Notifications</h3>
+          <div className="flex items-center justify-between gap-2 border-b border-gray-100 px-4 py-3">
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-semibold text-gray-900">Notifications</h3>
               {unreadCount > 0 && (
-                <p className="text-xs text-gray-400">{unreadCount} unread</p>
+                <span className="rounded-full bg-gray-100 px-1.5 text-[11px] font-medium leading-[18px] text-gray-600 tabular-nums">
+                  {unreadCount}
+                </span>
               )}
             </div>
             <div className="flex items-center gap-1">
               {unreadCount > 0 && (
-                <button
-                  onClick={markAllRead}
-                  className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 px-2 py-1 rounded-lg hover:bg-blue-50 transition-colors"
-                >
-                  <CheckCheck className="w-3.5 h-3.5" />
+                <Button variant="ghost" size="xs" onClick={markAllRead} className="text-muted-foreground">
+                  <CheckCheck className="size-3.5" />
                   Mark all read
-                </button>
+                </Button>
               )}
-              <button
-                onClick={() => setOpen(false)}
-                className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <X className="w-4 h-4 text-gray-400" />
-              </button>
+              <Button variant="ghost" size="icon-xs" onClick={() => setOpen(false)} className="text-gray-400" aria-label="Close">
+                <X />
+              </Button>
             </div>
           </div>
 
@@ -117,14 +113,16 @@ export default function NotificationBell() {
           <div className="max-h-80 overflow-y-auto scrollbar-thin">
             {loading && (
               <div className="flex items-center justify-center py-8">
-                <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
+                <Loader2 className="size-5 animate-spin text-gray-400" />
               </div>
             )}
 
             {!loading && notifications.length === 0 && (
-              <div className="text-center py-10">
-                <Bell className="w-10 h-10 text-gray-200 mx-auto mb-2" />
-                <p className="text-sm text-gray-400">No notifications yet</p>
+              <div className="flex flex-col items-center py-10 text-center">
+                <div className="mb-3 flex size-9 items-center justify-center rounded-lg border border-gray-200/80 bg-white shadow-xs">
+                  <Bell className="size-4 text-gray-500" />
+                </div>
+                <p className="text-sm text-muted-foreground">No notifications yet</p>
               </div>
             )}
 
@@ -132,17 +130,17 @@ export default function NotificationBell() {
               <div
                 key={n.id}
                 onClick={() => openNotification(n)}
-                className={`px-4 py-3 border-b border-gray-50 hover:bg-gray-50 transition-colors cursor-pointer ${!n.isRead ? 'bg-blue-50/50' : ''}`}
+                className="cursor-pointer border-b border-gray-100 px-4 py-3 transition-colors last:border-0 hover:bg-gray-50/70"
               >
                 <div className="flex items-start gap-3">
-                  <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${!n.isRead ? 'bg-blue-500' : 'bg-gray-200'}`} />
-                  <div className="flex-1 min-w-0">
-                    <p className={`text-sm font-medium ${!n.isRead ? 'text-gray-900' : 'text-gray-600'}`}>
+                  <span className={cn('mt-1.5 size-2 shrink-0 rounded-full', !n.isRead ? 'bg-brand' : 'bg-transparent')} />
+                  <div className="min-w-0 flex-1">
+                    <p className={cn('text-sm', !n.isRead ? 'font-medium text-gray-900' : 'text-gray-600')}>
                       {n.title}
                     </p>
-                    <p className="text-xs text-gray-400 mt-0.5 line-clamp-2">{n.message}</p>
-                    <p className="text-xs text-gray-300 mt-1">
-                      {new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} &bull; {new Date(n.createdAt).toLocaleDateString()}
+                    <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{n.message}</p>
+                    <p className="mt-1 text-[11px] text-gray-400">
+                      {new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · {new Date(n.createdAt).toLocaleDateString()}
                     </p>
                   </div>
                 </div>
@@ -151,13 +149,13 @@ export default function NotificationBell() {
           </div>
 
           {/* Footer */}
-          <div className="px-4 py-3 border-t border-gray-100 bg-gray-50">
+          <div className="border-t border-gray-100 p-1.5">
             <Link
               href="/notifications"
               onClick={() => setOpen(false)}
-              className="block text-center text-xs text-blue-600 hover:text-blue-700 font-medium"
+              className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'w-full')}
             >
-              View all notifications
+              View all
             </Link>
           </div>
         </div>

@@ -2,15 +2,17 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
-import { Landmark, Loader2, AlertTriangle, Info } from 'lucide-react'
+import { Landmark, AlertTriangle } from 'lucide-react'
 import Modal, { ModalFooter } from '@/components/ui/Modal'
+import Button from '@/components/ui/Button'
+import { Input, Textarea, Field } from '@/components/ui/Input'
 import DatePicker from '@/components/ui/DatePicker'
 import FileUpload from '@/components/ui/FileUpload'
 import MoneyAccountSelect, { invalidateMoneyAccounts } from '@/components/finance/MoneyAccountSelect'
 import { BD_BANKS } from '@/lib/finance/constants'
 import { CHALLAN_CODES } from '@/lib/tax/catalog'
 import {
-  inputCls, labelCls, hintCls, btnPrimary, btnGhost, tk, fmtDay, todayKey, fetchJson, fmtPeriod, depositBalance, sumBalance,
+  tk, fmtDay, todayKey, fetchJson, fmtPeriod, depositBalance, sumBalance,
 } from './taxUi'
 
 const KIND_COPY = {
@@ -153,144 +155,133 @@ export default function DepositModal({ open, onOpenChange, kind = 'TDS', entries
 
   const footer = (
     <ModalFooter>
-      <button type="button" className={btnGhost} onClick={() => onOpenChange?.(false)} disabled={saving}>Cancel</button>
-      <button type="button" className={btnPrimary} onClick={submit} disabled={saving}>
-        {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Landmark className="w-4 h-4" />}
+      <Button variant="outline" onClick={() => onOpenChange?.(false)} disabled={saving}>Cancel</Button>
+      <Button onClick={submit} loading={saving}>
+        {!saving && <Landmark />}
         Record challan
-      </button>
+      </Button>
     </ModalFooter>
   )
 
   return (
-    <Modal open={open} onOpenChange={onOpenChange} title={copy.title} description={`Posts a "${copy.category}" payment from the selected account — it does not affect profit.`} size="lg">
-      <div className="space-y-4 mb-4">
+    <Modal open={open} onOpenChange={onOpenChange} title={copy.title} description={`Books "${copy.category}" · no effect on profit`} size="lg">
+      <div className="space-y-5">
         {!isVat && (
-          <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-gray-600">{entries.length} {copy.what} selected</span>
-              <span className="font-semibold text-gray-900">{tk(selectedTotal)}</span>
+          <div className="rounded-lg border border-gray-200/80">
+            <div className="flex items-center justify-between gap-3 border-b border-gray-100 px-3 py-2.5 text-sm">
+              <span className="text-muted-foreground">{entries.length} {copy.what} selected</span>
+              <span className="font-semibold text-gray-900 tabular-nums">{tk(selectedTotal)}</span>
             </div>
-            <ul className="mt-2 max-h-36 overflow-y-auto divide-y divide-gray-100 text-xs">
+            <ul className="max-h-36 divide-y divide-gray-100 overflow-y-auto text-xs">
               {entries.map(e => (
-                <li key={e.id} className="flex items-center justify-between gap-3 py-1.5">
+                <li key={e.id} className="flex items-center justify-between gap-3 px-3 py-2">
                   <span className="min-w-0 truncate text-gray-700">
-                    <span className="font-mono text-gray-400 mr-1.5">{e.entryNo}</span>
+                    <span className="mr-1.5 font-mono text-gray-400">{e.entryNo}</span>
                     {e.partyName || '—'}{e.section ? <span className="text-gray-400"> · {e.section}</span> : null}
                   </span>
-                  <span className="shrink-0 text-gray-500">
-                    {fmtDay(e.date)} · <span className="font-medium text-gray-800">{tk(depositBalance(e))}</span>
+                  <span className="shrink-0 text-muted-foreground">
+                    {fmtDay(e.date)} · <span className="font-medium text-gray-900 tabular-nums">{tk(depositBalance(e))}</span>
                     {depositBalance(e) < (Number(e.amount) || 0) - 0.005 && <span className="text-gray-400"> of {tk(e.amount)}</span>}
                   </span>
                 </li>
               ))}
             </ul>
             {kind === 'TDS' && payeeTypes.length > 1 && (
-              <p className="mt-2 flex items-start gap-1.5 text-xs text-amber-700">
-                <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                The selection mixes company and non-company payees. Treasury codes differ ({CHALLAN_CODES.TDS_COMPANY} company, {CHALLAN_CODES.TDS_NON_COMPANY} others) — use separate challans if your bank requires it.
-              </p>
+              <div className="flex items-start gap-2 border-t border-amber-200 bg-amber-50 px-3 py-2.5 text-[13px] text-amber-800 rounded-b-lg">
+                <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+                <span>Mixes company ({CHALLAN_CODES.TDS_COMPANY}) and non-company ({CHALLAN_CODES.TDS_NON_COMPANY}) payees — use separate challans if your bank requires it.</span>
+              </div>
             )}
           </div>
         )}
 
         {isVat && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className={labelCls}>Return period — from</label>
-              <input type="month" className={inputCls} value={form.returnStart ?? ''} onChange={set('returnStart')} />
-            </div>
-            <div>
-              <label className={labelCls}>Return period — to</label>
-              <input type="month" className={inputCls} value={form.returnEnd ?? ''} onChange={set('returnEnd')} />
-            </div>
-            <p className={`${hintCls} sm:col-span-2 -mt-1`}>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Return period from">
+              <Input type="month" value={form.returnStart ?? ''} onChange={set('returnStart')} />
+            </Field>
+            <Field label="Return period to">
+              <Input type="month" value={form.returnEnd ?? ''} onChange={set('returnEnd')} />
+            </Field>
+            <p className="-mt-2 text-xs text-muted-foreground sm:col-span-2">
               {form.returnStart
-                ? `Counts as a treasury deposit (note 58) of the ${form.returnStart === form.returnEnd || !form.returnEnd ? fmtPeriod(form.returnStart) : `${fmtPeriod(form.returnStart)} – ${fmtPeriod(form.returnEnd)}`} Mushak-9.1.`
-                : 'Leave empty to link the payment to the return of the last ended period.'}
+                ? `Note 58 of the ${form.returnStart === form.returnEnd || !form.returnEnd ? fmtPeriod(form.returnStart) : `${fmtPeriod(form.returnStart)} – ${fmtPeriod(form.returnEnd)}`} Mushak-9.1`
+                : 'Empty links it to the last ended return'}
             </p>
           </div>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label className={labelCls}>Challan / e-payment no. *</label>
-            <input className={inputCls} value={form.challanNo ?? ''} onChange={set('challanNo')} placeholder="e.g. 2627-0012345678" maxLength={60} />
-          </div>
-          <div>
-            <label className={labelCls}>Challan date *</label>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Challan / e-payment no." required>
+            <Input value={form.challanNo ?? ''} onChange={set('challanNo')} placeholder="e.g. 2627-0012345678" maxLength={60} />
+          </Field>
+          <Field label="Challan date" required>
             <DatePicker value={form.date ?? null} onChange={set('date')} clearable={false} />
-          </div>
-          <div className="sm:col-span-2">
-            <label className={labelCls}>Paid from account</label>
-            <MoneyAccountSelect value={form.accountId ?? null} onChange={(id) => setForm(f => ({ ...f, accountId: id }))} placeholder="Select the bank / wallet account" />
-            <p className={hintCls}>Required once your books are live (after the go-live date).</p>
-          </div>
-          <div>
-            <label className={labelCls}>{isVat ? 'VAT deposited (Tk) *' : 'Tax deposited (Tk) *'}</label>
-            <input type="number" min="0" step="0.01" inputMode="decimal" className={inputCls} value={form.amount ?? ''} onChange={set('amount')} />
-            {!isVat && Math.abs(diff) > 0.01 && amount > 0 && (
-              <p className={`mt-1 text-[11px] ${over ? 'text-red-600' : 'text-amber-700'}`}>
-                {over ? `${tk(diff)} more than the selection` : `${tk(-diff)} less than the selection`}
-              </p>
-            )}
-          </div>
-          <div>
-            <label className={labelCls}>Interest / late fee paid (Tk)</label>
-            <input type="number" min="0" step="0.01" inputMode="decimal" className={inputCls} value={form.interestAmount ?? ''} onChange={set('interestAmount')} placeholder="0" />
-            <p className={hintCls}>Booked as "Tax Interest & Penalties" (not deductible).</p>
-          </div>
+          </Field>
+          <Field label="Paid from account" hint="Required after go-live" className="sm:col-span-2">
+            <MoneyAccountSelect value={form.accountId ?? null} onChange={(id) => setForm(f => ({ ...f, accountId: id }))} placeholder="Select account…" />
+          </Field>
+          <Field
+            label={isVat ? 'VAT deposited (Tk)' : 'Tax deposited (Tk)'}
+            required
+            error={!isVat && over && amount > 0 ? `${tk(diff)} more than the selection` : undefined}
+            hint={!isVat && partial ? `${tk(-diff)} less than the selection` : undefined}
+          >
+            <Input type="number" min="0" step="0.01" inputMode="decimal" value={form.amount ?? ''} onChange={set('amount')} invalid={!isVat && over} className="tabular-nums" />
+          </Field>
+          <Field label="Interest / late fee (Tk)">
+            <Input
+              type="number" min="0" step="0.01" inputMode="decimal" value={form.interestAmount ?? ''} onChange={set('interestAmount')} placeholder="0.00"
+              title='Booked as "Tax Interest & Penalties" (not deductible)' className="tabular-nums"
+            />
+          </Field>
         </div>
 
         {partial && (
-          <label className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+          <label className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-[13px] text-amber-800">
             <input type="checkbox" className="mt-0.5 rounded border-amber-300" checked={!!form.allowPartial} onChange={set('allowPartial')} />
             <span>
-              <span className="font-semibold">Part payment.</span> The oldest deductions are paid first:
+              <span className="font-medium">Part payment</span> — oldest deductions first:
               {allocation && ` ${allocation.full} settled in full`}
-              {allocation?.part && `; ${allocation.part.entryNo} part-paid ${tk(allocation.part.paid)}, ${tk(allocation.part.left)} left to deposit later`}
+              {allocation?.part && `; ${allocation.part.entryNo} part-paid ${tk(allocation.part.paid)}, ${tk(allocation.part.left)} left`}
               {allocation?.untouched > 0 && `; ${allocation.untouched} not paid by this challan`}.
             </span>
           </label>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div>
-            <label className={labelCls}>Bank</label>
-            <input className={inputCls} list="tax-deposit-banks" value={form.bank ?? ''} onChange={set('bank')} placeholder="Sonali Bank PLC" />
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Field label="Bank">
+            <Input list="tax-deposit-banks" value={form.bank ?? ''} onChange={set('bank')} placeholder="e.g. Sonali Bank" />
             <datalist id="tax-deposit-banks">
               {BD_BANKS.map(b => <option key={b} value={b} />)}
             </datalist>
-          </div>
-          <div>
-            <label className={labelCls}>Branch</label>
-            <input className={inputCls} value={form.branch ?? ''} onChange={set('branch')} placeholder="Motijheel" />
-          </div>
-          <div>
-            <label className={labelCls}>Treasury account code</label>
-            <input className={`${inputCls} font-mono`} value={form.accountCode ?? ''} onChange={set('accountCode')} placeholder={isVat ? '1/1133/0010/0311' : ''} />
-          </div>
+          </Field>
+          <Field label="Branch">
+            <Input value={form.branch ?? ''} onChange={set('branch')} placeholder="e.g. Motijheel" />
+          </Field>
+          <Field label="Treasury account code">
+            <Input className="font-mono" value={form.accountCode ?? ''} onChange={set('accountCode')} placeholder={isVat ? '1/1133/0010/0311' : ''} />
+          </Field>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label className={labelCls}>Notes</label>
-            <textarea rows={3} className={inputCls} value={form.notes ?? ''} onChange={set('notes')} maxLength={1000} />
-          </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Notes">
+            <Textarea rows={3} value={form.notes ?? ''} onChange={set('notes')} maxLength={1000} />
+          </Field>
           <div>
             <FileUpload value={form.attachment} onUploaded={(url) => setForm(f => ({ ...f, attachment: url }))} label="Challan copy" bucket="tax" />
           </div>
         </div>
 
         {interest > 0 && (
-          <p className="flex items-start gap-1.5 text-xs text-gray-500">
-            <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-            Total paid from the account: {tk(amount + interest)} ({tk(amount)} tax + {tk(interest)} interest).
+          <p className="text-[13px] text-muted-foreground">
+            Total from the account: <span className="font-medium text-gray-900 tabular-nums">{tk(amount + interest)}</span> ({tk(amount)} tax + {tk(interest)} interest)
           </p>
         )}
 
         {error && (
-          <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+          <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
             <span>{error}</span>
           </div>
         )}

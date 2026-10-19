@@ -2,33 +2,41 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import Link from 'next/link'
 import toast from 'react-hot-toast'
 import {
   ArrowLeft, Printer, RefreshCw, Layers, ExternalLink, Trash2,
-  AlertTriangle, Loader2, Save,
+  AlertTriangle, Save,
 } from 'lucide-react'
 import TkAmt from '@/components/ui/TkAmt'
+import Button from '@/components/ui/Button'
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card'
+import PageHeader from '@/components/ui/PageHeader'
+import Badge from '@/components/ui/Badge'
+import EmptyState from '@/components/ui/EmptyState'
+import { PageLoader } from '@/components/ui/LoadingSpinner'
+import { Field, Textarea } from '@/components/ui/Input'
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table'
 import CombinedInvoicePrintView, { openCombinedInvoicePrint } from '@/components/shared/CombinedInvoicePrintView'
 import { usePermission } from '@/components/auth/Can'
+import { cn } from '@/lib/utils'
 
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 
 const STATUS_STYLES = {
-  SENT:           { badge: 'bg-blue-100 text-blue-700',     label: 'Awaiting Payment' },
-  PARTIALLY_PAID: { badge: 'bg-yellow-100 text-yellow-700', label: 'Partially Paid' },
-  PAID:           { badge: 'bg-green-100 text-green-700',   label: 'Paid' },
-  OVERDUE:        { badge: 'bg-red-100 text-red-600',       label: 'Overdue' },
-  EMPTY:          { badge: 'bg-gray-100 text-gray-500',     label: 'No Issued Invoices' },
+  SENT:           { variant: 'primary', label: 'Awaiting payment' },
+  PARTIALLY_PAID: { variant: 'warning', label: 'Partially paid' },
+  PAID:           { variant: 'success', label: 'Paid' },
+  OVERDUE:        { variant: 'danger',  label: 'Overdue' },
+  EMPTY:          { variant: 'default', label: 'No issued invoices' },
 }
 
 const CHILD_BADGE = {
-  DRAFT:          'bg-gray-100 text-gray-600',
-  SENT:           'bg-blue-100 text-blue-700',
-  PARTIALLY_PAID: 'bg-yellow-100 text-yellow-700',
-  PAID:           'bg-green-100 text-green-700',
-  OVERDUE:        'bg-red-100 text-red-600',
-  CANCELLED:      'bg-gray-100 text-gray-400',
+  DRAFT:          'default',
+  SENT:           'primary',
+  PARTIALLY_PAID: 'warning',
+  PAID:           'success',
+  OVERDUE:        'danger',
+  CANCELLED:      'outline',
 }
 
 export default function CombinedInvoiceDetailPage() {
@@ -108,17 +116,14 @@ export default function CombinedInvoiceDetailPage() {
     } catch (err) { toast.error(err.message) }
   }
 
-  if (loading) return (
-    <div className="flex justify-center py-20">
-      <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-    </div>
-  )
+  if (loading) return <PageLoader />
 
   if (!combined) return (
-    <div className="text-center py-20">
-      <p className="text-gray-500">Combined invoice not found.</p>
-      <Link href="/admin/invoices" className="text-blue-600 text-sm mt-2 inline-block">Back to invoices</Link>
-    </div>
+    <EmptyState
+      icon={Layers}
+      title="Combined invoice not found"
+      action={<Button variant="outline" size="sm" href="/admin/invoices">Back to invoices</Button>}
+    />
   )
 
   const s = STATUS_STYLES[combined.status] ?? STATUS_STYLES.SENT
@@ -128,200 +133,177 @@ export default function CombinedInvoiceDetailPage() {
   if (printMode) {
     return (
       <div>
-        <div className="print:hidden flex items-center gap-3 mb-4 px-4 pt-4">
-          <button onClick={() => setPrintMode(false)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-200 rounded-xl hover:bg-gray-50">
-            <ArrowLeft className="w-4 h-4" /> Back
-          </button>
-          <button onClick={() => openCombinedInvoicePrint(combined.combinedNumber)}
-            className="flex items-center gap-1.5 px-4 py-1.5 text-sm bg-blue-600 text-white rounded-xl hover:bg-blue-700">
-            <Printer className="w-4 h-4" /> Print / Save PDF
-          </button>
+        <div className="mb-4 flex flex-wrap items-center gap-2 print:hidden">
+          <Button variant="outline" onClick={() => setPrintMode(false)}>
+            <ArrowLeft /> Back
+          </Button>
+          <Button onClick={() => openCombinedInvoicePrint(combined.combinedNumber)}>
+            <Printer /> Print / save PDF
+          </Button>
         </div>
         <CombinedInvoicePrintView combined={combined} company={company} />
       </div>
     )
   }
 
+  const childCount = combined.children?.length ?? 0
+
   return (
     <div className="space-y-6 pb-10">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-3">
-          <Link href={project?.id ? `/admin/projects/${project.id}` : '/admin/invoices'}
-            className="p-1.5 rounded-xl text-gray-400 hover:bg-gray-100">
-            <ArrowLeft className="w-4 h-4" />
-          </Link>
-          <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <Layers className="w-4 h-4 text-blue-500" />
-              <h1 className="text-xl font-bold text-gray-900 font-mono">{combined.combinedNumber}</h1>
-              <span className={`px-2.5 py-1 text-xs font-bold rounded-xl ${s.badge}`}>{s.label}</span>
-              <span className="px-2 py-0.5 text-xs font-medium rounded-lg bg-blue-50 text-blue-600 border border-blue-100">
-                Combined · {combined.children?.length ?? 0} invoices
-              </span>
-            </div>
-            <p className="text-sm text-gray-500 mt-0.5">
-              {project?.projectCode ? `${project.projectCode} · ` : ''}{project?.name ?? '—'}
-              {combined.clientId?.company ? ` · ${combined.clientId.company}` : ''}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
-          <button onClick={() => load(true)} disabled={refreshing}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 disabled:opacity-50">
-            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} /> Refresh
-          </button>
-          <button onClick={() => setPrintMode(true)}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-purple-50 text-purple-700 rounded-xl hover:bg-purple-100">
-            <Printer className="w-4 h-4" /> Print / PDF
-          </button>
-          {can('sales.invoices.delete') && (
-            <button onClick={handleDelete}
-              className="flex items-center gap-1.5 px-3 py-2 text-sm border border-red-100 text-red-600 rounded-xl hover:bg-red-50">
-              <Trash2 className="w-3.5 h-3.5" /> Remove
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Live-derived banner */}
-      <div className="flex items-start gap-2 rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3">
-        <Layers className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
-        <p className="text-xs text-blue-800 leading-relaxed">
-          Every figure below is recalculated from the child invoices each time this page loads — editing, paying or
-          cancelling any of them updates this document automatically.
-          {combined.excludedCount > 0 && (
-            <> {combined.excludedCount} draft or cancelled invoice{combined.excludedCount === 1 ? '' : 's'} on this project {combined.excludedCount === 1 ? 'is' : 'are'} excluded from the totals.</>
-          )}
-        </p>
-      </div>
+      <PageHeader
+        back={project?.id ? `/admin/projects/${project.id}` : '/admin/invoices'}
+        backLabel={project?.id ? 'Project' : 'Invoices'}
+        title={combined.combinedNumber}
+        meta={
+          <>
+            <Badge variant={s.variant} dot>{s.label}</Badge>
+            <Badge variant="outline"><Layers className="size-3" /> Combined · {childCount} invoices</Badge>
+          </>
+        }
+        description={
+          <>
+            {project?.projectCode ? `${project.projectCode} · ` : ''}{project?.name ?? '—'}
+            {combined.clientId?.company ? ` · ${combined.clientId.company}` : ''}
+          </>
+        }
+        actions={
+          <>
+            {can('sales.invoices.delete') && (
+              <Button variant="ghost" onClick={handleDelete} className="text-red-600 hover:bg-red-50 hover:text-red-700">
+                <Trash2 /> Remove
+              </Button>
+            )}
+            <Button variant="outline" onClick={() => load(true)} disabled={refreshing}
+              title="Figures are recalculated from the child invoices on every load.">
+              <RefreshCw className={cn(refreshing && 'animate-spin')} /> Refresh
+            </Button>
+            <Button variant="outline" onClick={() => setPrintMode(true)}>
+              <Printer /> Print / PDF
+            </Button>
+          </>
+        }
+      />
 
       {combined.mixedCurrency && (
-        <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
-          <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
-          <p className="text-xs text-amber-800">
-            These invoices are raised in more than one currency. Amounts are summed as entered, with no FX conversion applied.
-          </p>
+        <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+          Invoices use more than one currency — amounts are summed with no FX conversion.
         </div>
       )}
 
-      {/* Totals */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          { label: 'Invoices',    node: <span className="text-gray-900">{t.invoiceCount ?? 0}</span> },
-          { label: 'Total Payable', node: <TkAmt value={t.total} decimals={2} />, cls: 'text-gray-900' },
-          { label: 'Total Paid',    node: <TkAmt value={t.paidAmount} decimals={2} />, cls: 'text-green-600' },
-          { label: 'Total Due',     node: <TkAmt value={t.due} decimals={2} />, cls: t.due > 0.01 ? 'text-red-500' : 'text-green-600' },
-        ].map(c => (
-          <div key={c.label} className="bg-white rounded-2xl border border-gray-100 p-4">
-            <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-1">{c.label}</p>
-            <p className={`text-lg font-bold ${c.cls ?? 'text-gray-900'}`}>{c.node}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Collection progress */}
-      {t.total > 0 && (
-        <div className="bg-white rounded-2xl border border-gray-100 p-5">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-gray-700">Collection Progress</span>
-            <span className="text-sm text-gray-500">
-              <TkAmt value={t.paidAmount} decimals={2} /> of <TkAmt value={t.total} decimals={2} />
-            </span>
-          </div>
-          <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
-            <div className="h-full bg-green-500 rounded-full transition-all" style={{ width: `${t.paidPct ?? 0}%` }} />
-          </div>
-          <div className="flex justify-between mt-1.5">
-            <span className="text-xs text-green-600 font-medium">{t.paidPct ?? 0}% collected</span>
-            {t.due > 0.01 && <span className="text-xs text-amber-600 font-medium">Outstanding: <TkAmt value={t.due} decimals={2} /></span>}
-          </div>
+      {/* Totals + collection progress */}
+      <Card className="p-5">
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          {[
+            { label: 'Invoices',      node: <span className="text-gray-900">{t.invoiceCount ?? 0}</span> },
+            { label: 'Total payable', node: <TkAmt value={t.total} decimals={2} />, cls: 'text-gray-900' },
+            { label: 'Total paid',    node: <TkAmt value={t.paidAmount} decimals={2} />, cls: 'text-emerald-600' },
+            { label: 'Total due',     node: <TkAmt value={t.due} decimals={2} />, cls: t.due > 0.01 ? 'text-red-600' : 'text-emerald-600' },
+          ].map(c => (
+            <div key={c.label}>
+              <p className="text-[13px] font-medium text-muted-foreground">{c.label}</p>
+              <p className={cn('mt-1 text-2xl font-semibold tracking-tight tabular-nums', c.cls ?? 'text-gray-900')}>{c.node}</p>
+            </div>
+          ))}
         </div>
-      )}
 
-      {/* Child invoices */}
-      <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-        <div className="px-5 py-4 border-b border-gray-100">
-          <h2 className="text-sm font-semibold text-gray-900">Included Invoices ({combined.children?.length ?? 0})</h2>
-          <p className="text-xs text-gray-400 mt-0.5">Open any invoice to edit it — this document follows.</p>
-        </div>
-        {(combined.children?.length ?? 0) === 0 ? (
-          <div className="py-14 text-center text-sm text-gray-400">No issued invoices for this project yet.</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px]">
-              <thead>
-                <tr className="bg-gray-50/60 border-b border-gray-100">
-                  {['Invoice No', 'Issued', 'Due Date', 'Status', 'Amount', 'Paid', 'Due', ''].map((h, i) => (
-                    <th key={h + i} className={`px-5 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide ${i >= 4 && i <= 6 ? 'text-right' : 'text-left'}`}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {combined.children.map(c => (
-                  <tr key={c.id} className="hover:bg-gray-50/70 transition-colors">
-                    <td className="px-5 py-3 whitespace-nowrap">
-                      <span className="text-sm font-mono font-medium text-gray-800">{c.invoiceNumber}</span>
-                    </td>
-                    <td className="px-5 py-3 text-sm text-gray-600 whitespace-nowrap">{fmtDate(c.issueDate)}</td>
-                    <td className="px-5 py-3 text-sm text-gray-600 whitespace-nowrap">{fmtDate(c.dueDate)}</td>
-                    <td className="px-5 py-3 whitespace-nowrap">
-                      <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${CHILD_BADGE[c.status] ?? CHILD_BADGE.DRAFT}`}>
-                        {c.status.replace(/_/g, ' ')}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3 text-right text-sm font-semibold text-gray-900 whitespace-nowrap"><TkAmt value={c.total} decimals={2} /></td>
-                    <td className="px-5 py-3 text-right text-sm text-green-600 whitespace-nowrap"><TkAmt value={c.paidAmount} decimals={2} /></td>
-                    <td className={`px-5 py-3 text-right text-sm font-semibold whitespace-nowrap ${c.due > 0.01 ? 'text-red-500' : 'text-green-600'}`}>
-                      <TkAmt value={c.due} decimals={2} />
-                    </td>
-                    <td className="px-5 py-3 text-right">
-                      <Link href={`/admin/invoices/${c.id}`}
-                        className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700">
-                        Open <ExternalLink className="w-3 h-3" />
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        {t.total > 0 && (
+          <div className="mt-5 border-t border-gray-100 pt-4">
+            <div className="h-1.5 overflow-hidden rounded-full bg-gray-100">
+              <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${t.paidPct ?? 0}%` }} />
+            </div>
+            <div className="mt-2 flex justify-between text-xs">
+              <span className="font-medium text-emerald-600">{t.paidPct ?? 0}% collected</span>
+              {t.due > 0.01 && <span className="font-medium text-amber-700">Outstanding <TkAmt value={t.due} decimals={2} /></span>}
+            </div>
           </div>
         )}
-      </div>
+      </Card>
+
+      {/* Child invoices */}
+      <Card className="overflow-hidden">
+        <CardHeader className="border-b border-gray-100 pb-4">
+          <div>
+            <CardTitle>Included invoices ({childCount})</CardTitle>
+            {combined.excludedCount > 0 && (
+              <CardDescription>
+                {combined.excludedCount} draft or cancelled invoice{combined.excludedCount === 1 ? '' : 's'} excluded from totals
+              </CardDescription>
+            )}
+          </div>
+        </CardHeader>
+        {childCount === 0 ? (
+          <EmptyState icon={Layers} title="No issued invoices yet" className="py-10" />
+        ) : (
+          <Table className="min-w-[720px]">
+            <TableHeader>
+              <TableRow>
+                {['Invoice no.', 'Issued', 'Due date', 'Status', 'Amount', 'Paid', 'Due', ''].map((h, i) => (
+                  <TableHead key={h + i} className={i >= 4 && i <= 6 ? 'text-right' : 'text-left'}>{h}</TableHead>
+                ))}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {combined.children.map(c => (
+                <TableRow key={c.id}>
+                  <TableCell className="whitespace-nowrap">
+                    <span className="font-mono text-[13px] font-medium text-gray-900">{c.invoiceNumber}</span>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">{fmtDate(c.issueDate)}</TableCell>
+                  <TableCell className="whitespace-nowrap">{fmtDate(c.dueDate)}</TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    <Badge variant={CHILD_BADGE[c.status] ?? CHILD_BADGE.DRAFT}>
+                      {c.status.replace(/_/g, ' ')}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-right font-medium text-gray-900"><TkAmt value={c.total} decimals={2} /></TableCell>
+                  <TableCell className="whitespace-nowrap text-right text-emerald-600"><TkAmt value={c.paidAmount} decimals={2} /></TableCell>
+                  <TableCell className={cn('whitespace-nowrap text-right font-medium', c.due > 0.01 ? 'text-red-600' : 'text-emerald-600')}>
+                    <TkAmt value={c.due} decimals={2} />
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button variant="ghost" size="xs" href={`/admin/invoices/${c.id}`}>
+                      Open <ExternalLink />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </Card>
 
       {/* Notes & terms */}
       {can('sales.invoices.update') && (
-        <div className="bg-white rounded-2xl border border-gray-100 p-6 space-y-4">
-          <div>
-            <h2 className="text-sm font-semibold text-gray-900">Notes & Terms</h2>
-            <p className="text-xs text-gray-400 mt-0.5">Shown on the combined invoice document only.</p>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <Card>
+          <CardHeader>
             <div>
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Notes (visible to client)</label>
-              <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3}
-                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <CardTitle>Notes & terms</CardTitle>
+              <CardDescription>Shown on the combined document only</CardDescription>
             </div>
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Payment Terms</label>
-              <textarea value={terms} onChange={e => setTerms(e.target.value)} rows={3}
-                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Notes (visible to client)">
+                <Textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} className="resize-none" />
+              </Field>
+              <Field label="Payment terms">
+                <Textarea value={terms} onChange={e => setTerms(e.target.value)} rows={3} className="resize-none" />
+              </Field>
             </div>
-          </div>
-          <div className="flex justify-end">
-            <button onClick={saveText} disabled={savingText}
-              className="flex items-center gap-2 px-5 py-2 text-sm font-medium text-white bg-gray-900 rounded-xl hover:bg-gray-800 disabled:opacity-50">
-              {savingText ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save
-            </button>
-          </div>
-        </div>
+            <div className="flex justify-end">
+              <Button onClick={saveText} loading={savingText}>
+                {!savingText && <Save />} Save
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {/* Document preview */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      <Card className="overflow-hidden">
         <CombinedInvoicePrintView combined={combined} company={company} />
-      </div>
+      </Card>
     </div>
   )
 }

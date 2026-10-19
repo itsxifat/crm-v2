@@ -6,11 +6,10 @@ import { useSession } from 'next-auth/react'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
 import {
-  ArrowLeft, Pencil, Trash2, Plus, CheckCircle2, Circle,
-  Wallet, TrendingUp, TrendingDown, Loader2, X, Paperclip,
-  CreditCard, Clock, Calendar, Users, Tag, Flag, BarChart2,
-  ChevronRight, MoreHorizontal, Check, AlertTriangle, FileText,
-  BookOpen, MessageSquare, Send, Pencil as PencilIcon, Building2, Layers,
+  Pencil, Trash2, Plus, CheckCircle2, Circle,
+  Loader2, X, CreditCard, Clock, Calendar,
+  ChevronRight, Check, FileText,
+  BookOpen, MessageSquare, Send, Layers, TrendingDown, Users,
 } from 'lucide-react'
 import { STATUS_META } from '@/lib/ventures'
 import { useConfig } from '@/lib/useConfig'
@@ -20,6 +19,16 @@ import DocPreview from '@/components/ui/DocPreview'
 import Select from '@/components/ui/Select'
 import DatePicker from '@/components/ui/DatePicker'
 import PeoplePicker from '@/components/ui/PeoplePicker'
+import Button, { buttonVariants } from '@/components/ui/Button'
+import { Card, CardHeader, CardTitle, CardDescription, CardAction, CardContent } from '@/components/ui/Card'
+import { Input, Textarea, NativeSelect, Label, Field } from '@/components/ui/Input'
+import PageHeader from '@/components/ui/PageHeader'
+import Tabs from '@/components/ui/Tabs'
+import Badge from '@/components/ui/Badge'
+import EmptyState from '@/components/ui/EmptyState'
+import LoadingSpinner, { PageLoader } from '@/components/ui/LoadingSpinner'
+import { Table, TableHeader, TableBody, TableFooter, TableRow, TableHead, TableCell } from '@/components/ui/Table'
+import { cn } from '@/lib/utils'
 import MoneyAccountSelect, { useMoneyAccounts, invalidateMoneyAccounts, accountRequiredOn } from '@/components/finance/MoneyAccountSelect'
 import WithholdingFields, { emptyWithholding, invoiceAllowsVds } from '@/components/tax/WithholdingFields'
 import { PAYMENT_CHANNELS, channelFromPaymentMethod } from '@/lib/finance/constants'
@@ -33,10 +42,6 @@ import { canDo } from '@/lib/rbac'
 
 const fmt = (n) => `৳ ${(n ?? 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })}`
 
-const INVOICE_DOT = {
-  DRAFT: 'bg-gray-300', SENT: 'bg-blue-500', PARTIALLY_PAID: 'bg-yellow-400',
-  PAID: 'bg-emerald-500', OVERDUE: 'bg-red-500', CANCELLED: 'bg-gray-200',
-}
 // Amount in its own currency; BDT-equivalent alongside when foreign.
 const fmtMoney = (amount, currency) => {
   const cur = currency || 'BDT'
@@ -48,27 +53,23 @@ const fmtMoney = (amount, currency) => {
 const isPastDay = (d) => !!d && dhakaDayKey(d) < dhakaDayKey()
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Dhaka' }) : '—'
 const fmtDateTime = (d) => d ? new Date(d).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'
+// Display-only: 'IN_PROGRESS' → 'In progress'
+const humanize = (s) => s ? String(s).charAt(0) + String(s).slice(1).toLowerCase().replace(/_/g, ' ') : ''
 
-const VENTURE_COLOR_PALETTE = [
-  { bg: 'from-purple-600 to-purple-800', badge: 'bg-purple-100 text-purple-700', dot: 'bg-purple-500' },
-  { bg: 'from-blue-600 to-blue-800',     badge: 'bg-blue-100 text-blue-700',     dot: 'bg-blue-500'   },
-  { bg: 'from-emerald-600 to-emerald-800', badge: 'bg-emerald-100 text-emerald-700', dot: 'bg-emerald-500' },
-  { bg: 'from-orange-600 to-orange-800', badge: 'bg-orange-100 text-orange-700', dot: 'bg-orange-500' },
-  { bg: 'from-pink-600 to-pink-800',     badge: 'bg-pink-100 text-pink-700',     dot: 'bg-pink-500'   },
-  { bg: 'from-indigo-600 to-indigo-800', badge: 'bg-indigo-100 text-indigo-700', dot: 'bg-indigo-500' },
-]
-const STATUS_COLORS = {
-  PENDING:       'bg-gray-100 text-gray-600',
-  IN_PROGRESS:   'bg-blue-100 text-blue-700',
-  IN_REVIEW:     'bg-purple-100 text-purple-700',
-  REVISION:      'bg-yellow-100 text-yellow-700',
-  APPROVED:      'bg-teal-100 text-teal-700',
-  DELIVERED:     'bg-green-100 text-green-700',
-  ACTIVE:        'bg-green-100 text-green-700',
-  EXPIRING_SOON: 'bg-orange-100 text-orange-700',
-  RENEWED:       'bg-blue-100 text-blue-700',
-  ON_HOLD:       'bg-yellow-100 text-yellow-700',
-  CANCELLED:     'bg-red-100 text-red-600',
+const STATUS_BADGE = {
+  PENDING:       'default',
+  IN_PROGRESS:   'primary',
+  IN_REVIEW:     'purple',
+  REVISION:      'warning',
+  APPROVED:      'teal',
+  DELIVERED:     'success',
+  FEEDBACK:      'orange',
+  SUBMITTED:     'indigo',
+  ACTIVE:        'success',
+  EXPIRING_SOON: 'orange',
+  RENEWED:       'primary',
+  ON_HOLD:       'warning',
+  CANCELLED:     'danger',
 }
 const STATUS_DOT = {
   PENDING:       'bg-gray-400',
@@ -83,25 +84,49 @@ const STATUS_DOT = {
   ON_HOLD:       'bg-yellow-500',
   CANCELLED:     'bg-red-500',
 }
-const PRIORITY_COLORS = {
-  LOW:    'bg-gray-100 text-gray-500',
-  MEDIUM: 'bg-blue-50 text-blue-600',
-  HIGH:   'bg-orange-100 text-orange-600',
-  URGENT: 'bg-red-100 text-red-600',
-}
-const TASK_STATUS_COLORS = {
-  TODO:        'bg-gray-100 text-gray-600',
-  IN_PROGRESS: 'bg-blue-100 text-blue-700',
-  IN_REVIEW:   'bg-purple-100 text-purple-700',
-  COMPLETED:   'bg-green-100 text-green-700',
-  CANCELLED:   'bg-red-100 text-red-600',
-}
 const TASK_STATUS_DOT = {
   TODO:        'bg-gray-400',
   IN_PROGRESS: 'bg-blue-500',
   IN_REVIEW:   'bg-purple-500',
   COMPLETED:   'bg-green-500',
   CANCELLED:   'bg-red-500',
+}
+const ASSIGN_STATUS_BADGE = {
+  ASSIGNED: 'primary', ACCEPTED: 'teal', IN_PROGRESS: 'purple', COMPLETED: 'success', CANCELLED: 'danger',
+}
+const PAY_STATUS_BADGE = {
+  PENDING: 'warning', PAYMENT_REQUESTED: 'orange', IN_WALLET: 'success', WITHDRAWAL_REQUESTED: 'primary', PAID: 'default',
+}
+const EXPENSE_STATUS_BADGE = { AUTHORIZED: 'success', PAID: 'primary', REJECTED: 'danger' }
+const PAYMENT_STATUS_BADGE = { CONFIRMED: 'success', REJECTED: 'danger', REVERSED: 'default', REVERSING: 'default' }
+
+// Hand-built dialog shell that matches components/ui/Modal. Renders the panel as a
+// <form> when `onSubmit` is given so footer buttons can submit it.
+function DialogShell({ title, onClose, size = 'max-w-md', onSubmit, footer, scroll = true, children }) {
+  const Panel = onSubmit ? 'form' : 'div'
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-[2px]">
+      <Panel
+        onSubmit={onSubmit}
+        className={cn('flex w-full flex-col rounded-2xl border border-gray-200/80 bg-white shadow-2xl', scroll && 'max-h-[92vh]', size)}
+      >
+        <div className="flex shrink-0 items-start justify-between gap-4 px-6 pb-3 pt-5">
+          <h3 className="text-base font-semibold tracking-tight text-gray-900">{title}</h3>
+          <Button variant="ghost" size="icon-sm" onClick={onClose} className="-mr-1.5 -mt-0.5 text-gray-400" aria-label="Close">
+            <X />
+          </Button>
+        </div>
+        <div className={cn('space-y-4 px-6 pb-5 pt-1', scroll && 'flex-1 overflow-y-auto')}>
+          {children}
+        </div>
+        {footer && (
+          <div className="flex shrink-0 flex-wrap justify-end gap-2 rounded-b-2xl border-t border-gray-100 bg-gray-50/60 px-6 py-3.5">
+            {footer}
+          </div>
+        )}
+      </Panel>
+    </div>
+  )
 }
 // ─── StatusModal ──────────────────────────────────────────────────────────────
 
@@ -123,7 +148,7 @@ function StatusModal({ project, onClose, onSaved, onRenewed }) {
         const res  = await fetch(`/api/projects/${project.id}/renew`, { method: 'POST' })
         const json = await res.json()
         if (!res.ok) throw new Error(json.error ?? 'Renewal failed')
-        toast.success(`Renewed! New project created: ${json.newProject.projectCode}`, { duration: 6000 })
+        toast.success(`Renewed — new project ${json.newProject.projectCode}`, { duration: 6000 })
         onClose()
         onRenewed(json.newProject)
         return
@@ -142,40 +167,38 @@ function StatusModal({ project, onClose, onSaved, onRenewed }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-xl border border-gray-200 w-full max-w-sm p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-base font-semibold text-gray-900">Change Status</h3>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100"><X className="w-4 h-4 text-gray-400" /></button>
+    <DialogShell
+      title="Change status"
+      onClose={onClose}
+      size="max-w-sm"
+      footer={<>
+        <Button variant="outline" onClick={onClose}>Cancel</Button>
+        <Button onClick={save} disabled={!status} loading={saving}>Update</Button>
+      </>}
+    >
+      <p className="text-[13px] text-muted-foreground">Current: <span className="font-medium text-gray-900">{STATUS_META[project.status]?.label ?? project.status}</span></p>
+      {allowed.length === 0 ? (
+        <p className="py-2 text-sm text-muted-foreground">No further transitions available.</p>
+      ) : (
+        <div className="space-y-1.5">
+          {allowed.map(s => (
+            <button key={s} onClick={() => setStatus(s)}
+              className={cn(
+                'flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors',
+                status === s ? 'border-gray-900 bg-gray-50' : 'border-gray-200/80 hover:bg-gray-50'
+              )}>
+              <span className={`size-2 rounded-full shrink-0 ${STATUS_DOT[s] ?? 'bg-gray-400'}`} />
+              <span className="text-sm text-gray-900">{STATUS_META[s]?.label ?? s}</span>
+              {status === s && <Check className="ml-auto size-4 text-gray-900" />}
+            </button>
+          ))}
         </div>
-        <p className="text-xs text-gray-500">Current: <span className="font-medium text-gray-700">{STATUS_META[project.status]?.label ?? project.status}</span></p>
-        {allowed.length === 0 ? (
-          <p className="text-sm text-gray-400 py-2">No further transitions available.</p>
-        ) : (
-          <div className="space-y-1.5">
-            {allowed.map(s => (
-              <button key={s} onClick={() => setStatus(s)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border text-left transition-all ${status === s ? 'border-gray-900 bg-gray-50' : 'border-gray-200 hover:border-gray-300'}`}>
-                <div className={`w-2 h-2 rounded-full shrink-0 ${STATUS_DOT[s] ?? 'bg-gray-400'}`} />
-                <span className="text-sm text-gray-800">{STATUS_META[s]?.label ?? s}</span>
-                {status === s && <Check className="w-4 h-4 text-gray-700 ml-auto" />}
-              </button>
-            ))}
-          </div>
-        )}
-        {status === 'CANCELLED' && (
-          <textarea value={note} onChange={e => setNote(e.target.value)} rows={2} placeholder="Cancellation reason…"
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 resize-none" />
-        )}
-        <div className="flex gap-2 justify-end pt-1">
-          <button onClick={onClose} className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
-          <button onClick={save} disabled={!status || saving}
-            className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 disabled:opacity-40 flex items-center gap-2">
-            {saving && <Loader2 className="w-4 h-4 animate-spin" />} Update
-          </button>
-        </div>
-      </div>
-    </div>
+      )}
+      {status === 'CANCELLED' && (
+        <Textarea value={note} onChange={e => setNote(e.target.value)} rows={2} placeholder="Cancellation reason…"
+          className="min-h-0 resize-none" />
+      )}
+    </DialogShell>
   )
 }
 
@@ -216,55 +239,47 @@ function TaskModal({ projectId, task, onClose, onSaved }) {
     finally { setSaving(false) }
   }
 
-  const ic = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900'
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-xl border border-gray-200 w-full max-w-md p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-base font-semibold text-gray-900">{isEdit ? 'Edit Task' : 'New Task'}</h3>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100"><X className="w-4 h-4 text-gray-400" /></button>
-        </div>
-        <input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
-          placeholder="Task title *" className={ic} />
-        <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-          placeholder="Description (optional)" rows={2} className={`${ic} resize-none`} />
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
-            <Select value={form.status} onChange={v => setForm(f => ({ ...f, status: v ?? 'TODO' }))}
-              options={['TODO','IN_PROGRESS','IN_REVIEW','COMPLETED','CANCELLED'].map(s => ({ value: s, label: s.replace(/_/g,' ') }))}
-              placeholder="Select status…"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Priority</label>
-            <Select value={form.priority} onChange={v => setForm(f => ({ ...f, priority: v ?? 'MEDIUM' }))}
-              options={['LOW','MEDIUM','HIGH','URGENT'].map(p => ({ value: p, label: p }))}
-              placeholder="Select priority…"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Assigned To</label>
-            <Select value={form.assignedEmployeeId} onChange={v => setForm(f => ({ ...f, assignedEmployeeId: v ?? '' }))}
-              options={members.filter(m => m.userId?.name).map(m => ({ value: m.id, label: m.userId.name }))}
-              placeholder="Unassigned"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Due Date</label>
-            <DatePicker value={form.dueDate || null} onChange={v => setForm(f => ({ ...f, dueDate: v ?? '' }))} />
-          </div>
-        </div>
-        <div className="flex gap-2 justify-end">
-          <button onClick={onClose} className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
-          <button onClick={save} disabled={saving}
-            className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 disabled:opacity-40 flex items-center gap-2">
-            {saving && <Loader2 className="w-4 h-4 animate-spin" />} {isEdit ? 'Update' : 'Create'} Task
-          </button>
-        </div>
+    <DialogShell
+      title={isEdit ? 'Edit task' : 'New task'}
+      onClose={onClose}
+      footer={<>
+        <Button variant="outline" onClick={onClose}>Cancel</Button>
+        <Button onClick={save} loading={saving}>{isEdit ? 'Save' : 'Create task'}</Button>
+      </>}
+    >
+      <Field label="Title" required>
+        <Input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
+          placeholder="Task title" />
+      </Field>
+      <Field label="Description">
+        <Textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+          placeholder="Optional" rows={2} className="min-h-0 resize-none" />
+      </Field>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Status">
+          <Select value={form.status} onChange={v => setForm(f => ({ ...f, status: v ?? 'TODO' }))}
+            options={['TODO','IN_PROGRESS','IN_REVIEW','COMPLETED','CANCELLED'].map(s => ({ value: s, label: humanize(s) }))}
+            placeholder="Select…"
+          />
+        </Field>
+        <Field label="Priority">
+          <Select value={form.priority} onChange={v => setForm(f => ({ ...f, priority: v ?? 'MEDIUM' }))}
+            options={['LOW','MEDIUM','HIGH','URGENT'].map(p => ({ value: p, label: humanize(p) }))}
+            placeholder="Select…"
+          />
+        </Field>
+        <Field label="Assigned to">
+          <Select value={form.assignedEmployeeId} onChange={v => setForm(f => ({ ...f, assignedEmployeeId: v ?? '' }))}
+            options={members.filter(m => m.userId?.name).map(m => ({ value: m.id, label: m.userId.name }))}
+            placeholder="Unassigned"
+          />
+        </Field>
+        <Field label="Due date">
+          <DatePicker value={form.dueDate || null} onChange={v => setForm(f => ({ ...f, dueDate: v ?? '' }))} />
+        </Field>
       </div>
-    </div>
+    </DialogShell>
   )
 }
 
@@ -344,125 +359,106 @@ function ExpenseModal({ projectId, onClose, onSaved }) {
     finally { setSaving(false) }
   }
 
-  const ic = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900'
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-xl border border-gray-200 w-full max-w-md p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-base font-semibold text-gray-900">Add Expense</h3>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100"><X className="w-4 h-4 text-gray-400" /></button>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="col-span-2">
-            <label className="block text-xs font-medium text-gray-500 mb-1">Title *</label>
-            <input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="Expense title" className={ic} />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Amount (৳) *</label>
-            <input type="number" step="0.01" min="0" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} onKeyDown={e => { if (e.key === '-' || e.key === 'e') e.preventDefault() }} placeholder="0.00" className={ic} />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Date</label>
-            <DatePicker value={form.date || null} onChange={v => setForm(f => ({ ...f, date: v ?? '' }))} />
-          </div>
-          <div className="col-span-2">
-            <label className="block text-xs font-medium text-gray-500 mb-1">Category *</label>
-            <Select
-              value={form.category}
-              onChange={v => setForm(f => ({ ...f, category: v ?? '', subcategory: '' }))}
-              options={expenseCategories.map(c => ({ value: c.label, label: c.label }))}
-              placeholder="Select category…"
-              disabled={configLoading || expenseCategories.length === 0}
-            />
-            {!configLoading && expenseCategories.length === 0 && (
-              <p className="mt-1 text-xs text-amber-600">No expense categories configured in Config → Finance.</p>
-            )}
-          </div>
-          <div className="col-span-2">
-            <label className="block text-xs font-medium text-gray-500 mb-1">Subcategory</label>
-            <Select
-              value={form.subcategory}
-              onChange={v => setForm(f => ({ ...f, subcategory: v ?? '' }))}
-              options={subcategories.map(s => ({ value: s, label: s }))}
-              placeholder={!form.category ? 'Select category first…' : subcategories.length === 0 ? 'No subcategories' : 'Select subcategory…'}
-              disabled={!form.category || subcategories.length === 0}
-            />
-          </div>
+    <DialogShell
+      title="New expense"
+      onClose={onClose}
+      size="max-w-lg"
+      footer={<>
+        <Button variant="outline" onClick={onClose}>Cancel</Button>
+        <Button onClick={save} loading={saving}>Submit expense</Button>
+      </>}
+    >
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Title" required className="sm:col-span-2">
+          <Input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="Expense title" />
+        </Field>
+        <Field label="Amount (৳)" required>
+          <Input type="number" step="0.01" min="0" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} onKeyDown={e => { if (e.key === '-' || e.key === 'e') e.preventDefault() }} placeholder="0.00" />
+        </Field>
+        <Field label="Date">
+          <DatePicker value={form.date || null} onChange={v => setForm(f => ({ ...f, date: v ?? '' }))} />
+        </Field>
+        <Field label="Category" required className="sm:col-span-2">
+          <Select
+            value={form.category}
+            onChange={v => setForm(f => ({ ...f, category: v ?? '', subcategory: '' }))}
+            options={expenseCategories.map(c => ({ value: c.label, label: c.label }))}
+            placeholder="Select…"
+            disabled={configLoading || expenseCategories.length === 0}
+          />
+          {!configLoading && expenseCategories.length === 0 && (
+            <p className="mt-1.5 text-xs text-amber-700">No expense categories — add them in Config → Finance.</p>
+          )}
+        </Field>
+        <Field label="Subcategory" className="sm:col-span-2">
+          <Select
+            value={form.subcategory}
+            onChange={v => setForm(f => ({ ...f, subcategory: v ?? '' }))}
+            options={subcategories.map(s => ({ value: s, label: s }))}
+            placeholder={!form.category ? 'Select a category first' : subcategories.length === 0 ? 'No subcategories' : 'Select…'}
+            disabled={!form.category || subcategories.length === 0}
+          />
+        </Field>
 
-          <div className="col-span-2 space-y-2">
-            <label className="block text-xs font-medium text-gray-500 mb-1">Paid to <span className="text-gray-400 font-normal">(optional)</span></label>
-            <div className="flex flex-wrap gap-1.5">
-              {PAYEE_TYPES.map(t => (
-                <button key={t.id || 'none'} type="button"
-                  onClick={() => setPayeeType(t.id)}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                    form.payeeType === t.id
-                      ? 'bg-gray-900 text-white border-gray-900'
-                      : 'border-gray-200 text-gray-600 hover:border-gray-400'
-                  }`}>
-                  {t.label}
-                </button>
-              ))}
-            </div>
-            {form.payeeType === 'freelancer' && (
-              <Select value={form.freelancerId} onChange={v => setForm(f => ({ ...f, freelancerId: v ?? '' }))}
-                options={freelancers.map(a => ({
-                  value: a.freelancerId?.id ?? a.freelancerId,
-                  label: a.freelancerId?.userId?.name ?? a.freelancerId?.userId?.email ?? 'Unknown',
-                }))}
-                placeholder="Select freelancer…"
-              />
-            )}
-            {form.payeeType === 'agency' && (
-              <Select value={form.agencyId} onChange={v => setForm(f => ({ ...f, agencyId: v ?? '' }))}
-                options={agencies.map(a => ({
-                  value: a.freelancerId?.id ?? a.freelancerId,
-                  label: a.freelancerId?.agencyInfo?.agencyName ?? a.freelancerId?.userId?.name ?? 'Unknown Agency',
-                }))}
-                placeholder="Select agency…"
-              />
-            )}
-            {form.payeeType === 'vendor' && (
-              <Select value={form.vendorId} onChange={v => setForm(f => ({ ...f, vendorId: v ?? '' }))}
-                options={vendors.map(v => ({
-                  value: v.id,
-                  label: `${v.company}${v.serviceType ? ` — ${v.serviceType}` : ''}`,
-                }))}
-                placeholder="Select vendor…"
-              />
-            )}
-            {form.payeeType === 'employee' && (
-              <Select value={form.paidToEmployeeId} onChange={v => setForm(f => ({ ...f, paidToEmployeeId: v ?? '' }))}
-                options={employees.filter(e => e.userId?.id).map(e => ({
-                  value: e.id,
-                  label: `${e.userId.name}${e.designation ? ` — ${e.designation}` : ''}`,
-                }))}
-                placeholder="Select employee…"
-              />
-            )}
-            {form.payeeType === 'other' && (
-              <input value={form.paidToName} onChange={e => setForm(f => ({ ...f, paidToName: e.target.value }))}
-                placeholder="Enter name…" className={ic} />
-            )}
-          </div>
-
-          <div className="col-span-2">
-            <label className="block text-xs font-medium text-gray-500 mb-1">Notes</label>
-            <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} className={`${ic} resize-none`} />
-          </div>
-          <div className="col-span-2">
-            <FileUpload label="Invoice / Receipt" value={form.invoiceUrl} onUploaded={url => setForm(f => ({ ...f, invoiceUrl: url }))} />
-          </div>
+        <div className="space-y-2 sm:col-span-2">
+          <Label className="mb-0">Paid to</Label>
+          <Tabs
+            size="sm"
+            value={form.payeeType}
+            onChange={setPayeeType}
+            tabs={PAYEE_TYPES.map(t => ({ value: t.id, label: t.label }))}
+          />
+          {form.payeeType === 'freelancer' && (
+            <Select value={form.freelancerId} onChange={v => setForm(f => ({ ...f, freelancerId: v ?? '' }))}
+              options={freelancers.map(a => ({
+                value: a.freelancerId?.id ?? a.freelancerId,
+                label: a.freelancerId?.userId?.name ?? a.freelancerId?.userId?.email ?? 'Unknown',
+              }))}
+              placeholder="Select freelancer…"
+            />
+          )}
+          {form.payeeType === 'agency' && (
+            <Select value={form.agencyId} onChange={v => setForm(f => ({ ...f, agencyId: v ?? '' }))}
+              options={agencies.map(a => ({
+                value: a.freelancerId?.id ?? a.freelancerId,
+                label: a.freelancerId?.agencyInfo?.agencyName ?? a.freelancerId?.userId?.name ?? 'Unknown Agency',
+              }))}
+              placeholder="Select agency…"
+            />
+          )}
+          {form.payeeType === 'vendor' && (
+            <Select value={form.vendorId} onChange={v => setForm(f => ({ ...f, vendorId: v ?? '' }))}
+              options={vendors.map(v => ({
+                value: v.id,
+                label: `${v.company}${v.serviceType ? ` — ${v.serviceType}` : ''}`,
+              }))}
+              placeholder="Select vendor…"
+            />
+          )}
+          {form.payeeType === 'employee' && (
+            <Select value={form.paidToEmployeeId} onChange={v => setForm(f => ({ ...f, paidToEmployeeId: v ?? '' }))}
+              options={employees.filter(e => e.userId?.id).map(e => ({
+                value: e.id,
+                label: `${e.userId.name}${e.designation ? ` — ${e.designation}` : ''}`,
+              }))}
+              placeholder="Select employee…"
+            />
+          )}
+          {form.payeeType === 'other' && (
+            <Input value={form.paidToName} onChange={e => setForm(f => ({ ...f, paidToName: e.target.value }))}
+              placeholder="Name" />
+          )}
         </div>
-        <div className="flex gap-2 justify-end">
-          <button onClick={onClose} className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
-          <button onClick={save} disabled={saving}
-            className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 disabled:opacity-40 flex items-center gap-2">
-            {saving && <Loader2 className="w-4 h-4 animate-spin" />} Submit Expense
-          </button>
+
+        <Field label="Notes" className="sm:col-span-2">
+          <Textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} className="min-h-0 resize-none" />
+        </Field>
+        <div className="sm:col-span-2">
+          <FileUpload label="Invoice / receipt" value={form.invoiceUrl} onUploaded={url => setForm(f => ({ ...f, invoiceUrl: url }))} />
         </div>
       </div>
-    </div>
+    </DialogShell>
   )
 }
 
@@ -620,161 +616,141 @@ function PaymentModal({ projectId, project, onClose, onSaved }) {
     finally { setSaving(false) }
   }
 
-  const ic = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900'
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className={`bg-white rounded-xl border border-gray-200 w-full ${canConfirm ? 'max-w-2xl' : 'max-w-md'} max-h-[92vh] flex flex-col`}>
-        <div className="flex items-center justify-between px-6 pt-6 pb-4 shrink-0">
-          <h3 className="text-base font-semibold text-gray-900">Record Payment</h3>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100"><X className="w-4 h-4 text-gray-400" /></button>
+    <DialogShell
+      title="Record payment"
+      onClose={onClose}
+      size={canConfirm ? 'max-w-2xl' : 'max-w-md'}
+      footer={<>
+        <Button variant="outline" onClick={onClose}>Cancel</Button>
+        <Button onClick={save} loading={saving} disabled={amountExceedsBalance}>Record payment</Button>
+      </>}
+    >
+      {invoices.length > 1 && (
+        <Field label="Invoice">
+          <Select value={invoiceId} onChange={v => setInvoiceId(v ?? '')}
+            options={invoices.map(i => ({
+              value: i.id,
+              label: `${i.invoiceNumber} — due ${fmtMoney(Math.max(0, Number(i.total ?? 0) - Number(i.paidAmount ?? 0)), i.currency)}`,
+            }))}
+            placeholder="Select invoice…"
+          />
+        </Field>
+      )}
+      {invoice ? (
+        <div className="space-y-0.5 rounded-lg bg-gray-50 px-3 py-2.5 text-[13px] text-gray-600">
+          <p>
+            Invoice <span className="font-medium text-gray-900">{invoice.invoiceNumber}</span>
+            {' · '}{canConfirm ? 'confirmed immediately' : 'updates on confirmation'}
+          </p>
+          {outstanding !== null && (
+            <p className={outstanding <= 0.01 ? 'font-medium text-emerald-700' : ''}>
+              Outstanding <span className="font-medium text-gray-900 tabular-nums">{money(outstanding)}</span>
+              {outstanding <= 0.01 && ' — fully paid'}
+              {Number(invoice.vatAmount ?? 0) > 0 && <span className="text-muted-foreground"> · VAT {money(invoice.vatAmount)}</span>}
+            </p>
+          )}
         </div>
-        <div className="flex-1 overflow-y-auto px-6 space-y-4 pb-2">
-          {invoices.length > 1 && (
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Invoice</label>
-              <Select value={invoiceId} onChange={v => setInvoiceId(v ?? '')}
-                options={invoices.map(i => ({
-                  value: i.id,
-                  label: `${i.invoiceNumber} — due ${fmtMoney(Math.max(0, Number(i.total ?? 0) - Number(i.paidAmount ?? 0)), i.currency)}`,
-                }))}
-                placeholder="Select invoice…"
-              />
-            </div>
+      ) : (
+        <div className="space-y-0.5 rounded-lg bg-gray-50 px-3 py-2.5 text-[13px] text-gray-600">
+          <p>{canConfirm
+            ? 'Confirmed immediately and added to income.'
+            : 'Sent to Accounts for confirmation.'}</p>
+          {outstanding !== null && (
+            <p>Outstanding <span className="font-medium text-gray-900 tabular-nums">৳{outstanding.toFixed(2)}</span></p>
           )}
-          {invoice ? (
-            <div className="text-xs bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 space-y-0.5">
-              <p className="text-blue-600">Linked to invoice <strong>{invoice.invoiceNumber}</strong> — {canConfirm
-                ? 'the payment is confirmed immediately and updates the invoice status.'
-                : 'payment will update invoice status automatically on confirmation.'}</p>
-              {outstanding !== null && (
-                <p className={outstanding <= 0.01 ? 'text-green-600 font-medium' : 'text-blue-700'}>
-                  Outstanding balance: <strong>{money(outstanding)}</strong>
-                  {outstanding <= 0.01 && ' — invoice fully paid'}
-                  {Number(invoice.vatAmount ?? 0) > 0 && <span className="text-blue-500"> · invoice VAT {money(invoice.vatAmount)}</span>}
-                </p>
-              )}
-            </div>
-          ) : (
-            <div className="text-xs text-gray-400 border border-gray-100 rounded-lg px-3 py-2 space-y-0.5">
-              <p>{canConfirm
-                ? 'The payment is confirmed immediately and added to income.'
-                : 'Payment will be sent to Accounts for confirmation before being added to income.'}</p>
-              {outstanding !== null && (
-                <p className="text-gray-600">Outstanding balance: <strong>৳{outstanding.toFixed(2)}</strong></p>
-              )}
-            </div>
-          )}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">
-                {canWithhold ? 'Cash received (৳)' : `Amount (${isForeign ? payCurrency : '৳'}) *`}
-              </label>
-              <input type="number" step="0.01" min="0" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} onKeyDown={e => { if (e.key === '-' || e.key === 'e') e.preventDefault() }} placeholder="0.00" className={`${ic} ${amountExceedsBalance ? 'border-red-400 focus:ring-red-400' : ''}`} />
-              {amountExceedsBalance && (
-                <p className="text-xs text-red-500 mt-1">{withheld > 0 ? 'Cash + VDS + TDS exceeds' : 'Exceeds'} outstanding balance of {money(outstanding)}</p>
-              )}
-            </div>
-            {isForeign && (
-              <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">
-                  BDT received {canConfirm ? '*' : <span className="text-gray-400 font-normal">(optional — Accounts confirms it)</span>}
-                </label>
-                <input type="number" step="0.01" min="0" value={amountBDT} onChange={e => setAmountBDT(e.target.value)}
-                  onKeyDown={e => { if (e.key === '-' || e.key === 'e') e.preventDefault() }}
-                  placeholder={`Taka value of ${payCurrency} ${enteredAmt > 0 ? enteredAmt.toFixed(2) : '…'}`} className={ic} />
-                <p className="text-[11px] text-gray-400 mt-1">The taka actually credited (bank advice / encashment certificate) — used for income and balances.</p>
-              </div>
-            )}
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Method</label>
-              <Select value={form.paymentMethod} onChange={v => setForm(f => ({ ...f, paymentMethod: v ?? 'BANK_TRANSFER' }))}
-                options={paymentMethods}
-                placeholder="Select method…"
-              />
-            </div>
-            {canConfirm && (
-              <>
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">
-                    Received into {accountRequired ? '*' : <span className="text-gray-400 font-normal">(optional)</span>}
-                  </label>
-                  <MoneyAccountSelect
-                    value={accountId}
-                    onChange={(id, acc) => { setAccountId(id); setAccount(acc ?? null) }}
-                    currency={payCurrency}
-                    paymentMethod={form.paymentMethod || null}
-                    placeholder="Select bank / cash / wallet account"
-                    required={accountRequired}
-                    disabled={!(enteredAmt > 0) && withheld > 0}
-                    autoSelect={accountLive}
-                    date={form.paymentDate || null}
-                  />
-                  {moneyAccounts.length === 0 ? (
-                    <p className="mt-1 text-[11px] text-gray-400">No money accounts yet — add them in Finance → Money Accounts.</p>
-                  ) : enteredAmt > 0 && !accountLive && (
-                    <p className="mt-1 text-[11px] text-gray-400">Received before go-live ({goLiveDate}) — no money account needed.</p>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Channel</label>
-                  <select value={effectiveChannel} onChange={e => { setChannel(e.target.value); setChannelTouched(true) }}
-                    disabled={!(enteredAmt > 0) && withheld > 0} className={`${ic} disabled:bg-gray-50 disabled:text-gray-400`}>
-                    <option value="">Select channel…</option>
-                    {PAYMENT_CHANNEL_OPTIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-                  </select>
-                </div>
-              </>
-            )}
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Payment Date</label>
-              <DatePicker value={form.paymentDate || null} onChange={v => setForm(f => ({ ...f, paymentDate: v ?? '' }))} />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Description</label>
-              <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Invoice ref, note…" className={ic} />
-            </div>
-            <div className="sm:col-span-2">
-              <FileUpload label={enteredAmt > 0 || !(withheld > 0) ? 'Payment Proof / Receipt *' : 'Proof / client deduction note (optional)'} value={form.receiptUrl} onUploaded={url => setForm(f => ({ ...f, receiptUrl: url }))} />
-            </div>
-          </div>
-
-          {canWithhold && (
-            <>
-              <WithholdingFields
-                mode="CUSTOMER"
-                baseAmount={base}
-                vatAmount={vatShare}
-                payeeType="COMPANY"
-                value={withholding}
-                onChange={setWithholding}
+        </div>
+      )}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <Field
+          label={canWithhold ? 'Cash received (৳)' : `Amount (${isForeign ? payCurrency : '৳'})`}
+          required={!canWithhold}
+          error={amountExceedsBalance ? `${withheld > 0 ? 'Cash + VDS + TDS exceeds' : 'Exceeds'} outstanding balance of ${money(outstanding)}` : undefined}
+        >
+          <Input type="number" step="0.01" min="0" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} onKeyDown={e => { if (e.key === '-' || e.key === 'e') e.preventDefault() }} placeholder="0.00" invalid={amountExceedsBalance} />
+        </Field>
+        {isForeign && (
+          <Field label="BDT received" required={canConfirm} hint="Taka actually credited, per bank advice.">
+            <Input type="number" step="0.01" min="0" value={amountBDT} onChange={e => setAmountBDT(e.target.value)}
+              onKeyDown={e => { if (e.key === '-' || e.key === 'e') e.preventDefault() }}
+              placeholder="0.00"
+              title={canConfirm ? undefined : 'Optional — Accounts confirms it'} />
+          </Field>
+        )}
+        <Field label="Method">
+          <Select value={form.paymentMethod} onChange={v => setForm(f => ({ ...f, paymentMethod: v ?? 'BANK_TRANSFER' }))}
+            options={paymentMethods}
+            placeholder="Select…"
+          />
+        </Field>
+        {canConfirm && (
+          <>
+            <Field
+              label="Received into"
+              required={accountRequired}
+              hint={moneyAccounts.length === 0
+                ? 'No money accounts yet (Finance → Money accounts).'
+                : enteredAmt > 0 && !accountLive ? `Before go-live (${goLiveDate}) — no account needed.` : undefined}
+            >
+              <MoneyAccountSelect
+                value={accountId}
+                onChange={(id, acc) => { setAccountId(id); setAccount(acc ?? null) }}
+                currency={payCurrency}
+                paymentMethod={form.paymentMethod || null}
+                placeholder="Select account…"
+                required={accountRequired}
+                disabled={!(enteredAmt > 0) && withheld > 0}
+                autoSelect={accountLive}
                 date={form.paymentDate || null}
-                compact
-                vdsAllowed={invoiceAllowsVds(invoice)}
               />
-              {withheld > 0 && (
-                <div className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-xs flex flex-wrap items-center gap-x-3 gap-y-1 text-gray-600">
-                  <span>Cash ৳{enteredAmt.toFixed(2)}</span>
-                  {vds > 0 && <span>+ VDS ৳{vds.toFixed(2)}</span>}
-                  {tds > 0 && <span>+ TDS ৳{tds.toFixed(2)}</span>}
-                  <span className={`ml-auto font-semibold ${amountExceedsBalance ? 'text-red-600' : 'text-gray-900'}`}>Settles ৳{settledAmt.toFixed(2)}</span>
-                </div>
-              )}
-            </>
-          )}
-          {canConfirm && invoice && !canWithhold && (
-            <p className="text-xs text-gray-400">VDS / TDS withholding is recorded on BDT invoices only.</p>
-          )}
-        </div>
-        <div className="flex gap-2 justify-end px-6 py-4 border-t border-gray-100 mt-2 shrink-0">
-          <button onClick={onClose} className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
-          <button onClick={save} disabled={saving || amountExceedsBalance}
-            className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 disabled:opacity-40 flex items-center gap-2">
-            {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-            <CreditCard className="w-4 h-4" /> Record Payment
-          </button>
+            </Field>
+            <Field label="Channel">
+              <NativeSelect value={effectiveChannel} onChange={e => { setChannel(e.target.value); setChannelTouched(true) }}
+                disabled={!(enteredAmt > 0) && withheld > 0}>
+                <option value="">Select…</option>
+                {PAYMENT_CHANNEL_OPTIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+              </NativeSelect>
+            </Field>
+          </>
+        )}
+        <Field label="Payment date">
+          <DatePicker value={form.paymentDate || null} onChange={v => setForm(f => ({ ...f, paymentDate: v ?? '' }))} />
+        </Field>
+        <Field label="Description">
+          <Input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Invoice ref, note…" />
+        </Field>
+        <div className="sm:col-span-2">
+          <FileUpload label={enteredAmt > 0 || !(withheld > 0) ? 'Payment proof *' : 'Proof / client deduction note'} value={form.receiptUrl} onUploaded={url => setForm(f => ({ ...f, receiptUrl: url }))} />
         </div>
       </div>
-    </div>
+
+      {canWithhold && (
+        <>
+          <WithholdingFields
+            mode="CUSTOMER"
+            baseAmount={base}
+            vatAmount={vatShare}
+            payeeType="COMPANY"
+            value={withholding}
+            onChange={setWithholding}
+            date={form.paymentDate || null}
+            compact
+            vdsAllowed={invoiceAllowsVds(invoice)}
+          />
+          {withheld > 0 && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-600 tabular-nums">
+              <span>Cash ৳{enteredAmt.toFixed(2)}</span>
+              {vds > 0 && <span>+ VDS ৳{vds.toFixed(2)}</span>}
+              {tds > 0 && <span>+ TDS ৳{tds.toFixed(2)}</span>}
+              <span className={cn('ml-auto font-semibold', amountExceedsBalance ? 'text-red-600' : 'text-gray-900')}>Settles ৳{settledAmt.toFixed(2)}</span>
+            </div>
+          )}
+        </>
+      )}
+      {canConfirm && invoice && !canWithhold && (
+        <p className="text-xs text-muted-foreground">VDS / TDS withholding is recorded on BDT invoices only.</p>
+      )}
+    </DialogShell>
   )
 }
 
@@ -1010,7 +986,7 @@ export default function ProjectDetailPage() {
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error)
-      toast.success('Freelancer assigned!')
+      toast.success('Freelancer assigned')
       setAssignModal(false)
       setAssignForm({ person: null, freelancerId: '', paymentAmount: '', currency: 'BDT', amountBDT: '', paymentNotes: '' })
       loadFreelancerAssignments()
@@ -1043,7 +1019,7 @@ export default function ProjectDetailPage() {
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error)
-      toast.success('Agency assigned!')
+      toast.success('Agency assigned')
       setAssignAgencyModal(false)
       setAssignAgencyForm({ person: null, freelancerId: '', paymentAmount: '', currency: 'BDT', amountBDT: '', paymentNotes: '' })
       loadFreelancerAssignments()
@@ -1162,7 +1138,7 @@ export default function ProjectDetailPage() {
   }
 
   async function handleDelete() {
-    if (!confirm(`Delete "${project?.name}"? This cannot be undone.`)) return
+    if (!confirm(`Delete "${project?.name}"? This can't be undone.`)) return
     try {
       const res = await fetch(`/api/projects/${id}`, { method: 'DELETE' })
       if (!res.ok) throw new Error((await res.json()).error)
@@ -1171,16 +1147,13 @@ export default function ProjectDetailPage() {
     } catch (err) { toast.error(err.message) }
   }
 
-  if (loading) return (
-    <div className="flex justify-center py-20">
-      <div className="w-6 h-6 border-2 border-gray-300 border-t-gray-700 rounded-full animate-spin" />
-    </div>
-  )
+  if (loading) return <PageLoader />
   if (!project) return (
-    <div className="text-center py-20">
-      <p className="text-gray-500">Project not found.</p>
-      <Link href="/admin/projects" className="text-gray-700 text-sm mt-2 inline-block underline">Back to projects</Link>
-    </div>
+    <EmptyState
+      icon={FileText}
+      title="Project not found"
+      action={<Button variant="outline" href="/admin/projects">Back to projects</Button>}
+    />
   )
 
   const TABS           = canViewFinancials ? ALL_TABS : ALL_TABS.filter(t => !FINANCIAL_TABS.has(t))
@@ -1194,175 +1167,154 @@ export default function ProjectDetailPage() {
   const utilization    = projectValue > 0 ? Math.round(((project.approvedExpenses ?? 0) / projectValue) * 100) : 0
   const ventureIdx  = ventures.findIndex(v => v.id === project.venture)
   const vm          = ventureIdx >= 0 ? ventures[ventureIdx] : { label: project.venture }
-  const vc          = VENTURE_COLOR_PALETTE[ventureIdx >= 0 ? ventureIdx % VENTURE_COLOR_PALETTE.length : 0]
   const doneTasks   = project.tasks?.filter(t => t.status === 'COMPLETED').length ?? 0
   const totalTasks  = project.tasks?.length ?? 0
   const taskPct     = totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0
   const isOverdue   = project.projectType === 'FIXED' && isPastDay(project.deadline) && !['DELIVERED','CANCELLED','APPROVED'].includes(project.status)
 
+  const invoiceHref = `/admin/invoices/new?projectId=${id}&clientId=${project.clientId?.id ?? project.clientId?._id ?? project.clientId ?? ''}`
+  const stats = [
+    ...(canViewFinancials ? [
+      { label: 'Project value', value: fmt(projectValue) },
+      { label: 'Paid',     value: fmt(paidAmount),  cls: 'text-emerald-600' },
+      { label: 'Due',      value: fmt(dueAmount),   cls: dueAmount > 0 ? 'text-red-600' : undefined },
+      { label: 'Expenses', value: fmt(project.approvedExpenses) },
+      { label: 'Profit',   value: fmt(profit), cls: profit >= 0 ? 'text-emerald-600' : 'text-red-600' },
+    ] : []),
+    { label: 'Tasks', value: `${doneTasks} / ${totalTasks}` },
+  ]
+
   return (
-    <div className="space-y-5 pb-10">
+    <div className="space-y-6 pb-10">
 
       {/* Page Header */}
-      <div>
-        <div className="flex items-center gap-2 mb-4">
-          <Link href="/admin/projects" className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">
-            <ArrowLeft className="w-4 h-4" />
-          </Link>
-          <span className="text-gray-300">/</span>
-          <span className="text-sm text-gray-400">Projects</span>
+      <PageHeader
+        back="/admin/projects"
+        backLabel="Projects"
+        title={project.name}
+        meta={
+          <Badge variant={STATUS_BADGE[project.status] ?? 'default'} dot>
+            {STATUS_META[project.status]?.label ?? project.status}
+          </Badge>
+        }
+        actions={<>
+          {canUpdateProject && (<>
+            <Button variant="outline" size="sm" href={`/admin/projects/${id}/edit`}>
+              <Pencil /> Edit
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setStatusModal(true)}>
+              Change status
+            </Button>
+          </>)}
+          {canViewFinancials && (
+            <Button variant="outline" size="sm" href={invoiceHref}>
+              <FileText /> New invoice
+            </Button>
+          )}
+          {canDeleteProject && (
+            <Button variant="outline" size="icon-sm" onClick={handleDelete} aria-label="Delete project"
+              className="text-gray-500 hover:border-red-200 hover:bg-red-50 hover:text-red-600">
+              <Trash2 />
+            </Button>
+          )}
+        </>}
+      >
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+          {project.projectCode && <span className="font-mono text-[13px]">{project.projectCode}</span>}
+          {project.projectCode && <span className="text-gray-300">·</span>}
+          <span>{vm.label ?? project.venture}</span>
+          <span className="text-gray-300">·</span>
+          <span>{project.projectType === 'MONTHLY' ? 'Monthly retainer' : 'Fixed project'}</span>
+          {isOverdue && (
+            <span className="font-medium text-red-600">· Overdue since {fmtDate(project.deadline)}</span>
+          )}
         </div>
+      </PageHeader>
 
-        <div className="flex items-start justify-between gap-4 flex-wrap">
-          <div>
-            {project.projectCode && (
-              <p className="font-mono text-sm text-gray-400 mb-1">{project.projectCode}</p>
-            )}
-            <h1 className="text-2xl font-semibold text-gray-900">{project.name}</h1>
-            <div className="flex items-center gap-3 mt-2 flex-wrap">
-              <div className="flex items-center gap-1.5">
-                <span className={`w-2 h-2 rounded-full shrink-0 ${STATUS_DOT[project.status] ?? 'bg-gray-400'}`} />
-                <span className="text-sm text-gray-500">{STATUS_META[project.status]?.label ?? project.status}</span>
-              </div>
-              <span className="text-gray-200">·</span>
-              <span className="text-sm text-gray-400">{vm.label ?? project.venture}</span>
-              <span className="text-gray-200">·</span>
-              <span className="text-sm text-gray-400">{project.projectType === 'MONTHLY' ? 'Monthly Retainer' : 'Fixed Project'}</span>
-              {isOverdue && (
-                <span className="text-red-500 text-sm">· Overdue since {fmtDate(project.deadline)}</span>
-              )}
-            </div>
+      {/* Stats row */}
+      <Card className={cn(
+        'grid gap-px overflow-hidden bg-gray-100',
+        stats.length > 1 ? 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-6' : 'grid-cols-1'
+      )}>
+        {stats.map(({ label, value, cls }) => (
+          <div key={label} className="bg-white px-5 py-4">
+            <p className="text-[13px] text-muted-foreground">{label}</p>
+            <p className={cn('mt-1 text-lg font-semibold tracking-tight tabular-nums text-gray-900', cls)}>{value}</p>
           </div>
-
-          <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap">
-            {canUpdateProject && (<>
-              <Link href={`/admin/projects/${id}/edit`}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors">
-                <Pencil className="w-3.5 h-3.5" /> Edit
-              </Link>
-              <button onClick={() => setStatusModal(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors">
-                Change Status
-              </button>
-            </>)}
-            {canViewFinancials && (
-              <Link href={`/admin/invoices/new?projectId=${id}&clientId=${project.clientId?.id ?? project.clientId?._id ?? project.clientId ?? ''}`}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors">
-                <FileText className="w-3.5 h-3.5" /> Create Invoice
-              </Link>
-            )}
-            {canDeleteProject && (
-              <button onClick={handleDelete}
-                className="p-1.5 rounded-lg border border-gray-200 text-gray-400 hover:text-red-500 hover:border-red-200 transition-colors">
-                <Trash2 className="w-4 h-4" />
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Stats row */}
-        <div className="flex items-center gap-4 sm:gap-8 mt-5 pb-5 border-b border-gray-100 flex-wrap">
-          {[
-            ...(canViewFinancials ? [
-              { label: 'Project Value', value: fmt(projectValue), bold: true },
-              { label: 'Paid',     value: fmt(paidAmount),  colored: true, positive: true },
-              { label: 'Due',      value: fmt(dueAmount),   colored: dueAmount > 0, positive: false },
-              { label: 'Expenses', value: fmt(project.approvedExpenses) },
-              { label: 'Profit',   value: fmt(profit), colored: true, positive: profit >= 0 },
-            ] : []),
-            { label: 'Tasks', value: `${doneTasks} / ${totalTasks}` },
-          ].map(({ label, value, colored, positive, dimRed, bold }) => (
-            <div key={label}>
-              <p className={`text-lg font-semibold tabular-nums ${
-                dimRed   ? 'text-rose-500' :
-                bold     ? 'text-gray-900' :
-                colored  ? (positive ? 'text-green-600' : 'text-red-500') :
-                'text-gray-900'
-              }`}>{value}</p>
-              <p className="text-xs text-gray-400 mt-0.5">{label}</p>
-            </div>
-          ))}
-        </div>
-      </div>
+        ))}
+      </Card>
 
       {/* Tab Nav */}
-      <div className="flex gap-0 border-b border-gray-100 overflow-x-auto scrollbar-none">
-        {TABS.map(t => (
-          <button key={t} onClick={() => setTab(t)}
-            className={`px-4 py-2.5 text-sm font-medium transition-all -mb-px shrink-0 ${
-              tab === t
-                ? 'border-b-2 border-gray-900 text-gray-900'
-                : 'text-gray-400 hover:text-gray-600 border-b-2 border-transparent'
-            }`}>
-            {TAB_LABELS[t]}
-            {t === 'tasks' && totalTasks > 0 && (
-              <span className="ml-1.5 text-xs text-gray-400">{totalTasks}</span>
-            )}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        variant="underline"
+        value={tab}
+        onChange={setTab}
+        tabs={TABS.map(t => ({
+          value: t,
+          label: TAB_LABELS[t],
+          count: t === 'tasks' && totalTasks > 0 ? totalTasks : undefined,
+        }))}
+      />
 
       {/* ── OVERVIEW ── */}
       {tab === 'overview' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           {/* Details card */}
-          <div className="lg:col-span-2 bg-white border border-gray-100 rounded-xl p-4 sm:p-6">
-            <h3 className="text-sm font-medium text-gray-500 mb-5 flex items-center gap-2">
-              <FileText className="w-4 h-4" /> Project Details
-            </h3>
+          <Card className="p-5 sm:p-6 lg:col-span-2">
+            <CardTitle className="mb-5">Project details</CardTitle>
 
             {/* Progress bars */}
             {((canViewFinancials && projectValue > 0) || totalTasks > 0) && (
-              <div className="space-y-3 mb-6 pb-6 border-b border-gray-100">
+              <div className="mb-6 space-y-4 border-b border-gray-100 pb-6">
                 {canViewFinancials && projectValue > 0 && (
                   <div>
-                    <div className="flex justify-between text-xs text-gray-400 mb-1.5">
-                      <span>Cost vs project value <span className="text-gray-300">(of ৳{projectValue.toLocaleString()})</span></span>
-                      <span>{utilization}%</span>
+                    <div className="mb-1.5 flex justify-between text-xs text-muted-foreground">
+                      <span>Cost vs project value <span className="text-gray-400">(of ৳{projectValue.toLocaleString()})</span></span>
+                      <span className="tabular-nums">{utilization}%</span>
                     </div>
-                    <div className="w-full bg-gray-100 rounded-full h-1">
-                      <div className={`h-1 rounded-full transition-all ${utilization > 90 ? 'bg-red-400' : utilization > 70 ? 'bg-yellow-400' : 'bg-gray-400'}`}
+                    <div className="h-1.5 w-full rounded-full bg-gray-100">
+                      <div className={`h-1.5 rounded-full transition-all ${utilization > 90 ? 'bg-red-500' : utilization > 70 ? 'bg-amber-500' : 'bg-gray-900'}`}
                         style={{ width: `${Math.min(utilization, 100)}%` }} />
                     </div>
                   </div>
                 )}
                 {totalTasks > 0 && (
                   <div>
-                    <div className="flex justify-between text-xs text-gray-400 mb-1.5">
+                    <div className="mb-1.5 flex justify-between text-xs text-muted-foreground">
                       <span>Task completion</span>
-                      <span>{taskPct}%</span>
+                      <span className="tabular-nums">{taskPct}%</span>
                     </div>
-                    <div className="w-full bg-gray-100 rounded-full h-1">
-                      <div className="h-1 rounded-full bg-gray-400 transition-all" style={{ width: `${taskPct}%` }} />
+                    <div className="h-1.5 w-full rounded-full bg-gray-100">
+                      <div className="h-1.5 rounded-full bg-gray-900 transition-all" style={{ width: `${taskPct}%` }} />
                     </div>
                   </div>
                 )}
               </div>
             )}
 
-            <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4">
+            <dl className="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">
               {[
                 { label: 'Client',       value: project.clientId?.userId?.name ?? '—' },
                 { label: 'Company',      value: project.clientId?.company ?? '—' },
                 { label: 'Manager',      value: project.projectManagerId?.name ?? '—' },
-                { label: 'Priority',     value: <span className="text-xs text-gray-500">{project.priority}</span> },
-                { label: 'Order Date',   value: fmtDate(project.orderDate) },
-                { label: 'Start Date',   value: fmtDate(project.startDate) },
+                { label: 'Priority',     value: humanize(project.priority) || '—' },
+                { label: 'Order date',   value: fmtDate(project.orderDate) },
+                { label: 'Start date',   value: fmtDate(project.startDate) },
                 ...(project.projectType === 'FIXED' ? [
-                  { label: 'Deadline',   value: <span className={isOverdue ? 'text-red-500' : ''}>{fmtDate(project.deadline)}</span> },
+                  { label: 'Deadline',   value: <span className={isOverdue ? 'font-medium text-red-600' : ''}>{fmtDate(project.deadline)}</span> },
                 ] : [
-                  { label: 'Period Start', value: fmtDate(project.currentPeriodStart) },
-                  { label: 'Period End',   value: fmtDate(project.currentPeriodEnd) },
-                  { label: 'Next Billing', value: fmtDate(project.nextBillingDate) },
+                  { label: 'Period start', value: fmtDate(project.currentPeriodStart) },
+                  { label: 'Period end',   value: fmtDate(project.currentPeriodEnd) },
+                  { label: 'Next billing', value: fmtDate(project.nextBillingDate) },
                 ]),
                 { label: 'Currency',   value: 'BDT' },
                 ...(canViewFinancials ? [
                   { label: 'Expenses', value: fmt(project.approvedExpenses) },
-                  { label: 'Profit',   value: <span className={profit >= 0 ? 'text-green-600' : 'text-red-500'}>{fmt(profit)}</span> },
+                  { label: 'Profit',   value: <span className={profit >= 0 ? 'text-emerald-600' : 'text-red-600'}>{fmt(profit)}</span> },
                 ] : []),
               ].map(({ label, value }) => (
-                <div key={label} className="flex flex-col gap-0.5">
-                  <dt className="text-xs text-gray-400">{label}</dt>
+                <div key={label} className="flex flex-col gap-1">
+                  <dt className="text-[13px] text-muted-foreground">{label}</dt>
                   <dd className="text-sm text-gray-900">{value ?? '—'}</dd>
                 </div>
               ))}
@@ -1370,192 +1322,190 @@ export default function ProjectDetailPage() {
 
             {/* Financial breakdown — only shown to users who can view financials */}
             {canViewFinancials && projectValue > 0 && (
-              <div className="mt-6 rounded-xl bg-gray-900 text-white p-4 space-y-2.5">
-                <p className="text-xs font-medium text-gray-400 uppercase tracking-widest mb-3">Financial Breakdown</p>
-                <div className="flex items-center justify-between text-sm border-b border-gray-700 pb-2.5">
-                  <span className="text-gray-300 font-medium">Project Value</span>
-                  <span className="tabular-nums font-semibold">{fmt(projectValue)}</span>
+              <div className="mt-6 space-y-2.5 rounded-lg bg-gray-50 p-4 text-sm tabular-nums">
+                <p className="mb-1 text-sm font-semibold text-gray-900">Financial breakdown</p>
+                <div className="flex items-center justify-between border-b border-gray-200/80 pb-2.5">
+                  <span className="text-gray-600">Project value</span>
+                  <span className="font-semibold text-gray-900">{fmt(projectValue)}</span>
                 </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-400">Paid</span>
-                  <span className="tabular-nums text-emerald-400 font-medium">{fmt(paidAmount)}</span>
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-600">Paid</span>
+                  <span className="font-medium text-emerald-600">{fmt(paidAmount)}</span>
                 </div>
                 {dueAmount > 0 && (
-                  <div className="flex items-center justify-between text-sm border-t border-gray-700 pt-2.5">
-                    <span className="text-gray-300 font-medium">Outstanding</span>
-                    <span className="tabular-nums text-amber-400 font-semibold">{fmt(dueAmount)}</span>
+                  <div className="flex items-center justify-between border-t border-gray-200/80 pt-2.5">
+                    <span className="font-medium text-gray-900">Outstanding</span>
+                    <span className="font-semibold text-amber-600">{fmt(dueAmount)}</span>
                   </div>
                 )}
                 {dueAmount <= 0.01 && (
-                  <div className="flex items-center justify-between text-sm border-t border-gray-700 pt-2.5">
-                    <span className="text-emerald-400 font-medium text-xs">✓ Fully Paid</span>
-                    <span className="tabular-nums text-emerald-400 font-semibold">{fmt(paidAmount)}</span>
+                  <div className="flex items-center justify-between border-t border-gray-200/80 pt-2.5">
+                    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700">
+                      <CheckCircle2 className="size-3.5" /> Fully paid
+                    </span>
+                    <span className="font-semibold text-emerald-600">{fmt(paidAmount)}</span>
                   </div>
                 )}
               </div>
             )}
 
             {project.description && (
-              <>
-                <div className="border-t border-gray-100 my-5" />
-                <h4 className="text-xs text-gray-400 uppercase tracking-wide mb-2">Description</h4>
-                <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">{project.description}</p>
-              </>
+              <div className="mt-6 border-t border-gray-100 pt-5">
+                <h4 className="mb-2 text-sm font-medium text-gray-900">Description</h4>
+                <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-600">{project.description}</p>
+              </div>
             )}
 
             {project.tags && (
-              <div className="border-t border-gray-100 mt-5 pt-4 flex items-center gap-2 flex-wrap">
-                <Tag className="w-3.5 h-3.5 text-gray-300" />
+              <div className="mt-5 flex flex-wrap items-center gap-1.5 border-t border-gray-100 pt-4">
                 {project.tags.split(',').map(t => (
-                  <span key={t.trim()} className="px-2 py-0.5 border border-gray-200 text-gray-500 text-xs rounded-full">{t.trim()}</span>
+                  <Badge key={t.trim()} variant="outline">{t.trim()}</Badge>
                 ))}
               </div>
             )}
-          </div>
+          </Card>
 
           {/* Team + Quick Actions */}
           <div className="space-y-4">
             {/* Team */}
             {(project.teamMembers?.length > 0 || project.projectManagerId) && (
-              <div className="bg-white border border-gray-100 rounded-xl p-5">
-                <h3 className="text-sm font-medium text-gray-500 mb-4 flex items-center gap-2">
-                  <Users className="w-4 h-4" /> Team
-                </h3>
-                <div className="space-y-3">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Team</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
                   {project.projectManagerId && (
                     <div className="flex items-center gap-2.5">
-                      <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-xs font-medium text-gray-600 shrink-0">
+                      <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-medium text-gray-700">
                         {project.projectManagerId.name?.[0]?.toUpperCase()}
                       </div>
                       <div>
-                        <p className="text-sm text-gray-800">{project.projectManagerId.name}</p>
-                        <p className="text-xs text-gray-400">Project Manager</p>
+                        <p className="text-sm font-medium text-gray-900">{project.projectManagerId.name}</p>
+                        <p className="text-xs text-muted-foreground">Project manager</p>
                       </div>
                     </div>
                   )}
                   {project.teamMembers?.map(m => (
                     <div key={m.id ?? m._id ?? m} className="flex items-center gap-2.5">
-                      <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-xs font-medium text-gray-500 shrink-0">
+                      <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-medium text-gray-600">
                         {m.name?.[0]?.toUpperCase() ?? '?'}
                       </div>
                       <p className="text-sm text-gray-700">{m.name}</p>
                     </div>
                   ))}
-                </div>
-              </div>
+                </CardContent>
+              </Card>
             )}
 
             {/* Quick Actions */}
-            <div className="bg-white border border-gray-100 rounded-xl p-5">
-              <h3 className="text-sm font-medium text-gray-500 mb-3">Quick Actions</h3>
-              <div className="space-y-1">
-                <button onClick={() => { setTab('tasks'); setTaskModal(true) }}
-                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors text-left">
-                  <Plus className="w-4 h-4 text-gray-400" /> Add Task
-                </button>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle>Quick actions</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-0.5 px-3 pb-3">
+                <Button variant="ghost" className="w-full justify-start" onClick={() => { setTab('tasks'); setTaskModal(true) }}>
+                  <Plus className="text-gray-400" /> New task
+                </Button>
                 {canViewFinancials && (<>
-                  <button onClick={() => { setTab('expenses'); setExpenseModal(true) }}
-                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors text-left">
-                    <TrendingDown className="w-4 h-4 text-gray-400" /> Submit Expense
-                  </button>
-                  <button onClick={() => { setTab('payments'); setPaymentModal(true) }}
-                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors text-left">
-                    <CreditCard className="w-4 h-4 text-gray-400" /> Record Payment
-                  </button>
-                  <Link href={`/admin/invoices/new?projectId=${id}&clientId=${project.clientId?.id ?? project.clientId?._id ?? project.clientId ?? ''}`}
-                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors">
-                    <FileText className="w-4 h-4 text-gray-400" /> Create Invoice
+                  <Button variant="ghost" className="w-full justify-start" onClick={() => { setTab('expenses'); setExpenseModal(true) }}>
+                    <TrendingDown className="text-gray-400" /> Submit expense
+                  </Button>
+                  <Button variant="ghost" className="w-full justify-start" onClick={() => { setTab('payments'); setPaymentModal(true) }}>
+                    <CreditCard className="text-gray-400" /> Record payment
+                  </Button>
+                  <Link href={invoiceHref} className={cn(buttonVariants({ variant: 'ghost' }), 'w-full justify-start')}>
+                    <FileText className="text-gray-400" /> New invoice
                   </Link>
                 </>)}
-              </div>
-            </div>
+              </CardContent>
+            </Card>
           </div>
         </div>
       )}
 
       {/* ── TASKS ── */}
       {tab === 'tasks' && (
-        <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
-          <div className="px-4 sm:px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+        <Card className="overflow-hidden">
+          <CardHeader className="border-b border-gray-100 pb-4">
             <div>
-              <h3 className="text-sm font-medium text-gray-900">Tasks</h3>
-              <p className="text-xs text-gray-400 mt-0.5">{doneTasks} of {totalTasks} completed</p>
+              <CardTitle>Tasks</CardTitle>
+              <CardDescription>{doneTasks} of {totalTasks} completed</CardDescription>
             </div>
-            <button onClick={() => { setEditingTask(null); setTaskModal(true) }}
-              className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-50 transition-colors">
-              <Plus className="w-3.5 h-3.5" /> Add Task
-            </button>
-          </div>
+            <CardAction>
+              <Button variant="outline" size="sm" onClick={() => { setEditingTask(null); setTaskModal(true) }}>
+                <Plus /> New task
+              </Button>
+            </CardAction>
+          </CardHeader>
 
           {totalTasks > 0 && (
-            <div className="px-4 sm:px-6 py-3 border-b border-gray-100">
+            <div className="border-b border-gray-100 px-5 py-3">
               <div className="flex items-center gap-3">
-                <div className="flex-1 bg-gray-100 rounded-full h-1">
-                  <div className="h-1 rounded-full bg-gray-400 transition-all" style={{ width: `${taskPct}%` }} />
+                <div className="h-1.5 flex-1 rounded-full bg-gray-100">
+                  <div className="h-1.5 rounded-full bg-gray-900 transition-all" style={{ width: `${taskPct}%` }} />
                 </div>
-                <span className="text-xs text-gray-400 shrink-0">{taskPct}%</span>
+                <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{taskPct}%</span>
               </div>
             </div>
           )}
 
           {totalTasks === 0 ? (
-            <div className="py-16 text-center">
-              <Circle className="w-8 h-8 text-gray-200 mx-auto mb-3" />
-              <p className="text-gray-400 text-sm">No tasks yet</p>
-              <button onClick={() => setTaskModal(true)}
-                className="mt-3 text-gray-500 text-sm hover:text-gray-700 underline">Create the first task</button>
-            </div>
+            <EmptyState
+              icon={Circle}
+              title="No tasks yet"
+              action={<Button variant="outline" size="sm" onClick={() => setTaskModal(true)}><Plus /> New task</Button>}
+            />
           ) : (
-            <div className="divide-y divide-gray-50">
+            <div className="divide-y divide-gray-100">
               {project.tasks.map(t => {
                 const isDone = t.status === 'COMPLETED'
                 return (
-                  <div key={t.id ?? t._id} className="flex items-start gap-3 px-4 sm:px-6 py-4 hover:bg-gray-50/50 group transition-colors">
-                    <button onClick={() => handleToggleTask(t)} className="mt-0.5 shrink-0">
+                  <div key={t.id ?? t._id} className="group flex items-start gap-3 px-5 py-3.5 transition-colors hover:bg-gray-50/70">
+                    <button onClick={() => handleToggleTask(t)} className="mt-0.5 shrink-0" aria-label={isDone ? 'Mark as to do' : 'Mark as completed'}>
                       {isDone
-                        ? <CheckCircle2 className="w-5 h-5 text-gray-400" />
-                        : <Circle className="w-5 h-5 text-gray-200 group-hover:text-gray-300 transition-colors" />
+                        ? <CheckCircle2 className="size-[18px] text-emerald-600" />
+                        : <Circle className="size-[18px] text-gray-300 transition-colors group-hover:text-gray-400" />
                       }
                     </button>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-3 flex-wrap">
-                        <p className={`text-sm ${isDone ? 'line-through text-gray-400' : 'text-gray-900'}`}>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <p className={cn('text-sm', isDone ? 'text-gray-400 line-through' : 'font-medium text-gray-900')}>
                           {t.title}
                         </p>
                         <div className="flex items-center gap-1.5">
-                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${TASK_STATUS_DOT[t.status] ?? 'bg-gray-400'}`} />
-                          <span className="text-xs text-gray-400">{t.status.replace('_',' ')}</span>
+                          <span className={`size-1.5 shrink-0 rounded-full ${TASK_STATUS_DOT[t.status] ?? 'bg-gray-400'}`} />
+                          <span className="text-xs text-muted-foreground">{humanize(t.status)}</span>
                         </div>
                         {t.priority && t.priority !== 'MEDIUM' && (
-                          <span className="text-xs text-gray-400">{t.priority}</span>
+                          <span className="text-xs text-muted-foreground">{humanize(t.priority)}</span>
                         )}
                       </div>
-                      {t.description && <p className="text-xs text-gray-400 mt-0.5 truncate">{t.description}</p>}
+                      {t.description && <p className="mt-0.5 truncate text-xs text-muted-foreground">{t.description}</p>}
                       {t.dueDate && (
-                        <div className="flex items-center gap-1 mt-1.5">
-                          <Calendar className="w-3 h-3 text-gray-300" />
-                          <span className={`text-xs ${isPastDay(t.dueDate) && !isDone && t.status !== 'CANCELLED' ? 'text-red-500' : 'text-gray-400'}`}>
+                        <div className="mt-1.5 flex items-center gap-1">
+                          <Calendar className="size-3.5 text-gray-400" />
+                          <span className={`text-xs ${isPastDay(t.dueDate) && !isDone && t.status !== 'CANCELLED' ? 'font-medium text-red-600' : 'text-muted-foreground'}`}>
                             {fmtDate(t.dueDate)}
                           </span>
                         </div>
                       )}
                     </div>
-                    <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shrink-0">
-                      <button onClick={() => { setEditingTask(t); setTaskModal(true) }}
-                        className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
-                        <Pencil className="w-3.5 h-3.5" />
-                      </button>
-                      <button onClick={() => handleDeleteTask(t.id ?? t._id)}
-                        className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors">
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                    <div className="flex shrink-0 items-center gap-0.5 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
+                      <Button variant="ghost" size="icon-sm" aria-label="Edit task" className="text-gray-400"
+                        onClick={() => { setEditingTask(t); setTaskModal(true) }}>
+                        <Pencil />
+                      </Button>
+                      <Button variant="ghost" size="icon-sm" aria-label="Delete task" className="text-gray-400 hover:bg-red-50 hover:text-red-600"
+                        onClick={() => handleDeleteTask(t.id ?? t._id)}>
+                        <Trash2 />
+                      </Button>
                     </div>
                   </div>
                 )
               })}
             </div>
           )}
-        </div>
+        </Card>
       )}
 
       {/* ── INVOICES ── */}
@@ -1563,852 +1513,735 @@ export default function ProjectDetailPage() {
         <div className="space-y-4">
           {/* Rollup across every issued invoice on this project */}
           {invoiceSummary && (
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
               {[
                 { label: 'Invoices',   value: invoiceSummary.allCount ?? 0, cls: 'text-gray-900', raw: true },
                 { label: 'Billed',     value: fmt(invoiceSummary.total),      cls: 'text-gray-900' },
                 { label: 'Paid',       value: fmt(invoiceSummary.paidAmount), cls: 'text-emerald-600' },
-                { label: 'Due',        value: fmt(invoiceSummary.due),        cls: invoiceSummary.due > 0.01 ? 'text-red-500' : 'text-emerald-600' },
+                { label: 'Due',        value: fmt(invoiceSummary.due),        cls: invoiceSummary.due > 0.01 ? 'text-red-600' : 'text-emerald-600' },
                 { label: 'Un-invoiced', value: fmt(invoiceSummary.uninvoiced), cls: invoiceSummary.uninvoiced > 0.01 ? 'text-amber-600' : 'text-gray-400' },
               ].map(c => (
-                <div key={c.label} className="bg-white border border-gray-100 rounded-xl p-4">
-                  <p className="text-xs text-gray-400">{c.label}</p>
-                  <p className={`text-base font-semibold mt-0.5 tabular-nums ${c.cls}`}>{c.value}</p>
-                </div>
+                <Card key={c.label} className="p-4">
+                  <p className="text-[13px] text-muted-foreground">{c.label}</p>
+                  <p className={`mt-1 text-base font-semibold tabular-nums ${c.cls}`}>{c.value}</p>
+                </Card>
               ))}
             </div>
           )}
 
-          <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
-            <div className="px-4 sm:px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-3 flex-wrap">
+          <Card className="overflow-hidden">
+            <CardHeader className="flex-wrap border-b border-gray-100">
               <div>
-                <h3 className="text-sm font-medium text-gray-900">Invoices ({invoices.length})</h3>
+                <CardTitle>Invoices <span className="font-normal text-muted-foreground">{invoices.length}</span></CardTitle>
                 {invoiceSummary?.draftCount > 0 && (
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    {invoiceSummary.draftCount} draft{invoiceSummary.draftCount === 1 ? '' : 's'} excluded from the totals above.
-                  </p>
+                  <CardDescription>
+                    {invoiceSummary.draftCount} draft{invoiceSummary.draftCount === 1 ? '' : 's'} excluded from totals
+                  </CardDescription>
                 )}
               </div>
-              <div className="flex items-center gap-2 flex-wrap">
+              <CardAction className="flex-wrap">
                 {combinedInvoice ? (
                   <Link href={`/admin/invoices/combined/${combinedInvoice.id}`}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 border border-blue-100 text-blue-700 text-xs font-medium rounded-lg hover:bg-blue-100 transition-colors">
-                    <Layers className="w-3.5 h-3.5" /> {combinedInvoice.combinedNumber}
+                    title="Combined invoice — re-totals from the invoices below each time it's opened"
+                    className={buttonVariants({ variant: 'outline', size: 'sm' })}>
+                    <Layers /> {combinedInvoice.combinedNumber}
                   </Link>
                 ) : invoices.length > 1 ? (
-                  <button onClick={handleGenerateCombined} disabled={generatingCombined}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors">
-                    {generatingCombined ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Layers className="w-3.5 h-3.5" />}
-                    Generate Combined Invoice
-                  </button>
+                  <Button variant="outline" size="sm" onClick={handleGenerateCombined} loading={generatingCombined}>
+                    {!generatingCombined && <Layers />}
+                    Generate combined invoice
+                  </Button>
                 ) : null}
-                <Link href={`/admin/invoices/new?projectId=${id}&clientId=${project.clientId?.id ?? project.clientId?._id ?? project.clientId ?? ''}`}
-                  className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-50 transition-colors">
-                  <Plus className="w-3.5 h-3.5" /> New Invoice
-                </Link>
-              </div>
-            </div>
-
-            {combinedInvoice && (
-              <div className="px-4 sm:px-6 py-2.5 bg-blue-50/50 border-b border-blue-100 flex items-center gap-2">
-                <Layers className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                <p className="text-xs text-blue-800">
-                  This project has a combined invoice ({combinedInvoice.combinedNumber}). It re-totals itself from the
-                  invoices below every time it is opened — no manual refresh needed.
-                </p>
-              </div>
-            )}
+                <Button variant="outline" size="sm" href={invoiceHref}>
+                  <Plus /> New invoice
+                </Button>
+              </CardAction>
+            </CardHeader>
 
             {!invoicesLoaded ? (
-              <div className="py-10 flex justify-center">
-                <div className="w-5 h-5 border-2 border-gray-200 border-t-gray-500 rounded-full animate-spin" />
+              <div className="flex justify-center py-10">
+                <LoadingSpinner />
               </div>
             ) : invoices.length === 0 ? (
-              <div className="py-16 text-center">
-                <FileText className="w-8 h-8 text-gray-200 mx-auto mb-2" />
-                <p className="text-gray-400 text-sm">No invoices raised for this project yet</p>
-              </div>
+              <EmptyState icon={FileText} title="No invoices yet" />
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[720px]">
-                  <thead>
-                    <tr className="border-b border-gray-100">
-                      {['Invoice No', 'Issued', 'Due Date', 'Status', 'Amount', 'Paid', 'Due', ''].map((h, i) => (
-                        <th key={h + i} className={`px-5 py-3 text-xs text-gray-400 font-medium whitespace-nowrap ${i >= 4 && i <= 6 ? 'text-right' : 'text-left'}`}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
-                    {invoices.map(inv => (
-                      <tr key={inv.id} onClick={() => router.push(`/admin/invoices/${inv.id}`)}
-                        className="hover:bg-gray-50/50 cursor-pointer">
-                        <td className="px-5 py-3 text-sm font-mono text-gray-800 whitespace-nowrap">{inv.invoiceNumber}</td>
-                        <td className="px-5 py-3 text-sm text-gray-400 whitespace-nowrap">{fmtDate(inv.issueDate)}</td>
-                        <td className="px-5 py-3 text-sm text-gray-400 whitespace-nowrap">{fmtDate(inv.dueDate)}</td>
-                        <td className="px-5 py-3 whitespace-nowrap">
-                          <div className="flex items-center gap-1.5">
-                            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${INVOICE_DOT[inv.status] ?? 'bg-gray-300'}`} />
-                            <span className="text-xs text-gray-500">{inv.status.replace(/_/g, ' ')}</span>
-                          </div>
-                        </td>
-                        <td className="px-5 py-3 text-right text-sm font-medium text-gray-900 tabular-nums whitespace-nowrap">{fmt(inv.total)}</td>
-                        <td className="px-5 py-3 text-right text-sm text-emerald-600 tabular-nums whitespace-nowrap">{fmt(inv.paidAmount)}</td>
-                        <td className={`px-5 py-3 text-right text-sm font-medium tabular-nums whitespace-nowrap ${inv.due > 0.01 ? 'text-red-500' : 'text-emerald-600'}`}>{fmt(inv.due)}</td>
-                        <td className="px-5 py-3 text-right">
-                          <ChevronRight className="w-4 h-4 text-gray-300 inline" />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="border-t-2 border-gray-100 bg-gray-50/60">
-                      <td colSpan={4} className="px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                        Total ({invoiceSummary?.invoiceCount ?? 0} billable)
-                      </td>
-                      <td className="px-5 py-3 text-right text-sm font-bold text-gray-900 tabular-nums">{fmt(invoiceSummary?.total)}</td>
-                      <td className="px-5 py-3 text-right text-sm font-bold text-emerald-600 tabular-nums">{fmt(invoiceSummary?.paidAmount)}</td>
-                      <td className={`px-5 py-3 text-right text-sm font-bold tabular-nums ${(invoiceSummary?.due ?? 0) > 0.01 ? 'text-red-500' : 'text-emerald-600'}`}>{fmt(invoiceSummary?.due)}</td>
-                      <td />
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
+              <Table className="min-w-[720px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Invoice no</TableHead>
+                    <TableHead>Issued</TableHead>
+                    <TableHead>Due date</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Amount</TableHead>
+                    <TableHead className="text-right">Paid</TableHead>
+                    <TableHead className="text-right">Due</TableHead>
+                    <TableHead className="w-10" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {invoices.map(inv => (
+                    <TableRow key={inv.id} onClick={() => router.push(`/admin/invoices/${inv.id}`)}
+                      className="cursor-pointer">
+                      <TableCell className="whitespace-nowrap font-mono text-[13px] font-medium text-gray-900">{inv.invoiceNumber}</TableCell>
+                      <TableCell className="whitespace-nowrap text-muted-foreground">{fmtDate(inv.issueDate)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-muted-foreground">{fmtDate(inv.dueDate)}</TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        <Badge status={inv.status} dot />
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-right font-medium tabular-nums text-gray-900">{fmt(inv.total)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums text-emerald-600">{fmt(inv.paidAmount)}</TableCell>
+                      <TableCell className={`whitespace-nowrap text-right font-medium tabular-nums ${inv.due > 0.01 ? 'text-red-600' : 'text-emerald-600'}`}>{fmt(inv.due)}</TableCell>
+                      <TableCell className="text-right">
+                        <ChevronRight className="inline size-4 text-gray-300" />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+                <TableFooter>
+                  <TableRow className="hover:bg-transparent">
+                    <TableCell colSpan={4} className="text-[13px] font-medium text-gray-600">
+                      Total ({invoiceSummary?.invoiceCount ?? 0} billable)
+                    </TableCell>
+                    <TableCell className="text-right font-semibold tabular-nums text-gray-900">{fmt(invoiceSummary?.total)}</TableCell>
+                    <TableCell className="text-right font-semibold tabular-nums text-emerald-600">{fmt(invoiceSummary?.paidAmount)}</TableCell>
+                    <TableCell className={`text-right font-semibold tabular-nums ${(invoiceSummary?.due ?? 0) > 0.01 ? 'text-red-600' : 'text-emerald-600'}`}>{fmt(invoiceSummary?.due)}</TableCell>
+                    <TableCell />
+                  </TableRow>
+                </TableFooter>
+              </Table>
             )}
-          </div>
+          </Card>
         </div>
       )}
 
       {/* ── EXPENSES ── */}
       {tab === 'expenses' && (
-        <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
-          <div className="px-4 sm:px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-            <h3 className="text-sm font-medium text-gray-900">Expenses ({project.expenses?.length ?? 0})</h3>
-            <button onClick={() => setExpenseModal(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-50 transition-colors">
-              <Plus className="w-3.5 h-3.5" /> Add Expense
-            </button>
-          </div>
+        <Card className="overflow-hidden">
+          <CardHeader className="border-b border-gray-100">
+            <CardTitle>Expenses <span className="font-normal text-muted-foreground">{project.expenses?.length ?? 0}</span></CardTitle>
+            <CardAction>
+              <Button variant="outline" size="sm" onClick={() => setExpenseModal(true)}>
+                <Plus /> New expense
+              </Button>
+            </CardAction>
+          </CardHeader>
           {(project.expenses?.length ?? 0) === 0 ? (
-            <div className="py-16 text-center text-gray-400 text-sm">No expenses yet</div>
+            <EmptyState icon={TrendingDown} title="No expenses yet" />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[560px]">
-                <thead>
-                  <tr className="border-b border-gray-100">
-                    {['Title','Category','Amount','Date','Status',''].map(h => (
-                      <th key={h} className="px-5 py-3 text-left text-xs text-gray-400 font-medium">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {project.expenses.map(e => (
-                    <tr key={e.id ?? e._id} className="hover:bg-gray-50/50">
-                      <td className="px-5 py-3 text-sm text-gray-800">{e.title}</td>
-                      <td className="px-5 py-3 text-sm text-gray-400 whitespace-nowrap">
-                        {e.category}{e.subcategory ? ` / ${e.subcategory}` : ''}
-                      </td>
-                      <td className="px-5 py-3 text-sm text-gray-900 whitespace-nowrap">
-                        {fmtMoney(e.amount, e.currency)}
-                        {(e.currency || 'BDT') !== 'BDT' && e.amountBDT != null && (
-                          <p className="text-xs text-gray-400">≈ {fmtMoney(e.amountBDT, 'BDT')}</p>
+            <Table className="min-w-[560px]">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Title</TableHead>
+                  <TableHead>Category</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {project.expenses.map(e => (
+                  <TableRow key={e.id ?? e._id}>
+                    <TableCell className="font-medium text-gray-900">{e.title}</TableCell>
+                    <TableCell className="whitespace-nowrap text-muted-foreground">
+                      {e.category}{e.subcategory ? ` / ${e.subcategory}` : ''}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-right tabular-nums text-gray-900">
+                      {fmtMoney(e.amount, e.currency)}
+                      {(e.currency || 'BDT') !== 'BDT' && e.amountBDT != null && (
+                        <p className="text-xs text-muted-foreground">≈ {fmtMoney(e.amountBDT, 'BDT')}</p>
+                      )}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-muted-foreground">{fmtDate(e.date)}</TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      <Badge variant={EXPENSE_STATUS_BADGE[e.status] ?? 'warning'} dot>{humanize(e.status)}</Badge>
+                    </TableCell>
+                    <TableCell className="py-2">
+                      <div className="flex items-center justify-end gap-1.5">
+                        {e.invoiceUrl && <DocPreview url={e.invoiceUrl} compact />}
+                        {(e.status === 'PAID' || e.status === 'AUTHORIZED') && (
+                          <a href={`/api/expenses/${e.id ?? e._id}/voucher`} target="_blank" rel="noreferrer"
+                            className={buttonVariants({ variant: 'outline', size: 'xs' })}>
+                            Invoice
+                          </a>
                         )}
-                      </td>
-                      <td className="px-5 py-3 text-sm text-gray-400 whitespace-nowrap">{fmtDate(e.date)}</td>
-                      <td className="px-5 py-3 whitespace-nowrap">
-                        <div className="flex items-center gap-1.5">
-                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                            e.status === 'AUTHORIZED' ? 'bg-green-500' :
-                            e.status === 'PAID' ? 'bg-blue-500' :
-                            e.status === 'REJECTED' ? 'bg-red-500' :
-                            'bg-yellow-400'
-                          }`} />
-                          <span className="text-xs text-gray-500">{e.status}</span>
-                        </div>
-                      </td>
-                      <td className="px-5 py-3">
-                        <div className="flex items-center gap-2">
-                          {e.invoiceUrl && <DocPreview url={e.invoiceUrl} compact />}
-                          {(e.status === 'PAID' || e.status === 'AUTHORIZED') && (
-                            <a href={`/api/expenses/${e.id ?? e._id}/voucher`} target="_blank" rel="noreferrer"
-                              className="px-2 py-0.5 text-xs font-medium text-gray-600 border border-gray-200 rounded hover:bg-gray-50">
-                              Invoice
-                            </a>
-                          )}
-                          {e.status === 'PENDING' && (
-                            <>
-                              <Link href="/admin/accounts?tab=requests"
-                                className="px-2 py-0.5 text-xs font-medium text-white bg-gray-900 rounded hover:bg-gray-800">
-                                Record payment →
-                              </Link>
-                              <button onClick={() => handleExpenseAction(e.id ?? e._id, 'reject')}
-                                disabled={processingExpense === (e.id ?? e._id)}
-                                className="px-2 py-0.5 text-xs font-medium text-red-600 border border-red-200 rounded hover:bg-red-50 disabled:opacity-50">
-                                Reject
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                        {e.status === 'PENDING' && (
+                          <>
+                            <Link href="/admin/accounts?tab=requests"
+                              className={buttonVariants({ variant: 'default', size: 'xs' })}>
+                              Record payment
+                            </Link>
+                            <Button variant="outline" size="xs"
+                              onClick={() => handleExpenseAction(e.id ?? e._id, 'reject')}
+                              disabled={processingExpense === (e.id ?? e._id)}
+                              className="text-red-600 hover:bg-red-50 hover:text-red-700">
+                              Reject
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           )}
-        </div>
+        </Card>
       )}
 
       {/* ── PAYMENTS ── */}
       {tab === 'payments' && (
-        <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
-          <div className="px-4 sm:px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-            <h3 className="text-sm font-medium text-gray-900">Payments ({payments.length})</h3>
-            <button onClick={() => setPaymentModal(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-50 transition-colors">
-              <Plus className="w-3.5 h-3.5" /> Record Payment
-            </button>
-          </div>
+        <Card className="overflow-hidden">
+          <CardHeader className="border-b border-gray-100">
+            <CardTitle>Payments <span className="font-normal text-muted-foreground">{payments.length}</span></CardTitle>
+            <CardAction>
+              <Button variant="outline" size="sm" onClick={() => setPaymentModal(true)}>
+                <Plus /> Record payment
+              </Button>
+            </CardAction>
+          </CardHeader>
           {!paymentsLoaded ? (
-            <div className="py-10 flex justify-center">
-              <div className="w-5 h-5 border-2 border-gray-200 border-t-gray-500 rounded-full animate-spin" />
+            <div className="flex justify-center py-10">
+              <LoadingSpinner />
             </div>
           ) : payments.length === 0 ? (
-            <div className="py-16 text-center text-gray-400 text-sm">No payments recorded yet</div>
+            <EmptyState icon={CreditCard} title="No payments yet" />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[540px]">
-                <thead>
-                  <tr className="border-b border-gray-100">
-                    {['Description','Amount','Method','Date','Status','Proof'].map(h => (
-                      <th key={h} className="px-5 py-3 text-left text-xs text-gray-400 font-medium whitespace-nowrap">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {payments.map(p => (
-                    <tr key={p.id} className="hover:bg-gray-50/50">
-                      <td className="px-5 py-3 text-sm text-gray-800">{p.description || '—'}</td>
-                      <td className="px-5 py-3 text-sm text-gray-900 whitespace-nowrap">
-                        {p.currency && p.currency !== 'BDT' ? p.currency : 'BDT'} {Number(p.amount).toLocaleString()}
-                        {(numOr0(p.vdsAmount) > 0 || numOr0(p.tdsAmount) > 0) && (
-                          <span className="block text-[11px] text-gray-400">
-                            {numOr0(p.vdsAmount) > 0 ? `+ VDS ${numOr0(p.vdsAmount).toLocaleString()}` : ''}
-                            {numOr0(p.vdsAmount) > 0 && numOr0(p.tdsAmount) > 0 ? ' · ' : ''}
-                            {numOr0(p.tdsAmount) > 0 ? `+ TDS ${numOr0(p.tdsAmount).toLocaleString()}` : ''}
-                          </span>
-                        )}
-                        {p.accountId?.name && <span className="block text-[11px] text-gray-400">into {p.accountId.name}</span>}
-                      </td>
-                      <td className="px-5 py-3 text-sm text-gray-400 whitespace-nowrap">{fmtMethod(p.paymentMethod)}</td>
-                      <td className="px-5 py-3 text-sm text-gray-400 whitespace-nowrap">{fmtDate(p.paymentDate)}</td>
-                      <td className="px-5 py-3 whitespace-nowrap">
-                        <div className="flex items-center gap-1.5">
-                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                            p.status === 'CONFIRMED' ? 'bg-green-500' :
-                            p.status === 'REJECTED'  ? 'bg-red-500'   :
-                            p.status === 'REVERSED' || p.status === 'REVERSING' ? 'bg-gray-400' :
-                            'bg-yellow-400'
-                          }`} />
-                          <span className="text-xs text-gray-500" title={p.status === 'REVERSED' && p.reversalReason ? `Reversed: ${p.reversalReason}` : undefined}>
-                            {({ PENDING_CONFIRMATION: 'Pending', CONFIRMED: 'Confirmed', REJECTED: 'Rejected', REVERSING: 'Reversing…', REVERSED: 'Reversed' })[p.status] ?? p.status}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-5 py-3">
-                        {p.receiptUrl ? <DocPreview url={p.receiptUrl} compact /> : '—'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <Table className="min-w-[540px]">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Description</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead>Method</TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Proof</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {payments.map(p => (
+                  <TableRow key={p.id}>
+                    <TableCell className="text-gray-900">{p.description || '—'}</TableCell>
+                    <TableCell className="whitespace-nowrap text-right tabular-nums text-gray-900">
+                      {p.currency && p.currency !== 'BDT' ? p.currency : 'BDT'} {Number(p.amount).toLocaleString()}
+                      {(numOr0(p.vdsAmount) > 0 || numOr0(p.tdsAmount) > 0) && (
+                        <span className="block text-[11px] text-muted-foreground">
+                          {numOr0(p.vdsAmount) > 0 ? `+ VDS ${numOr0(p.vdsAmount).toLocaleString()}` : ''}
+                          {numOr0(p.vdsAmount) > 0 && numOr0(p.tdsAmount) > 0 ? ' · ' : ''}
+                          {numOr0(p.tdsAmount) > 0 ? `+ TDS ${numOr0(p.tdsAmount).toLocaleString()}` : ''}
+                        </span>
+                      )}
+                      {p.accountId?.name && <span className="block text-[11px] text-muted-foreground">into {p.accountId.name}</span>}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-muted-foreground">{fmtMethod(p.paymentMethod)}</TableCell>
+                    <TableCell className="whitespace-nowrap text-muted-foreground">{fmtDate(p.paymentDate)}</TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      <span title={p.status === 'REVERSED' && p.reversalReason ? `Reversed: ${p.reversalReason}` : undefined}>
+                        <Badge variant={PAYMENT_STATUS_BADGE[p.status] ?? 'warning'} dot>
+                          {({ PENDING_CONFIRMATION: 'Pending', CONFIRMED: 'Confirmed', REJECTED: 'Rejected', REVERSING: 'Reversing…', REVERSED: 'Reversed' })[p.status] ?? p.status}
+                        </Badge>
+                      </span>
+                    </TableCell>
+                    <TableCell className="py-2">
+                      {p.receiptUrl ? <DocPreview url={p.receiptUrl} compact /> : '—'}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           )}
           {payments.some(p => p.status === 'PENDING_CONFIRMATION') && (
-            <div className="px-4 sm:px-6 py-3 border-t border-gray-100">
-              <p className="text-xs text-gray-400">Pending payments are awaiting confirmation in <strong className="text-gray-600">Accounts → Payment Confirmations</strong>.</p>
+            <div className="border-t border-gray-100 px-5 py-3">
+              <p className="text-xs text-muted-foreground">Pending payments await confirmation in <span className="font-medium text-gray-700">Accounts → Payment confirmations</span>.</p>
             </div>
           )}
-        </div>
+        </Card>
       )}
 
       {/* ── RENEWALS ── */}
       {tab === 'renewals' && (
-        <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
-          <div className="px-4 sm:px-6 py-4 border-b border-gray-100">
-            <h3 className="text-sm font-medium text-gray-900">Renewal History ({project.renewals?.length ?? 0})</h3>
-          </div>
+        <Card className="overflow-hidden">
+          <CardHeader className="border-b border-gray-100">
+            <CardTitle>Renewal history <span className="font-normal text-muted-foreground">{project.renewals?.length ?? 0}</span></CardTitle>
+          </CardHeader>
           {(project.renewals?.length ?? 0) === 0 ? (
-            <div className="py-16 text-center text-gray-400 text-sm">No renewal history</div>
+            <EmptyState icon={Clock} title="No renewals yet" />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[420px]">
-                <thead>
-                  <tr className="border-b border-gray-100">
-                    {['Period','Amount','Status','Notes'].map(h => (
-                      <th key={h} className="px-5 py-3 text-left text-xs text-gray-400 font-medium whitespace-nowrap">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {project.renewals.map(r => (
-                    <tr key={r.id ?? r._id} className="hover:bg-gray-50/50">
-                      <td className="px-5 py-3 text-sm text-gray-700 whitespace-nowrap">{fmtDate(r.periodStart)} – {fmtDate(r.periodEnd)}</td>
-                      <td className="px-5 py-3 text-sm text-gray-900 whitespace-nowrap">BDT {Number(r.billingAmount).toLocaleString()}</td>
-                      <td className="px-5 py-3 whitespace-nowrap">
-                        <div className="flex items-center gap-1.5">
-                          <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0" />
-                          <span className="text-xs text-gray-500">{r.status}</span>
-                        </div>
-                      </td>
-                      <td className="px-5 py-3 text-sm text-gray-400">{r.notes ?? '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <Table className="min-w-[420px]">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Period</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Notes</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {project.renewals.map(r => (
+                  <TableRow key={r.id ?? r._id}>
+                    <TableCell className="whitespace-nowrap text-gray-900">{fmtDate(r.periodStart)} – {fmtDate(r.periodEnd)}</TableCell>
+                    <TableCell className="whitespace-nowrap text-right tabular-nums text-gray-900">BDT {Number(r.billingAmount).toLocaleString()}</TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      <Badge variant="primary" dot>{humanize(r.status)}</Badge>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{r.notes ?? '—'}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           )}
-        </div>
+        </Card>
       )}
 
       {/* ── FREELANCERS ── */}
       {tab === 'freelancers' && (() => {
-        const ASSIGN_STATUS_COLORS = {
-          ASSIGNED: 'bg-blue-100 text-blue-700', ACCEPTED: 'bg-teal-100 text-teal-700',
-          IN_PROGRESS: 'bg-purple-100 text-purple-700', COMPLETED: 'bg-green-100 text-green-700', CANCELLED: 'bg-red-100 text-red-600',
-        }
-        const PAY_STATUS_COLORS = {
-          PENDING: 'bg-yellow-100 text-yellow-700', PAYMENT_REQUESTED: 'bg-orange-100 text-orange-700',
-          IN_WALLET: 'bg-green-100 text-green-700',
-          WITHDRAWAL_REQUESTED: 'bg-blue-100 text-blue-700', PAID: 'bg-gray-100 text-gray-600',
-        }
         const isAdmin = ['SUPER_ADMIN', 'MANAGER'].includes(session?.user?.role)
         // The API lets admins and the project manager complete / request payment.
         const canManageAssignments = isAdmin ||
           (session?.user?.role === 'EMPLOYEE' && (project.projectManagerId?.id ?? project.projectManagerId) === session?.user?.id)
-        const ic = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900'
         const freelancerOnlyAssignments = freelancerAssignments.filter(a => a.freelancerId?.type !== 'AGENCY')
 
         return (
-          <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+          <Card className="overflow-hidden">
+            <CardHeader className="border-b border-gray-100">
               <div>
-                <h3 className="text-sm font-medium text-gray-900">Freelancer Assignments</h3>
-                <p className="text-xs text-gray-400 mt-0.5">{freelancerOnlyAssignments.length} assignment{freelancerOnlyAssignments.length !== 1 ? 's' : ''}</p>
+                <CardTitle>Freelancers</CardTitle>
+                <CardDescription>{freelancerOnlyAssignments.length} assignment{freelancerOnlyAssignments.length !== 1 ? 's' : ''}</CardDescription>
               </div>
               {(
                 ['SUPER_ADMIN', 'MANAGER'].includes(session?.user?.role) ||
                 (session?.user?.role === 'EMPLOYEE' && (project.projectManagerId?.id ?? project.projectManagerId) === session.user.id)
               ) && (
-                <button onClick={() => setAssignModal(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-50 transition-colors">
-                  <Plus className="w-3.5 h-3.5" /> Assign Freelancer
-                </button>
+                <CardAction>
+                  <Button variant="outline" size="sm" onClick={() => setAssignModal(true)}>
+                    <Plus /> Assign freelancer
+                  </Button>
+                </CardAction>
               )}
-            </div>
+            </CardHeader>
 
             {freelancerOnlyAssignments.length === 0 ? (
-              <div className="py-16 text-center text-gray-400 text-sm">No freelancers assigned to this project yet</div>
+              <EmptyState icon={Users} title="No freelancers assigned yet" />
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[640px]">
-                  <thead>
-                    <tr className="border-b border-gray-100">
-                      {['Freelancer', 'Payment', 'Status', 'Payment Status', 'Action'].map(h => (
-                        <th key={h} className="px-5 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
-                    {freelancerOnlyAssignments.map(a => {
-                      const name   = a.freelancerId?.userId?.name ?? 'Unknown'
-                      const email  = a.freelancerId?.userId?.email ?? ''
-                      const avatar = a.freelancerId?.userId?.avatar
-                      const aId    = a.id ?? a._id
-                      return (
-                        <tr key={aId} className="hover:bg-gray-50/50 transition-colors">
-                          <td className="px-5 py-3.5">
-                            <div className="flex items-center gap-2.5">
-                              {avatar ? (
-                                <Image src={avatar} alt="" width={28} height={28} className="w-7 h-7 rounded-full object-cover shrink-0" />
-                              ) : (
-                                <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-xs font-medium text-gray-600 shrink-0">
-                                  {name[0]?.toUpperCase()}
-                                </div>
-                              )}
-                              <div>
-                                <p className="text-sm font-medium text-gray-900">{name}</p>
-                                {email && <p className="text-xs text-gray-400">{email}</p>}
+              <Table className="min-w-[640px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Freelancer</TableHead>
+                    <TableHead className="text-right">Payment</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Payment status</TableHead>
+                    <TableHead>Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {freelancerOnlyAssignments.map(a => {
+                    const name   = a.freelancerId?.userId?.name ?? 'Unknown'
+                    const email  = a.freelancerId?.userId?.email ?? ''
+                    const avatar = a.freelancerId?.userId?.avatar
+                    const aId    = a.id ?? a._id
+                    return (
+                      <TableRow key={aId}>
+                        <TableCell>
+                          <div className="flex items-center gap-2.5">
+                            {avatar ? (
+                              <Image src={avatar} alt="" width={28} height={28} className="size-7 shrink-0 rounded-full object-cover" />
+                            ) : (
+                              <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-medium text-gray-600">
+                                {name[0]?.toUpperCase()}
                               </div>
-                            </div>
-                          </td>
-                          <td className="px-5 py-3.5 text-sm font-medium text-gray-900">
-                            {fmtMoney(a.paymentAmount, a.currency)}
-                            {(a.currency || 'BDT') !== 'BDT' && a.amountBDT != null && (
-                              <p className="text-xs font-normal text-gray-400">≈ {fmtMoney(a.amountBDT, 'BDT')}</p>
                             )}
-                          </td>
-                          <td className="px-5 py-3.5">
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${ASSIGN_STATUS_COLORS[a.status] ?? 'bg-gray-100 text-gray-600'}`}>
-                              {a.status?.replace('_', ' ')}
-                            </span>
-                          </td>
-                          <td className="px-5 py-3.5">
+                            <div className="min-w-0">
+                              <p className="font-medium text-gray-900">{name}</p>
+                              {email && <p className="text-xs text-muted-foreground">{email}</p>}
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-right font-medium tabular-nums text-gray-900">
+                          {fmtMoney(a.paymentAmount, a.currency)}
+                          {(a.currency || 'BDT') !== 'BDT' && a.amountBDT != null && (
+                            <p className="text-xs font-normal text-muted-foreground">≈ {fmtMoney(a.amountBDT, 'BDT')}</p>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={ASSIGN_STATUS_BADGE[a.status] ?? 'default'}>{humanize(a.status)}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1.5">
                             {/* Payment Status — dropdown for admin when PENDING and the work is delivered */}
                             {canManageAssignments && a.paymentStatus === 'PENDING' && a.status === 'COMPLETED' ? (
-                              <select
+                              <NativeSelect
                                 value={a.paymentStatus}
                                 disabled={requestingPayment === aId}
                                 onChange={e => { if (e.target.value === 'PAYMENT_REQUESTED') handleRequestPayment(aId) }}
-                                className="text-xs border border-gray-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-gray-900 cursor-pointer"
+                                className="h-8 w-auto text-xs"
                               >
                                 <option value="PENDING">Pending</option>
-                                <option value="PAYMENT_REQUESTED">Send Request for Payment</option>
-                              </select>
+                                <option value="PAYMENT_REQUESTED">Request payment</option>
+                              </NativeSelect>
                             ) : (
-                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${PAY_STATUS_COLORS[a.paymentStatus] ?? 'bg-gray-100 text-gray-600'}`}>
-                                {a.paymentStatus === 'PAYMENT_REQUESTED' ? 'Payment Requested' : (a.paymentStatus?.replace(/_/g, ' ') ?? 'PENDING')}
-                              </span>
+                              <Badge variant={PAY_STATUS_BADGE[a.paymentStatus] ?? 'default'}>
+                                {a.paymentStatus === 'PAYMENT_REQUESTED' ? 'Payment requested' : (humanize(a.paymentStatus) || 'Pending')}
+                              </Badge>
                             )}
-                            {requestingPayment === aId && <Loader2 className="w-3 h-3 animate-spin inline ml-1.5 text-gray-400" />}
-                          </td>
-                          <td className="px-5 py-3.5">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              {a.status === 'IN_PROGRESS' && (
-                                <button
-                                  onClick={() => handleCompleteAssignment(aId)}
-                                  className="flex items-center gap-1 px-2.5 py-1 bg-teal-600 text-white text-xs font-medium rounded-lg hover:bg-teal-700 transition-colors"
-                                >
-                                  <CheckCircle2 className="w-3 h-3" /> Mark Complete
-                                </button>
-                              )}
-                              {isAdmin && (
-                                <>
-                                  <button
-                                    onClick={() => setEditAssignment({ id: aId, paymentAmount: a.paymentAmount ?? '', currency: a.currency || 'BDT', amountBDT: a.amountBDT ?? '', paymentNotes: a.paymentNotes ?? '', status: a.status })}
-                                    className="flex items-center gap-1 px-2.5 py-1 border border-gray-200 text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-50 transition-colors"
-                                  >
-                                    <Pencil className="w-3 h-3" /> Edit
-                                  </button>
-                                  <button
-                                    onClick={() => handleDeleteAssignment(aId)}
-                                    disabled={deletingAssign === aId}
-                                    className="flex items-center gap-1 px-2.5 py-1 border border-red-200 text-red-600 text-xs font-medium rounded-lg hover:bg-red-50 disabled:opacity-50 transition-colors"
-                                  >
-                                    {deletingAssign === aId ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                            {requestingPayment === aId && <Loader2 className="size-3.5 animate-spin text-gray-400" />}
+                          </div>
+                        </TableCell>
+                        <TableCell className="py-2">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {a.status === 'IN_PROGRESS' && (
+                              <Button variant="outline" size="xs" onClick={() => handleCompleteAssignment(aId)}>
+                                <CheckCircle2 /> Mark complete
+                              </Button>
+                            )}
+                            {isAdmin && (
+                              <>
+                                <Button variant="outline" size="xs"
+                                  onClick={() => setEditAssignment({ id: aId, paymentAmount: a.paymentAmount ?? '', currency: a.currency || 'BDT', amountBDT: a.amountBDT ?? '', paymentNotes: a.paymentNotes ?? '', status: a.status })}>
+                                  <Pencil /> Edit
+                                </Button>
+                                <Button variant="ghost" size="icon-xs" aria-label="Delete assignment"
+                                  onClick={() => handleDeleteAssignment(aId)}
+                                  disabled={deletingAssign === aId}
+                                  className="text-gray-400 hover:bg-red-50 hover:text-red-600">
+                                  {deletingAssign === aId ? <Loader2 className="animate-spin" /> : <Trash2 />}
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
             )}
 
             {/* Assign Freelancer Modal */}
             {assignModal && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-                <div className="bg-white rounded-xl border border-gray-200 w-full max-w-md p-6 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-base font-semibold text-gray-900">Assign Freelancer</h3>
-                    <button onClick={() => setAssignModal(false)} className="p-1 rounded-lg hover:bg-gray-100">
-                      <X className="w-4 h-4 text-gray-400" />
-                    </button>
+              <DialogShell
+                title="Assign freelancer"
+                onClose={() => setAssignModal(false)}
+                onSubmit={handleAssignFreelancer}
+                scroll={false}
+                footer={<>
+                  <Button variant="outline" onClick={() => setAssignModal(false)}>Cancel</Button>
+                  <Button type="submit" loading={assignSaving}>Assign</Button>
+                </>}
+              >
+                <Field label="Freelancer" required>
+                  <PeoplePicker types={['FREELANCER']} typeFilter={false} value={assignForm.person}
+                    placeholder="Search freelancers…"
+                    onChange={p => setAssignForm(f => ({
+                      ...f, person: p, freelancerId: p?.id ?? '',
+                      currency: p?.currency ?? 'BDT',
+                    }))} />
+                </Field>
+                {assignForm.person?.mode === 'SALARY' ? (
+                  <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5 text-sm text-blue-800">
+                    Salary-based — covered by their monthly salary.
                   </div>
-                  <form onSubmit={handleAssignFreelancer} className="space-y-4">
-                    <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-1">Freelancer <span className="text-red-500">*</span></label>
-                      <PeoplePicker types={['FREELANCER']} typeFilter={false} value={assignForm.person}
-                        placeholder="Search freelancers…"
-                        onChange={p => setAssignForm(f => ({
-                          ...f, person: p, freelancerId: p?.id ?? '',
-                          currency: p?.currency ?? 'BDT',
-                        }))} />
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 gap-4">
+                      <Field label="Amount" required>
+                        <Input type="number" step="0.01" min="1"
+                          value={assignForm.paymentAmount}
+                          onChange={e => setAssignForm(f => ({ ...f, paymentAmount: e.target.value }))}
+                          placeholder="0.00" />
+                      </Field>
+                      <Field label="Currency">
+                        <Select value={assignForm.currency}
+                          onChange={v => setAssignForm(f => ({ ...f, currency: v ?? 'BDT' }))}
+                          options={currencyOptions} placeholder="Select…" />
+                      </Field>
                     </div>
-                    {assignForm.person?.mode === 'SALARY' ? (
-                      <div className="rounded-lg bg-indigo-50 border border-indigo-100 px-3 py-2.5 text-xs text-indigo-700">
-                        Salary-based freelancer — no per-engagement payment. Their monthly salary covers this work.
-                      </div>
-                    ) : (
-                      <>
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Amount <span className="text-red-500">*</span></label>
-                            <input type="number" step="0.01" min="1"
-                              value={assignForm.paymentAmount}
-                              onChange={e => setAssignForm(f => ({ ...f, paymentAmount: e.target.value }))}
-                              placeholder="0.00" className={ic} />
-                          </div>
-                          <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Currency</label>
-                            <Select value={assignForm.currency}
-                              onChange={v => setAssignForm(f => ({ ...f, currency: v ?? 'BDT' }))}
-                              options={currencyOptions} placeholder="Currency…" />
-                          </div>
-                        </div>
-                        {assignForm.currency !== BASE_CURRENCY && (
-                          <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">BDT-equivalent <span className="text-red-500">*</span></label>
-                            <input type="number" step="0.01" min="1"
-                              value={assignForm.amountBDT}
-                              onChange={e => setAssignForm(f => ({ ...f, amountBDT: e.target.value }))}
-                              placeholder="0.00" className={ic} />
-                          </div>
-                        )}
-                      </>
+                    {assignForm.currency !== BASE_CURRENCY && (
+                      <Field label="BDT equivalent" required>
+                        <Input type="number" step="0.01" min="1"
+                          value={assignForm.amountBDT}
+                          onChange={e => setAssignForm(f => ({ ...f, amountBDT: e.target.value }))}
+                          placeholder="0.00" />
+                      </Field>
                     )}
-                    <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-1">Payment Notes</label>
-                      <textarea value={assignForm.paymentNotes}
-                        onChange={e => setAssignForm(f => ({ ...f, paymentNotes: e.target.value }))}
-                        rows={2} placeholder="Additional notes…" className={`${ic} resize-none`} />
-                    </div>
-                    <div className="flex gap-2 justify-end pt-1">
-                      <button type="button" onClick={() => setAssignModal(false)}
-                        className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
-                      <button type="submit" disabled={assignSaving}
-                        className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 disabled:opacity-40 flex items-center gap-2">
-                        {assignSaving && <Loader2 className="w-4 h-4 animate-spin" />} Assign
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              </div>
+                  </>
+                )}
+                <Field label="Payment notes">
+                  <Textarea value={assignForm.paymentNotes}
+                    onChange={e => setAssignForm(f => ({ ...f, paymentNotes: e.target.value }))}
+                    rows={2} placeholder="Optional" className="min-h-0 resize-none" />
+                </Field>
+              </DialogShell>
             )}
 
             {/* Edit Assignment Modal */}
             {editAssignment && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-                <div className="bg-white rounded-xl border border-gray-200 w-full max-w-md p-6 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-base font-semibold text-gray-900">Edit Assignment</h3>
-                    <button onClick={() => setEditAssignment(null)} className="p-1 rounded-lg hover:bg-gray-100">
-                      <X className="w-4 h-4 text-gray-400" />
-                    </button>
-                  </div>
-                  <form onSubmit={handleEditAssignment} className="space-y-4">
-                    <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
-                      <select
-                        value={editAssignment.status}
-                        onChange={e => setEditAssignment(f => ({ ...f, status: e.target.value }))}
-                        className={ic}
-                      >
-                        {['ASSIGNED', 'ACCEPTED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'].map(s => (
-                          <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">Payment Amount <span className="text-red-500">*</span></label>
-                        <input type="number" step="0.01" min="1"
-                          value={editAssignment.paymentAmount}
-                          onChange={e => setEditAssignment(f => ({ ...f, paymentAmount: e.target.value }))}
-                          placeholder="0.00" className={ic} required />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">Currency</label>
-                        <Select value={editAssignment.currency}
-                          onChange={v => setEditAssignment(f => ({ ...f, currency: v ?? 'BDT' }))}
-                          options={currencyOptions} placeholder="Currency…" />
-                      </div>
-                    </div>
-                    {editAssignment.currency !== BASE_CURRENCY && (
-                      <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">BDT-equivalent <span className="text-red-500">*</span></label>
-                        <input type="number" step="0.01" min="1"
-                          value={editAssignment.amountBDT}
-                          onChange={e => setEditAssignment(f => ({ ...f, amountBDT: e.target.value }))}
-                          placeholder="0.00" className={ic} required />
-                      </div>
-                    )}
-                    <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-1">Payment Notes</label>
-                      <textarea value={editAssignment.paymentNotes}
-                        onChange={e => setEditAssignment(f => ({ ...f, paymentNotes: e.target.value }))}
-                        rows={2} placeholder="Additional notes…" className={`${ic} resize-none`} />
-                    </div>
-                    <div className="flex gap-2 justify-end pt-1">
-                      <button type="button" onClick={() => setEditAssignment(null)}
-                        className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
-                      <button type="submit" disabled={editAssignSaving}
-                        className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 disabled:opacity-40 flex items-center gap-2">
-                        {editAssignSaving && <Loader2 className="w-4 h-4 animate-spin" />} Save Changes
-                      </button>
-                    </div>
-                  </form>
+              <DialogShell
+                title="Edit assignment"
+                onClose={() => setEditAssignment(null)}
+                onSubmit={handleEditAssignment}
+                footer={<>
+                  <Button variant="outline" onClick={() => setEditAssignment(null)}>Cancel</Button>
+                  <Button type="submit" loading={editAssignSaving}>Save</Button>
+                </>}
+              >
+                <Field label="Status">
+                  <NativeSelect
+                    value={editAssignment.status}
+                    onChange={e => setEditAssignment(f => ({ ...f, status: e.target.value }))}
+                  >
+                    {['ASSIGNED', 'ACCEPTED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'].map(s => (
+                      <option key={s} value={s}>{humanize(s)}</option>
+                    ))}
+                  </NativeSelect>
+                </Field>
+                <div className="grid grid-cols-2 gap-4">
+                  <Field label="Payment amount" required>
+                    <Input type="number" step="0.01" min="1"
+                      value={editAssignment.paymentAmount}
+                      onChange={e => setEditAssignment(f => ({ ...f, paymentAmount: e.target.value }))}
+                      placeholder="0.00" required />
+                  </Field>
+                  <Field label="Currency">
+                    <Select value={editAssignment.currency}
+                      onChange={v => setEditAssignment(f => ({ ...f, currency: v ?? 'BDT' }))}
+                      options={currencyOptions} placeholder="Select…" />
+                  </Field>
                 </div>
-              </div>
+                {editAssignment.currency !== BASE_CURRENCY && (
+                  <Field label="BDT equivalent" required>
+                    <Input type="number" step="0.01" min="1"
+                      value={editAssignment.amountBDT}
+                      onChange={e => setEditAssignment(f => ({ ...f, amountBDT: e.target.value }))}
+                      placeholder="0.00" required />
+                  </Field>
+                )}
+                <Field label="Payment notes">
+                  <Textarea value={editAssignment.paymentNotes}
+                    onChange={e => setEditAssignment(f => ({ ...f, paymentNotes: e.target.value }))}
+                    rows={2} placeholder="Optional" className="min-h-0 resize-none" />
+                </Field>
+              </DialogShell>
             )}
-          </div>
+          </Card>
         )
       })()}
 
       {/* ── AGENCIES ── */}
       {tab === 'agencies' && (() => {
-        const ASSIGN_STATUS_COLORS = {
-          ASSIGNED: 'bg-blue-100 text-blue-700', ACCEPTED: 'bg-teal-100 text-teal-700',
-          IN_PROGRESS: 'bg-purple-100 text-purple-700', COMPLETED: 'bg-green-100 text-green-700', CANCELLED: 'bg-red-100 text-red-600',
-        }
-        const PAY_STATUS_COLORS = {
-          PENDING: 'bg-yellow-100 text-yellow-700', PAYMENT_REQUESTED: 'bg-orange-100 text-orange-700',
-          IN_WALLET: 'bg-green-100 text-green-700',
-          WITHDRAWAL_REQUESTED: 'bg-blue-100 text-blue-700', PAID: 'bg-gray-100 text-gray-600',
-        }
         const isAdmin = ['SUPER_ADMIN', 'MANAGER'].includes(session?.user?.role)
         // The API lets admins and the project manager complete / request payment.
         const canManageAssignments = isAdmin ||
           (session?.user?.role === 'EMPLOYEE' && (project.projectManagerId?.id ?? project.projectManagerId) === session?.user?.id)
-        const ic = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900'
         const agencyAssignments = freelancerAssignments.filter(a => a.freelancerId?.type === 'AGENCY')
 
         return (
-          <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+          <Card className="overflow-hidden">
+            <CardHeader className="border-b border-gray-100">
               <div>
-                <h3 className="text-sm font-medium text-gray-900">Agency Assignments</h3>
-                <p className="text-xs text-gray-400 mt-0.5">{agencyAssignments.length} assignment{agencyAssignments.length !== 1 ? 's' : ''}</p>
+                <CardTitle>Agencies</CardTitle>
+                <CardDescription>{agencyAssignments.length} assignment{agencyAssignments.length !== 1 ? 's' : ''}</CardDescription>
               </div>
               {(
                 ['SUPER_ADMIN', 'MANAGER'].includes(session?.user?.role) ||
                 (session?.user?.role === 'EMPLOYEE' && (project.projectManagerId?.id ?? project.projectManagerId) === session.user.id)
               ) && (
-                <button onClick={() => setAssignAgencyModal(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-50 transition-colors">
-                  <Plus className="w-3.5 h-3.5" /> Assign Agency
-                </button>
+                <CardAction>
+                  <Button variant="outline" size="sm" onClick={() => setAssignAgencyModal(true)}>
+                    <Plus /> Assign agency
+                  </Button>
+                </CardAction>
               )}
-            </div>
+            </CardHeader>
 
             {agencyAssignments.length === 0 ? (
-              <div className="py-16 text-center text-gray-400 text-sm">No agencies assigned to this project yet</div>
+              <EmptyState icon={Users} title="No agencies assigned yet" />
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[640px]">
-                  <thead>
-                    <tr className="border-b border-gray-100">
-                      {['Agency', 'Payment', 'Status', 'Payment Status', 'Action'].map(h => (
-                        <th key={h} className="px-5 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
-                    {agencyAssignments.map(a => {
-                      const agencyName = a.freelancerId?.agencyInfo?.agencyName ?? a.freelancerId?.userId?.name ?? 'Unknown'
-                      const email      = a.freelancerId?.userId?.email ?? ''
-                      const aId        = a.id ?? a._id
-                      return (
-                        <tr key={aId} className="hover:bg-gray-50/50 transition-colors">
-                          <td className="px-5 py-3.5">
-                            <div className="flex items-center gap-2.5">
-                              <div className="w-7 h-7 rounded-full bg-indigo-100 flex items-center justify-center text-xs font-medium text-indigo-600 shrink-0">
-                                {agencyName[0]?.toUpperCase()}
-                              </div>
-                              <div>
-                                <p className="text-sm font-medium text-gray-900">{agencyName}</p>
-                                {email && <p className="text-xs text-gray-400">{email}</p>}
-                              </div>
+              <Table className="min-w-[640px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Agency</TableHead>
+                    <TableHead className="text-right">Payment</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Payment status</TableHead>
+                    <TableHead>Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {agencyAssignments.map(a => {
+                    const agencyName = a.freelancerId?.agencyInfo?.agencyName ?? a.freelancerId?.userId?.name ?? 'Unknown'
+                    const email      = a.freelancerId?.userId?.email ?? ''
+                    const aId        = a.id ?? a._id
+                    return (
+                      <TableRow key={aId}>
+                        <TableCell>
+                          <div className="flex items-center gap-2.5">
+                            <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-medium text-gray-600">
+                              {agencyName[0]?.toUpperCase()}
                             </div>
-                          </td>
-                          <td className="px-5 py-3.5 text-sm font-medium text-gray-900">
-                            {fmtMoney(a.paymentAmount, a.currency)}
-                            {(a.currency || 'BDT') !== 'BDT' && a.amountBDT != null && (
-                              <p className="text-xs font-normal text-gray-400">≈ {fmtMoney(a.amountBDT, 'BDT')}</p>
-                            )}
-                          </td>
-                          <td className="px-5 py-3.5">
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${ASSIGN_STATUS_COLORS[a.status] ?? 'bg-gray-100 text-gray-600'}`}>
-                              {a.status?.replace('_', ' ')}
-                            </span>
-                          </td>
-                          <td className="px-5 py-3.5">
+                            <div className="min-w-0">
+                              <p className="font-medium text-gray-900">{agencyName}</p>
+                              {email && <p className="text-xs text-muted-foreground">{email}</p>}
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-right font-medium tabular-nums text-gray-900">
+                          {fmtMoney(a.paymentAmount, a.currency)}
+                          {(a.currency || 'BDT') !== 'BDT' && a.amountBDT != null && (
+                            <p className="text-xs font-normal text-muted-foreground">≈ {fmtMoney(a.amountBDT, 'BDT')}</p>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={ASSIGN_STATUS_BADGE[a.status] ?? 'default'}>{humanize(a.status)}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1.5">
                             {canManageAssignments && a.paymentStatus === 'PENDING' && a.status === 'COMPLETED' ? (
-                              <select
+                              <NativeSelect
                                 value={a.paymentStatus}
                                 disabled={requestingPayment === aId}
                                 onChange={e => { if (e.target.value === 'PAYMENT_REQUESTED') handleRequestPayment(aId) }}
-                                className="text-xs border border-gray-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-gray-900 cursor-pointer"
+                                className="h-8 w-auto text-xs"
                               >
                                 <option value="PENDING">Pending</option>
-                                <option value="PAYMENT_REQUESTED">Send Request for Payment</option>
-                              </select>
+                                <option value="PAYMENT_REQUESTED">Request payment</option>
+                              </NativeSelect>
                             ) : (
-                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${PAY_STATUS_COLORS[a.paymentStatus] ?? 'bg-gray-100 text-gray-600'}`}>
-                                {a.paymentStatus === 'PAYMENT_REQUESTED' ? 'Payment Requested' : (a.paymentStatus?.replace(/_/g, ' ') ?? 'PENDING')}
-                              </span>
+                              <Badge variant={PAY_STATUS_BADGE[a.paymentStatus] ?? 'default'}>
+                                {a.paymentStatus === 'PAYMENT_REQUESTED' ? 'Payment requested' : (humanize(a.paymentStatus) || 'Pending')}
+                              </Badge>
                             )}
-                            {requestingPayment === aId && <Loader2 className="w-3 h-3 animate-spin inline ml-1.5 text-gray-400" />}
-                          </td>
-                          <td className="px-5 py-3.5">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              {a.status === 'IN_PROGRESS' && (
-                                <button
-                                  onClick={() => handleCompleteAssignment(aId)}
-                                  className="flex items-center gap-1 px-2.5 py-1 bg-teal-600 text-white text-xs font-medium rounded-lg hover:bg-teal-700 transition-colors"
-                                >
-                                  <CheckCircle2 className="w-3 h-3" /> Mark Complete
-                                </button>
-                              )}
-                              {isAdmin && (
-                                <>
-                                  <button
-                                    onClick={() => setEditAssignment({ id: aId, paymentAmount: a.paymentAmount ?? '', currency: a.currency || 'BDT', amountBDT: a.amountBDT ?? '', paymentNotes: a.paymentNotes ?? '', status: a.status })}
-                                    className="flex items-center gap-1 px-2.5 py-1 border border-gray-200 text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-50 transition-colors"
-                                  >
-                                    <Pencil className="w-3 h-3" /> Edit
-                                  </button>
-                                  <button
-                                    onClick={() => handleDeleteAssignment(aId)}
-                                    disabled={deletingAssign === aId}
-                                    className="flex items-center gap-1 px-2.5 py-1 border border-red-200 text-red-600 text-xs font-medium rounded-lg hover:bg-red-50 disabled:opacity-50 transition-colors"
-                                  >
-                                    {deletingAssign === aId ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                            {requestingPayment === aId && <Loader2 className="size-3.5 animate-spin text-gray-400" />}
+                          </div>
+                        </TableCell>
+                        <TableCell className="py-2">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {a.status === 'IN_PROGRESS' && (
+                              <Button variant="outline" size="xs" onClick={() => handleCompleteAssignment(aId)}>
+                                <CheckCircle2 /> Mark complete
+                              </Button>
+                            )}
+                            {isAdmin && (
+                              <>
+                                <Button variant="outline" size="xs"
+                                  onClick={() => setEditAssignment({ id: aId, paymentAmount: a.paymentAmount ?? '', currency: a.currency || 'BDT', amountBDT: a.amountBDT ?? '', paymentNotes: a.paymentNotes ?? '', status: a.status })}>
+                                  <Pencil /> Edit
+                                </Button>
+                                <Button variant="ghost" size="icon-xs" aria-label="Delete assignment"
+                                  onClick={() => handleDeleteAssignment(aId)}
+                                  disabled={deletingAssign === aId}
+                                  className="text-gray-400 hover:bg-red-50 hover:text-red-600">
+                                  {deletingAssign === aId ? <Loader2 className="animate-spin" /> : <Trash2 />}
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
             )}
 
             {/* Assign Agency Modal */}
             {assignAgencyModal && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-                <div className="bg-white rounded-xl border border-gray-200 w-full max-w-md p-6 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-base font-semibold text-gray-900">Assign Agency</h3>
-                    <button onClick={() => setAssignAgencyModal(false)} className="p-1 rounded-lg hover:bg-gray-100">
-                      <X className="w-4 h-4 text-gray-400" />
-                    </button>
-                  </div>
-                  <form onSubmit={handleAssignAgency} className="space-y-4">
-                    <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-1">Agency <span className="text-red-500">*</span></label>
-                      <PeoplePicker types={['AGENCY']} typeFilter={false} value={assignAgencyForm.person}
-                        placeholder="Search agencies…"
-                        onChange={p => setAssignAgencyForm(f => ({
-                          ...f, person: p, freelancerId: p?.id ?? '',
-                          currency: p?.currency ?? 'BDT',
-                        }))} />
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">Amount <span className="text-red-500">*</span></label>
-                        <input type="number" step="0.01" min="1"
-                          value={assignAgencyForm.paymentAmount}
-                          onChange={e => setAssignAgencyForm(f => ({ ...f, paymentAmount: e.target.value }))}
-                          placeholder="0.00" className={ic} />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">Currency</label>
-                        <Select value={assignAgencyForm.currency}
-                          onChange={v => setAssignAgencyForm(f => ({ ...f, currency: v ?? 'BDT' }))}
-                          options={currencyOptions} placeholder="Currency…" />
-                      </div>
-                    </div>
-                    {assignAgencyForm.currency !== BASE_CURRENCY && (
-                      <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">BDT-equivalent <span className="text-red-500">*</span></label>
-                        <input type="number" step="0.01" min="1"
-                          value={assignAgencyForm.amountBDT}
-                          onChange={e => setAssignAgencyForm(f => ({ ...f, amountBDT: e.target.value }))}
-                          placeholder="0.00" className={ic} />
-                      </div>
-                    )}
-                    <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-1">Payment Notes</label>
-                      <textarea value={assignAgencyForm.paymentNotes}
-                        onChange={e => setAssignAgencyForm(f => ({ ...f, paymentNotes: e.target.value }))}
-                        rows={2} placeholder="Additional notes…" className={`${ic} resize-none`} />
-                    </div>
-                    <div className="flex gap-2 justify-end pt-1">
-                      <button type="button" onClick={() => setAssignAgencyModal(false)}
-                        className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
-                      <button type="submit" disabled={assignAgencySaving}
-                        className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 disabled:opacity-40 flex items-center gap-2">
-                        {assignAgencySaving && <Loader2 className="w-4 h-4 animate-spin" />} Assign
-                      </button>
-                    </div>
-                  </form>
+              <DialogShell
+                title="Assign agency"
+                onClose={() => setAssignAgencyModal(false)}
+                onSubmit={handleAssignAgency}
+                scroll={false}
+                footer={<>
+                  <Button variant="outline" onClick={() => setAssignAgencyModal(false)}>Cancel</Button>
+                  <Button type="submit" loading={assignAgencySaving}>Assign</Button>
+                </>}
+              >
+                <Field label="Agency" required>
+                  <PeoplePicker types={['AGENCY']} typeFilter={false} value={assignAgencyForm.person}
+                    placeholder="Search agencies…"
+                    onChange={p => setAssignAgencyForm(f => ({
+                      ...f, person: p, freelancerId: p?.id ?? '',
+                      currency: p?.currency ?? 'BDT',
+                    }))} />
+                </Field>
+                <div className="grid grid-cols-2 gap-4">
+                  <Field label="Amount" required>
+                    <Input type="number" step="0.01" min="1"
+                      value={assignAgencyForm.paymentAmount}
+                      onChange={e => setAssignAgencyForm(f => ({ ...f, paymentAmount: e.target.value }))}
+                      placeholder="0.00" />
+                  </Field>
+                  <Field label="Currency">
+                    <Select value={assignAgencyForm.currency}
+                      onChange={v => setAssignAgencyForm(f => ({ ...f, currency: v ?? 'BDT' }))}
+                      options={currencyOptions} placeholder="Select…" />
+                  </Field>
                 </div>
-              </div>
+                {assignAgencyForm.currency !== BASE_CURRENCY && (
+                  <Field label="BDT equivalent" required>
+                    <Input type="number" step="0.01" min="1"
+                      value={assignAgencyForm.amountBDT}
+                      onChange={e => setAssignAgencyForm(f => ({ ...f, amountBDT: e.target.value }))}
+                      placeholder="0.00" />
+                  </Field>
+                )}
+                <Field label="Payment notes">
+                  <Textarea value={assignAgencyForm.paymentNotes}
+                    onChange={e => setAssignAgencyForm(f => ({ ...f, paymentNotes: e.target.value }))}
+                    rows={2} placeholder="Optional" className="min-h-0 resize-none" />
+                </Field>
+              </DialogShell>
             )}
 
             {/* Edit Assignment Modal (shared with freelancers tab) */}
             {editAssignment && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-                <div className="bg-white rounded-xl border border-gray-200 w-full max-w-md p-6 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-base font-semibold text-gray-900">Edit Assignment</h3>
-                    <button onClick={() => setEditAssignment(null)} className="p-1 rounded-lg hover:bg-gray-100">
-                      <X className="w-4 h-4 text-gray-400" />
-                    </button>
-                  </div>
-                  <form onSubmit={handleEditAssignment} className="space-y-4">
-                    <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
-                      <select
-                        value={editAssignment.status}
-                        onChange={e => setEditAssignment(f => ({ ...f, status: e.target.value }))}
-                        className={ic}
-                      >
-                        {['ASSIGNED', 'ACCEPTED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'].map(s => (
-                          <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">Payment Amount <span className="text-red-500">*</span></label>
-                        <input type="number" step="0.01" min="1"
-                          value={editAssignment.paymentAmount}
-                          onChange={e => setEditAssignment(f => ({ ...f, paymentAmount: e.target.value }))}
-                          placeholder="0.00" className={ic} required />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">Currency</label>
-                        <Select value={editAssignment.currency}
-                          onChange={v => setEditAssignment(f => ({ ...f, currency: v ?? 'BDT' }))}
-                          options={currencyOptions} placeholder="Currency…" />
-                      </div>
-                    </div>
-                    {editAssignment.currency !== BASE_CURRENCY && (
-                      <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">BDT-equivalent <span className="text-red-500">*</span></label>
-                        <input type="number" step="0.01" min="1"
-                          value={editAssignment.amountBDT}
-                          onChange={e => setEditAssignment(f => ({ ...f, amountBDT: e.target.value }))}
-                          placeholder="0.00" className={ic} required />
-                      </div>
-                    )}
-                    <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-1">Payment Notes</label>
-                      <textarea value={editAssignment.paymentNotes}
-                        onChange={e => setEditAssignment(f => ({ ...f, paymentNotes: e.target.value }))}
-                        rows={2} placeholder="Additional notes…" className={`${ic} resize-none`} />
-                    </div>
-                    <div className="flex gap-2 justify-end pt-1">
-                      <button type="button" onClick={() => setEditAssignment(null)}
-                        className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
-                      <button type="submit" disabled={editAssignSaving}
-                        className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 disabled:opacity-40 flex items-center gap-2">
-                        {editAssignSaving && <Loader2 className="w-4 h-4 animate-spin" />} Save Changes
-                      </button>
-                    </div>
-                  </form>
+              <DialogShell
+                title="Edit assignment"
+                onClose={() => setEditAssignment(null)}
+                onSubmit={handleEditAssignment}
+                footer={<>
+                  <Button variant="outline" onClick={() => setEditAssignment(null)}>Cancel</Button>
+                  <Button type="submit" loading={editAssignSaving}>Save</Button>
+                </>}
+              >
+                <Field label="Status">
+                  <NativeSelect
+                    value={editAssignment.status}
+                    onChange={e => setEditAssignment(f => ({ ...f, status: e.target.value }))}
+                  >
+                    {['ASSIGNED', 'ACCEPTED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'].map(s => (
+                      <option key={s} value={s}>{humanize(s)}</option>
+                    ))}
+                  </NativeSelect>
+                </Field>
+                <div className="grid grid-cols-2 gap-4">
+                  <Field label="Payment amount" required>
+                    <Input type="number" step="0.01" min="1"
+                      value={editAssignment.paymentAmount}
+                      onChange={e => setEditAssignment(f => ({ ...f, paymentAmount: e.target.value }))}
+                      placeholder="0.00" required />
+                  </Field>
+                  <Field label="Currency">
+                    <Select value={editAssignment.currency}
+                      onChange={v => setEditAssignment(f => ({ ...f, currency: v ?? 'BDT' }))}
+                      options={currencyOptions} placeholder="Select…" />
+                  </Field>
                 </div>
-              </div>
+                {editAssignment.currency !== BASE_CURRENCY && (
+                  <Field label="BDT equivalent" required>
+                    <Input type="number" step="0.01" min="1"
+                      value={editAssignment.amountBDT}
+                      onChange={e => setEditAssignment(f => ({ ...f, amountBDT: e.target.value }))}
+                      placeholder="0.00" required />
+                  </Field>
+                )}
+                <Field label="Payment notes">
+                  <Textarea value={editAssignment.paymentNotes}
+                    onChange={e => setEditAssignment(f => ({ ...f, paymentNotes: e.target.value }))}
+                    rows={2} placeholder="Optional" className="min-h-0 resize-none" />
+                </Field>
+              </DialogShell>
             )}
-          </div>
+          </Card>
         )
       })()}
 
@@ -2422,84 +2255,71 @@ export default function ProjectDetailPage() {
 
         return (
           <div className="max-w-3xl space-y-4">
-            <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+            <Card className="overflow-hidden">
               {/* Header */}
-              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-                <div className="flex items-center gap-2">
-                  <BookOpen className="w-4 h-4 text-gray-400" />
-                  <h3 className="text-sm font-semibold text-gray-800">Project Brief</h3>
-                </div>
+              <CardHeader className="items-center border-b border-gray-100">
+                <CardTitle>Project brief</CardTitle>
                 {canEditBrief && !briefEditing && (
-                  <button
-                    onClick={() => { setBriefDraft(brief ?? ''); setBriefEditing(true) }}
-                    className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-900 px-2.5 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
-                  >
-                    <Pencil className="w-3.5 h-3.5" />
-                    {brief ? 'Edit' : 'Add Brief'}
-                  </button>
+                  <CardAction>
+                    <Button variant="outline" size="sm"
+                      onClick={() => { setBriefDraft(brief ?? ''); setBriefEditing(true) }}>
+                      <Pencil />
+                      {brief ? 'Edit' : 'Add brief'}
+                    </Button>
+                  </CardAction>
                 )}
-              </div>
+              </CardHeader>
 
               {/* Content */}
-              <div className="px-6 py-5">
+              <div className="px-5 py-5">
                 {briefEditing ? (
                   <div className="space-y-3">
-                    <textarea
+                    <Textarea
                       value={briefDraft}
                       onChange={e => setBriefDraft(e.target.value)}
                       rows={12}
-                      placeholder="Write the project brief here — scope, objectives, deliverables, special instructions…"
-                      className="w-full text-sm text-gray-800 border border-gray-200 rounded-lg px-3.5 py-3 resize-y focus:outline-none focus:ring-2 focus:ring-gray-900/10 leading-relaxed"
+                      placeholder="Scope, objectives, deliverables…"
+                      className="resize-y"
                       autoFocus
                     />
-                    <div className="flex items-center gap-2 justify-end">
-                      <button
-                        onClick={() => setBriefEditing(false)}
-                        className="px-3.5 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-                      >
+                    <div className="flex items-center justify-end gap-2">
+                      <Button variant="outline" onClick={() => setBriefEditing(false)}>
                         Cancel
-                      </button>
-                      <button
-                        onClick={handleSaveBrief}
-                        disabled={briefSaving}
-                        className="flex items-center gap-1.5 px-3.5 py-1.5 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 disabled:opacity-40 transition-colors"
-                      >
-                        {briefSaving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                        Save Brief
-                      </button>
+                      </Button>
+                      <Button onClick={handleSaveBrief} loading={briefSaving}>
+                        Save brief
+                      </Button>
                     </div>
                   </div>
                 ) : !briefLoaded ? (
                   <div className="flex justify-center py-10">
-                    <div className="w-5 h-5 border-2 border-gray-200 border-t-gray-600 rounded-full animate-spin" />
+                    <LoadingSpinner />
                   </div>
                 ) : brief ? (
-                  <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{brief}</p>
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700">{brief}</p>
                 ) : (
-                  <div className="flex flex-col items-center justify-center py-12 text-gray-400 gap-2">
-                    <BookOpen className="w-8 h-8 opacity-30" />
-                    <p className="text-sm">No brief has been written yet.</p>
-                    {canEditBrief && (
-                      <button
-                        onClick={() => { setBriefDraft(''); setBriefEditing(true) }}
-                        className="mt-1 text-sm text-gray-600 underline underline-offset-2 hover:text-gray-900"
-                      >
-                        Write the brief
-                      </button>
+                  <EmptyState
+                    icon={BookOpen}
+                    title="No brief yet"
+                    className="py-8"
+                    action={canEditBrief && (
+                      <Button variant="outline" size="sm" onClick={() => { setBriefDraft(''); setBriefEditing(true) }}>
+                        Write brief
+                      </Button>
                     )}
-                  </div>
+                  />
                 )}
               </div>
 
               {/* Footer: last edited */}
               {!briefEditing && briefMeta?.briefUpdatedAt && (
-                <div className="px-6 py-3 border-t border-gray-50 flex items-center gap-1.5 text-xs text-gray-400">
-                  <Clock className="w-3 h-3" />
-                  Last updated {fmtBriefDate(briefMeta.briefUpdatedAt)}
+                <div className="flex items-center gap-1.5 border-t border-gray-100 px-5 py-3 text-xs text-muted-foreground">
+                  <Clock className="size-3.5" />
+                  Updated {fmtBriefDate(briefMeta.briefUpdatedAt)}
                   {briefMeta.briefUpdatedBy?.name && ` by ${briefMeta.briefUpdatedBy.name}`}
                 </div>
               )}
-            </div>
+            </Card>
           </div>
         )
       })()}
@@ -2512,77 +2332,66 @@ export default function ProjectDetailPage() {
           (project.projectManagerId?.id ?? project.projectManagerId) === uid ||
           project.teamMembers?.some(m => (m.id ?? m._id ?? m) === uid)
         )
-        const ROLE_DOT = {
-          SUPER_ADMIN: 'bg-violet-500', MANAGER: 'bg-blue-500',
-          EMPLOYEE: 'bg-emerald-500', FREELANCER: 'bg-orange-500',
-          CLIENT: 'bg-cyan-500', VENDOR: 'bg-slate-400',
-        }
 
         return (
-          <div className="max-w-3xl flex flex-col gap-0 bg-white border border-gray-100 rounded-xl overflow-hidden" style={{ height: '70vh' }}>
+          <Card className="flex max-w-3xl flex-col gap-0 overflow-hidden" style={{ height: '70vh' }}>
             {/* Header */}
-            <div className="flex items-center gap-2 px-5 py-3.5 border-b border-gray-100 shrink-0">
-              <MessageSquare className="w-4 h-4 text-gray-400" />
-              <h3 className="text-sm font-semibold text-gray-800">Discussion</h3>
+            <div className="flex shrink-0 items-center gap-2 border-b border-gray-100 px-5 py-3.5">
+              <CardTitle>Discussion</CardTitle>
               {messages.length > 0 && (
-                <span className="ml-1 text-xs text-gray-400">{messages.length} message{messages.length !== 1 ? 's' : ''}</span>
+                <span className="text-xs text-muted-foreground">{messages.length} message{messages.length !== 1 ? 's' : ''}</span>
               )}
             </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+            <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
               {!discussionLoaded ? (
                 <div className="flex justify-center py-10">
-                  <div className="w-5 h-5 border-2 border-gray-200 border-t-gray-600 rounded-full animate-spin" />
+                  <LoadingSpinner />
                 </div>
               ) : messages.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full gap-2 text-gray-400 py-10">
-                  <MessageSquare className="w-8 h-8 opacity-30" />
-                  <p className="text-sm">No messages yet. Start the conversation.</p>
-                </div>
+                <EmptyState icon={MessageSquare} title="No messages yet" className="h-full" />
               ) : (
                 messages.map(msg => {
                   const isOwn  = msg.user.id === uid
                   const canDel = isOwn || ['SUPER_ADMIN', 'MANAGER'].includes(session?.user?.role)
-                  const dot    = ROLE_DOT[msg.user.role] ?? 'bg-gray-400'
 
                   return (
-                    <div key={msg.id} className={`flex gap-3 group ${isOwn ? 'flex-row-reverse' : ''}`}>
+                    <div key={msg.id} className={`group flex gap-3 ${isOwn ? 'flex-row-reverse' : ''}`}>
                       {/* Avatar */}
-                      <div className={`w-8 h-8 rounded-full shrink-0 flex items-center justify-center text-xs font-bold text-white ${dot}`}>
+                      <div className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gray-100 text-xs font-medium text-gray-700">
                         {msg.user.avatar
-                          ? <Image src={msg.user.avatar} alt="" width={32} height={32} className="w-8 h-8 rounded-full object-cover" />
+                          ? <Image src={msg.user.avatar} alt="" width={32} height={32} className="size-8 rounded-full object-cover" />
                           : msg.user.name.charAt(0).toUpperCase()
                         }
                       </div>
 
                       {/* Bubble */}
-                      <div className={`flex flex-col gap-0.5 max-w-[75%] ${isOwn ? 'items-end' : 'items-start'}`}>
+                      <div className={`flex max-w-[75%] flex-col gap-1 ${isOwn ? 'items-end' : 'items-start'}`}>
                         <div className="flex items-center gap-2">
-                          <span className={`text-xs font-medium text-gray-500 ${isOwn ? 'order-last' : ''}`}>
+                          <span className={`text-xs font-medium text-gray-700 ${isOwn ? 'order-last' : ''}`}>
                             {isOwn ? 'You' : msg.user.name}
                           </span>
-                          <span className="text-xs text-gray-300">{fmtDateTime(msg.createdAt)}</span>
+                          <span className="text-[11px] text-gray-400">{fmtDateTime(msg.createdAt)}</span>
                         </div>
                         <div className={`flex items-start gap-1.5 ${isOwn ? 'flex-row-reverse' : ''}`}>
-                          <div className={`px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap break-words ${
+                          <div className={`whitespace-pre-wrap break-words rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
                             isOwn
-                              ? 'bg-gray-900 text-white rounded-tr-sm'
-                              : 'bg-gray-100 text-gray-800 rounded-tl-sm'
+                              ? 'rounded-tr-md bg-gray-900 text-white'
+                              : 'rounded-tl-md bg-gray-100 text-gray-900'
                           }`}>
                             {msg.content}
                           </div>
                           {canDel && (
-                            <button
+                            <Button variant="ghost" size="icon-xs" aria-label="Delete message"
                               onClick={() => handleDeleteMessage(msg.id)}
                               disabled={deletingMsg === msg.id}
-                              className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-md text-gray-300 hover:text-red-400 hover:bg-red-50 shrink-0 mt-0.5"
-                            >
+                              className="mt-0.5 text-gray-300 opacity-0 transition-opacity hover:bg-red-50 hover:text-red-600 group-hover:opacity-100">
                               {deletingMsg === msg.id
-                                ? <Loader2 className="w-3 h-3 animate-spin" />
-                                : <Trash2 className="w-3 h-3" />
+                                ? <Loader2 className="size-3.5 animate-spin" />
+                                : <Trash2 className="size-3.5" />
                               }
-                            </button>
+                            </Button>
                           )}
                         </div>
                       </div>
@@ -2597,33 +2406,28 @@ export default function ProjectDetailPage() {
             <div className="shrink-0 border-t border-gray-100 px-4 py-3">
               {canPost ? (
                 <form onSubmit={handleSendMessage} className="flex items-end gap-2">
-                  <textarea
+                  <Textarea
                     value={msgInput}
                     onChange={e => setMsgInput(e.target.value)}
                     onKeyDown={e => {
                       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(e) }
                     }}
-                    placeholder="Write a message… (Enter to send, Shift+Enter for new line)"
+                    placeholder="Write a message…"
+                    title="Enter to send · Shift+Enter for a new line"
                     rows={1}
-                    className="flex-1 resize-none text-sm border border-gray-200 rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-gray-900/10 leading-relaxed"
+                    className="min-h-0 flex-1 resize-none py-2"
                     style={{ maxHeight: '120px', overflowY: 'auto' }}
                   />
-                  <button
-                    type="submit"
-                    disabled={!msgInput.trim() || msgSending}
-                    className="p-2.5 rounded-xl bg-gray-900 text-white hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
-                  >
-                    {msgSending
-                      ? <Loader2 className="w-4 h-4 animate-spin" />
-                      : <Send className="w-4 h-4" />
-                    }
-                  </button>
+                  <Button type="submit" size="icon" aria-label="Send"
+                    disabled={!msgInput.trim() || msgSending}>
+                    {msgSending ? <Loader2 className="animate-spin" /> : <Send />}
+                  </Button>
                 </form>
               ) : (
-                <p className="text-xs text-gray-400 text-center py-1">Only project members can post in the discussion.</p>
+                <p className="py-1 text-center text-xs text-muted-foreground">Only project members can post.</p>
               )}
             </div>
-          </div>
+          </Card>
         )
       })()}
 

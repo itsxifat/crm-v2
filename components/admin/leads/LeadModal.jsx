@@ -7,8 +7,11 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import toast from 'react-hot-toast'
 import { Plus, X, Loader2, Send, Trash2, Check } from 'lucide-react'
-import Modal from '@/components/ui/Modal'
+import Modal, { ModalFooter } from '@/components/ui/Modal'
 import Select from '@/components/ui/Select'
+import Button from '@/components/ui/Button'
+import Badge from '@/components/ui/Badge'
+import { Input, Textarea, Label, Field } from '@/components/ui/Input'
 import { invalidateConfigCache } from '@/lib/useConfig'
 
 const schema = z.object({
@@ -42,7 +45,7 @@ const schema = z.object({
 const STATUSES = [
   { value: 'NEW',           label: 'New' },
   { value: 'CONTACTED',     label: 'Contacted' },
-  { value: 'PROPOSAL_SENT', label: 'Proposal Sent' },
+  { value: 'PROPOSAL_SENT', label: 'Proposal sent' },
   { value: 'NEGOTIATION',   label: 'Negotiation' },
   { value: 'WON',           label: 'Won' },
   { value: 'LOST',          label: 'Lost' },
@@ -333,78 +336,61 @@ export default function LeadModal({ open, onClose, lead, onSuccess }) {
     }
   }
 
-  const ic  = (err) => `w-full px-3 py-2 text-sm border rounded-lg bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors ${err ? 'border-red-300' : 'border-gray-200'}`
-  const lc  = 'block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide'
-  const sec = 'text-xs font-bold text-gray-400 uppercase tracking-wider pb-2 border-b border-gray-100 mb-3'
+  const refVariant = (t) => (t === 'CLIENT' || t === 'Client') ? 'success' : (t === 'EMPLOYEE' || t === 'Employee') ? 'purple' : 'primary'
 
   return (
     <Modal
       open={open}
       onOpenChange={(v) => !v && onClose()}
-      title={isEdit ? 'Edit Lead' : 'Add New Lead'}
-      description={isEdit ? 'Update lead information' : 'Fill in the details to create a new lead'}
+      title={isEdit ? 'Edit lead' : 'New lead'}
       size="xl"
     >
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
 
         {/* ── Contact ── */}
-        <div>
-          <p className={sec}>Contact</p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className={lc}>Name *</label>
-              <input {...register('name')} placeholder="John Smith" className={ic(errors.name)} />
-              {errors.name && <p className="mt-1 text-xs text-red-500">{errors.name.message}</p>}
-            </div>
-            <div>
-              <label className={lc}>Designation</label>
-              <input {...register('designation')} placeholder="CEO, Marketing Head…" className={ic()} />
-            </div>
-            <div>
-              <label className={lc}>Email</label>
-              <input {...register('email')} type="email" placeholder="john@example.com" className={ic(errors.email)} />
-              {errors.email && <p className="mt-1 text-xs text-red-500">{errors.email.message}</p>}
-            </div>
-            <div>
-              <label className={lc}>Phone</label>
-              <input {...register('phone')} type="tel" placeholder="+880 1X XX XXX XXX" className={ic()} />
-            </div>
-            <div>
-              <label className={lc}>Alternative Phone</label>
-              <input {...register('alternativePhone')} type="tel" placeholder="+880 1X XX XXX XXX" className={ic()} />
-            </div>
-            <div>
-              <label className={lc}>Company</label>
-              <input {...register('company')} placeholder="Acme Corp" className={ic()} />
-            </div>
-            <div className="sm:col-span-2">
-              <label className={lc}>Location</label>
-              <input {...register('location')} placeholder="Dhaka, Bangladesh" className={ic()} />
-            </div>
+        <Section title="Contact">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Name" required error={errors.name?.message}>
+              <Input {...register('name')} placeholder="John Smith" invalid={!!errors.name} />
+            </Field>
+            <Field label="Designation">
+              <Input {...register('designation')} placeholder="e.g. CEO" />
+            </Field>
+            <Field label="Email" error={errors.email?.message}>
+              <Input {...register('email')} type="email" placeholder="john@example.com" invalid={!!errors.email} />
+            </Field>
+            <Field label="Phone">
+              <Input {...register('phone')} type="tel" placeholder="e.g. 017…" />
+            </Field>
+            <Field label="Alternative phone">
+              <Input {...register('alternativePhone')} type="tel" placeholder="e.g. 018…" />
+            </Field>
+            <Field label="Company">
+              <Input {...register('company')} placeholder="Acme Corp" />
+            </Field>
+            <Field label="Location" className="sm:col-span-2">
+              <Input {...register('location')} placeholder="Dhaka, Bangladesh" />
+            </Field>
           </div>
-        </div>
+        </Section>
 
         {/* ── Lead Classification ── */}
-        <div>
-          <p className={sec}>Lead Details</p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className={lc}>Status</label>
+        <Section title="Lead details">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Status">
               <Controller name="status" control={control} render={({ field }) => (
-                <Select value={field.value} onChange={field.onChange} options={STATUSES} placeholder="Select status…" />
+                <Select value={field.value} onChange={field.onChange} options={STATUSES} placeholder="Select…" />
               )} />
-            </div>
-            <div>
-              <label className={lc}>Priority</label>
+            </Field>
+            <Field label="Priority">
               <Controller name="priority" control={control} render={({ field }) => (
-                <Select value={field.value} onChange={field.onChange} options={PRIORITIES.map(p => ({ value: p.value, label: p.label }))} placeholder="Select priority…" />
+                <Select value={field.value} onChange={field.onChange} options={PRIORITIES.map(p => ({ value: p.value, label: p.label }))} placeholder="Select…" />
               )} />
-            </div>
-            <div className="sm:col-span-2">
-              <label className={lc}>Business Category</label>
+            </Field>
+            <Field label="Business category" className="sm:col-span-2">
               {addingBizCat ? (
                 <div className="flex gap-2">
-                  <input
+                  <Input
                     autoFocus
                     value={newBizCatInput}
                     onChange={e => setNewBizCatInput(e.target.value)}
@@ -412,60 +398,52 @@ export default function LeadModal({ open, onClose, lead, onSuccess }) {
                       if (e.key === 'Enter') { e.preventDefault(); addBusinessCategory() }
                       if (e.key === 'Escape') { setAddingBizCat(false); setNewBizCatInput('') }
                     }}
-                    placeholder="e.g. E-commerce, Healthcare…"
-                    className={ic()}
+                    placeholder="e.g. E-commerce"
                   />
-                  <button type="button" onClick={addBusinessCategory} disabled={savingBizCat}
-                    className="px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 shrink-0 flex items-center gap-1">
-                    {savingBizCat ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                  </button>
-                  <button type="button" onClick={() => { setAddingBizCat(false); setNewBizCatInput('') }}
-                    className="px-3 py-2 text-sm bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 shrink-0">
-                    <X className="w-3.5 h-3.5" />
-                  </button>
+                  <Button size="icon" onClick={addBusinessCategory} loading={savingBizCat} aria-label="Save category">
+                    {!savingBizCat && <Check />}
+                  </Button>
+                  <Button variant="outline" size="icon" onClick={() => { setAddingBizCat(false); setNewBizCatInput('') }} aria-label="Cancel">
+                    <X />
+                  </Button>
                 </div>
               ) : (
                 <div className="flex gap-2">
-                  <div className="flex-1">
+                  <div className="min-w-0 flex-1">
                     <Controller name="businessCategory" control={control} render={({ field }) => (
                       <Select value={field.value} onChange={field.onChange}
                         options={businessCategories.map(c => ({ value: c, label: c }))}
-                        placeholder={businessCategories.length === 0 ? (canEditConfig ? 'No categories — click + to add' : 'No categories — add in Config') : 'Select category…'}
+                        placeholder={businessCategories.length === 0 ? (canEditConfig ? 'No categories — click + to add' : 'No categories — add in Config') : 'Select…'}
                       />
                     )} />
                   </div>
                   {canEditConfig && (
-                    <button type="button" onClick={() => setAddingBizCat(true)}
-                      className="px-2.5 py-2 text-sm bg-gray-100 text-gray-600 rounded-lg hover:bg-blue-100 hover:text-blue-700 shrink-0 transition-colors"
-                      title="Add new business category">
-                      <Plus className="w-4 h-4" />
-                    </button>
+                    <Button variant="outline" size="icon" onClick={() => setAddingBizCat(true)} title="Add business category" aria-label="Add business category">
+                      <Plus />
+                    </Button>
                   )}
                 </div>
               )}
-            </div>
-            <div>
-              <label className={lc}>Source</label>
+            </Field>
+            <Field label="Source">
               <Controller name="source" control={control} render={({ field }) => (
                 <Select value={field.value} onChange={field.onChange}
                   options={sources.map(s => ({ value: s, label: s }))}
-                  placeholder={sources.length === 0 ? 'No sources — add in Config' : 'Select source…'}
+                  placeholder={sources.length === 0 ? 'No sources — add in Config' : 'Select…'}
                   disabled={sources.length === 0}
                 />
               )} />
-            </div>
-            <div>
-              <label className={lc}>Platform</label>
+            </Field>
+            <Field label="Platform">
               <Controller name="platform" control={control} render={({ field }) => (
                 <Select value={field.value} onChange={field.onChange}
                   options={platforms.map(p => ({ value: p, label: p }))}
-                  placeholder={platforms.length === 0 ? 'No platforms — add in Config' : 'Select platform…'}
+                  placeholder={platforms.length === 0 ? 'No platforms — add in Config' : 'Select…'}
                   disabled={platforms.length === 0}
                 />
               )} />
-            </div>
-            <div>
-              <label className={lc}>Service / Sister Concern</label>
+            </Field>
+            <Field label="Service / sister concern">
               <Controller name="service" control={control} render={({ field }) => (
                 <Select value={field.value}
                   onChange={(v) => {
@@ -473,13 +451,12 @@ export default function LeadModal({ open, onClose, lead, onSuccess }) {
                     field.onChange(v)
                   }}
                   options={ventures.map(v => ({ value: v.id, label: v.label }))}
-                  placeholder={ventures.length === 0 ? 'No ventures — add in Config' : 'Select venture…'}
+                  placeholder={ventures.length === 0 ? 'No ventures — add in Config' : 'Select…'}
                   disabled={ventures.length === 0}
                 />
               )} />
-            </div>
-            <div>
-              <label className={lc}>Category</label>
+            </Field>
+            <Field label="Category">
               <Controller name="category" control={control} render={({ field }) => (
                 <Select value={field.value}
                   onChange={(v) => {
@@ -487,25 +464,24 @@ export default function LeadModal({ open, onClose, lead, onSuccess }) {
                     field.onChange(v)
                   }}
                   options={categoryOptions}
-                  placeholder={!watchedService ? 'Select venture first…' : categoryOptions.length === 0 ? 'No categories for this venture' : 'Select category…'}
+                  placeholder={!watchedService ? 'Select venture first' : categoryOptions.length === 0 ? 'No categories' : 'Select…'}
                   disabled={categoryOptions.length === 0}
                 />
               )} />
-            </div>
-            <div>
-              <label className={lc}>Subcategory</label>
+            </Field>
+            <Field label="Subcategory">
               <Controller name="subcategory" control={control} render={({ field }) => (
                 <Select value={field.value} onChange={field.onChange}
                   options={subcategoryOptions}
-                  placeholder={!watchedCategory ? 'Select category first…' : subcategoryOptions.length === 0 ? 'No subcategories' : 'Select subcategory…'}
+                  placeholder={!watchedCategory ? 'Select category first' : subcategoryOptions.length === 0 ? 'No subcategories' : 'Select…'}
                   disabled={subcategoryOptions.length === 0}
                 />
               )} />
-            </div>
+            </Field>
             <div className="sm:col-span-2" ref={refWrapRef}>
-              <label className={lc}>Reference / Referred By</label>
+              <Label>Referred by</Label>
               <div className="relative">
-                <input
+                <Input
                   value={refQuery}
                   onChange={e => {
                     setRefQuery(e.target.value)
@@ -517,27 +493,22 @@ export default function LeadModal({ open, onClose, lead, onSuccess }) {
                     searchReference(e.target.value)
                   }}
                   onFocus={() => { if (refSuggestions.length > 0) setRefOpen(true) }}
-                  placeholder="Search leads, clients or employees…"
-                  className={ic()}
+                  placeholder="Search leads, clients, employees…"
+                  className="pr-24"
                   autoComplete="off"
                 />
                 {refLoading && (
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">
-                    <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-                    </svg>
+                    <Loader2 className="size-4 animate-spin" />
                   </span>
                 )}
                 {refType && !refOpen && (
-                  <span className={`absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${
-                    refType === 'CLIENT'   ? 'bg-green-100 text-green-700' :
-                    refType === 'EMPLOYEE' ? 'bg-purple-100 text-purple-700' :
-                                            'bg-blue-100 text-blue-700'
-                  }`}>{refType === 'LEAD' ? 'Lead' : refType === 'CLIENT' ? 'Client' : 'Employee'}</span>
+                  <Badge variant={refVariant(refType)} className="absolute right-2 top-1/2 -translate-y-1/2">
+                    {refType === 'LEAD' ? 'Lead' : refType === 'CLIENT' ? 'Client' : 'Employee'}
+                  </Badge>
                 )}
                 {refOpen && refSuggestions.length > 0 && (
-                  <ul className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-52 overflow-y-auto text-sm">
+                  <ul className="absolute left-0 right-0 z-50 mt-1 max-h-52 overflow-y-auto rounded-xl border border-gray-200/80 bg-white p-1 text-sm shadow-lg">
                     {refSuggestions.map((s, i) => (
                       <li
                         key={i}
@@ -551,18 +522,12 @@ export default function LeadModal({ open, onClose, lead, onSuccess }) {
                           setRefId(s.id ? String(s.id) : null)
                           setRefOpen(false)
                         }}
-                        className="flex items-center gap-3 px-3 py-2 hover:bg-blue-50 cursor-pointer"
+                        className="flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 hover:bg-gray-100"
                       >
-                        <span className={`shrink-0 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${
-                          s.group === 'Client'   ? 'bg-green-100 text-green-700' :
-                          s.group === 'Employee' ? 'bg-purple-100 text-purple-700' :
-                                                   'bg-blue-100 text-blue-700'
-                        }`}>
-                          {s.group}
-                        </span>
-                        <span className="flex-1 min-w-0">
+                        <Badge variant={refVariant(s.group)} className="shrink-0">{s.group}</Badge>
+                        <span className="min-w-0 flex-1">
                           <span className="font-medium text-gray-900">{s.label}</span>
-                          {s.sublabel && <span className="ml-1.5 text-gray-400 text-xs truncate">{s.sublabel}</span>}
+                          {s.sublabel && <span className="ml-1.5 truncate text-xs text-muted-foreground">{s.sublabel}</span>}
                         </span>
                       </li>
                     ))}
@@ -571,26 +536,21 @@ export default function LeadModal({ open, onClose, lead, onSuccess }) {
               </div>
             </div>
           </div>
-        </div>
+        </Section>
 
         {/* ── Dates & Financials ── */}
-        <div>
-          <p className={sec}>Dates & Financials</p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className={lc}>Sending Date</label>
-              <input type="date" {...register('sendingDate')} className={ic()} />
-            </div>
-            <div>
-              <label className={lc}>Follow-up Date</label>
-              <input type="date" {...register('followUpDate')} className={ic()} />
-            </div>
-            <div>
-              <label className={lc}>Deal Value (৳)</label>
-              <input {...register('value')} type="number" step="0.01" min="0" placeholder="0.00" className={ic()} />
-            </div>
-            <div>
-              <label className={lc}>Assigned To</label>
+        <Section title="Dates & value">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Sending date">
+              <Input type="date" {...register('sendingDate')} />
+            </Field>
+            <Field label="Follow-up date">
+              <Input type="date" {...register('followUpDate')} />
+            </Field>
+            <Field label="Deal value (৳)">
+              <Input {...register('value')} type="number" step="0.01" min="0" placeholder="0.00" />
+            </Field>
+            <Field label="Assignee">
               <Controller name="assignedToId" control={control} render={({ field }) => (
                 <Select
                   value={field.value}
@@ -599,63 +559,58 @@ export default function LeadModal({ open, onClose, lead, onSuccess }) {
                   options={employees.map(emp => ({ value: emp.id, label: emp.userId?.name ?? emp.id }))}
                 />
               )} />
-            </div>
+            </Field>
           </div>
-        </div>
+        </Section>
 
         {/* ── Links ── */}
-        <div>
-          <p className={sec}>Links</p>
-          <div className="flex gap-2 mb-2">
-            <input
+        <Section title="Links">
+          <div className="flex gap-2">
+            <Input
               value={linkInput}
               onChange={e => setLinkInput(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addLink())}
-              placeholder="https://facebook.com/page, LinkedIn, Portfolio…"
-              className={ic()}
+              placeholder="https://…"
             />
-            <button type="button" onClick={addLink}
-              className="px-3 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 shrink-0 flex items-center gap-1">
-              <Plus className="w-3.5 h-3.5" /> Add
-            </button>
+            <Button variant="outline" onClick={addLink}>
+              <Plus /> Add
+            </Button>
           </div>
           {links.length > 0 && (
-            <div className="space-y-1.5">
+            <div className="mt-2 space-y-1.5">
               {links.map((url, i) => (
-                <div key={i} className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 rounded-lg text-sm">
-                  <a href={url} target="_blank" rel="noreferrer" className="flex-1 text-blue-600 hover:underline truncate">{url}</a>
-                  <button type="button" onClick={() => removeLink(i)} className="text-gray-300 hover:text-red-500 shrink-0">
-                    <X className="w-3.5 h-3.5" />
+                <div key={i} className="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-1.5 text-sm">
+                  <a href={url} target="_blank" rel="noreferrer" className="flex-1 truncate text-gray-900 underline-offset-4 hover:underline">{url}</a>
+                  <button type="button" onClick={() => removeLink(i)} className="shrink-0 text-gray-400 hover:text-red-600" aria-label="Remove link">
+                    <X className="size-4" />
                   </button>
                 </div>
               ))}
             </div>
           )}
-        </div>
+        </Section>
 
         {/* ── Notes ── */}
-        <div>
-          <p className={sec}>Notes</p>
-          <textarea {...register('notes')} rows={3} placeholder="Any relevant notes…" className={ic() + ' resize-none'} />
-        </div>
+        <Section title="Notes">
+          <Textarea {...register('notes')} rows={3} placeholder="Notes…" className="resize-none" />
+        </Section>
 
         {/* ── Comments (edit only) ── */}
         {isEdit && (
-          <div>
-            <p className={sec}>Comments ({comments.length})</p>
+          <Section title={`Comments (${comments.length})`}>
             {comments.length > 0 && (
-              <div className="space-y-2 mb-3 max-h-40 overflow-y-auto">
+              <div className="mb-3 max-h-40 space-y-2 overflow-y-auto">
                 {comments.map(c => (
-                  <div key={c.id} className="flex gap-2 items-start px-3 py-2 bg-gray-50 rounded-lg">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-gray-800">{c.text}</p>
-                      <p className="text-xs text-gray-400 mt-0.5">
+                  <div key={c.id} className="flex items-start gap-2 rounded-lg bg-gray-50 px-3 py-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm text-gray-900">{c.text}</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
                         {c.authorName} · {new Date(c.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
                       </p>
                     </div>
                     {(c.authorId === session?.user?.id || ['SUPER_ADMIN','MANAGER'].includes(session?.user?.role)) && (
-                      <button type="button" onClick={() => deleteComment(c.id)} className="text-gray-300 hover:text-red-500 shrink-0 mt-0.5">
-                        <Trash2 className="w-3.5 h-3.5" />
+                      <button type="button" onClick={() => deleteComment(c.id)} className="mt-0.5 shrink-0 text-gray-400 hover:text-red-600" aria-label="Delete comment">
+                        <Trash2 className="size-4" />
                       </button>
                     )}
                   </div>
@@ -663,34 +618,35 @@ export default function LeadModal({ open, onClose, lead, onSuccess }) {
               </div>
             )}
             <div className="flex gap-2">
-              <input
+              <Input
                 value={commentText}
                 onChange={e => setCommentText(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addComment())}
                 placeholder="Add a comment…"
-                className={ic()}
               />
-              <button type="button" onClick={addComment} disabled={commentSaving || !commentText.trim()}
-                className="px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 shrink-0">
-                {commentSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-              </button>
+              <Button size="icon" onClick={addComment} disabled={commentSaving || !commentText.trim()} aria-label="Send comment">
+                {commentSaving ? <Loader2 className="animate-spin" /> : <Send />}
+              </Button>
             </div>
-          </div>
+          </Section>
         )}
 
-        {/* ── Footer ── */}
-        <div className="flex items-center justify-end gap-3 pt-2 border-t border-gray-100">
-          <button type="button" onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors">
-            Cancel
-          </button>
-          <button type="submit" disabled={loading}
-            className="px-5 py-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-60 flex items-center gap-2">
-            {loading && <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
-            {isEdit ? 'Save Changes' : 'Create Lead'}
-          </button>
-        </div>
+        <ModalFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button type="submit" loading={loading}>
+            {isEdit ? 'Save changes' : 'Create lead'}
+          </Button>
+        </ModalFooter>
       </form>
     </Modal>
+  )
+}
+
+function Section({ title, children }) {
+  return (
+    <section>
+      <h3 className="mb-3 text-sm font-semibold text-gray-900">{title}</h3>
+      {children}
+    </section>
   )
 }

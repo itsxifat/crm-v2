@@ -3,11 +3,19 @@
 import { useState, useEffect, useRef } from 'react'
 import { useSession } from 'next-auth/react'
 import {
-  User, Phone, MapPin, FileText, Upload, Loader2, CheckCircle2,
-  AlertCircle, Clock, Shield, Camera, ChevronRight, Lock,
-  BadgeCheck, X, Plus,
+  FileText, Upload, CheckCircle2, AlertCircle, Camera, ChevronLeft, ChevronRight, Lock, X, Plus,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { cn } from '@/lib/utils'
+import Button, { buttonVariants } from '@/components/ui/Button'
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/Card'
+import { Input, Textarea, NativeSelect, Label, Field } from '@/components/ui/Input'
+import PageHeader from '@/components/ui/PageHeader'
+import Tabs from '@/components/ui/Tabs'
+import Badge from '@/components/ui/Badge'
+import Avatar from '@/components/ui/Avatar'
+import EmptyState from '@/components/ui/EmptyState'
+import { PageLoader } from '@/components/ui/LoadingSpinner'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -17,20 +25,21 @@ const GENDER_OPTIONS    = ['MALE', 'FEMALE', 'OTHER']
 const MARITAL_OPTIONS   = ['SINGLE', 'MARRIED', 'DIVORCED', 'WIDOWED']
 const DOC_TYPE_OPTIONS  = ['NID', 'BIRTH_CERTIFICATE', 'CV', 'PASSPORT', 'ACADEMIC', 'OTHER']
 
+// Labels are also saved as the document name — don't reword them.
 const DOC_TYPE_META = {
-  NID:               { label: 'National ID (NID)',      color: 'text-blue-700',   bg: 'bg-blue-50'   },
-  BIRTH_CERTIFICATE: { label: 'Birth Certificate',      color: 'text-teal-700',   bg: 'bg-teal-50'   },
-  CV:                { label: 'CV / Resume',             color: 'text-purple-700', bg: 'bg-purple-50' },
-  PASSPORT:          { label: 'Passport',                color: 'text-orange-700', bg: 'bg-orange-50' },
-  ACADEMIC:          { label: 'Academic Certificate',    color: 'text-green-700',  bg: 'bg-green-50'  },
-  OTHER:             { label: 'Other Document',          color: 'text-gray-600',   bg: 'bg-gray-100'  },
+  NID:               { label: 'National ID (NID)'    },
+  BIRTH_CERTIFICATE: { label: 'Birth Certificate'    },
+  CV:                { label: 'CV / Resume'          },
+  PASSPORT:          { label: 'Passport'             },
+  ACADEMIC:          { label: 'Academic Certificate' },
+  OTHER:             { label: 'Other Document'       },
 }
 
 const STATUS_META = {
-  CREATED:          { label: 'Not Started',       bg: 'bg-gray-100',    text: 'text-gray-600',   icon: AlertCircle  },
-  INCOMPLETE:       { label: 'Incomplete',        bg: 'bg-amber-50',    text: 'text-amber-700',  icon: AlertCircle  },
-  PENDING_APPROVAL: { label: 'Pending HR Review', bg: 'bg-blue-50',     text: 'text-blue-700',   icon: Clock        },
-  APPROVED:         { label: 'Approved',          bg: 'bg-green-50',    text: 'text-green-700',  icon: BadgeCheck   },
+  CREATED:          { label: 'Not started',       variant: 'default' },
+  INCOMPLETE:       { label: 'Incomplete',        variant: 'warning' },
+  PENDING_APPROVAL: { label: 'Pending HR review', variant: 'primary' },
+  APPROVED:         { label: 'Approved',          variant: 'success' },
 }
 
 // Which fields count toward each tab's completion
@@ -46,11 +55,10 @@ function fmtDate(d) {
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function ProgressBar({ pct }) {
-  const color = pct === 100 ? 'bg-green-500' : pct >= 60 ? 'bg-blue-500' : 'bg-amber-400'
   return (
-    <div className="w-full bg-gray-100 rounded-full h-2.5">
+    <div className="h-2 w-full rounded-full bg-gray-100">
       <div
-        className={`h-2.5 rounded-full transition-all duration-700 ${color}`}
+        className={cn('h-2 rounded-full transition-all duration-700', pct === 100 ? 'bg-emerald-500' : 'bg-gray-900')}
         style={{ width: `${pct}%` }}
       />
     </div>
@@ -59,51 +67,19 @@ function ProgressBar({ pct }) {
 
 function StatusBadge({ status }) {
   const m = STATUS_META[status] ?? STATUS_META.INCOMPLETE
-  const Icon = m.icon
-  return (
-    <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium ${m.bg} ${m.text}`}>
-      <Icon className="w-4 h-4" />
-      {m.label}
-    </span>
-  )
+  return <Badge variant={m.variant}>{m.label}</Badge>
 }
 
-function Field({ label, required, locked, children }) {
+function TabDoneIcon({ className }) {
+  return <CheckCircle2 className={cn(className, 'text-emerald-600')} />
+}
+
+function InfoRow({ label, children }) {
   return (
-    <div>
-      <label className="block text-xs font-medium text-gray-500 mb-1.5">
-        {label}
-        {required && <span className="text-red-400 ml-0.5">*</span>}
-        {locked && <Lock className="inline w-3 h-3 ml-1 text-gray-400" />}
-      </label>
-      {children}
+    <div className="flex items-center justify-between gap-4 py-2.5 first:pt-0 last:pb-0">
+      <dt className="text-sm text-muted-foreground">{label}</dt>
+      <dd className="text-right text-sm text-gray-900">{children}</dd>
     </div>
-  )
-}
-
-function Input({ locked, ...props }) {
-  const base = 'w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white'
-  const dis  = 'bg-gray-50 text-gray-500 cursor-not-allowed'
-  return (
-    <input
-      disabled={locked || props.disabled}
-      className={`${base} ${locked || props.disabled ? dis : ''}`}
-      {...props}
-    />
-  )
-}
-
-function Select({ locked, children, ...props }) {
-  const base = 'w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white'
-  const dis  = 'bg-gray-50 text-gray-500 cursor-not-allowed'
-  return (
-    <select
-      disabled={locked || props.disabled}
-      className={`${base} ${locked || props.disabled ? dis : ''}`}
-      {...props}
-    >
-      {children}
-    </select>
   )
 }
 
@@ -112,29 +88,24 @@ function Select({ locked, children, ...props }) {
 function PersonalTab({ form, onChange, locked, uploading, onPhotoUpload }) {
   const fileRef = useRef(null)
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       {/* Photo */}
-      <Field label="Profile Photo" locked={locked}>
+      <Field label="Profile photo">
         <div className="flex items-center gap-4">
-          <div className="w-20 h-20 rounded-2xl bg-gray-100 border-2 border-dashed border-gray-300 overflow-hidden flex items-center justify-center shrink-0">
+          <div className="flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-dashed border-gray-300 bg-gray-50">
             {form.photo ? (
-              <img src={form.photo} alt="Profile" className="w-full h-full object-cover" />
+              <img src={form.photo} alt="Profile" className="h-full w-full object-cover" />
             ) : (
-              <Camera className="w-7 h-7 text-gray-400" />
+              <Camera className="size-5 text-gray-400" />
             )}
           </div>
           {!locked && (
             <div>
-              <button
-                type="button"
-                disabled={uploading}
-                onClick={() => fileRef.current?.click()}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 rounded-xl text-sm font-medium hover:bg-blue-100 transition-colors disabled:opacity-50"
-              >
-                {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                {uploading ? 'Uploading…' : 'Upload Photo'}
-              </button>
-              <p className="text-xs text-gray-400 mt-1">JPG or PNG, plain background</p>
+              <Button variant="outline" size="sm" loading={uploading} onClick={() => fileRef.current?.click()}>
+                {!uploading && <Upload />}
+                {uploading ? 'Uploading…' : 'Upload photo'}
+              </Button>
+              <p className="mt-1.5 text-xs text-muted-foreground">JPG or PNG, plain background</p>
               <input ref={fileRef} type="file" accept="image/*" className="hidden"
                 onChange={e => onPhotoUpload(e.target.files?.[0])} />
             </div>
@@ -142,27 +113,27 @@ function PersonalTab({ form, onChange, locked, uploading, onPhotoUpload }) {
         </div>
       </Field>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Field label="Gender" required locked={locked}>
-          <Select value={form.gender ?? ''} onChange={e => onChange('gender', e.target.value || null)} locked={locked}>
-            <option value="">Select gender</option>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Gender" required>
+          <NativeSelect value={form.gender ?? ''} onChange={e => onChange('gender', e.target.value || null)} disabled={locked}>
+            <option value="">Select…</option>
             {GENDER_OPTIONS.map(g => <option key={g} value={g}>{g.charAt(0) + g.slice(1).toLowerCase()}</option>)}
-          </Select>
+          </NativeSelect>
         </Field>
 
-        <Field label="Date of Birth" required locked={locked}>
-          <Input type="date" value={form.dateOfBirth ?? ''} onChange={e => onChange('dateOfBirth', e.target.value)} locked={locked} />
+        <Field label="Date of birth" required>
+          <Input type="date" value={form.dateOfBirth ?? ''} onChange={e => onChange('dateOfBirth', e.target.value)} disabled={locked} />
         </Field>
 
-        <Field label="Nationality" required locked={locked}>
-          <Input type="text" placeholder="e.g. Bangladeshi" value={form.nationality ?? ''} onChange={e => onChange('nationality', e.target.value)} locked={locked} />
+        <Field label="Nationality" required>
+          <Input type="text" placeholder="e.g. Bangladeshi" value={form.nationality ?? ''} onChange={e => onChange('nationality', e.target.value)} disabled={locked} />
         </Field>
 
-        <Field label="Marital Status" required locked={locked}>
-          <Select value={form.maritalStatus ?? ''} onChange={e => onChange('maritalStatus', e.target.value || null)} locked={locked}>
-            <option value="">Select status</option>
+        <Field label="Marital status" required>
+          <NativeSelect value={form.maritalStatus ?? ''} onChange={e => onChange('maritalStatus', e.target.value || null)} disabled={locked}>
+            <option value="">Select…</option>
             {MARITAL_OPTIONS.map(m => <option key={m} value={m}>{m.charAt(0) + m.slice(1).toLowerCase()}</option>)}
-          </Select>
+          </NativeSelect>
         </Field>
       </div>
     </div>
@@ -189,59 +160,54 @@ function ContactTab({ form, onChange, locked }) {
   }
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-      <Field label="Phone Number" required locked={locked}>
-        <Input type="tel" placeholder="+880 1x xx xx xx xx" value={form.phone ?? ''} onChange={e => onChange('phone', e.target.value)} locked={locked} />
+    <div className="grid gap-4 sm:grid-cols-2">
+      <Field label="Phone" required>
+        <Input type="tel" placeholder="+880…" value={form.phone ?? ''} onChange={e => onChange('phone', e.target.value)} disabled={locked} />
       </Field>
 
-      <Field label="Alternative Phone" locked={locked}>
-        <Input type="tel" placeholder="+880 1x xx xx xx xx" value={form.secondaryPhone ?? ''} onChange={e => onChange('secondaryPhone', e.target.value)} locked={locked} />
+      <Field label="Alternative phone">
+        <Input type="tel" placeholder="+880…" value={form.secondaryPhone ?? ''} onChange={e => onChange('secondaryPhone', e.target.value)} disabled={locked} />
       </Field>
 
-      <div className="sm:col-span-2">
-        <Field label="Full Address" required locked={locked}>
-          <textarea
-            rows={3}
-            placeholder="House, Road, Area, City, Country"
-            value={form.address ?? ''}
-            onChange={e => onChange('address', e.target.value)}
-            disabled={locked}
-            className={`w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none ${locked ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : 'bg-white'}`}
-          />
-        </Field>
-      </div>
+      <Field label="Address" required className="sm:col-span-2">
+        <Textarea
+          rows={3}
+          placeholder="House, road, area, city, country"
+          value={form.address ?? ''}
+          onChange={e => onChange('address', e.target.value)}
+          disabled={locked}
+          className="resize-none"
+        />
+      </Field>
 
-      <div className="sm:col-span-2 space-y-3">
+      <div className="space-y-3 sm:col-span-2">
         <div className="flex items-center justify-between">
-          <label className="block text-xs font-medium text-gray-500">
-            Emergency Contacts <span className="text-red-400">*</span>
-          </label>
+          <Label required className="mb-0">Emergency contacts</Label>
           {!locked && (
-            <button type="button" onClick={addContact}
-              className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium">
-              <Plus className="w-3.5 h-3.5" /> Add Another
-            </button>
+            <Button variant="ghost" size="xs" onClick={addContact}>
+              <Plus /> Add contact
+            </Button>
           )}
         </div>
         {contacts.map((contact, i) => (
-          <div key={i} className="border border-gray-200 rounded-xl p-3 space-y-2">
+          <div key={i} className="space-y-2 rounded-lg border border-gray-200/80 p-3">
             {contacts.length > 1 && (
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs text-gray-400 font-medium">Contact {i + 1}</span>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-muted-foreground">Contact {i + 1}</span>
                 {!locked && (
-                  <button type="button" onClick={() => removeContact(i)}
-                    className="p-1 text-gray-300 hover:text-red-500 rounded-lg hover:bg-red-50 transition-colors">
-                    <X className="w-3.5 h-3.5" />
-                  </button>
+                  <Button variant="ghost" size="icon-xs" aria-label="Remove contact" onClick={() => removeContact(i)}
+                    className="text-gray-400 hover:bg-red-50 hover:text-red-600">
+                    <X />
+                  </Button>
                 )}
               </div>
             )}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              <Input type="text" placeholder="Full Name" value={contact.name} locked={locked}
+            <div className="grid gap-2 sm:grid-cols-3">
+              <Input type="text" placeholder="Name" value={contact.name} disabled={locked}
                 onChange={e => updateContact(i, 'name', e.target.value)} />
-              <Input type="text" placeholder="Relation (e.g. Father)" value={contact.relation} locked={locked}
+              <Input type="text" placeholder="Relation (e.g. Father)" value={contact.relation} disabled={locked}
                 onChange={e => updateContact(i, 'relation', e.target.value)} />
-              <Input type="tel" placeholder="Phone Number" value={contact.phone} locked={locked}
+              <Input type="tel" placeholder="Phone" value={contact.phone} disabled={locked}
                 onChange={e => updateContact(i, 'phone', e.target.value)} />
             </div>
           </div>
@@ -261,52 +227,53 @@ function KYCTab({ form, onChange, locked, kycLocked, onDocUpload, docUploading, 
   const effectiveLock = locked || kycLocked
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       {kycLocked && (
-        <div className="flex items-center gap-3 p-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-700">
-          <Lock className="w-4 h-4 shrink-0" />
-          KYC documents are locked after HR verification.
+        <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
+          <Lock className="size-4 shrink-0" />
+          KYC is locked after HR verification.
         </div>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Field label="NID Number" required locked={effectiveLock}>
-          <Input type="text" placeholder="National ID number" value={form.nidNumber ?? ''} onChange={e => onChange('nidNumber', e.target.value)} locked={effectiveLock} />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="NID number" required>
+          <Input type="text" value={form.nidNumber ?? ''} onChange={e => onChange('nidNumber', e.target.value)} disabled={effectiveLock} />
         </Field>
 
-        <Field label="Passport Number" locked={effectiveLock}>
-          <Input type="text" placeholder="Optional" value={form.passportNumber ?? ''} onChange={e => onChange('passportNumber', e.target.value)} locked={effectiveLock} />
+        <Field label="Passport number">
+          <Input type="text" placeholder="Optional" value={form.passportNumber ?? ''} onChange={e => onChange('passportNumber', e.target.value)} disabled={effectiveLock} />
         </Field>
       </div>
 
       {/* Documents */}
-      <div>
-        <p className="text-xs font-medium text-gray-500 mb-2">
-          Documents <span className="text-red-400">*</span>
-          <span className="text-gray-400 font-normal ml-1">(at least 1 required — NID scan recommended)</span>
-        </p>
+      <div className="space-y-3">
+        <div>
+          <Label required className="mb-1.5">Documents</Label>
+          <p className="text-xs text-muted-foreground">At least one required, e.g. NID scan.</p>
+        </div>
 
         {(form.documents ?? []).length === 0 ? (
-          <div className="text-center py-6 border-2 border-dashed border-gray-200 rounded-xl text-sm text-gray-400">
-            No documents uploaded yet
+          <div className="rounded-lg border border-dashed border-gray-200 py-6 text-center text-sm text-muted-foreground">
+            No documents yet
           </div>
         ) : (
-          <div className="space-y-2 mb-3">
+          <div className="divide-y divide-gray-100 rounded-lg border border-gray-200/80">
             {(form.documents ?? []).map((doc, i) => {
               const meta = DOC_TYPE_META[doc.type] ?? DOC_TYPE_META.OTHER
               const name = doc.name || doc.url?.split('/').pop() || 'Document'
               return (
-                <div key={i} className="flex items-center gap-3 p-3 bg-gray-50 border border-gray-100 rounded-xl">
-                  <FileText className={`w-4 h-4 shrink-0 ${meta.color}`} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-gray-800 truncate">{name}</p>
-                    <span className={`text-xs px-1.5 py-0.5 rounded-full ${meta.bg} ${meta.color}`}>{meta.label}</span>
+                <div key={i} className="flex items-center gap-3 px-3 py-2.5">
+                  <FileText className="size-4 shrink-0 text-gray-400" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm text-gray-900">{name}</p>
+                    <p className="text-xs text-muted-foreground">{meta.label}</p>
                   </div>
-                  <a href={doc.url} target="_blank" rel="noreferrer" className="text-xs text-blue-600 hover:underline shrink-0">View</a>
+                  <a href={doc.url} target="_blank" rel="noreferrer" className={buttonVariants({ variant: 'ghost', size: 'xs' })}>View</a>
                   {!effectiveLock && (
-                    <button type="button" onClick={() => onDocRemove(i)} className="p-1 text-gray-400 hover:text-red-500 transition-colors">
-                      <X className="w-4 h-4" />
-                    </button>
+                    <Button variant="ghost" size="icon-xs" aria-label="Remove document" onClick={() => onDocRemove(i)}
+                      className="text-gray-400 hover:bg-red-50 hover:text-red-600">
+                      <X />
+                    </Button>
                   )}
                 </div>
               )
@@ -315,28 +282,24 @@ function KYCTab({ form, onChange, locked, kycLocked, onDocUpload, docUploading, 
         )}
 
         {!effectiveLock && (
-          <div className="flex flex-wrap gap-2 items-end p-3 bg-gray-50 border border-gray-100 rounded-xl">
+          <div className="flex flex-wrap items-end gap-2 rounded-lg bg-gray-50 p-3">
             <div>
-              <p className="text-xs text-gray-400 mb-1">Type</p>
-              <select value={addType} onChange={e => { setAddType(e.target.value); setAddName('') }}
-                className="px-2 py-1.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-blue-500">
+              <Label className="mb-1.5 text-xs text-muted-foreground">Type</Label>
+              <NativeSelect value={addType} onChange={e => { setAddType(e.target.value); setAddName('') }} className="h-8 w-52">
                 {DOC_TYPE_OPTIONS.map(t => <option key={t} value={t}>{DOC_TYPE_META[t].label}</option>)}
-              </select>
+              </NativeSelect>
             </div>
             {addType === 'OTHER' && (
               <div>
-                <p className="text-xs text-gray-400 mb-1">Name</p>
-                <input value={addName} onChange={e => setAddName(e.target.value)} placeholder="Document name"
-                  className="px-2 py-1.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 w-40" />
+                <Label className="mb-1.5 text-xs text-muted-foreground">Name</Label>
+                <Input value={addName} onChange={e => setAddName(e.target.value)} placeholder="Document name" className="h-8 w-44" />
               </div>
             )}
             <div>
-              <p className="text-xs text-gray-400 mb-1">File</p>
-              <button type="button" disabled={docUploading} onClick={() => fileRef.current?.click()}
-                className="flex items-center gap-1.5 px-3 py-1.5 border-2 border-dashed border-gray-300 rounded-lg text-sm text-gray-500 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50 transition-all disabled:opacity-50">
-                {docUploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+              <Button variant="outline" size="sm" loading={docUploading} onClick={() => fileRef.current?.click()}>
+                {!docUploading && <Upload />}
                 {docUploading ? 'Uploading…' : 'Upload'}
-              </button>
+              </Button>
               <input ref={fileRef} type="file" accept="image/*,application/pdf" className="hidden"
                 onChange={e => onDocUpload(e.target.files?.[0], addType, addName)} />
             </div>
@@ -419,7 +382,7 @@ export default function EmployeeProfilePage() {
   async function handleDocUpload(file, type, name) {
     if (!file) return
     if (type === 'OTHER' && !name?.trim()) {
-      toast.error('Please enter a document name for "Other" type')
+      toast.error('Enter a name for the "Other" document')
       return
     }
     setDocUploading(true)
@@ -465,11 +428,11 @@ export default function EmployeeProfilePage() {
         body: JSON.stringify(payload),
       })
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error ?? 'Save failed')
+      if (!res.ok) throw new Error(json.error ?? "Couldn't save profile")
       setEmp(prev => ({ ...prev, ...json.data, profileCompletionPct: json.profileCompletionPct, profileStatus: json.profileStatus }))
       toast.success(json.profileStatus === 'PENDING_APPROVAL'
-        ? 'Profile complete! Submitted to HR for review.'
-        : 'Profile saved successfully')
+        ? 'Submitted for HR review'
+        : 'Profile saved')
     } catch (err) {
       toast.error(err.message)
     } finally {
@@ -478,21 +441,20 @@ export default function EmployeeProfilePage() {
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-      </div>
-    )
+    return <PageLoader />
   }
 
   if (!emp) {
     return (
-      <div className="max-w-md mx-auto mt-16 bg-white rounded-2xl border border-gray-100 p-8 shadow-sm text-center">
-        <AlertCircle className="w-10 h-10 text-amber-400 mx-auto mb-3" />
-        <h1 className="text-lg font-semibold text-gray-900">Profile not set up yet</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Your employee record isn’t ready, so there’s nothing to complete here yet. Please contact HR / your admin to finish setting up your account.
-        </p>
+      <div className="max-w-3xl space-y-6">
+        <PageHeader title="Profile" />
+        <Card>
+          <EmptyState
+            icon={AlertCircle}
+            title="Profile not set up yet"
+            description="Contact HR or your admin to finish setup."
+          />
+        </Card>
       </div>
     )
   }
@@ -525,41 +487,45 @@ export default function EmployeeProfilePage() {
 
   const userName = emp.user?.name ?? session?.user?.name ?? 'Employee'
 
-  return (
-    <div className="max-w-3xl mx-auto space-y-6">
+  const tabItems = TABS.map((tab, i) => {
+    const full = tabDone[i] === tabTotal[i]
+    return {
+      value: i,
+      label: tab,
+      icon:  full ? TabDoneIcon : undefined,
+      count: full ? undefined : `${tabDone[i]}/${tabTotal[i]}`,
+    }
+  })
 
-      {/* Header card */}
-      <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
+  return (
+    <div className="max-w-3xl space-y-6">
+      <PageHeader title="Profile" />
+
+      {/* Identity + completion */}
+      <Card className="p-5">
         <div className="flex items-start gap-4">
-          <div className="w-16 h-16 rounded-2xl bg-blue-50 flex items-center justify-center shrink-0 overflow-hidden">
-            {form.photo ? (
-              <img src={form.photo} alt="" className="w-full h-full object-cover" />
-            ) : (
-              <User className="w-7 h-7 text-blue-600" />
-            )}
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-xl font-bold text-gray-900">{userName}</h1>
+          <Avatar key={form.photo || 'none'} src={form.photo || undefined} name={userName} size="xl" />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="truncate text-base font-semibold text-gray-900">{userName}</h2>
               <StatusBadge status={status} />
             </div>
-            <p className="text-sm text-gray-400 mt-0.5">{emp.user?.email ?? session?.user?.email}</p>
+            <p className="truncate text-sm text-muted-foreground">{emp.user?.email ?? session?.user?.email}</p>
 
-            {/* Progress */}
             <div className="mt-4">
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-sm font-medium text-gray-600">Profile Completion</span>
-                <span className={`text-sm font-bold ${pct === 100 ? 'text-green-600' : 'text-blue-600'}`}>{pct}%</span>
+              <div className="mb-1.5 flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Profile completion</span>
+                <span className="font-medium tabular-nums text-gray-900">{pct}%</span>
               </div>
               <ProgressBar pct={pct} />
               {pct < 100 && (
-                <p className="text-xs text-gray-400 mt-1.5">Complete all required fields to submit for HR review</p>
+                <p className="mt-1.5 text-xs text-muted-foreground">Complete required fields to submit for HR review.</p>
               )}
               {status === 'PENDING_APPROVAL' && (
-                <p className="text-xs text-blue-600 mt-1.5 font-medium">Your profile is pending HR review. You will be notified once approved.</p>
+                <p className="mt-1.5 text-xs text-muted-foreground">You&rsquo;ll be notified once approved.</p>
               )}
               {status === 'APPROVED' && (
-                <p className="text-xs text-green-600 mt-1.5 font-medium">Your profile has been approved. You have full panel access.</p>
+                <p className="mt-1.5 text-xs text-muted-foreground">Approved, with full panel access.</p>
               )}
             </div>
           </div>
@@ -567,79 +533,40 @@ export default function EmployeeProfilePage() {
 
         {/* HR notes if rejected */}
         {emp.hrNotes && status === 'INCOMPLETE' && (
-          <div className="mt-4 flex items-start gap-3 p-3 bg-red-50 border border-red-100 rounded-xl text-sm text-red-700">
-            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+          <div className="mt-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-800">
+            <AlertCircle className="mt-0.5 size-4 shrink-0" />
             <div>
-              <span className="font-medium">HR Feedback: </span>{emp.hrNotes}
+              <span className="font-medium">HR feedback: </span>{emp.hrNotes}
             </div>
           </div>
         )}
-      </div>
+      </Card>
 
       {/* Company info (HR-filled, read-only) */}
       {(emp.department || emp.position || emp.venture) && (
-        <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
-          <div className="flex items-center gap-2 mb-3">
-            <Shield className="w-4 h-4 text-gray-400" />
-            <h2 className="text-sm font-semibold text-gray-600">Company Info (HR managed)</h2>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            {emp.employeeId && (
-              <div>
-                <p className="text-xs text-gray-400">Employee ID</p>
-                <p className="text-sm font-semibold text-gray-800 font-mono">{emp.employeeId}</p>
-              </div>
-            )}
-            {emp.department && (
-              <div>
-                <p className="text-xs text-gray-400">Department</p>
-                <p className="text-sm font-medium text-gray-800">{emp.department}</p>
-              </div>
-            )}
-            {emp.position && (
-              <div>
-                <p className="text-xs text-gray-400">Position</p>
-                <p className="text-sm font-medium text-gray-800">{emp.position}</p>
-              </div>
-            )}
-            {emp.venture && (
-              <div>
-                <p className="text-xs text-gray-400">Venture</p>
-                <p className="text-sm font-medium text-gray-800">{emp.venture}</p>
-              </div>
-            )}
-          </div>
-        </div>
+        <Card>
+          <CardHeader>
+            <div>
+              <CardTitle>Company info</CardTitle>
+              <CardDescription>Managed by HR</CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <dl className="divide-y divide-gray-100">
+              {emp.employeeId && <InfoRow label="Employee ID"><span className="font-mono">{emp.employeeId}</span></InfoRow>}
+              {emp.department && <InfoRow label="Department">{emp.department}</InfoRow>}
+              {emp.position   && <InfoRow label="Position">{emp.position}</InfoRow>}
+              {emp.venture    && <InfoRow label="Venture">{emp.venture}</InfoRow>}
+            </dl>
+          </CardContent>
+        </Card>
       )}
 
-      {/* Tab navigation */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className="flex border-b border-gray-100">
-          {TABS.map((tab, i) => {
-            const done  = tabDone[i]
-            const total = tabTotal[i]
-            const full  = done === total
-            return (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(i)}
-                className={`flex-1 flex items-center justify-center gap-2 py-3.5 px-4 text-sm font-medium transition-colors border-b-2 ${
-                  activeTab === i
-                    ? 'border-blue-600 text-blue-600 bg-blue-50/50'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-                }`}
-              >
-                {full
-                  ? <CheckCircle2 className="w-4 h-4 text-green-500" />
-                  : <span className={`text-xs font-semibold px-1.5 py-0.5 rounded-full ${activeTab === i ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>{done}/{total}</span>
-                }
-                {tab}
-              </button>
-            )
-          })}
-        </div>
+      {/* Profile sections */}
+      <Card>
+        <Tabs variant="underline" value={activeTab} onChange={setActiveTab} tabs={tabItems} className="px-5 pt-3" />
 
-        <div className="p-6">
+        <div className="p-5">
           {activeTab === 0 && (
             <PersonalTab
               form={form}
@@ -667,43 +594,33 @@ export default function EmployeeProfilePage() {
               onDocRemove={handleDocRemove}
             />
           )}
-
-          {/* Navigation + Save */}
-          <div className="flex items-center justify-between mt-6 pt-4 border-t border-gray-100">
-            <button
-              type="button"
-              disabled={activeTab === 0}
-              onClick={() => setActiveTab(t => t - 1)}
-              className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-            >
-              Previous
-            </button>
-
-            <div className="flex items-center gap-3">
-              {!finalLocked && (
-                <button
-                  type="button"
-                  onClick={handleSave}
-                  disabled={saving}
-                  className="flex items-center gap-2 px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-colors"
-                >
-                  {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                  {saving ? 'Saving…' : 'Save'}
-                </button>
-              )}
-              {activeTab < TABS.length - 1 && (
-                <button
-                  type="button"
-                  onClick={() => setActiveTab(t => t + 1)}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-xl hover:bg-gray-800 transition-colors"
-                >
-                  Next <ChevronRight className="w-4 h-4" />
-                </button>
-              )}
-            </div>
-          </div>
         </div>
-      </div>
+
+        {/* Navigation + Save */}
+        <CardFooter className="justify-between">
+          <Button variant="outline" disabled={activeTab === 0} onClick={() => setActiveTab(t => t - 1)}>
+            <ChevronLeft /> Previous
+          </Button>
+
+          <div className="flex items-center gap-2">
+            {finalLocked && (
+              <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Lock className="size-3.5" /> Locked
+              </span>
+            )}
+            {activeTab < TABS.length - 1 && (
+              <Button variant="outline" onClick={() => setActiveTab(t => t + 1)}>
+                Next <ChevronRight />
+              </Button>
+            )}
+            {!finalLocked && (
+              <Button onClick={handleSave} loading={saving}>
+                {saving ? 'Saving…' : 'Save'}
+              </Button>
+            )}
+          </div>
+        </CardFooter>
+      </Card>
     </div>
   )
 }

@@ -10,8 +10,12 @@ import TaxEntryFormModal from '@/components/tax/TaxEntryFormModal'
 import { CertificateBadge, TaxPill } from '@/components/tax/TaxBadges'
 import { useTaxData } from '@/components/tax/useTaxData'
 import {
-  tk, fmtDay, fmtPeriod, btnPrimary, btnGhost, sumAmount, cardCls, partyKeyOf, fiscalYearOptions, inputCls,
+  tk, fmtDay, fmtPeriod, sumAmount, partyKeyOf, fiscalYearOptions,
 } from '@/components/tax/taxUi'
+import Button from '@/components/ui/Button'
+import Tabs from '@/components/ui/Tabs'
+import { Card, CardTitle, CardDescription } from '@/components/ui/Card'
+import { NativeSelect } from '@/components/ui/Input'
 import { cn } from '@/lib/utils'
 
 const STATUS_TABS = [
@@ -19,6 +23,16 @@ const STATUS_TABS = [
   { value: 'RECEIVED', label: 'Received' },
   { value: 'all', label: 'All' },
 ]
+
+function Stat({ label, value, sub, toneCls = 'text-gray-900' }) {
+  return (
+    <Card className="p-5">
+      <p className="text-[13px] font-medium text-muted-foreground">{label}</p>
+      <p className={cn('mt-2 text-2xl font-semibold tracking-tight tabular-nums', toneCls)}>{value}</p>
+      {sub && <p className="mt-1 text-xs text-muted-foreground">{sub}</p>}
+    </Card>
+  )
+}
 
 /**
  * Certificates we must COLLECT from customers:
@@ -51,21 +65,21 @@ export default function CollectCertificatesTab({ type = 'VDS' }) {
   }, [rows])
 
   const columns = [
-    { key: 'date', label: 'Deducted', render: r => <div><p className="text-gray-900 whitespace-nowrap">{fmtDay(r.date)}</p><p className="text-[11px] font-mono text-gray-400">{r.entryNo}</p></div> },
+    { key: 'date', label: 'Deducted', render: r => <div><p className="whitespace-nowrap text-gray-900">{fmtDay(r.date)}</p><p className="font-mono text-[11px] text-gray-400">{r.entryNo}</p></div> },
     { key: 'party', label: isAit ? 'Customer / bank' : 'Customer', render: r => (
       <div className="min-w-[150px]">
         <p className="font-medium text-gray-900">{r.partyName || '—'}</p>
-        {r.partyBin && <p className="text-[11px] font-mono text-gray-500">BIN {r.partyBin}</p>}
+        {r.partyBin && <p className="font-mono text-[11px] text-muted-foreground">BIN {r.partyBin}</p>}
       </div>
     ) },
     { key: 'doc', label: isAit ? 'Invoice / reference' : 'Invoice', render: r => <span className="text-xs text-gray-600">{r.documentNo || '—'}</span> },
     ...(isAit ? [{ key: 'section', label: 'Section', render: r => <span className="font-mono text-xs">{r.section || '—'}</span> }] : []),
-    { key: 'base', label: isAit ? 'Paid to us' : 'Value', className: 'text-right', cellClassName: 'text-right whitespace-nowrap', render: r => tk(r.baseAmount) },
-    { key: 'amount', label: isAit ? 'AIT' : 'VDS', className: 'text-right', cellClassName: 'text-right whitespace-nowrap font-semibold text-gray-900', render: r => tk(r.amount) },
+    { key: 'base', label: isAit ? 'Paid to us' : 'Value', className: 'text-right', cellClassName: 'text-right whitespace-nowrap tabular-nums', render: r => tk(r.baseAmount) },
+    { key: 'amount', label: isAit ? 'AIT' : 'VDS', className: 'text-right', cellClassName: 'text-right whitespace-nowrap font-semibold text-gray-900 tabular-nums', render: r => tk(r.amount) },
     { key: 'cert', label: 'Certificate', render: r => (
       <div className="space-y-0.5">
         <CertificateBadge certificate={r.certificate} />
-        {r.certificate?.number && <p className="text-[11px] font-mono text-gray-600">{r.certificate.number} · {fmtDay(r.certificate.date)}</p>}
+        {r.certificate?.number && <p className="font-mono text-[11px] text-gray-600">{r.certificate.number} · {fmtDay(r.certificate.date)}</p>}
       </div>
     ) },
     ...(!isAit ? [{ key: 'claim', label: 'Claim', render: r => r.claimPeriod
@@ -74,68 +88,51 @@ export default function CollectCertificatesTab({ type = 'VDS' }) {
         ? <TaxPill label={r.due.overdue ? `Expired ${fmtPeriod(r.due.period)}` : `By ${fmtPeriod(r.due.period)} return`} color={r.due.overdue ? 'red' : 'gray'} dot={!!r.due.overdue} />
         : <span className="text-xs text-gray-400">—</span> }] : []),
     { key: 'view', label: '', cellClassName: 'text-right', render: r => (
-      <button type="button" className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100" onClick={(e) => { e.stopPropagation(); setDetailId(r.id) }} aria-label="View entry"><Eye className="w-4 h-4" /></button>
+      <Button variant="ghost" size="icon-xs" className="text-gray-400 hover:text-gray-900" onClick={(e) => { e.stopPropagation(); setDetailId(r.id) }} aria-label="View entry"><Eye /></Button>
     ) },
   ]
 
   return (
     <div className="space-y-4">
       {isAit && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div className={cn(cardCls, 'p-4')}>
-            <p className="text-xs font-medium text-gray-500">AIT credit — FY {fy}</p>
-            <p className="mt-1 text-lg font-semibold text-gray-900">{tk(totals.all)}</p>
-            <p className="text-xs text-gray-500">Set off against the company's income tax for the year</p>
-          </div>
-          <div className={cn(cardCls, 'p-4')}>
-            <p className="text-xs font-medium text-gray-500">With certificate</p>
-            <p className="mt-1 text-lg font-semibold text-gray-900">{tk(totals.withCert)}</p>
-          </div>
-          <div className={cn(cardCls, 'p-4')}>
-            <p className="text-xs font-medium text-gray-500">Certificate missing</p>
-            <p className={cn('mt-1 text-lg font-semibold', totals.missingCount ? 'text-amber-700' : 'text-gray-900')}>{tk(totals.missing)}</p>
-            <p className="text-xs text-gray-500">{totals.missingCount} deduction{totals.missingCount === 1 ? '' : 's'} — ask the customer for the certificate</p>
-          </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <Stat label={`AIT credit — FY ${fy}`} value={tk(totals.all)} sub="Set off against income tax" />
+          <Stat label="With certificate" value={tk(totals.withCert)} />
+          <Stat label="Certificate missing" value={tk(totals.missing)} toneCls={totals.missingCount ? 'text-amber-700' : 'text-gray-900'}
+            sub={`${totals.missingCount} deduction${totals.missingCount === 1 ? '' : 's'}`} />
         </div>
       )}
 
-      <div className={cardCls}>
-        <div className="flex flex-wrap items-start justify-between gap-3 px-4 py-3 border-b border-gray-100">
+      <Card className="overflow-hidden">
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-gray-100 px-5 py-3">
           <div className="max-w-2xl">
-            <h3 className="text-sm font-semibold text-gray-900">{isAit ? 'Income tax deducted from us by customers and banks' : 'VAT deducted at source by customers'}</h3>
-            <p className="text-xs text-gray-500">
+            <CardTitle>{isAit ? 'TDS deducted by customers & banks' : 'VDS deducted by customers'}</CardTitle>
+            <CardDescription>
               {isAit
-                ? 'Collect each customer\'s TDS certificate (and the bank\'s certificate for tax deducted on interest) — it proves the credit at assessment.'
-                : 'Collect the customer\'s Mushak-6.6. With it in hand, the VDS is claimed as a decreasing adjustment (note 29) in the return of the period the payment was received or one of the next 6 periods.'}
-            </p>
+                ? 'Collect each certificate — it proves the credit at assessment.'
+                : 'Claim via note 29 with the customer’s Mushak-6.6, in the payment period or the next 6.'}
+            </CardDescription>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {isAit && (
-              <select className={cn(inputCls, 'w-auto py-1.5')} value={fy} onChange={e => { setFy(e.target.value); setSelected(new Set()) }} aria-label="Income year">
+              <NativeSelect className="h-8 w-auto text-[13px]" value={fy} onChange={e => { setFy(e.target.value); setSelected(new Set()) }} aria-label="Income year">
                 {fyOptions.map(f => <option key={f} value={f}>FY {f}</option>)}
-              </select>
+              </NativeSelect>
             )}
-            <div className="inline-flex rounded-lg border border-gray-200 p-0.5 bg-gray-50">
-              {STATUS_TABS.map(s => (
-                <button key={s.value} type="button" onClick={() => { setStatus(s.value); setSelected(new Set()) }}
-                  className={cn('px-3 py-1.5 text-xs font-medium rounded-md', status === s.value ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-800')}>
-                  {s.label}
-                </button>
-              ))}
-            </div>
-            {isAit && canManage && <button type="button" className={btnGhost} onClick={() => setAddOpen(true)}><Plus className="w-4 h-4" /> Add AIT</button>}
-            <button type="button" className={btnGhost} onClick={refresh} aria-label="Refresh"><RefreshCw className={cn('w-4 h-4', loading && 'animate-spin')} /></button>
+            <Tabs size="sm" value={status} onChange={(v) => { setStatus(v); setSelected(new Set()) }} tabs={STATUS_TABS} />
+            {isAit && canManage && <Button variant="outline" size="sm" onClick={() => setAddOpen(true)}><Plus /> Add AIT</Button>}
+            <Button variant="ghost" size="icon-sm" className="text-gray-500" onClick={refresh} aria-label="Refresh"><RefreshCw className={cn(loading && 'animate-spin')} /></Button>
           </div>
         </div>
         {!isAit && json?.summary && (
-          <div className="flex flex-wrap gap-2 px-4 py-2.5 border-b border-gray-50 text-xs">
+          <div className="flex flex-wrap gap-2 border-b border-gray-100 px-5 py-2.5 text-xs">
             <TaxPill label={`${json.summary.collect.VDS.pending.count} pending · ${tk(json.summary.collect.VDS.pending.amount)}`} color="amber" />
             {json.summary.collect.VDS.expiring.count > 0 && <TaxPill label={`${json.summary.collect.VDS.expiring.count} expiring soon`} color="orange" />}
             {json.summary.collect.VDS.expired.count > 0 && <TaxPill label={`${json.summary.collect.VDS.expired.count} expired`} color="red" />}
             <TaxPill label={`${json.summary.collect.VDS.received.count} received`} color="green" />
           </div>
         )}
-        {error ? <p className="px-4 py-6 text-sm text-red-600">{error}</p> : (
+        {error ? <p className="px-5 py-6 text-sm text-red-600">{error}</p> : (
           <SelectTable
             columns={columns}
             rows={rows}
@@ -144,17 +141,17 @@ export default function CollectCertificatesTab({ type = 'VDS' }) {
             canSelect={canSelect}
             loading={loading}
             emptyIcon={Inbox}
-            emptyTitle={isAit ? `No AIT deductions in FY ${fy}` : 'No VDS deductions here'}
+            emptyTitle={isAit ? `No AIT deductions in FY ${fy}` : 'No VDS deductions'}
             emptyDescription={isAit
-              ? 'When a customer pays you net of income tax, record the TDS on the payment — it appears here as a credit.'
-              : 'When a customer pays you net of VAT withheld, record the VDS on the payment — it appears here until you collect their Mushak-6.6.'}
+              ? 'Record TDS on a customer payment to see it here.'
+              : 'Record VDS on a customer payment to see it here.'}
             onRowClick={r => setDetailId(r.id)}
           />
         )}
-      </div>
+      </Card>
 
       <SelectionBar count={selectedRows.length} amount={sumAmount(selectedRows)} onClear={() => setSelected(new Set())}>
-        <button type="button" className={btnPrimary} onClick={() => setCertOpen(true)}><FileCheck className="w-4 h-4" /> Record certificate</button>
+        <Button onClick={() => setCertOpen(true)}><FileCheck /> Record certificate</Button>
       </SelectionBar>
 
       <CertificateModal open={certOpen} onOpenChange={setCertOpen} entries={selectedRows} onSaved={refresh} />

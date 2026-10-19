@@ -2,31 +2,43 @@
 
 import { useState, useEffect } from 'react'
 import { toast } from 'react-hot-toast'
-import { Loader2 } from 'lucide-react'
+import { FolderOpen } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
+import PageHeader from '@/components/ui/PageHeader'
+import Button from '@/components/ui/Button'
+import Badge from '@/components/ui/Badge'
+import EmptyState from '@/components/ui/EmptyState'
+import { PageLoader } from '@/components/ui/LoadingSpinner'
+import { Card } from '@/components/ui/Card'
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table'
 
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 
-const ASSIGNMENT_STATUS_COLORS = {
-  ASSIGNED:    'bg-blue-100 text-blue-700',
-  ACCEPTED:    'bg-teal-100 text-teal-700',
-  IN_PROGRESS: 'bg-purple-100 text-purple-700',
-  COMPLETED:   'bg-green-100 text-green-700',
-  CANCELLED:   'bg-red-100 text-red-600',
+const ASSIGNMENT_STATUS_VARIANT = {
+  ASSIGNED:    'primary',
+  ACCEPTED:    'teal',
+  IN_PROGRESS: 'purple',
+  COMPLETED:   'success',
+  CANCELLED:   'danger',
 }
 
 // Keys match FreelancerAssignment.paymentStatus
 const PAYMENT_STATUS_LABEL = {
-  PENDING:            { label: 'Not requested',    cls: 'bg-gray-100 text-gray-600' },
-  PAYMENT_REQUESTED:  { label: 'Awaiting payment', cls: 'bg-yellow-100 text-yellow-700' },
-  PAID:               { label: 'Paid',             cls: 'bg-green-100 text-green-700' },
-  NOT_REQUIRED:       { label: 'Salary',           cls: 'bg-indigo-100 text-indigo-700' },
+  PENDING:            { label: 'Not requested',    variant: 'default' },
+  PAYMENT_REQUESTED:  { label: 'Awaiting payment', variant: 'warning' },
+  PAID:               { label: 'Paid',             variant: 'success' },
+  NOT_REQUIRED:       { label: 'Salary',           variant: 'indigo' },
 }
 
-const VENTURE_COLORS = {
-  ENSTUDIO: 'bg-purple-100 text-purple-700',
-  ENTECH:   'bg-blue-100 text-blue-700',
-  ENMARK:   'bg-green-100 text-green-700',
+const VENTURE_VARIANT = {
+  ENSTUDIO: 'purple',
+  ENTECH:   'primary',
+  ENMARK:   'success',
+}
+
+const humanize = (s) => {
+  const t = String(s).replace(/_/g, ' ').toLowerCase()
+  return t.charAt(0).toUpperCase() + t.slice(1)
 }
 
 export default function FreelancerProjectsPage() {
@@ -59,7 +71,7 @@ export default function FreelancerProjectsPage() {
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error)
-      toast.success('Assignment accepted!')
+      toast.success('Assignment accepted')
       load()
     } catch (err) {
       toast.error(err.message)
@@ -68,88 +80,71 @@ export default function FreelancerProjectsPage() {
     }
   }
 
-  if (loading) return (
-    <div className="flex justify-center py-20">
-      <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
-    </div>
-  )
+  if (loading) return <PageLoader />
 
   return (
-    <div className="space-y-5 max-w-6xl">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">My Projects</h1>
-        <p className="text-sm text-gray-400 mt-0.5">All your project assignments</p>
-      </div>
+    <div className="space-y-6">
+      <PageHeader title="Projects" />
 
-      <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+      <Card className="overflow-hidden">
         {assignments.length === 0 ? (
-          <div className="py-20 text-center text-gray-400 text-sm">No assignments found</div>
+          <EmptyState icon={FolderOpen} title="No assignments yet" />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[700px]">
-              <thead>
-                <tr className="border-b border-gray-100 bg-gray-50/50">
-                  {['Project Code', 'Project Name', 'Venture', 'My Payment', 'Status', 'Payment Status', 'Date', 'Action'].map(h => (
-                    <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {assignments.map(a => (
-                  <tr key={a.id ?? a._id} className="hover:bg-gray-50/50 transition-colors">
-                    <td className="px-4 py-3.5 text-xs font-mono text-gray-400">
+          <Table className="min-w-[700px]">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Code</TableHead>
+                <TableHead>Project</TableHead>
+                <TableHead>Venture</TableHead>
+                <TableHead className="text-right">My payment</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Payment</TableHead>
+                <TableHead>Date</TableHead>
+                <TableHead className="w-24"><span className="sr-only">Action</span></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {assignments.map(a => {
+                const pay = PAYMENT_STATUS_LABEL[a.paymentStatus] ?? PAYMENT_STATUS_LABEL.PENDING
+                return (
+                  <TableRow key={a.id ?? a._id}>
+                    <TableCell className="font-mono text-xs text-muted-foreground">
                       {a.projectId?.projectCode ?? '—'}
-                    </td>
-                    <td className="px-4 py-3.5">
-                      <p className="text-sm font-medium text-gray-900">{a.projectId?.name ?? '—'}</p>
-                    </td>
-                    <td className="px-4 py-3.5">
-                      {a.projectId?.venture ? (
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${VENTURE_COLORS[a.projectId.venture] ?? 'bg-gray-100 text-gray-600'}`}>
-                          {a.projectId.venture}
-                        </span>
-                      ) : '—'}
-                    </td>
-                    <td className="px-4 py-3.5 text-sm font-medium text-gray-900">
+                    </TableCell>
+                    <TableCell className="font-medium text-gray-900">{a.projectId?.name ?? '—'}</TableCell>
+                    <TableCell>
+                      {a.projectId?.venture
+                        ? <Badge variant={VENTURE_VARIANT[a.projectId.venture] ?? 'default'}>{a.projectId.venture}</Badge>
+                        : <span className="text-gray-300">—</span>}
+                    </TableCell>
+                    <TableCell className="text-right font-medium tabular-nums text-gray-900">
                       {a.paymentAmount ? formatCurrency(a.paymentAmount, a.currency) : '—'}
-                    </td>
-                    <td className="px-4 py-3.5">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${ASSIGNMENT_STATUS_COLORS[a.status] ?? 'bg-gray-100 text-gray-600'}`}>
-                        {a.status.replace('_', ' ')}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3.5">
-                      {(() => {
-                        const pay = PAYMENT_STATUS_LABEL[a.paymentStatus] ?? PAYMENT_STATUS_LABEL.PENDING
-                        return (
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${pay.cls}`}>
-                            {pay.label}
-                          </span>
-                        )
-                      })()}
-                    </td>
-                    <td className="px-4 py-3.5 text-sm text-gray-500">
-                      {fmtDate(a.createdAt)}
-                    </td>
-                    <td className="px-4 py-3.5">
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={ASSIGNMENT_STATUS_VARIANT[a.status] ?? 'default'}>{humanize(a.status)}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={pay.variant}>{pay.label}</Badge>
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-muted-foreground">{fmtDate(a.createdAt)}</TableCell>
+                    <TableCell className="text-right">
                       {a.status === 'ASSIGNED' && (
-                        <button
+                        <Button
+                          size="xs"
                           onClick={() => acceptAssignment(a.id ?? a._id)}
-                          disabled={acting === (a.id ?? a._id)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-lg hover:bg-gray-800 disabled:opacity-50 transition-colors"
+                          loading={acting === (a.id ?? a._id)}
                         >
-                          {acting === (a.id ?? a._id) && <Loader2 className="w-3 h-3 animate-spin" />}
                           Accept
-                        </button>
+                        </Button>
                       )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
         )}
-      </div>
+      </Card>
     </div>
   )
 }

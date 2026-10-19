@@ -21,24 +21,35 @@ export default function Providers({ children, session }) {
         containerStyle={{ zIndex: 9999 }}
         toastOptions={{
           duration: 4000,
+          // shadcn / sonner look: white card, hairline zinc border, soft shadow
           style: {
-            background: '#fff',
-            color:      '#374151',
-            fontSize:   '0.875rem',
-            borderRadius: '0.75rem',
-            boxShadow:  '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)',
-            maxWidth:   '380px',
+            background:   '#fff',
+            color:        '#18181b',             // zinc-900
+            border:       '1px solid #e4e4e7',   // zinc-200
+            borderRadius: '12px',
+            boxShadow:    '0 4px 12px -2px rgb(0 0 0 / 0.08), 0 2px 4px -2px rgb(0 0 0 / 0.04)',
+            fontSize:     '0.875rem',            // text-sm
+            lineHeight:   '1.25rem',
+            fontWeight:   500,
+            padding:      '10px 14px',
+            maxWidth:     '380px',
           },
           success: {
             iconTheme: {
-              primary: '#22c55e',
+              primary:   '#10b981',              // emerald-500
               secondary: '#fff',
             },
           },
           error: {
             iconTheme: {
-              primary: '#ef4444',
+              primary:   '#ef4444',              // red-500
               secondary: '#fff',
+            },
+          },
+          loading: {
+            iconTheme: {
+              primary:   '#18181b',
+              secondary: '#e4e4e7',
             },
           },
         }}

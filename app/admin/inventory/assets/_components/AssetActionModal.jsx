@@ -1,12 +1,15 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, Info, Loader2, Scale, X } from 'lucide-react'
+import { AlertTriangle, Info, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import Modal, { ModalFooter } from '@/components/ui/Modal'
 import DatePicker from '@/components/ui/DatePicker'
 import FileUpload from '@/components/ui/FileUpload'
 import PeoplePicker from '@/components/ui/PeoplePicker'
+import Button from '@/components/ui/Button'
+import Tabs from '@/components/ui/Tabs'
+import { Input, Textarea, NativeSelect, Label } from '@/components/ui/Input'
 import MoneyAccountSelect, { invalidateMoneyAccounts } from '@/components/finance/MoneyAccountSelect'
 import { cn } from '@/lib/utils'
 import { VAT_RATE_OPTIONS, isValidBin } from '@/lib/tax/catalog'
@@ -23,7 +26,7 @@ import { periodLabelOf as rawPeriodLabel } from '@/lib/inventory/depreciationMat
 /** 'Oct 2026' for '2026-10' (falls back to the raw value instead of throwing). */
 const periodLabelOf = (p) => { try { return rawPeriodLabel(p) } catch { return p ?? '' } }
 import {
-  Field, inputCls, btnPrimary, btnSecondary, btnDanger, tk, todayKey, apiJson, useAssetOptions, holderName, refId,
+  Field, tk, todayKey, apiJson, useAssetOptions, holderName, refId,
   openPrint, fmtDay,
 } from './shared'
 
@@ -36,13 +39,13 @@ const WRITE_OFF_REASONS = [
 
 function Notice({ tone = 'info', children }) {
   const cls = tone === 'warn'
-    ? 'bg-amber-50 text-amber-800'
-    : tone === 'danger' ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-800'
+    ? 'border-amber-200 bg-amber-50 text-amber-800'
+    : tone === 'danger' ? 'border-red-200 bg-red-50 text-red-700' : 'border-gray-200/80 bg-gray-50 text-gray-700'
   const Icon = tone === 'info' ? Info : AlertTriangle
   return (
-    <div className={cn('flex items-start gap-2 rounded-lg px-3 py-2.5 text-xs leading-relaxed', cls)}>
-      <Icon className="w-4 h-4 shrink-0 mt-px" />
-      <div>{children}</div>
+    <div className={cn('flex items-start gap-2 rounded-lg border px-3 py-2.5 text-[13px] leading-5', cls)}>
+      <Icon className={cn('mt-0.5 size-4 shrink-0', tone === 'info' && 'text-gray-500')} />
+      <div className="min-w-0">{children}</div>
     </div>
   )
 }
@@ -50,8 +53,8 @@ function Notice({ tone = 'info', children }) {
 function PreviewRow({ label, value, strong, tone }) {
   return (
     <div className="flex items-center justify-between gap-3 text-sm py-1">
-      <span className="text-gray-500">{label}</span>
-      <span className={cn('text-right', strong && 'font-semibold', tone === 'gain' && 'text-green-700', tone === 'loss' && 'text-red-600', !tone && 'text-gray-900')}>{value}</span>
+      <span className="text-muted-foreground">{label}</span>
+      <span className={cn('text-right tabular-nums', strong && 'font-semibold', tone === 'gain' && 'text-emerald-700', tone === 'loss' && 'text-red-600', !tone && 'text-gray-900')}>{value}</span>
     </div>
   )
 }
@@ -70,11 +73,8 @@ function DisposalPreviewPanel({ asset, kind, date, proceeds, vatRate, convention
     : ''
   const glLabel = p.gainLoss >= 0 ? 'Gain on disposal' : 'Loss on disposal'
   return (
-    <div className="border border-gray-100 rounded-xl p-4 bg-gray-50/60">
-      <div className="flex items-center gap-2 mb-2">
-        <Scale className="w-4 h-4 text-gray-500" />
-        <h4 className="text-sm font-semibold text-gray-900">Effect on the books</h4>
-      </div>
+    <div className="rounded-lg bg-gray-50 p-4">
+      <h4 className="mb-2 text-sm font-medium text-gray-900">Effect on the books</h4>
       {p.capitalized ? (
         <>
           <PreviewRow label="Cost" value={tk(p.cost)} />
@@ -107,7 +107,7 @@ function DisposalPreviewPanel({ asset, kind, date, proceeds, vatRate, convention
           <PreviewRow label={kind === 'donate' ? 'Charged to P&L (donation)' : 'Written off to P&L'} value={tk(p.bookValue)} strong tone={p.bookValue > 0 ? 'loss' : undefined} />
         )}
       </div>
-      <ul className="mt-3 space-y-1 text-xs text-gray-500 list-disc pl-4">
+      <ul className="mt-3 list-disc space-y-1 pl-4 text-xs text-muted-foreground">
         {p.capitalized && dep.amount > 0 && <li>{postToLedger ? 'Depreciation' : 'Depreciation (register only — ledger posting is off)'} of {tk(dep.amount)} up to the disposal date</li>}
         {p.capitalized && over.amount > 0 && <li>{postToLedger ? 'Depreciation written back' : 'Depreciation written back (register only — ledger posting is off)'}: {tk(over.amount)} already posted for days after the disposal date</li>}
         {hasProceeds && <li>Asset sale {tk(p.gross)} into the selected account (not income — only the gain or loss hits P&amp;L)</li>}
@@ -128,12 +128,12 @@ function AttachmentsField({ value, onChange, label = 'Attachments' }) {
     }
   }, [pending]) // eslint-disable-line react-hooks/exhaustive-deps
   return (
-    <div className="space-y-1.5">
-      <span className="block text-xs font-medium text-gray-600">{label}</span>
+    <div className="space-y-2">
+      <Label className="mb-0">{label}</Label>
       {(value ?? []).map((u, i) => (
-        <div key={`${u}-${i}`} className="flex items-center gap-2 text-xs bg-gray-50 rounded-lg px-2 py-1.5">
-          <a href={u} target="_blank" rel="noopener noreferrer" className="flex-1 truncate text-blue-600 hover:underline">{u.split('/').pop()}</a>
-          <button type="button" className="text-gray-400 hover:text-red-500" onClick={() => onChange(value.filter((_, j) => j !== i))}><X className="w-3.5 h-3.5" /></button>
+        <div key={`${u}-${i}`} className="flex items-center gap-2 rounded-lg bg-gray-50 py-1 pl-2.5 pr-1 text-xs">
+          <a href={u} target="_blank" rel="noopener noreferrer" className="flex-1 truncate font-medium text-gray-900 underline-offset-4 hover:underline">{u.split('/').pop()}</a>
+          <Button variant="ghost" size="icon-xs" className="text-gray-400 hover:text-red-600" aria-label="Remove attachment" onClick={() => onChange(value.filter((_, j) => j !== i))}><X className="size-3.5" /></Button>
         </div>
       ))}
       {(value ?? []).length < 10 && <FileUpload label={null} value="" onUploaded={(url) => url && setPending(url)} bucket="assets" />}
@@ -398,36 +398,36 @@ export default function AssetActionModal({ open, onOpenChange, action, asset, se
 
   const locationSelect = (label, { required = false, exclude = null, hint } = {}) => (
     <Field label={label} required={required} hint={hint}>
-      <select className={inputCls} value={f.locationId} onChange={e => set({ locationId: e.target.value })}>
+      <NativeSelect value={f.locationId} onChange={e => set({ locationId: e.target.value })}>
         <option value="">{required ? 'Select location' : `Keep current${asset.locationId?.name ? ` (${asset.locationId.name})` : ''}`}</option>
         {locations.filter(l => l.id !== exclude).map(l => <option key={l.id} value={l.id}>{l.name}{l.code ? ` (${l.code})` : ''}</option>)}
-      </select>
+      </NativeSelect>
     </Field>
   )
 
   const conditionSelect = (label = 'Condition') => (
     <Field label={label}>
-      <select className={inputCls} value={f.condition} onChange={e => set({ condition: e.target.value })}>
+      <NativeSelect value={f.condition} onChange={e => set({ condition: e.target.value })}>
         {CONDITION_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-      </select>
+      </NativeSelect>
     </Field>
   )
 
   const vendorFields = (
     <>
       <Field label="Repair vendor">
-        <select className={inputCls} value={f.vendorId} onChange={e => set({ vendorId: e.target.value })}>
-          <option value="">{vendors.length ? 'Other / in-house' : 'Type the name →'}</option>
+        <NativeSelect value={f.vendorId} onChange={e => set({ vendorId: e.target.value })}>
+          <option value="">{vendors.length ? 'Other / in-house' : 'Type the name'}</option>
           {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-        </select>
+        </NativeSelect>
       </Field>
       {!f.vendorId && (
         <Field label="Vendor / technician name">
-          <input className={inputCls} value={f.vendorName} onChange={e => set({ vendorName: e.target.value })} placeholder="e.g. IT team, Apple service centre" />
+          <Input value={f.vendorName} onChange={e => set({ vendorName: e.target.value })} placeholder="e.g. IT team, Apple service centre" />
         </Field>
       )}
       <Field label="Job / ticket no.">
-        <input className={inputCls} value={f.repairRef} onChange={e => set({ repairRef: e.target.value })} />
+        <Input value={f.repairRef} onChange={e => set({ repairRef: e.target.value })} />
       </Field>
     </>
   )
@@ -444,16 +444,16 @@ export default function AssetActionModal({ open, onOpenChange, action, asset, se
         {/* ── custody ── */}
         {(action === 'assign' || action === 'reassign') && (
           <>
-            {action === 'reassign' && holder && <Notice>Currently with <b>{holder}</b>. They will be notified of the hand-over.</Notice>}
-            <Field label="Employee" hint="They get a notification to confirm receipt in My Assets">
+            {action === 'reassign' && holder && <Notice>Currently with <b className="font-medium">{holder}</b>, who will be notified.</Notice>}
+            <Field label="Employee">
               <PeoplePicker types={['EMPLOYEE']} value={f.employee} onChange={p => set({ employee: p })} placeholder="Search employees…" typeFilter={false} />
             </Field>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Field label="Department (optional)" hint="For shared equipment">
-                <select className={inputCls} value={f.departmentId} onChange={e => set({ departmentId: e.target.value })}>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field label="Department" hint="For shared equipment">
+                <NativeSelect value={f.departmentId} onChange={e => set({ departmentId: e.target.value })}>
                   <option value="">None</option>
                   {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                </select>
+                </NativeSelect>
               </Field>
               {locationSelect('Location')}
               <Field label="Expected return"><DatePicker value={f.expectedReturnDate} onChange={v => set({ expectedReturnDate: v })} /></Field>
@@ -462,7 +462,7 @@ export default function AssetActionModal({ open, onOpenChange, action, asset, se
             {f.employee && (
               <label className="flex items-center gap-2 text-sm text-gray-700">
                 <input type="checkbox" className="rounded border-gray-300" checked={f.printHandover} onChange={e => set({ printHandover: e.target.checked })} />
-                Open the hand-over form to print and sign
+                Print hand-over form to sign
               </label>
             )}
           </>
@@ -470,12 +470,12 @@ export default function AssetActionModal({ open, onOpenChange, action, asset, se
 
         {action === 'return' && (
           <>
-            {holder ? <Notice>Checking the asset back in from <b>{holder}</b>.</Notice> : <Notice>The asset has been assessed and goes back to stock.</Notice>}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {holder ? <Notice>Checking in from <b className="font-medium">{holder}</b>.</Notice> : <Notice>Assessed — goes back to stock.</Notice>}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               {conditionSelect('Condition on return')}
               {locationSelect('Return to location')}
             </div>
-            {f.condition === 'BROKEN' && <Notice tone="warn">Returned broken: the asset will be marked <b>Damaged</b>. Use “Report damage” to start a recovery case if someone is responsible.</Notice>}
+            {f.condition === 'BROKEN' && <Notice tone="warn">Returned broken — it will be marked <b className="font-medium">Damaged</b>. Use “Report damage” for a recovery case.</Notice>}
           </>
         )}
 
@@ -483,7 +483,7 @@ export default function AssetActionModal({ open, onOpenChange, action, asset, se
 
         {/* ── repairs ── */}
         {action === 'repair_send' && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {vendorFields}
             <Field label="Expected back"><DatePicker value={f.expectedDate} onChange={v => set({ expectedDate: v })} /></Field>
           </div>
@@ -494,28 +494,28 @@ export default function AssetActionModal({ open, onOpenChange, action, asset, se
             {repairSent && (
               <Notice>Sent on {fmtDay(repairSent.date)}{repairSent.vendorName ? ` to ${repairSent.vendorName}` : ''}{repairSent.repairRef ? ` (job ${repairSent.repairRef})` : ''}.</Notice>
             )}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Field label="Repair bill (incl. VAT)" hint="Leave 0 for warranty / free repairs">
-                <input type="number" min={0} step="0.01" inputMode="decimal" className={inputCls} value={f.cost} onChange={e => set({ cost: e.target.value })} />
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field label="Repair bill (incl. VAT)" hint="0 for warranty or free repairs">
+                <Input type="number" min={0} step="0.01" inputMode="decimal" value={f.cost} onChange={e => set({ cost: e.target.value })} />
               </Field>
               <Field label="VAT in the bill">
-                <input type="number" min={0} step="0.01" inputMode="decimal" className={inputCls} value={f.vatAmount} disabled={!(Number(f.cost) > 0)} onChange={e => set({ vatAmount: e.target.value })} />
+                <Input type="number" min={0} step="0.01" inputMode="decimal" value={f.vatAmount} disabled={!(Number(f.cost) > 0)} onChange={e => set({ vatAmount: e.target.value })} />
               </Field>
               {conditionSelect('Condition after repair')}
               <Field label="Goes back to">
-                <select className={inputCls} value={f.returnTo} onChange={e => set({ returnTo: e.target.value })}>
+                <NativeSelect value={f.returnTo} onChange={e => set({ returnTo: e.target.value })}>
                   {hasHolder(asset) && <option value="ASSIGNED">{holder ?? 'Current holder'}</option>}
                   <option value="IN_STOCK">Stock</option>
-                </select>
+                </NativeSelect>
               </Field>
               {locationSelect('Location')}
             </div>
             {Number(f.cost) > 0 && (
               <div className="space-y-2">
-                <span className="block text-xs font-medium text-gray-600">Payment</span>
+                <Label className="mb-0">Payment</Label>
                 <label className="flex items-start gap-2 text-sm text-gray-700">
                   <input type="radio" className="mt-0.5" checked={f.paymentMode === 'REQUEST'} onChange={() => set({ paymentMode: 'REQUEST' })} />
-                  <span>Send the bill to Accounts as a payment request <span className="text-gray-400">(Repairs &amp; Maintenance)</span></span>
+                  <span>Send to Accounts as a payment request <span className="text-muted-foreground">(Repairs &amp; Maintenance)</span></span>
                 </label>
                 <label className="flex items-start gap-2 text-sm text-gray-700">
                   <input type="radio" className="mt-0.5" checked={f.paymentMode === 'NONE'} onChange={() => set({ paymentMode: 'NONE' })} />
@@ -524,12 +524,12 @@ export default function AssetActionModal({ open, onOpenChange, action, asset, se
                 {canCapitalize && asset.isCapitalized !== false && (
                   <label className="flex items-start gap-2 text-sm text-gray-700 pt-1">
                     <input type="checkbox" className="mt-0.5 rounded border-gray-300" checked={f.capitalize} onChange={e => set({ capitalize: e.target.checked })} />
-                    <span>Add to the asset cost (upgrade) <span className="block text-xs text-gray-400">Only for work that improves or extends the asset (e.g. RAM/SSD upgrade) — ordinary repairs are expenses.</span></span>
+                    <span>Add to the asset cost (upgrade) <span className="block text-xs text-muted-foreground">Upgrades only (e.g. RAM/SSD) — ordinary repairs are expenses.</span></span>
                   </label>
                 )}
               </div>
             )}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{vendorFields}</div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">{vendorFields}</div>
           </>
         )}
 
@@ -537,51 +537,51 @@ export default function AssetActionModal({ open, onOpenChange, action, asset, se
         {action === 'report_damage' && (
           <>
             {damageCase?.reportedByEmployee && <Notice>Assessing the problem reported by the employee on {fmtDay(damageCase.date)}.</Notice>}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field label="Cause" required>
-                <select className={inputCls} value={f.cause} onChange={e => set({ cause: e.target.value })}>
+                <NativeSelect value={f.cause} onChange={e => set({ cause: e.target.value })}>
                   <option value="">Select cause</option>
                   {DAMAGE_CAUSE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
+                </NativeSelect>
               </Field>
               {conditionSelect('Condition now')}
               <Field label="What happened" required className="sm:col-span-2">
-                <textarea rows={2} className={inputCls} value={f.description} onChange={e => set({ description: e.target.value })} placeholder="e.g. Screen cracked after the laptop fell from the desk" />
+                <Textarea rows={2} value={f.description} onChange={e => set({ description: e.target.value })} placeholder="e.g. Screen cracked after the laptop fell from the desk" />
               </Field>
               <Field label="Assessed loss" hint="Repair estimate or value lost">
-                <input type="number" min={0} step="0.01" inputMode="decimal" className={inputCls} value={f.assessedLoss} onChange={e => set({ assessedLoss: e.target.value })} />
+                <Input type="number" min={0} step="0.01" inputMode="decimal" value={f.assessedLoss} onChange={e => set({ assessedLoss: e.target.value })} />
               </Field>
-              <Field label="Police GD no. (if any)">
-                <input className={inputCls} value={f.gdNumber} onChange={e => set({ gdNumber: e.target.value })} />
+              <Field label="Police GD no.">
+                <Input value={f.gdNumber} onChange={e => set({ gdNumber: e.target.value })} />
               </Field>
             </div>
-            <div className="border border-gray-100 rounded-xl p-4 space-y-3">
-              <h4 className="text-sm font-semibold text-gray-900">Responsibility &amp; recovery</h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-4 rounded-lg border border-gray-200/80 p-4">
+              <h4 className="text-sm font-medium text-gray-900">Responsibility &amp; recovery</h4>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <Field label="Responsible employee">
                   <PeoplePicker types={['EMPLOYEE']} value={f.responsible} onChange={p => set({ responsible: p })} placeholder="Nobody / unknown" typeFilter={false} />
                 </Field>
                 <Field label="Recovery">
-                  <select className={inputCls} value={f.recoveryMethod} onChange={e => set({ recoveryMethod: e.target.value })}>
+                  <NativeSelect value={f.recoveryMethod} onChange={e => set({ recoveryMethod: e.target.value })}>
                     {RECOVERY_METHOD_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
+                  </NativeSelect>
                 </Field>
                 {employeeRecovery && (
                   <>
-                    <Field label="Employee's share of liability (%)">
-                      <input type="number" min={0} max={100} className={inputCls} value={f.liabilityPct} placeholder="100" onChange={e => set({ liabilityPct: e.target.value })} />
+                    <Field label="Employee's liability (%)">
+                      <Input type="number" min={0} max={100} value={f.liabilityPct} placeholder="100" onChange={e => set({ liabilityPct: e.target.value })} />
                     </Field>
-                    <Field label="Amount to recover" hint={`Maximum ${tk(recoveryCap)} (share of the actual loss)`}>
-                      <input type="number" min={0} step="0.01" className={inputCls} value={f.recoveryAmount} placeholder={String(recoveryCap)} onChange={e => set({ recoveryAmount: e.target.value })} />
+                    <Field label="Amount to recover" hint={`Max ${tk(recoveryCap)} (share of actual loss)`}>
+                      <Input type="number" min={0} step="0.01" value={f.recoveryAmount} placeholder={String(recoveryCap)} onChange={e => set({ recoveryAmount: e.target.value })} />
                     </Field>
-                    <Field label="Enquiry findings" required className="sm:col-span-2" hint="Who investigated, when, what the employee said">
-                      <textarea rows={2} className={inputCls} value={f.enquiryNote} onChange={e => set({ enquiryNote: e.target.value })} />
+                    <Field label="Enquiry findings" required className="sm:col-span-2" hint="Who investigated, when, and the employee's response">
+                      <Textarea rows={2} value={f.enquiryNote} onChange={e => set({ enquiryNote: e.target.value })} />
                     </Field>
                   </>
                 )}
                 {f.recoveryMethod === 'INSURANCE' && (
                   <Field label="Claim amount" hint="Defaults to the assessed loss">
-                    <input type="number" min={0} step="0.01" className={inputCls} value={f.recoveryAmount} onChange={e => set({ recoveryAmount: e.target.value })} />
+                    <Input type="number" min={0} step="0.01" value={f.recoveryAmount} onChange={e => set({ recoveryAmount: e.target.value })} />
                   </Field>
                 )}
               </div>
@@ -589,7 +589,7 @@ export default function AssetActionModal({ open, onOpenChange, action, asset, se
                 <Notice tone={causeBlocksRecovery ? 'danger' : 'warn'}>
                   {causeBlocksRecovery
                     ? `${DAMAGE_CAUSE_LABELS[f.cause]} is not the employee's fault — wages cannot be deducted for it.`
-                    : 'Labour Act 2006 s.125/127: a deduction is allowed only for loss directly caused by the worker’s neglect or default, after a proper enquiry and a chance to explain, and never more than the actual loss. It is recorded in the damage register.'}
+                    : 'Labour Act 2006 s.125/127: deduct only for loss directly caused by the worker’s neglect or default, after a proper enquiry and a chance to explain, and never above the actual loss.'}
                 </Notice>
               )}
             </div>
@@ -598,46 +598,40 @@ export default function AssetActionModal({ open, onOpenChange, action, asset, se
 
         {action === 'update_recovery' && damageCase && (
           <>
-            <div className="bg-gray-50 rounded-lg px-3 py-2.5 text-sm space-y-0.5">
+            <div className="space-y-0.5 rounded-lg bg-gray-50 px-3 py-2.5 text-sm">
               <p className="font-medium text-gray-900">{DAMAGE_CAUSE_LABELS[damageCase.cause] ?? 'Damage'} · {fmtDay(damageCase.date)}</p>
               <p className="text-gray-600">{damageCase.description}</p>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted-foreground">
                 {RECOVERY_METHOD_LABELS[damageCase.recovery?.method] ?? '—'} · {tk(damageCase.recovery?.amount)}
                 {damageCase.responsibleEmployeeName ? ` · ${damageCase.responsibleEmployeeName}` : ''}
               </p>
               {recDone > 0 && (
-                <p className="text-xs text-gray-500">Recovered so far {tk(recDone)} · balance <b className="text-gray-700">{tk(recBalance)}</b></p>
+                <p className="text-xs text-muted-foreground">Recovered so far {tk(recDone)} · balance <b className="font-medium text-gray-900">{tk(recBalance)}</b></p>
               )}
             </div>
-            <div className="flex gap-2">
-              {['RECOVERED', 'WAIVED'].map(s => (
-                <button key={s} type="button" onClick={() => set({ recStatus: s })}
-                  className={cn('flex-1 rounded-lg border px-3 py-2 text-sm font-medium', f.recStatus === s ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 text-gray-700 hover:bg-gray-50')}>
-                  {s === 'RECOVERED' ? 'Recovered' : 'Waive the balance'}
-                </button>
-              ))}
-            </div>
+            <Tabs value={f.recStatus} onChange={v => set({ recStatus: v })}
+              tabs={['RECOVERED', 'WAIVED'].map(s => ({ value: s, label: s === 'RECOVERED' ? 'Recovered' : 'Waive the balance' }))} />
             {f.recStatus === 'WAIVED' && (
               <Notice tone="warn">
                 Waives the balance of {tk(recBalance)}{recDone > 0 ? ` — the ${tk(recDone)} already recovered stays on record` : ''}. The case is closed.
               </Notice>
             )}
             {f.recStatus === 'RECOVERED' && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Field label="Amount recovered now" hint={recCase > 0 ? `Up to ${tk(recBalance)} — a part payment keeps the case open for the rest` : null}>
-                  <input type="number" min={0} step="0.01" className={inputCls} value={f.recAmount} onChange={e => set({ recAmount: e.target.value })} />
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Field label="Amount recovered now" hint={recCase > 0 ? `Up to ${tk(recBalance)} · part payments keep it open` : null}>
+                  <Input type="number" min={0} step="0.01" value={f.recAmount} onChange={e => set({ recAmount: e.target.value })} />
                 </Field>
                 {recNeedsAccount ? (
                   <Field label="Received into" required>
                     <MoneyAccountSelect currency="BDT" value={f.accountId} onChange={id => set({ accountId: id })} />
                   </Field>
                 ) : (
-                  <p className="text-xs text-gray-500 self-end pb-2">Salary deductions are taken through the payslip — no money is posted here.</p>
+                  <p className="self-end pb-2 text-xs text-muted-foreground">Deducted via payslip — nothing is posted here.</p>
                 )}
               </div>
             )}
             <Field label={f.recStatus === 'WAIVED' ? 'Reason for waiving' : 'Note'} required={f.recStatus === 'WAIVED'}>
-              <textarea rows={2} className={inputCls} value={f.recNote} onChange={e => set({ recNote: e.target.value })} />
+              <Textarea rows={2} value={f.recNote} onChange={e => set({ recNote: e.target.value })} />
             </Field>
           </>
         )}
@@ -645,50 +639,50 @@ export default function AssetActionModal({ open, onOpenChange, action, asset, se
         {/* ── lost / stolen / found / retire ── */}
         {(action === 'mark_lost' || action === 'mark_stolen') && (
           <>
-            {holder && <Notice>{holder} currently holds it — the custody record is kept in the history.</Notice>}
+            {holder && <Notice>{holder} currently holds it — custody stays in the history.</Notice>}
             <Field label="What happened" required>
-              <textarea rows={3} className={inputCls} value={f.description} onChange={e => set({ description: e.target.value })} placeholder="Where and when it was last seen" />
+              <Textarea rows={3} value={f.description} onChange={e => set({ description: e.target.value })} placeholder="Where and when it was last seen" />
             </Field>
-            <Field label="Police GD no." hint={action === 'mark_stolen' ? 'Needed for insurance and the tax write-off' : 'If reported to the police'}>
-              <input className={inputCls} value={f.gdNumber} onChange={e => set({ gdNumber: e.target.value })} />
+            <Field label="Police GD no." hint={action === 'mark_stolen' ? 'Needed for insurance and the tax write-off' : null}>
+              <Input value={f.gdNumber} onChange={e => set({ gdNumber: e.target.value })} />
             </Field>
           </>
         )}
 
         {action === 'found' && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {locationSelect('Found at / now kept at')}
             {conditionSelect()}
           </div>
         )}
 
         {action === 'retire' && (
-          <Field label="Reason" hint="The asset is kept but not used; book depreciation continues">
-            <input className={inputCls} value={f.reason} onChange={e => set({ reason: e.target.value })} placeholder="e.g. Spare unit, replaced by newer model" />
+          <Field label="Reason" hint="Book depreciation continues while retired">
+            <Input value={f.reason} onChange={e => set({ reason: e.target.value })} placeholder="e.g. Spare unit, replaced by newer model" />
           </Field>
         )}
 
         {/* ── disposals ── */}
         {(action === 'sell' || action === 'scrap') && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {action === 'scrap' && (
               <Field label="Reason" required className="sm:col-span-2">
-                <input className={inputCls} value={f.reason} onChange={e => set({ reason: e.target.value })} placeholder="e.g. Motherboard failed, repair not economical" />
+                <Input value={f.reason} onChange={e => set({ reason: e.target.value })} placeholder="e.g. Motherboard failed, repair not economical" />
               </Field>
             )}
             <Field label={action === 'sell' ? 'Buyer' : 'Scrap buyer'} required={action === 'sell'}>
-              <input className={inputCls} value={f.buyerName} onChange={e => set({ buyerName: e.target.value })} placeholder={action === 'scrap' ? 'Scrap buyer' : ''} />
+              <Input value={f.buyerName} onChange={e => set({ buyerName: e.target.value })} placeholder={action === 'scrap' ? 'Scrap buyer' : ''} />
             </Field>
-            <Field label="Buyer BIN" hint="13 digits, e.g. 000123456-0101 (if VAT registered)">
-              <input className={cn(inputCls, 'font-mono')} value={f.buyerBin} onChange={e => set({ buyerBin: e.target.value })} />
+            <Field label="Buyer BIN" hint="9 or 13 digits, if VAT registered">
+              <Input className="font-mono" value={f.buyerBin} onChange={e => set({ buyerBin: e.target.value })} />
             </Field>
             <Field label={action === 'sell' ? 'Sale price (excl. VAT)' : 'Scrap proceeds (excl. VAT)'} required={action === 'sell'}>
-              <input type="number" min={0} step="0.01" inputMode="decimal" className={inputCls} value={f.proceeds} onChange={e => set({ proceeds: e.target.value })} placeholder={action === 'scrap' ? '0 if nothing received' : ''} />
+              <Input type="number" min={0} step="0.01" inputMode="decimal" value={f.proceeds} onChange={e => set({ proceeds: e.target.value })} placeholder="0.00" />
             </Field>
-            <Field label="VAT rate" hint={registered ? 'Sale of a used asset is a taxable supply' : 'Company is not VAT registered'}>
-              <select className={inputCls} value={f.vatRate} disabled={!registered || !(Number(f.proceeds) > 0)} onChange={e => set({ vatRate: e.target.value })}>
+            <Field label="VAT rate" hint={registered ? null : 'Company is not VAT registered'}>
+              <NativeSelect value={f.vatRate} disabled={!registered || !(Number(f.proceeds) > 0)} onChange={e => set({ vatRate: e.target.value })}>
                 {VAT_RATE_OPTIONS.map(r => <option key={r} value={String(r)}>{r}%</option>)}
-              </select>
+              </NativeSelect>
             </Field>
             {gross > 0 && (
               <Field label={`Money received (${tk(gross)}) into`} required className="sm:col-span-2">
@@ -696,8 +690,8 @@ export default function AssetActionModal({ open, onOpenChange, action, asset, se
               </Field>
             )}
             {action === 'sell' && (
-              <Field label="Reason (optional)" className="sm:col-span-2">
-                <input className={inputCls} value={f.reason} onChange={e => set({ reason: e.target.value })} placeholder="e.g. Upgraded; sold to staff" />
+              <Field label="Reason" className="sm:col-span-2">
+                <Input value={f.reason} onChange={e => set({ reason: e.target.value })} placeholder="e.g. Upgraded; sold to staff" />
               </Field>
             )}
           </div>
@@ -706,17 +700,17 @@ export default function AssetActionModal({ open, onOpenChange, action, asset, se
         {action === 'write_off' && (
           <>
             <Field label="Reason" required>
-              <input className={inputCls} value={f.reason} onChange={e => set({ reason: e.target.value })} list="wo-reasons" />
+              <Input value={f.reason} onChange={e => set({ reason: e.target.value })} list="wo-reasons" />
               <datalist id="wo-reasons">{WRITE_OFF_REASONS.map(r => <option key={r} value={r} />)}</datalist>
             </Field>
-            {['LOST', 'STOLEN'].includes(asset.status) && <Notice tone="warn">Keep the search record or police GD on file — the write-off is a deductible loss only with evidence.</Notice>}
+            {['LOST', 'STOLEN'].includes(asset.status) && <Notice tone="warn">Keep the search record or police GD on file — deductible only with evidence.</Notice>}
           </>
         )}
 
         {action === 'donate' && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Field label="Recipient" required><input className={inputCls} value={f.recipient} onChange={e => set({ recipient: e.target.value })} placeholder="Organisation or person" /></Field>
-            <Field label="Reason" required><input className={inputCls} value={f.reason} onChange={e => set({ reason: e.target.value })} /></Field>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Recipient" required><Input value={f.recipient} onChange={e => set({ recipient: e.target.value })} placeholder="Organisation or person" /></Field>
+            <Field label="Reason" required><Input value={f.reason} onChange={e => set({ reason: e.target.value })} /></Field>
           </div>
         )}
 
@@ -727,42 +721,36 @@ export default function AssetActionModal({ open, onOpenChange, action, asset, se
 
         {action === 'adjust_value' && (
           <>
-            <div className="flex gap-2">
-              {[['IMPAIRMENT', 'Impairment (write-down)'], ['COST', 'Correct the cost']].map(([k, l]) => (
-                <button key={k} type="button" onClick={() => set({ adjustMode: k })}
-                  className={cn('flex-1 rounded-lg border px-3 py-2 text-sm font-medium', f.adjustMode === k ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 text-gray-700 hover:bg-gray-50')}>
-                  {l}
-                </button>
-              ))}
-            </div>
+            <Tabs value={f.adjustMode} onChange={v => set({ adjustMode: v })}
+              tabs={[['IMPAIRMENT', 'Impairment (write-down)'], ['COST', 'Correct the cost']].map(([k, l]) => ({ value: k, label: l }))} />
             {f.adjustMode === 'IMPAIRMENT' ? (
               <>
-                <Field label="Impairment amount" hint={`Book value now ${tk(asset.bookValue)} — posted as a non-cash expense`}>
-                  <input type="number" min={0} step="0.01" className={inputCls} value={f.impairment} onChange={e => set({ impairment: e.target.value })} />
+                <Field label="Impairment amount" hint={`Book value ${tk(asset.bookValue)} · non-cash expense`}>
+                  <Input type="number" min={0} step="0.01" value={f.impairment} onChange={e => set({ impairment: e.target.value })} />
                 </Field>
-                {Number(f.impairment) > 0 && <p className="text-sm text-gray-600">New book value: <b>{tk(round2((asset.bookValue ?? 0) - Number(f.impairment)))}</b></p>}
+                {Number(f.impairment) > 0 && <p className="text-sm text-muted-foreground">New book value <b className="font-semibold tabular-nums text-gray-900">{tk(round2((asset.bookValue ?? 0) - Number(f.impairment)))}</b></p>}
               </>
             ) : (
               <>
-                <Field label="Corrected cost" hint={`Current cost ${tk(asset.cost)} — only to fix a wrong entry before any depreciation or ledger posting`}>
-                  <input type="number" min={0} step="0.01" className={inputCls} value={f.newCost} onChange={e => set({ newCost: e.target.value })} />
+                <Field label="Corrected cost" hint={`Now ${tk(asset.cost)} · only before any depreciation or posting`}>
+                  <Input type="number" min={0} step="0.01" value={f.newCost} onChange={e => set({ newCost: e.target.value })} />
                 </Field>
               </>
             )}
             <Field label="Reason" required>
-              <input className={inputCls} value={f.reason} onChange={e => set({ reason: e.target.value })} placeholder={f.adjustMode === 'IMPAIRMENT' ? 'e.g. Obsolete model, market value fell' : 'e.g. Invoice amount was keyed wrongly'} />
+              <Input value={f.reason} onChange={e => set({ reason: e.target.value })} placeholder={f.adjustMode === 'IMPAIRMENT' ? 'e.g. Obsolete model, market value fell' : 'e.g. Invoice amount was keyed wrongly'} />
             </Field>
           </>
         )}
 
         {/* ── common ── */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Field label="Date" hint={def.money ? (settings?.lockedUntil ? `Books are locked up to ${settings.lockedUntil}` : 'Accounting date of the entries') : null}>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field label={def.money ? 'Accounting date' : 'Date'} hint={def.money && settings?.lockedUntil ? `Books are locked up to ${settings.lockedUntil}` : null}>
             <DatePicker value={date} onChange={v => setDate(v || todayKey())} clearable={false} />
           </Field>
         </div>
         <Field label={notesLabel} required={action === 'note'}>
-          <textarea rows={action === 'note' ? 4 : 2} className={inputCls} value={notes} onChange={e => setNotes(e.target.value)} />
+          <Textarea rows={action === 'note' ? 4 : 2} value={notes} onChange={e => setNotes(e.target.value)} />
         </Field>
         {action !== 'reactivate' && (
           <AttachmentsField value={attachments} onChange={setAttachments} label={action === 'report_damage' ? 'Photos & documents' : 'Attachments'} />
@@ -771,12 +759,11 @@ export default function AssetActionModal({ open, onOpenChange, action, asset, se
         {error && <Notice tone="danger">{error}</Notice>}
       </div>
 
-      <ModalFooter className="-mx-4 sm:-mx-6 -mb-4 mt-5 sticky bottom-0 z-10">
-        <button type="button" className={btnSecondary} onClick={() => onOpenChange(false)} disabled={saving}>Cancel</button>
-        <button type="button" className={danger ? btnDanger : btnPrimary} onClick={submit} disabled={saving}>
-          {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+      <ModalFooter className="sticky bottom-0 z-10">
+        <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
+        <Button variant={danger ? 'destructive' : 'default'} onClick={submit} loading={saving}>
           {action === 'return' ? returnActionLabel(asset) : def.verb}
-        </button>
+        </Button>
       </ModalFooter>
     </Modal>
   )

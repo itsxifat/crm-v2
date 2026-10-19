@@ -4,11 +4,11 @@ import { Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { STEPS } from '../_lib/meta'
 
-/** Horizontal step indicator; scrolls sideways on narrow screens. */
+/** Minimal step indicator (numbered dots joined by a line); scrolls sideways on narrow screens. */
 export default function Stepper({ step, done = {}, onStep }) {
   return (
-    <nav aria-label="Opening balance steps" className="bg-white border border-gray-100 rounded-xl p-2 overflow-x-auto">
-      <ol className="flex items-center gap-1 min-w-max">
+    <nav aria-label="Opening balance steps" className="overflow-x-auto scrollbar-none">
+      <ol className="flex min-w-max items-center">
         {STEPS.map((s, i) => {
           const active = s.key === step
           const complete = !!done[s.key]
@@ -18,23 +18,27 @@ export default function Stepper({ step, done = {}, onStep }) {
                 type="button"
                 onClick={() => onStep(s.key)}
                 aria-current={active ? 'step' : undefined}
-                className={cn(
-                  'flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors',
-                  active ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-50',
-                )}
+                className="group flex items-center gap-2 rounded-md py-1 pr-1 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
               >
                 <span className={cn(
-                  'w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold shrink-0',
-                  active ? 'bg-white text-gray-900' : complete ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500',
+                  'flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-medium tabular-nums transition-colors',
+                  active
+                    ? 'bg-gray-900 text-white'
+                    : complete
+                      ? 'bg-gray-100 text-gray-900'
+                      : 'border border-gray-200 bg-white text-gray-500 group-hover:border-gray-300',
                 )}>
-                  {complete && !active ? <Check className="w-3.5 h-3.5" /> : s.key}
+                  {complete && !active ? <Check className="size-3.5" /> : s.key}
                 </span>
-                <span className="font-medium whitespace-nowrap">
+                <span className={cn(
+                  'whitespace-nowrap font-medium transition-colors',
+                  active ? 'text-gray-900' : 'text-muted-foreground group-hover:text-gray-900',
+                )}>
                   <span className="hidden sm:inline">{s.label}</span>
                   <span className="sm:hidden">{s.short}</span>
                 </span>
               </button>
-              {i < STEPS.length - 1 && <span className="w-4 h-px bg-gray-200 mx-0.5" aria-hidden />}
+              {i < STEPS.length - 1 && <span className="mx-2 h-px w-6 bg-gray-200 sm:mx-3 sm:w-10" aria-hidden />}
             </li>
           )
         })}

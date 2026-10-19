@@ -1,16 +1,18 @@
 'use client'
 
-import { AlertTriangle, CheckCircle2, Info, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ChevronDown, Info, XCircle } from 'lucide-react'
 import TkAmt from '@/components/ui/TkAmt'
+import { buttonVariants } from '@/components/ui/Button'
+import { inputClass } from '@/components/ui/Input'
 import { formatMoney } from '@/lib/currencies'
 import { cn } from '@/lib/utils'
 
-export const inputCls = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 disabled:bg-gray-50 disabled:text-gray-500'
-export const labelCls = 'block text-xs font-medium text-gray-600 mb-1'
-export const btnPrimary = 'inline-flex items-center justify-center gap-2 bg-gray-900 text-white hover:bg-gray-800 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
-export const btnGhost = 'inline-flex items-center justify-center gap-2 border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
-export const btnDanger = 'inline-flex items-center justify-center gap-2 bg-red-600 text-white hover:bg-red-700 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
-export const cardCls = 'bg-white border border-gray-100 rounded-xl'
+export const inputCls = inputClass
+export const labelCls = 'mb-2 block text-sm font-medium leading-none text-gray-900'
+export const btnPrimary = buttonVariants()
+export const btnGhost = buttonVariants({ variant: 'outline' })
+export const btnDanger = buttonVariants({ variant: 'destructive' })
+export const cardCls = 'rounded-xl border border-gray-200/80 bg-white shadow-xs'
 
 /**
  * fetch wrapper: JSON in/out; throws Error(json.error) with .status / .details on failure.
@@ -46,41 +48,57 @@ export function Money({ value, currency = 'BDT', className, decimals = 2 }) {
 }
 
 const TONES = {
-  info:    { box: 'bg-blue-50 border-blue-100 text-blue-900',     icon: Info,          iconCls: 'text-blue-500' },
-  warning: { box: 'bg-amber-50 border-amber-100 text-amber-900',  icon: AlertTriangle, iconCls: 'text-amber-500' },
-  error:   { box: 'bg-red-50 border-red-100 text-red-900',        icon: XCircle,       iconCls: 'text-red-500' },
-  success: { box: 'bg-emerald-50 border-emerald-100 text-emerald-900', icon: CheckCircle2, iconCls: 'text-emerald-500' },
-  neutral: { box: 'bg-gray-50 border-gray-100 text-gray-700',     icon: Info,          iconCls: 'text-gray-400' },
+  info:    { box: 'border-blue-200 bg-blue-50 text-blue-800',          icon: Info,          iconCls: 'text-blue-600' },
+  warning: { box: 'border-amber-200 bg-amber-50 text-amber-800',       icon: AlertTriangle, iconCls: 'text-amber-600' },
+  error:   { box: 'border-red-200 bg-red-50 text-red-800',             icon: XCircle,       iconCls: 'text-red-600' },
+  success: { box: 'border-emerald-200 bg-emerald-50 text-emerald-800', icon: CheckCircle2,  iconCls: 'text-emerald-600' },
+  neutral: { box: 'border-gray-200/80 bg-gray-50 text-gray-700',       icon: Info,          iconCls: 'text-gray-500' },
 }
 
 export function Callout({ tone = 'info', title, children, className, icon }) {
   const t = TONES[tone] ?? TONES.info
   const Icon = icon ?? t.icon
   return (
-    <div className={cn('flex gap-3 rounded-lg border px-3 py-2.5 text-sm', t.box, className)}>
-      <Icon className={cn('w-4 h-4 mt-0.5 shrink-0', t.iconCls)} />
+    <div className={cn('flex gap-2.5 rounded-lg border px-3 py-2.5 text-sm', t.box, className)}>
+      <Icon className={cn('mt-0.5 size-4 shrink-0', t.iconCls)} />
       <div className="min-w-0">
         {title && <p className="font-medium">{title}</p>}
-        {children && <div className={cn(title && 'mt-0.5', 'text-[13px] leading-relaxed opacity-90')}>{children}</div>}
+        {children && <div className={cn(title && 'mt-0.5', 'text-[13px] leading-relaxed')}>{children}</div>}
       </div>
     </div>
   )
 }
 
-/** "What to enter / where to find it" box used on every step. */
-export function Guidance({ what, where, children }) {
+/** "What to enter / where to find it" guidance, collapsed by default (`collapsible={false}` for a plain box). */
+export function Guidance({ what, where, children, collapsible = true }) {
+  if (!collapsible) {
+    return (
+      <div className="space-y-1 rounded-lg bg-gray-50 px-3 py-2.5 text-[13px] leading-relaxed text-gray-600">
+        {what && <p>{what}</p>}
+        {where && <p><span className="font-medium text-gray-800">Where to find it: </span>{where}</p>}
+        {children}
+      </div>
+    )
+  }
   return (
-    <div className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2.5 text-[13px] leading-relaxed text-gray-600 space-y-1">
-      {what && <p><span className="font-medium text-gray-800">What to enter: </span>{what}</p>}
-      {where && <p><span className="font-medium text-gray-800">Where to find it: </span>{where}</p>}
-      {children}
-    </div>
+    <details className="group rounded-lg bg-gray-50 px-3 py-2 text-[13px] leading-relaxed text-gray-600">
+      <summary className="flex cursor-pointer list-none items-center gap-1.5 font-medium text-gray-700 hover:text-gray-900 [&::-webkit-details-marker]:hidden">
+        <Info className="size-3.5 text-gray-400" />
+        What to enter
+        <ChevronDown className="size-3.5 text-gray-400 transition-transform group-open:rotate-180" />
+      </summary>
+      <div className="mt-2 space-y-1">
+        {what && <p>{what}</p>}
+        {where && <p><span className="font-medium text-gray-800">Where to find it: </span>{where}</p>}
+        {children}
+      </div>
+    </details>
   )
 }
 
 export function FieldError({ message }) {
   if (!message) return null
-  return <p className="mt-1 text-xs text-red-600">{message}</p>
+  return <p className="mt-1.5 text-xs text-red-600">{message}</p>
 }
 
 /** Parse a money input string; returns null for blank, NaN for junk. */

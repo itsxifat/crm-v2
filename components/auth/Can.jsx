@@ -3,8 +3,10 @@
 import { useSession } from 'next-auth/react'
 import { usePathname } from 'next/navigation'
 import { canDo, canDoAny, getRoutePermission } from '@/lib/rbac'
-import { ShieldAlert } from 'lucide-react'
+import { ShieldAlert, ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
+import { cn } from '@/lib/utils'
+import { buttonVariants } from '@/components/ui/Button'
 
 /**
  * Client-side permission helpers.
@@ -63,19 +65,16 @@ export function Can({ perm, any, children, fallback = null }) {
 
 function AccessDenied() {
   return (
-    <div className="flex flex-col items-center justify-center py-24 text-center">
-      <div className="w-14 h-14 rounded-2xl bg-red-50 flex items-center justify-center mb-4">
-        <ShieldAlert className="w-7 h-7 text-red-500" />
+    <div className="flex flex-col items-center justify-center px-4 py-24 text-center">
+      <div className="mb-4 flex size-11 items-center justify-center rounded-xl border border-gray-200/80 bg-white shadow-xs">
+        <ShieldAlert className="size-5 text-red-600" />
       </div>
-      <h1 className="text-lg font-semibold text-gray-900">Access denied</h1>
-      <p className="text-sm text-gray-500 mt-1 max-w-sm">
-        You don&apos;t have permission to view this page. If you think this is a
-        mistake, contact your administrator.
+      <h1 className="text-base font-semibold text-gray-900">Access denied</h1>
+      <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+        You don&apos;t have permission to view this page.
       </p>
-      <Link
-        href="/admin"
-        className="mt-5 px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-700 transition-colors"
-      >
+      <Link href="/admin" className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'mt-5')}>
+        <ArrowLeft />
         Back to dashboard
       </Link>
     </div>

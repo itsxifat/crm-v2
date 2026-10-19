@@ -14,6 +14,9 @@ import DatePicker from '@/components/ui/DatePicker'
 import StatsCard from '@/components/ui/StatsCard'
 import ActionMenu from '@/components/ui/ActionMenu'
 import EmptyState from '@/components/ui/EmptyState'
+import Button from '@/components/ui/Button'
+import { Card } from '@/components/ui/Card'
+import PageHeader from '@/components/ui/PageHeader'
 import { PageLoader } from '@/components/ui/LoadingSpinner'
 import { Can, usePermission } from '@/components/auth/Can'
 import { formatDate } from '@/lib/utils'
@@ -157,7 +160,7 @@ function PurchasesPage() {
       key: 'billNo', label: 'Bill', sortable: true,
       render: (b) => (
         <div>
-          <Link href={`/admin/inventory/purchases/${b.id}`} className="font-medium text-gray-900 hover:underline" onClick={e => e.stopPropagation()}>
+          <Link href={`/admin/inventory/purchases/${b.id}`} className="font-medium text-gray-900 hover:underline underline-offset-4" onClick={e => e.stopPropagation()}>
             {b.billNo ?? 'Draft'}
           </Link>
           <p className="text-xs text-gray-400">{b.billDay ? formatDate(b.billDay) : '—'}</p>
@@ -176,13 +179,16 @@ function PurchasesPage() {
       ),
     },
     { key: 'lines', label: 'Items', render: (b) => <span className="text-gray-600 whitespace-nowrap">{lineSummary(b.lines)}</span> },
-    { key: 'total', label: 'Total', sortable: true, render: (b) => <span className="whitespace-nowrap">{tk(b.total, 0)}</span> },
     {
-      key: 'netPayable', label: 'Net payable', sortable: true,
+      key: 'total', label: 'Total', sortable: true, className: '[&>div]:justify-end', cellClassName: 'text-right tabular-nums',
+      render: (b) => <span className="whitespace-nowrap">{tk(b.total, 0)}</span>,
+    },
+    {
+      key: 'netPayable', label: 'Net payable', sortable: true, className: '[&>div]:justify-end', cellClassName: 'text-right tabular-nums',
       render: (b) => (
         <div className="whitespace-nowrap">
           <span className="font-medium text-gray-900">{tk(b.netPayable, 0)}</span>
-          {(Number(b.tds?.amount) || 0) + (Number(b.vds?.amount) || 0) > 0 && <p className="text-[11px] text-gray-400">after VDS/TDS</p>}
+          {(Number(b.tds?.amount) || 0) + (Number(b.vds?.amount) || 0) > 0 && <p className="text-xs text-gray-400">after VDS/TDS</p>}
         </div>
       ),
     },
@@ -202,20 +208,17 @@ function PurchasesPage() {
   ]
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-gray-900">Purchases</h1>
-          <p className="text-sm text-gray-500">Supplier bills — receive assets and stock, then pay or send to Accounts.</p>
-        </div>
-        <Can perm="inventory.purchase">
-          <Link href={newHref} className="inline-flex items-center gap-1.5 bg-gray-900 text-white hover:bg-gray-800 rounded-lg px-4 py-2 text-sm font-medium">
-            <Plus className="w-4 h-4" /> New purchase bill
-          </Link>
-        </Can>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Purchases"
+        actions={(
+          <Can perm="inventory.purchase">
+            <Button href={newHref}><Plus /> New purchase bill</Button>
+          </Can>
+        )}
+      />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatsCard title="Drafts" icon={FileClock} color="yellow"
           value={<StatValue count={summary?.drafts} amount={summary?.draftAmount} />} />
         <StatsCard title="With Accounts" icon={Send} color="blue"
@@ -226,8 +229,8 @@ function PurchasesPage() {
           value={<StatValue count={summary?.monthCount} amount={summary?.monthAmount} amountFirst />} />
       </div>
 
-      <div className="bg-white border border-gray-100 rounded-xl p-4 flex flex-wrap items-center gap-3">
-        <SearchInput value={search} onChange={setSearch} placeholder="Bill no., supplier, invoice, item…" className="w-full sm:w-64" />
+      <div className="flex flex-wrap items-center gap-2">
+        <SearchInput value={search} onChange={setSearch} placeholder="Search bills…" className="w-full sm:w-64" />
         <FilterSelect value={status} onChange={v => setStatus(v ?? '')} options={STATUS_OPTIONS} placeholder="All statuses" />
         <FilterSelect value={paymentStatus} onChange={v => setPaymentStatus(v ?? '')} options={PAYMENT_OPTIONS} placeholder="All payments" />
         <div className="flex items-center gap-2">
@@ -236,31 +239,30 @@ function PurchasesPage() {
           <DatePicker value={endDate} onChange={setEndDate} placeholder="To" size="sm" />
         </div>
         {vendorId && (
-          <span className="inline-flex items-center gap-1.5 rounded-lg bg-gray-100 px-2.5 py-1 text-xs text-gray-700">
-            Vendor: {vendorName ?? '…'}
-            <button type="button" onClick={clearVendor} className="text-gray-400 hover:text-gray-700" aria-label="Clear vendor filter"><X className="w-3.5 h-3.5" /></button>
+          <span className="inline-flex h-8 items-center gap-1.5 rounded-md border border-gray-200/80 bg-white pl-2.5 pr-1 text-[13px] text-gray-700 shadow-xs">
+            Vendor: <span className="font-medium text-gray-900">{vendorName ?? '…'}</span>
+            <Button variant="ghost" size="icon-xs" onClick={clearVendor} aria-label="Clear vendor filter" className="size-6 text-gray-400">
+              <X className="size-3.5" />
+            </Button>
           </span>
         )}
         {hasFilters && (
-          <button type="button" onClick={resetFilters} className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900">
-            <RotateCcw className="w-3.5 h-3.5" /> Reset
-          </button>
+          <Button variant="ghost" size="sm" onClick={resetFilters}>
+            <RotateCcw /> Reset
+          </Button>
         )}
       </div>
 
-      <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+      <Card className="overflow-hidden">
         {error ? (
-          <EmptyState icon={AlertCircle} title="Could not load purchase bills" description={error}
-            action={<button type="button" onClick={load} className="text-sm font-medium text-gray-900 underline">Try again</button>} />
+          <EmptyState icon={AlertCircle} title="Couldn't load purchase bills" description={error}
+            action={<Button variant="outline" size="sm" onClick={load}>Try again</Button>} />
         ) : !loading && rows.length === 0 && !hasFilters ? (
           <EmptyState
             icon={ShoppingCart}
             title={vendorId ? 'No bills from this vendor yet' : 'No purchase bills yet'}
-            description="Record a supplier bill to tag new equipment, stock up consumables and pay the supplier with the right VAT and withholding."
             action={can('inventory.purchase') ? (
-              <Link href={newHref} className="inline-flex items-center gap-1.5 bg-gray-900 text-white hover:bg-gray-800 rounded-lg px-4 py-2 text-sm font-medium">
-                <Plus className="w-4 h-4" /> New purchase bill
-              </Link>
+              <Button href={newHref} variant="outline" size="sm"><Plus /> New purchase bill</Button>
             ) : null}
           />
         ) : (
@@ -269,19 +271,19 @@ function PurchasesPage() {
               columns={columns}
               data={rows}
               loading={loading}
-              emptyTitle="No bills match these filters"
+              emptyTitle="No results"
               emptyDescription="Try a different search or clear the filters."
               emptyIcon={ShoppingCart}
               onRowClick={(b) => router.push(`/admin/inventory/purchases/${b.id}`)}
             />
             {meta && meta.pages > 1 && (
-              <div className="px-4 py-3 border-t border-gray-100">
+              <div className="border-t border-gray-100 px-4 py-3">
                 <Pagination meta={meta} onPageChange={(p) => { setPage(p); if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' }) }} />
               </div>
             )}
           </>
         )}
-      </div>
+      </Card>
     </div>
   )
 }

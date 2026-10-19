@@ -3,24 +3,26 @@
 import Link from 'next/link'
 import { ExternalLink } from 'lucide-react'
 import Modal, { ModalFooter } from '@/components/ui/Modal'
+import Button from '@/components/ui/Button'
+import { Table, TableHeader, TableBody, TableFooter, TableRow, TableHead, TableCell } from '@/components/ui/Table'
 import { INPUT_NON_CREDIT_REASONS } from '@/lib/tax/catalog'
 import { noteLabel } from '@/app/api/tax/vat-return/_lib/layout'
-import { fmtAmount, fmtDay, fmtPeriod, round2, toNum, btnGhost } from '../_lib/format'
+import { fmtAmount, fmtDay, fmtPeriod, round2, toNum } from '../_lib/format'
 
 const CERT_LABELS = { NOT_REQUIRED: 'Not required', PENDING: 'Pending', RECEIVED: 'Received', ISSUED: 'Issued' }
 const SUM_KEYS = ['base', 'sd', 'amount']
 
 const party = (l) => (
   <div className="min-w-[140px]">
-    <p className="text-gray-800">{l.partyName || '—'}</p>
-    {l.partyBin && <p className="text-[11px] text-gray-500 font-mono">BIN {l.partyBin}</p>}
+    <p className="text-gray-900">{l.partyName || '—'}</p>
+    {l.partyBin && <p className="font-mono text-xs text-muted-foreground">BIN {l.partyBin}</p>}
   </div>
 )
 
 const doc = (l) => (
   <div className="whitespace-nowrap">
-    <p className="font-mono text-xs text-gray-800">{l.documentNo || l.entryNo || '—'}</p>
-    {l.entryNo && l.documentNo && <p className="text-[11px] text-gray-400 font-mono">{l.entryNo}</p>}
+    <p className="font-mono text-xs text-gray-900">{l.documentNo || l.entryNo || '—'}</p>
+    {l.entryNo && l.documentNo && <p className="font-mono text-xs text-muted-foreground">{l.entryNo}</p>}
   </div>
 )
 
@@ -62,7 +64,7 @@ function columnsFor(note) {
         key: 'cert', label: 'Mushak-6.6', render: l => (
           <div className="whitespace-nowrap">
             <p>{l.certificate?.number || CERT_LABELS[l.certificate?.status] || '—'}</p>
-            {l.certificate?.date && <p className="text-[11px] text-gray-500">{fmtDay(l.certificate.date)}</p>}
+            {l.certificate?.date && <p className="text-xs text-muted-foreground">{fmtDay(l.certificate.date)}</p>}
           </div>
         ),
       },
@@ -129,61 +131,61 @@ export default function NoteDrilldown({ note, result, onClose }) {
       size="full"
     >
       {rows.length === 0 ? (
-        <p className="text-sm text-gray-500 py-6 text-center">No entries behind this note.</p>
+        <p className="py-8 text-center text-sm text-muted-foreground">No entries behind this note.</p>
       ) : (
-        <div className="overflow-x-auto -mx-4 sm:mx-0">
-          <table className="w-full text-sm min-w-[720px]">
-            <thead>
-              <tr className="text-xs text-gray-500 border-b border-gray-100">
+        <div className="-mx-4 overflow-hidden border-y border-gray-100 sm:mx-0 sm:rounded-lg sm:border">
+          <Table className="min-w-[720px]">
+            <TableHeader>
+              <TableRow>
                 {cols.map(c => (
-                  <th key={c.key} className={`px-3 py-2 font-medium ${c.align === 'right' ? 'text-right' : 'text-left'}`}>{c.label}</th>
+                  <TableHead key={c.key} className={c.align === 'right' ? 'text-right' : undefined}>{c.label}</TableHead>
                 ))}
-                {anyLink && <th className="w-8" />}
-              </tr>
-            </thead>
-            <tbody>
+                {anyLink && <TableHead className="w-10" />}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {rows.map((l, i) => {
                 const href = hrefFor(l)
                 return (
-                  <tr key={l.id ?? `${l.challanNo}-${i}`} className="border-b border-gray-50 align-top">
+                  <TableRow key={l.id ?? `${l.challanNo}-${i}`} className="align-top">
                     {cols.map(c => (
-                      <td key={c.key} className={`px-3 py-2 ${c.align === 'right' ? 'text-right tabular-nums whitespace-nowrap' : 'text-gray-700'}`}>
+                      <TableCell key={c.key} className={c.align === 'right' ? 'whitespace-nowrap text-right tabular-nums text-gray-900' : undefined}>
                         {c.render(l)}
-                      </td>
+                      </TableCell>
                     ))}
                     {anyLink && (
-                      <td className="px-2 py-2">
+                      <TableCell className="px-2">
                         {href && (
-                          <Link href={href} className="text-gray-400 hover:text-gray-700" aria-label="Open source document">
-                            <ExternalLink className="w-4 h-4" />
+                          <Link href={href} className="inline-flex text-gray-400 hover:text-gray-900" aria-label="Open source document">
+                            <ExternalLink className="size-4" />
                           </Link>
                         )}
-                      </td>
+                      </TableCell>
                     )}
-                  </tr>
+                  </TableRow>
                 )
               })}
-            </tbody>
-            <tfoot>
-              <tr className="bg-gray-50 font-semibold">
+            </TableBody>
+            <TableFooter>
+              <tr className="font-semibold text-gray-900">
                 {cols.map((c, i) => (
-                  <td key={c.key} className={`px-3 py-2 ${c.align === 'right' ? 'text-right tabular-nums whitespace-nowrap' : ''}`}>
+                  <td key={c.key} className={`px-4 py-2.5 ${c.align === 'right' ? 'whitespace-nowrap text-right tabular-nums' : ''}`}>
                     {SUM_KEYS.includes(c.key) ? fmtAmount(totals[c.key]) : (i === 0 ? 'Total' : '')}
                   </td>
                 ))}
                 {anyLink && <td />}
               </tr>
-            </tfoot>
-          </table>
+            </TableFooter>
+          </Table>
         </div>
       )}
-      <p className="text-xs text-gray-400 mt-3">
-        Amounts are in Taka. To correct an entry, open the tax ledger
-        {' '}<Link href="/admin/tax/entries" className="text-blue-600 hover:underline">Tax ledger</Link>
-        {' '}or the source invoice / bill.
+      <p className="mt-3 text-xs text-muted-foreground">
+        Amounts in Taka. To correct an entry, use the
+        {' '}<Link href="/admin/tax/entries" className="font-medium text-gray-900 underline-offset-4 hover:underline">tax ledger</Link>
+        {' '}or the source document.
       </p>
-      <ModalFooter className="-mx-4 sm:-mx-6 -mb-4 mt-4">
-        <button type="button" onClick={onClose} className={btnGhost}>Close</button>
+      <ModalFooter>
+        <Button variant="outline" onClick={onClose}>Close</Button>
       </ModalFooter>
     </Modal>
   )

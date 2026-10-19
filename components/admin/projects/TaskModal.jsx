@@ -4,9 +4,11 @@ import { useState } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { X, Loader2, CheckSquare } from 'lucide-react'
+import { X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import Select from '@/components/ui/Select'
+import Button from '@/components/ui/Button'
+import { Input, Textarea, Field } from '@/components/ui/Input'
 import PeoplePicker from '@/components/ui/PeoplePicker'
 
 const schema = z.object({
@@ -78,7 +80,7 @@ export default function TaskModal({ task, projectId, defaultStatus, onClose, onS
       const json = await res.json()
       if (!res.ok) { toast.error(json.error ?? 'Failed to save task'); return }
 
-      toast.success(isEdit ? 'Task updated!' : 'Task created!')
+      toast.success(isEdit ? 'Task updated' : 'Task created')
       onSave?.(json.data)
       onClose()
     } catch {
@@ -87,59 +89,40 @@ export default function TaskModal({ task, projectId, defaultStatus, onClose, onS
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-[2px]">
+      <div className="flex max-h-[90vh] w-full max-w-xl flex-col rounded-2xl border border-gray-200/80 bg-white shadow-2xl">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-blue-50 rounded-lg flex items-center justify-center">
-              <CheckSquare className="w-4 h-4 text-blue-600" />
-            </div>
-            <div>
-              <h2 className="font-semibold text-gray-900">{isEdit ? 'Edit Task' : 'New Task'}</h2>
-              <p className="text-xs text-gray-500">{isEdit ? 'Update task details' : 'Add a task to this project'}</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">
-            <X className="w-4 h-4" />
-          </button>
+        <div className="flex items-start justify-between gap-4 px-6 pb-3 pt-5">
+          <h2 className="text-base font-semibold tracking-tight text-gray-900">{isEdit ? 'Edit task' : 'New task'}</h2>
+          <Button variant="ghost" size="icon-sm" onClick={onClose} className="-mr-1.5 -mt-0.5 text-gray-400" aria-label="Close">
+            <X />
+          </Button>
         </div>
 
         {/* Body */}
-        <form onSubmit={handleSubmit(onSubmit)} className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Title <span className="text-red-500">*</span>
-            </label>
-            <input {...register('title')}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
-              placeholder="Task title" />
-            {errors.title && <p className="text-xs text-red-500 mt-1">{errors.title.message}</p>}
-          </div>
+        <form onSubmit={handleSubmit(onSubmit)} className="flex-1 space-y-4 overflow-y-auto px-6 pb-5 pt-1">
+          <Field label="Title" required error={errors.title?.message}>
+            <Input {...register('title')} placeholder="Task title" invalid={!!errors.title} />
+          </Field>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-            <textarea {...register('description')} rows={3}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary resize-none"
-              placeholder="Task description..." />
-          </div>
+          <Field label="Description">
+            <Textarea {...register('description')} rows={3} placeholder="Description…" className="resize-none" />
+          </Field>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Status">
               <Controller name="status" control={control} render={({ field }) => (
                 <Select value={field.value} onChange={v => field.onChange(v ?? 'TODO')}
                   options={[
-                    { value: 'TODO',        label: 'To Do' },
-                    { value: 'IN_PROGRESS', label: 'In Progress' },
-                    { value: 'IN_REVIEW',   label: 'In Review' },
+                    { value: 'TODO',        label: 'To do' },
+                    { value: 'IN_PROGRESS', label: 'In progress' },
+                    { value: 'IN_REVIEW',   label: 'In review' },
                     { value: 'COMPLETED',   label: 'Completed' },
                     { value: 'CANCELLED',   label: 'Cancelled' },
-                  ]} placeholder="Select status…" />
+                  ]} placeholder="Select…" />
               )} />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
+            </Field>
+            <Field label="Priority">
               <Controller name="priority" control={control} render={({ field }) => (
                 <Select value={field.value} onChange={v => field.onChange(v ?? 'MEDIUM')}
                   options={[
@@ -147,59 +130,47 @@ export default function TaskModal({ task, projectId, defaultStatus, onClose, onS
                     { value: 'MEDIUM', label: 'Medium' },
                     { value: 'HIGH',   label: 'High' },
                     { value: 'URGENT', label: 'Urgent' },
-                  ]} placeholder="Select priority…" />
+                  ]} placeholder="Select…" />
               )} />
-            </div>
+            </Field>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Due Date</label>
-              <input type="date" {...register('dueDate')}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Estimated Hours</label>
-              <input type="number" step="0.5" {...register('estimatedHours')}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
-                placeholder="0" />
-            </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Due date">
+              <Input type="date" {...register('dueDate')} />
+            </Field>
+            <Field label="Estimated hours">
+              <Input type="number" step="0.5" {...register('estimatedHours')} placeholder="0" />
+            </Field>
           </div>
 
           {/* Assignee — employees only */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Assign to employee</label>
-            <PeoplePicker types={['EMPLOYEE']} value={assignee} onChange={setAssignee}
-              placeholder="Search team members…" typeFilter={false} />
-            <p className="text-xs text-gray-400 mt-1">Tasks are for in-house team members. Outsiders are engaged from the project’s Freelancers tab.</p>
-          </div>
+          <Field label="Assignee" hint="In-house team only">
+            <span title="Outsiders are engaged from the project’s Freelancers tab." className="block">
+              <PeoplePicker types={['EMPLOYEE']} value={assignee} onChange={setAssignee}
+                placeholder="Search team members…" typeFilter={false} />
+            </span>
+          </Field>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Tags</label>
-              <input {...register('tags')}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
-                placeholder="tag1, tag2" />
-            </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Tags">
+              <Input {...register('tags')} placeholder="e.g. design, copy" />
+            </Field>
             <div className="flex items-end pb-2">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" {...register('isClientVisible')} className="w-4 h-4 text-primary border-gray-300 rounded" />
-                <span className="text-sm text-gray-700">Visible to client</span>
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-700">
+                <input type="checkbox" {...register('isClientVisible')} className="size-4 rounded border-gray-300" />
+                Visible to client
               </label>
             </div>
           </div>
         </form>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-100">
-          <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-            Cancel
-          </button>
-          <button onClick={handleSubmit(onSubmit)} disabled={isSubmitting}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary rounded-lg hover:bg-primary/90 disabled:opacity-60 transition-colors">
-            {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
-            {isEdit ? 'Save Changes' : 'Create Task'}
-          </button>
+        <div className="flex flex-col-reverse gap-2 rounded-b-2xl border-t border-gray-100 bg-gray-50/60 px-6 py-3.5 sm:flex-row sm:justify-end">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleSubmit(onSubmit)} loading={isSubmitting}>
+            {isEdit ? 'Save changes' : 'Create task'}
+          </Button>
         </div>
       </div>
     </div>

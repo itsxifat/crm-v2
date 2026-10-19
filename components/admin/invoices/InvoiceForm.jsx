@@ -3,20 +3,24 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Plus, Trash2, Loader2, ArrowLeft, Layers, FileText, Receipt, Info, AlertTriangle } from 'lucide-react'
+import { Plus, Trash2, Loader2, ArrowLeft, Layers, Info, AlertTriangle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import ClientSearch from '@/components/ui/ClientSearch'
 import Select from '@/components/ui/Select'
 import DatePicker from '@/components/ui/DatePicker'
+import Button from '@/components/ui/Button'
+import PageHeader from '@/components/ui/PageHeader'
+import { Card, CardHeader, CardTitle, CardAction, CardContent } from '@/components/ui/Card'
+import { Field, Label, inputClass, textareaClass, selectClass } from '@/components/ui/Input'
 import TaxCodeSelect from '@/components/tax/TaxCodeSelect'
 import { dhakaDayKey } from '@/lib/dhakaTime'
 import { VAT_TREATMENTS, VAT_RATE_OPTIONS } from '@/lib/tax/catalog'
 import { computeInvoiceTotals, previewInvoiceTotals, uniformVatRate } from '@/lib/invoiceTotals'
+import { cn } from '@/lib/utils'
 
-const ic = 'w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
-const icSm = 'w-full border border-gray-200 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
-const lc = 'block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5'
-const hint = 'text-xs text-gray-400 mt-1'
+const ic = inputClass
+const icSm = cn(inputClass, 'px-2')
+const th = 'px-1 pb-1 text-left text-xs font-medium text-muted-foreground'
 
 const TERMS_TEMPLATES = [
   'Payment due within 7 days of invoice date.',
@@ -34,6 +38,15 @@ const TREATMENT_HINTS = {
   ZERO_RATED: 'Export of services paid in foreign currency through a bank — VAT at 0%.',
   EXEMPT:     'Exempt supply — no VAT is charged.',
   NONE:       'Not a VAT invoice — no VAT lines appear on the document.',
+}
+
+// One-line versions shown under the field (full text above is the tooltip).
+const TREATMENT_SHORT = {
+  STANDARD:   'VAT on value after discount (Mushak-6.3)',
+  REDUCED:    'e.g. ITES 5% — no input tax credit',
+  ZERO_RATED: 'Export of services paid in FX via bank',
+  EXEMPT:     'No VAT is charged',
+  NONE:       'No VAT lines on the document',
 }
 
 // Treatments whose lines carry a VAT rate / may carry supplementary duty.
@@ -355,457 +368,451 @@ export default function InvoiceForm({ invoice, defaultProjectId, defaultClientId
   const visibleIssues = preview.issues.filter(m => m !== 'At least one item required')
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6 pb-10">
+    <div className="mx-auto max-w-4xl space-y-6 pb-10">
       {/* Header */}
-      <div className="flex items-center gap-3">
-        <button onClick={() => router.back()} className="p-1.5 rounded-xl text-gray-400 hover:bg-gray-100">
-          <ArrowLeft className="w-4 h-4" />
+      <div>
+        <button type="button" onClick={() => router.back()}
+          className="mb-2 inline-flex items-center gap-1.5 text-[13px] font-medium text-muted-foreground hover:text-gray-900">
+          <ArrowLeft className="size-3.5" /> Back
         </button>
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">{isEdit ? 'Edit Invoice' : 'New Invoice'}</h1>
-          <p className="text-sm text-gray-500">
-            {isEdit ? `Editing ${invoice.invoiceNumber}` : 'Bill a project in as many invoices as you need — they roll up into a combined invoice'}
-          </p>
-        </div>
+        <PageHeader
+          title={isEdit ? 'Edit invoice' : 'New invoice'}
+          description={isEdit ? invoice.invoiceNumber : undefined}
+        />
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Client + Project */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-6 space-y-5">
-          <h2 className="text-sm font-bold text-gray-700 uppercase tracking-wide">Client & Project</h2>
+        <Card>
+          <CardHeader><CardTitle>Client & project</CardTitle></CardHeader>
+          <CardContent className="space-y-5">
+            <Field label="Client" required>
+              <ClientSearch
+                value={clientId}
+                onChange={id => { setClientId(id ?? ''); setProjectId(''); setItems([emptyItem()]) }}
+              />
+            </Field>
 
-          <div>
-            <label className={lc}>Client *</label>
-            <ClientSearch
-              value={clientId}
-              onChange={id => { setClientId(id ?? ''); setProjectId(''); setItems([emptyItem()]) }}
-            />
-          </div>
+            {clientId && (
+              <div>
+                <Label>Project</Label>
+                {clientProjects.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No projects for this client</p>
+                ) : (
+                  <Select value={projectId}
+                    onChange={v => setProjectId(v ?? '')}
+                    options={clientProjects.map(p => ({
+                      value: p.id ?? p._id,
+                      label: `${p.projectCode} — ${p.name}${p.budget > 0 ? ` (৳${(p.budget || 0).toLocaleString()})` : ''}`,
+                    }))}
+                    placeholder="No project (standalone)"
+                    disabled={isEdit}
+                  />
+                )}
+                {projectId && siblingsLoading && (
+                  <p className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Loader2 className="size-3 animate-spin" /> Checking existing invoices…
+                  </p>
+                )}
 
-          {clientId && (
-            <div>
-              <label className={lc}>Project</label>
-              {clientProjects.length === 0 ? (
-                <p className="text-xs text-gray-400">No projects found for this client.</p>
-              ) : (
-                <Select value={projectId}
-                  onChange={v => setProjectId(v ?? '')}
-                  options={clientProjects.map(p => ({
-                    value: p.id ?? p._id,
-                    label: `${p.projectCode} — ${p.name}${p.budget > 0 ? ` (৳${(p.budget || 0).toLocaleString()})` : ''}`,
-                  }))}
-                  placeholder="— No project (standalone invoice) —"
-                  disabled={isEdit}
-                />
-              )}
-              {projectId && siblingsLoading && (
-                <p className="text-xs text-gray-400 mt-1.5 flex items-center gap-1">
-                  <Loader2 className="w-3 h-3 animate-spin" /> Checking existing invoices…
-                </p>
-              )}
-
-              {/* What has already been billed on this project */}
-              {projectId && !siblingsLoading && (siblings?.length ?? 0) > 0 && (
-                <div className="mt-3 rounded-xl border border-gray-100 bg-gray-50/70 p-3.5">
-                  <div className="flex items-center justify-between gap-2 mb-2">
-                    <p className="text-xs font-semibold text-gray-600 flex items-center gap-1.5">
-                      <FileText className="w-3.5 h-3.5 text-gray-400" />
-                      {siblings.length} existing invoice{siblings.length === 1 ? '' : 's'} on this project
-                    </p>
-                    {siblings[0]?.combined && (
-                      <Link href={`/admin/invoices/combined/${siblings[0].combined.id}`} target="_blank"
-                        className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700">
-                        <Layers className="w-3 h-3" /> {siblings[0].combined.combinedNumber}
-                      </Link>
-                    )}
-                  </div>
-                  <ul className="space-y-1 mb-2.5">
-                    {siblings.map(i => (
-                      <li key={i.id} className="flex items-center justify-between gap-3 text-xs">
-                        <Link href={`/admin/invoices/${i.id}`} target="_blank"
-                          className="font-mono text-gray-600 hover:text-blue-600 truncate">
-                          {i.invoiceNumber}
-                          <span className="ml-2 text-gray-400 font-sans">{i.status.replace(/_/g, ' ')}</span>
+                {/* What has already been billed on this project */}
+                {projectId && !siblingsLoading && (siblings?.length ?? 0) > 0 && (
+                  <div className="mt-3 rounded-lg bg-gray-50 p-3.5">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <p className="text-[13px] font-medium text-gray-900">
+                        {siblings.length} existing invoice{siblings.length === 1 ? '' : 's'}
+                      </p>
+                      {siblings[0]?.combined && (
+                        <Link href={`/admin/invoices/combined/${siblings[0].combined.id}`} target="_blank"
+                          className="inline-flex items-center gap-1 text-xs font-medium text-gray-900 underline-offset-4 hover:underline">
+                          <Layers className="size-3.5 text-gray-500" /> {siblings[0].combined.combinedNumber}
                         </Link>
-                        <span className="text-gray-700 tabular-nums shrink-0">
-                          ৳ {money(i.total)}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                  <div className="border-t border-gray-200 pt-2 space-y-1">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-gray-500">Already billed{siblingsHaveVat ? ' (excl. VAT)' : ''}</span>
-                      <span className="font-semibold text-gray-800 tabular-nums">
-                        ৳ {money(alreadyBilled)}
-                      </span>
+                      )}
                     </div>
-                    {projectNet > 0 && (
+                    <ul className="mb-2.5 space-y-1">
+                      {siblings.map(i => (
+                        <li key={i.id} className="flex items-center justify-between gap-3 text-xs">
+                          <Link href={`/admin/invoices/${i.id}`} target="_blank"
+                            className="truncate font-mono text-gray-700 underline-offset-4 hover:text-gray-900 hover:underline">
+                            {i.invoiceNumber}
+                            <span className="ml-2 font-sans text-muted-foreground">{i.status.replace(/_/g, ' ')}</span>
+                          </Link>
+                          <span className="shrink-0 tabular-nums text-gray-700">
+                            ৳ {money(i.total)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                    <div className="space-y-1 border-t border-gray-200 pt-2">
                       <div className="flex items-center justify-between text-xs">
-                        <span className="text-gray-500">Remaining to bill</span>
-                        <span className={`font-semibold tabular-nums ${remainingToBill > 0 ? 'text-amber-600' : 'text-green-600'}`}>
-                          ৳ {money(remainingToBill)}
+                        <span className="text-muted-foreground">Already billed{siblingsHaveVat ? ' (excl. VAT)' : ''}</span>
+                        <span className="font-semibold tabular-nums text-gray-900">
+                          ৳ {money(alreadyBilled)}
                         </span>
                       </div>
+                      {projectNet > 0 && (
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-muted-foreground">Remaining to bill</span>
+                          <span className={cn('font-semibold tabular-nums', remainingToBill > 0 ? 'text-amber-600' : 'text-emerald-600')}>
+                            ৳ {money(remainingToBill)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                    {!isEdit && (
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        Rolls into this project&rsquo;s combined invoice.
+                      </p>
                     )}
                   </div>
-                  {!isEdit && (
-                    <p className="text-xs text-gray-400 mt-2">
-                      Adding a second invoice creates (or updates) this project&rsquo;s combined invoice automatically.
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Dates */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-6">
-          <h2 className="text-sm font-bold text-gray-700 uppercase tracking-wide mb-4">Dates</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className={lc}>Issue Date *</label>
+        <Card>
+          <CardHeader><CardTitle>Dates</CardTitle></CardHeader>
+          <CardContent className="grid gap-4 sm:grid-cols-2">
+            <Field label="Issue date" required>
               <DatePicker value={issueDate || null} onChange={v => setIssueDate(v ?? '')} />
-            </div>
-            <div>
-              <label className={lc}>Due Date</label>
+            </Field>
+            <Field label="Due date">
               <DatePicker value={dueDate || null} onChange={v => setDueDate(v ?? '')} />
-            </div>
-          </div>
-        </div>
+            </Field>
+          </CardContent>
+        </Card>
 
         {/* VAT */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-6 space-y-4">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h2 className="text-sm font-bold text-gray-700 uppercase tracking-wide flex items-center gap-1.5">
-                <Receipt className="w-4 h-4 text-gray-400" /> VAT
-              </h2>
-              <p className="text-xs text-gray-400 mt-0.5">VAT treatment of this supply — drives the Mushak-6.3 tax invoice and the VAT return.</p>
-            </div>
+        <Card>
+          <CardHeader>
+            <CardTitle>VAT</CardTitle>
             {vatInfoState === 'loading' && !isEdit && (
-              <span className="text-xs text-gray-400 flex items-center gap-1 shrink-0">
-                <Loader2 className="w-3 h-3 animate-spin" /> Loading defaults…
-              </span>
+              <CardAction className="text-xs text-muted-foreground">
+                <Loader2 className="size-3 animate-spin" /> Loading defaults…
+              </CardAction>
             )}
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className={lc}>VAT treatment</label>
-              <Select
-                value={vatTreatment}
-                onChange={changeTreatment}
-                options={VAT_TREATMENTS.map(t => ({
-                  value: t.value,
-                  label: t.label,
-                  disabled: notRegistered && t.value !== 'NONE',
-                }))}
-                placeholder="Company default (applied on save)"
-              />
-              <p className={hint}>
-                {vatTreatment
-                  ? TREATMENT_HINTS[vatTreatment]
-                  : 'The company’s default VAT treatment (Tax & VAT → Tax Settings) is applied when you save.'}
-              </p>
-            </div>
-
-            {ratesOn && (
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <label className={lc}>{perLineVat ? 'Default VAT rate' : 'VAT rate'}</label>
+                <Label>VAT treatment</Label>
                 <Select
-                  value={String(defaultVatRate ?? '')}
-                  onChange={v => { vatTouched.current = true; setDefaultVatRate(v === null ? 0 : Number(v)) }}
-                  options={rateOptions}
-                  placeholder="Rate"
+                  value={vatTreatment}
+                  onChange={changeTreatment}
+                  options={VAT_TREATMENTS.map(t => ({
+                    value: t.value,
+                    label: t.label,
+                    disabled: notRegistered && t.value !== 'NONE',
+                  }))}
+                  placeholder="Company default"
                 />
-                <p className={hint}>
-                  {perLineVat ? 'Used for lines without their own VAT %.' : effectiveTreatment === 'REDUCED' ? 'Applied to every line. Turn on “Different VAT per line” to mix reduced rates.' : 'Applied to every line. For a reduced rate (e.g. ITES 5%) choose the “Reduced rate” treatment.'}
+                <p className="mt-1.5 text-xs text-muted-foreground"
+                  title={vatTreatment ? TREATMENT_HINTS[vatTreatment] : 'The company’s default VAT treatment (Tax & VAT → Tax Settings) is applied when you save.'}>
+                  {vatTreatment ? TREATMENT_SHORT[vatTreatment] : 'Company default applied on save'}
                 </p>
               </div>
-            )}
 
-            {isVat && (
-              <div>
-                <label className={lc}>Service code</label>
-                <TaxCodeSelect
-                  kind="VAT_SERVICE"
-                  value={serviceCode || null}
-                  onChange={changeServiceCode}
-                  placeholder="Select service code (e.g. S099.10)"
-                  className={ic}
-                />
-                <p className={hint}>Picking a code sets its VAT rate.</p>
-              </div>
-            )}
-
-            {isVat && (
-              <div>
-                <label className={lc}>Delivery / service destination</label>
-                <input value={deliveryDestination} onChange={e => setDeliveryDestination(e.target.value)}
-                  maxLength={300} placeholder="Where the service is delivered (optional)" className={ic} />
-                <p className={hint}>Printed on the Mushak-6.3. Leave blank to use the client&rsquo;s address.</p>
-              </div>
-            )}
-          </div>
-
-          {(ratesOn || sdAllowed) && (
-            <div className="flex flex-wrap gap-x-6 gap-y-2 pt-1">
               {ratesOn && (
-                <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
-                  <input type="checkbox" checked={perLineVat} onChange={e => togglePerLineVat(e.target.checked)}
-                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
-                  Different VAT per line
-                </label>
+                <Field
+                  label={perLineVat ? 'Default VAT rate' : 'VAT rate'}
+                  hint={perLineVat ? 'For lines without their own rate' : effectiveTreatment === 'REDUCED' ? 'Applies to every line' : 'For ITES 5%, pick “Reduced rate”'}
+                >
+                  <Select
+                    value={String(defaultVatRate ?? '')}
+                    onChange={v => { vatTouched.current = true; setDefaultVatRate(v === null ? 0 : Number(v)) }}
+                    options={rateOptions}
+                    placeholder="Rate"
+                  />
+                </Field>
               )}
-              {sdAllowed && (
-                <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
-                  <input type="checkbox" checked={showSd} onChange={e => setShowSd(e.target.checked)}
-                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
-                  Supplementary duty (SD)
-                </label>
+
+              {isVat && (
+                <Field label="Service code" hint="Sets the VAT rate">
+                  <TaxCodeSelect
+                    kind="VAT_SERVICE"
+                    value={serviceCode || null}
+                    onChange={changeServiceCode}
+                    placeholder="e.g. S099.10"
+                    className={selectClass}
+                  />
+                </Field>
+              )}
+
+              {isVat && (
+                <Field label="Delivery destination" hint="Blank uses the client’s address">
+                  <input value={deliveryDestination} onChange={e => setDeliveryDestination(e.target.value)}
+                    maxLength={300} placeholder="Optional" className={ic}
+                    title="Printed on the Mushak-6.3" />
+                </Field>
               )}
             </div>
-          )}
 
-          {/* Context hints */}
-          <div className="space-y-2">
-            {notRegistered && (
-              <p className="flex items-start gap-1.5 text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
-                <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                The company is set up as {registrationType === 'TURNOVER' ? 'a turnover-tax enterprise' : 'not VAT registered'}, so invoices cannot carry VAT.
-              </p>
+            {(ratesOn || sdAllowed) && (
+              <div className="flex flex-wrap gap-x-6 gap-y-2">
+                {ratesOn && (
+                  <label className="flex cursor-pointer select-none items-center gap-2 text-sm text-gray-700">
+                    <input type="checkbox" checked={perLineVat} onChange={e => togglePerLineVat(e.target.checked)}
+                      className="rounded border-gray-300" />
+                    Different VAT per line
+                  </label>
+                )}
+                {sdAllowed && (
+                  <label className="flex cursor-pointer select-none items-center gap-2 text-sm text-gray-700">
+                    <input type="checkbox" checked={showSd} onChange={e => setShowSd(e.target.checked)}
+                      className="rounded border-gray-300" />
+                    Supplementary duty (SD)
+                  </label>
+                )}
+              </div>
             )}
-            {clientInfo?.vatRegistrationType === 'FOREIGN' && effectiveTreatment !== 'ZERO_RATED' && isVat && (
-              <p className="flex items-start gap-1.5 text-xs text-blue-700 bg-blue-50 rounded-lg px-3 py-2">
-                <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                This is a foreign client — export of services paid in foreign currency through a bank is usually zero-rated.
-              </p>
+
+            {/* Context hints */}
+            {(notRegistered
+              || (clientInfo?.vatRegistrationType === 'FOREIGN' && effectiveTreatment !== 'ZERO_RATED' && isVat)
+              || (clientInfo && isVat && !clientInfo.hasBin && clientInfo.vatRegistrationType !== 'FOREIGN')
+              || (!isEdit && vatInfoState === 'failed' && !vatTreatment)) && (
+              <div className="space-y-2">
+                {notRegistered && (
+                  <p className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
+                    <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+                    Company is {registrationType === 'TURNOVER' ? 'a turnover-tax enterprise' : 'not VAT registered'} — invoices can&rsquo;t carry VAT.
+                  </p>
+                )}
+                {clientInfo?.vatRegistrationType === 'FOREIGN' && effectiveTreatment !== 'ZERO_RATED' && isVat && (
+                  <p className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5 text-sm text-blue-800">
+                    <Info className="mt-0.5 size-4 shrink-0" />
+                    Foreign client — exports paid in FX through a bank are usually zero-rated.
+                  </p>
+                )}
+                {clientInfo && isVat && !clientInfo.hasBin && clientInfo.vatRegistrationType !== 'FOREIGN' && (
+                  <p className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
+                    <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+                    Client has no BIN on file — it must appear on the Mushak-6.3. Add it on the client profile.
+                  </p>
+                )}
+                {!isEdit && vatInfoState === 'failed' && !vatTreatment && (
+                  <p className="flex items-start gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-700">
+                    <Info className="mt-0.5 size-4 shrink-0 text-gray-500" />
+                    Couldn&rsquo;t load VAT defaults — they&rsquo;ll apply on save, or pick a treatment.
+                  </p>
+                )}
+              </div>
             )}
-            {clientInfo && isVat && !clientInfo.hasBin && clientInfo.vatRegistrationType !== 'FOREIGN' && (
-              <p className="flex items-start gap-1.5 text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
-                <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                This client has no BIN on file. A VAT-registered buyer&rsquo;s BIN must appear on the Mushak-6.3 — add it on the client profile.
-              </p>
-            )}
-            {!isEdit && vatInfoState === 'failed' && !vatTreatment && (
-              <p className="flex items-start gap-1.5 text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
-                <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                Couldn&rsquo;t load the company&rsquo;s VAT defaults. They will be applied when you save, or pick a treatment above.
-              </p>
-            )}
-          </div>
-        </div>
+          </CardContent>
+        </Card>
 
         {/* Line Items */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-6">
-          <div className="flex items-center justify-between mb-4 gap-3">
-            <div>
-              <h2 className="text-sm font-bold text-gray-700 uppercase tracking-wide">Line Items</h2>
-              <p className="text-xs text-gray-400 mt-0.5">Add all billing milestones, phases, or dues as separate line items.</p>
-            </div>
-            <button type="button" onClick={addItem}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 rounded-xl hover:bg-blue-100 transition-colors shrink-0">
-              <Plus className="w-3.5 h-3.5" /> Add Item
-            </button>
-          </div>
+        <Card>
+          <CardHeader>
+            <CardTitle>Line items</CardTitle>
+            <CardAction>
+              <Button variant="outline" size="sm" onClick={addItem}>
+                <Plus /> Add item
+              </Button>
+            </CardAction>
+          </CardHeader>
 
-          <div className="overflow-x-auto -mx-1 px-1">
-            <table className="w-full min-w-[620px] border-separate" style={{ borderSpacing: '0 6px' }}>
-              <thead>
-                <tr className="text-left">
-                  <th className="px-1 text-xs font-semibold text-gray-400 uppercase">Description</th>
-                  {showUnit && <th className="px-1 w-24 text-xs font-semibold text-gray-400 uppercase">Unit</th>}
-                  <th className="px-1 w-20 text-xs font-semibold text-gray-400 uppercase">Qty</th>
-                  <th className="px-1 w-28 text-xs font-semibold text-gray-400 uppercase">Rate (৳)</th>
-                  {showSd && sdAllowed && <th className="px-1 w-20 text-xs font-semibold text-gray-400 uppercase">SD %</th>}
-                  {perLineVat && ratesOn && <th className="px-1 w-24 text-xs font-semibold text-gray-400 uppercase">VAT %</th>}
-                  <th className="px-1 w-32 text-xs font-semibold text-gray-400 uppercase text-right">Amount</th>
-                  <th className="w-9" />
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((item, idx) => {
-                  const line = preview.items[idx]
-                  return (
-                    <tr key={idx} className="align-top">
-                      <td className="px-1">
-                        <input value={item.description}
-                          onChange={e => updateItem(idx, 'description', e.target.value)}
-                          placeholder="e.g. Phase 1 — Design, Monthly retainer April…"
-                          className={ic} required />
-                      </td>
-                      {showUnit && (
+          <CardContent>
+            <div className="-mx-1 overflow-x-auto px-1">
+              <table className="w-full min-w-[620px] border-separate" style={{ borderSpacing: '0 6px' }}>
+                <thead>
+                  <tr>
+                    <th className={th}>Description</th>
+                    {showUnit && <th className={cn(th, 'w-24')}>Unit</th>}
+                    <th className={cn(th, 'w-20')}>Qty</th>
+                    <th className={cn(th, 'w-28')}>Rate (৳)</th>
+                    {showSd && sdAllowed && <th className={cn(th, 'w-20')}>SD %</th>}
+                    {perLineVat && ratesOn && <th className={cn(th, 'w-24')}>VAT %</th>}
+                    <th className={cn(th, 'w-32 text-right')}>Amount</th>
+                    <th className="w-9" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((item, idx) => {
+                    const line = preview.items[idx]
+                    return (
+                      <tr key={idx} className="align-top">
                         <td className="px-1">
-                          <input value={item.unit ?? ''} list="invoice-unit-presets"
-                            onChange={e => updateItem(idx, 'unit', e.target.value)}
-                            placeholder="job" maxLength={20} className={icSm} />
+                          <input value={item.description}
+                            onChange={e => updateItem(idx, 'description', e.target.value)}
+                            placeholder="e.g. Phase 1 — Design"
+                            className={ic} required />
                         </td>
-                      )}
-                      <td className="px-1">
-                        <input type="number" min="0.01" step="0.01"
-                          value={item.quantity}
-                          onChange={e => updateItem(idx, 'quantity', e.target.value)}
-                          className={icSm} required />
-                      </td>
-                      <td className="px-1">
-                        <input type="number" min="0" step="0.01"
-                          value={item.rate}
-                          onChange={e => updateItem(idx, 'rate', e.target.value)}
-                          className={icSm} />
-                      </td>
-                      {showSd && sdAllowed && (
-                        <td className="px-1">
-                          <input type="number" min="0" max="500" step="0.01"
-                            value={item.sdRate ?? ''}
-                            onChange={e => updateItem(idx, 'sdRate', e.target.value)}
-                            placeholder="0" className={icSm} />
-                        </td>
-                      )}
-                      {perLineVat && ratesOn && (
-                        <td className="px-1">
-                          <select value={blank(item.vatRate) ? '' : String(item.vatRate)}
-                            onChange={e => updateItem(idx, 'vatRate', e.target.value)}
-                            className={`${icSm} pr-6`}>
-                            <option value="">Default ({defaultVatRate}%)</option>
-                            {[...new Set([...ratesFor(effectiveTreatment), ...(blank(item.vatRate) ? [] : [Number(item.vatRate)])])]
-                              .sort((a, b) => a - b)
-                              .map(r => <option key={r} value={String(r)}>{r}%</option>)}
-                          </select>
-                        </td>
-                      )}
-                      <td className="px-1 pt-2 text-right">
-                        <span className="text-sm font-semibold text-gray-800 tabular-nums">{money(item.amount)}</span>
-                        {isVat && line && (line.vatAmount > 0 || line.sdAmount > 0) && (
-                          <span className="block text-[11px] text-gray-400 tabular-nums">
-                            {line.sdAmount > 0 && <>SD {money(line.sdAmount)} · </>}VAT {money(line.vatAmount)}
-                          </span>
+                        {showUnit && (
+                          <td className="px-1">
+                            <input value={item.unit ?? ''} list="invoice-unit-presets"
+                              onChange={e => updateItem(idx, 'unit', e.target.value)}
+                              placeholder="job" maxLength={20} className={icSm} />
+                          </td>
                         )}
-                      </td>
-                      <td className="pt-1 text-right">
-                        <button type="button" onClick={() => removeItem(idx)} aria-label="Remove line"
-                          className="p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-            <datalist id="invoice-unit-presets">
-              {UNIT_PRESETS.map(u => <option key={u} value={u} />)}
-            </datalist>
-          </div>
+                        <td className="px-1">
+                          <input type="number" min="0.01" step="0.01"
+                            value={item.quantity}
+                            onChange={e => updateItem(idx, 'quantity', e.target.value)}
+                            className={icSm} required />
+                        </td>
+                        <td className="px-1">
+                          <input type="number" min="0" step="0.01"
+                            value={item.rate}
+                            onChange={e => updateItem(idx, 'rate', e.target.value)}
+                            className={icSm} />
+                        </td>
+                        {showSd && sdAllowed && (
+                          <td className="px-1">
+                            <input type="number" min="0" max="500" step="0.01"
+                              value={item.sdRate ?? ''}
+                              onChange={e => updateItem(idx, 'sdRate', e.target.value)}
+                              placeholder="0" className={icSm} />
+                          </td>
+                        )}
+                        {perLineVat && ratesOn && (
+                          <td className="px-1">
+                            <select value={blank(item.vatRate) ? '' : String(item.vatRate)}
+                              onChange={e => updateItem(idx, 'vatRate', e.target.value)}
+                              className={cn(selectClass, 'pl-2 pr-7')}>
+                              <option value="">Default ({defaultVatRate}%)</option>
+                              {[...new Set([...ratesFor(effectiveTreatment), ...(blank(item.vatRate) ? [] : [Number(item.vatRate)])])]
+                                .sort((a, b) => a - b)
+                                .map(r => <option key={r} value={String(r)}>{r}%</option>)}
+                            </select>
+                          </td>
+                        )}
+                        <td className="px-1 pt-2 text-right">
+                          <span className="text-sm font-medium tabular-nums text-gray-900">{money(item.amount)}</span>
+                          {isVat && line && (line.vatAmount > 0 || line.sdAmount > 0) && (
+                            <span className="block text-[11px] tabular-nums text-muted-foreground">
+                              {line.sdAmount > 0 && <>SD {money(line.sdAmount)} · </>}VAT {money(line.vatAmount)}
+                            </span>
+                          )}
+                        </td>
+                        <td className="pt-0.5 text-right">
+                          <Button variant="ghost" size="icon-sm" onClick={() => removeItem(idx)} aria-label="Remove line"
+                            className="text-gray-400 hover:bg-red-50 hover:text-red-600">
+                            <Trash2 />
+                          </Button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+              <datalist id="invoice-unit-presets">
+                {UNIT_PRESETS.map(u => <option key={u} value={u} />)}
+              </datalist>
+            </div>
 
-          {/* Totals */}
-          <div className="mt-6 border-t border-gray-100 pt-5 space-y-3">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-gray-500">Subtotal</span>
-              <span className="font-semibold text-gray-900 tabular-nums">৳ {money(subtotal)}</span>
-            </div>
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <label className="text-sm text-gray-500">Discount (৳)</label>
-                {isVat && <p className="text-[11px] text-gray-400">Reduces the VAT base; shared across lines by value.</p>}
+            {/* Totals */}
+            <div className="mt-5 space-y-3 border-t border-gray-100 pt-5">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Subtotal</span>
+                <span className="font-medium tabular-nums text-gray-900">৳ {money(subtotal)}</span>
               </div>
-              <input type="number" min="0" max={Math.max(0, discountMax)} step="0.01" value={discount}
-                onChange={e => setDiscount(e.target.value)}
-                className="w-28 border border-gray-200 rounded-xl px-3 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500" />
-            </div>
-            {isVat && (
-              <>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-500">Taxable value</span>
-                  <span className="text-gray-700 tabular-nums">৳ {money(preview.taxableValue)}</span>
-                </div>
-                {(preview.sdAmount > 0 || (showSd && sdAllowed)) && (
+              <div className="flex items-center justify-between gap-4">
+                <label className="text-sm text-muted-foreground"
+                  title={isVat ? 'Reduces the VAT base; shared across lines by value.' : undefined}>
+                  Discount (৳)
+                </label>
+                <input type="number" min="0" max={Math.max(0, discountMax)} step="0.01" value={discount}
+                  onChange={e => setDiscount(e.target.value)}
+                  title={isVat ? 'Reduces the VAT base; shared across lines by value.' : undefined}
+                  className={cn(inputClass, 'h-8 w-28 text-right')} />
+              </div>
+              {isVat && (
+                <>
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-gray-500">Supplementary duty (SD)</span>
-                    <span className="text-gray-700 tabular-nums">৳ {money(preview.sdAmount)}</span>
+                    <span className="text-muted-foreground">Taxable value</span>
+                    <span className="tabular-nums text-gray-700">৳ {money(preview.taxableValue)}</span>
                   </div>
-                )}
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-500">{vatRowLabel}</span>
-                  <span className="text-gray-700 tabular-nums">৳ {money(preview.vatAmount)}</span>
+                  {(preview.sdAmount > 0 || (showSd && sdAllowed)) && (
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">Supplementary duty (SD)</span>
+                      <span className="tabular-nums text-gray-700">৳ {money(preview.sdAmount)}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">{vatRowLabel}</span>
+                    <span className="tabular-nums text-gray-700">৳ {money(preview.vatAmount)}</span>
+                  </div>
+                </>
+              )}
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <label className="text-sm text-muted-foreground">MFS charge (%)</label>
+                  <p className="text-[11px] text-muted-foreground">Mobile-payment surcharge, not VAT</p>
                 </div>
-              </>
-            )}
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <label className="text-sm text-gray-500">MFS Charge (%)</label>
-                <p className="text-[11px] text-gray-400">Mobile-payment surcharge — not VAT</p>
+                <input type="number" min="0" max="100" step="0.01" value={taxRate}
+                  onChange={e => setTaxRate(e.target.value)}
+                  className={cn(inputClass, 'h-8 w-28 text-right')} />
               </div>
-              <input type="number" min="0" max="100" step="0.01" value={taxRate}
-                onChange={e => setTaxRate(e.target.value)}
-                className="w-28 border border-gray-200 rounded-xl px-3 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              {taxAmount > 0 && (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">MFS charge ({Number(taxRate) || 0}%)</span>
+                  <span className="tabular-nums text-gray-700">৳ {money(taxAmount)}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between border-t border-gray-100 pt-3">
+                <span className="text-sm font-semibold text-gray-900">Total</span>
+                <span className="text-xl font-semibold tracking-tight tabular-nums text-gray-900">৳ {money(total)}</span>
+              </div>
+              {Number(invoice?.paidAmount) > 0 && (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium text-emerald-600">Paid so far</span>
+                  <span className="font-semibold tabular-nums text-emerald-700">৳ {money(invoice.paidAmount)}</span>
+                </div>
+              )}
+              {!vatTreatment && !isEdit && vatInfoState !== 'loading' && (
+                <p className="text-xs text-muted-foreground">Company-default VAT, if any, is added on save.</p>
+              )}
+              {visibleIssues.length > 0 && (
+                <ul className="space-y-0.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
+                  {visibleIssues.map((m, i) => <li key={i}>{m}</li>)}
+                </ul>
+              )}
             </div>
-            {taxAmount > 0 && (
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-500">MFS Charge ({Number(taxRate) || 0}%)</span>
-                <span className="text-gray-700 tabular-nums">৳ {money(taxAmount)}</span>
-              </div>
-            )}
-            <div className="flex items-center justify-between border-t border-gray-200 pt-3">
-              <span className="text-base font-bold text-gray-900">Total</span>
-              <span className="text-xl font-bold text-blue-700 tabular-nums">৳ {money(total)}</span>
-            </div>
-            {Number(invoice?.paidAmount) > 0 && (
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-green-600 font-medium">Paid so far</span>
-                <span className="text-green-700 font-semibold tabular-nums">৳ {money(invoice.paidAmount)}</span>
-              </div>
-            )}
-            {!vatTreatment && !isEdit && vatInfoState !== 'loading' && (
-              <p className="text-xs text-gray-400">VAT, if any, is added on save from the company default.</p>
-            )}
-            {visibleIssues.length > 0 && (
-              <ul className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2 space-y-0.5">
-                {visibleIssues.map((m, i) => <li key={i}>{m}</li>)}
-              </ul>
-            )}
-          </div>
-        </div>
+          </CardContent>
+        </Card>
 
         {/* Notes & Terms */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-6 space-y-4">
-          <h2 className="text-sm font-bold text-gray-700 uppercase tracking-wide">Notes & Terms</h2>
-          <div>
-            <label className={lc}>Notes (visible to client)</label>
-            <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3}
-              placeholder="Thank you for your business…"
-              className={`${ic} resize-none`} />
-          </div>
-          <div>
-            <label className={lc}>Payment Terms</label>
-            <div className="flex flex-wrap gap-2 mb-2">
-              {TERMS_TEMPLATES.map(t => (
-                <button type="button" key={t} onClick={() => setTerms(t)}
-                  className={`px-3 py-1 text-xs rounded-xl border transition-colors ${
-                    terms === t ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-gray-300'
-                  }`}>
-                  {t.split(' ').slice(0, 5).join(' ')}…
-                </button>
-              ))}
+        <Card>
+          <CardHeader><CardTitle>Notes & terms</CardTitle></CardHeader>
+          <CardContent className="space-y-4">
+            <Field label="Notes" hint="Visible to the client">
+              <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3}
+                placeholder="Thank you for your business…"
+                className={cn(textareaClass, 'resize-none')} />
+            </Field>
+            <div>
+              <Label>Payment terms</Label>
+              <div className="mb-2 flex flex-wrap gap-1.5">
+                {TERMS_TEMPLATES.map(t => (
+                  <button type="button" key={t} onClick={() => setTerms(t)} title={t}
+                    className={cn(
+                      'rounded-full border px-2.5 py-1 text-xs font-medium transition-colors',
+                      terms === t
+                        ? 'border-gray-900 bg-gray-900 text-white'
+                        : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                    )}>
+                    {t.split(' ').slice(0, 5).join(' ')}…
+                  </button>
+                ))}
+              </div>
+              <textarea value={terms} onChange={e => setTerms(e.target.value)} rows={2}
+                placeholder="Payment terms…"
+                className={cn(textareaClass, 'resize-none')} />
             </div>
-            <textarea value={terms} onChange={e => setTerms(e.target.value)} rows={2}
-              placeholder="Payment terms…"
-              className={`${ic} resize-none`} />
-          </div>
-        </div>
+          </CardContent>
+        </Card>
 
         {/* Actions */}
-        <div className="flex items-center justify-end gap-3">
-          <button type="button" onClick={() => router.back()}
-            className="px-5 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors">
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={() => router.back()}>
             Cancel
-          </button>
-          <button type="submit" disabled={saving}
-            className="px-6 py-2.5 text-sm font-medium text-white bg-blue-600 rounded-xl hover:bg-blue-700 disabled:opacity-60 transition-colors flex items-center gap-2 shadow-sm">
-            {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-            {isEdit ? 'Save Changes' : 'Create Invoice'}
-          </button>
+          </Button>
+          <Button type="submit" loading={saving}>
+            {isEdit ? 'Save changes' : 'Create invoice'}
+          </Button>
         </div>
       </form>
     </div>

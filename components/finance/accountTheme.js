@@ -1,25 +1,31 @@
 /**
- * components/finance/accountTheme.js — PURE presentation helpers for money
- * accounts (brand-ish accent colours, groups, masked numbers, money
- * formatting, CSV download). Safe for client components; no React.
+ * components/finance/accountTheme.js — presentation helpers for money
+ * accounts (accent colours, groups, masked numbers, money formatting, CSV
+ * download). Safe for client components. The class-string tokens below reuse
+ * the shared UI primitives so finance screens match the rest of the app.
  */
 
-import { formatCurrency } from '@/lib/utils'
+import { cn, formatCurrency } from '@/lib/utils'
 import { formatMoney } from '@/lib/currencies'
 import { dhakaDayKey } from '@/lib/dhakaTime'
+import { buttonVariants } from '@/components/ui/Button'
+import { inputClass, selectClass } from '@/components/ui/Input'
 import {
   accountTypeGroup, accountTypeLabel, MFS_PROVIDER_LABELS, BD_BANK_LIST,
 } from '@/lib/finance/constants'
 
-// ── House style tokens (SPEC §0.6) ───────────────────────────────────────────
-export const INPUT = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed'
-export const INPUT_ERR = 'border-red-300 focus:ring-red-500'
-export const LABEL = 'block text-xs font-medium text-gray-600 mb-1'
-export const BTN_PRIMARY = 'inline-flex items-center justify-center gap-1.5 bg-gray-900 text-white hover:bg-gray-800 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed'
-export const BTN_SECONDARY = 'inline-flex items-center justify-center gap-1.5 border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed'
-export const BTN_DANGER = 'inline-flex items-center justify-center gap-1.5 bg-rose-600 text-white hover:bg-rose-700 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed'
-/** ModalFooter className that keeps the footer pinned to the bottom of the scrolling modal body. */
-export const FOOTER_STICKY = 'sticky -bottom-4 -mx-4 sm:-mx-6 -mb-4 mt-6 z-10'
+// ── House style tokens (same look as components/ui/Input + Button) ──────────
+/** Text-like control. `items-center` keeps read-only <span> look-alikes vertically centred. */
+export const INPUT = cn(inputClass, 'items-center')
+/** Native <select> (keeps room for the chevron). */
+export const SELECT = selectClass
+export const INPUT_ERR = 'border-red-400 focus:border-red-400 focus:ring-red-500/15 focus-visible:border-red-400 focus-visible:ring-red-500/15'
+export const LABEL = 'mb-2 block text-sm font-medium leading-none text-gray-900'
+export const BTN_PRIMARY = buttonVariants({ variant: 'default' })
+export const BTN_SECONDARY = buttonVariants({ variant: 'outline' })
+export const BTN_DANGER = buttonVariants({ variant: 'destructive' })
+/** ModalFooter className that keeps the footer pinned to the bottom of the scrolling modal body (body padding: px-4 sm:px-6, pb-4). */
+export const FOOTER_STICKY = 'sticky -bottom-4 z-10 -mx-4 -mb-4 mt-6 sm:-mx-6'
 
 export const ACCOUNT_GROUPS = [
   { key: 'bank',  label: 'Bank accounts',            short: 'Bank',           empty: 'No bank accounts yet.' },

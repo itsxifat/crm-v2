@@ -6,17 +6,23 @@ import { useSession } from 'next-auth/react'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
 import {
-  ArrowLeft, Pencil, Phone, Mail, MapPin, Globe, MessageSquare,
+  ArrowLeft, Pencil, Phone, Mail, MapPin,
   Send, Trash2, UserCheck, Calendar, Wallet, TrendingUp,
-  Clock, Tag, User, Building2, PhoneCall, AtSign, ExternalLink,
-  Activity, PhoneIncoming, MailOpen, CalendarClock, FileText, CheckSquare,
+  Clock, Tag, User, Building2, PhoneCall, ExternalLink,
+  MailOpen, CalendarClock, FileText, CheckSquare,
   FileEdit, Plus, RefreshCw,
 } from 'lucide-react'
 import Badge from '@/components/ui/Badge'
 import Avatar from '@/components/ui/Avatar'
+import Button from '@/components/ui/Button'
+import PageHeader from '@/components/ui/PageHeader'
+import Tabs from '@/components/ui/Tabs'
+import EmptyState from '@/components/ui/EmptyState'
+import { Card, CardHeader, CardTitle, CardAction, CardContent } from '@/components/ui/Card'
+import { Input } from '@/components/ui/Input'
 import LeadModal from '@/components/admin/leads/LeadModal'
 import ConvertLeadModal from '@/components/admin/leads/ConvertLeadModal'
-import { formatCurrency, formatDate } from '@/lib/utils'
+import { formatCurrency, formatDate, cn } from '@/lib/utils'
 
 // Value is a masked string ('••••••') for users without pii.financial.view
 const formatValue = (v) => (typeof v === 'string' ? v : formatCurrency(v))
@@ -29,19 +35,14 @@ function refHref(type, id) {
   return null
 }
 
-const REF_TYPE_STYLE = {
-  CLIENT:   'bg-green-100 text-green-700',
-  EMPLOYEE: 'bg-purple-100 text-purple-700',
-  LEAD:     'bg-blue-100 text-blue-700',
-}
+const REF_TYPE_VARIANT = { CLIENT: 'success', EMPLOYEE: 'purple', LEAD: 'primary' }
 const REF_TYPE_LABEL = { CLIENT: 'Client', EMPLOYEE: 'Employee', LEAD: 'Lead' }
 
-const PRIORITY_STYLES = {
-  LOW:    'bg-gray-100 text-gray-500',
-  NORMAL: 'bg-blue-50 text-blue-600',
-  HIGH:   'bg-orange-100 text-orange-600',
-  URGENT: 'bg-red-100 text-red-600',
-}
+const PRIORITY_VARIANT = { LOW: 'default', NORMAL: 'primary', HIGH: 'orange', URGENT: 'danger' }
+const PRIORITY_LABEL   = { LOW: 'Low', NORMAL: 'Normal', HIGH: 'High', URGENT: 'Urgent' }
+
+const QUOTE_VARIANT = { ACCEPTED: 'success', REJECTED: 'danger', SENT: 'primary' }
+const humanize = (s) => (s ? s.charAt(0) + s.slice(1).toLowerCase().replace(/_/g, ' ') : '')
 
 const ACTIVITY_ICONS = {
   call:    PhoneCall,
@@ -50,15 +51,6 @@ const ACTIVITY_ICONS = {
   note:    FileText,
   task:    CheckSquare,
   update:  RefreshCw,
-}
-
-const ACTIVITY_COLORS = {
-  call:    'bg-blue-50 text-blue-600',
-  email:   'bg-purple-50 text-purple-600',
-  meeting: 'bg-green-50 text-green-600',
-  note:    'bg-yellow-50 text-yellow-600',
-  task:    'bg-orange-50 text-orange-600',
-  update:  'bg-gray-100 text-gray-500',
 }
 
 function fmtDateTime(d) {
@@ -187,11 +179,11 @@ export default function LeadDetailPage() {
 
   if (loading) {
     return (
-      <div className="space-y-4 animate-pulse">
-        <div className="h-8 w-48 bg-gray-200 rounded" />
-        <div className="h-48 bg-gray-100 rounded-xl" />
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {[1,2,3].map((i) => <div key={i} className="h-32 bg-gray-100 rounded-xl" />)}
+      <div className="space-y-6">
+        <div className="h-8 w-48 animate-pulse rounded-md bg-gray-100" />
+        <div className="grid gap-6 lg:grid-cols-3">
+          <div className="h-64 animate-pulse rounded-xl bg-gray-100 lg:col-span-2" />
+          <div className="h-64 animate-pulse rounded-xl bg-gray-100" />
         </div>
       </div>
     )
@@ -199,503 +191,414 @@ export default function LeadDetailPage() {
 
   if (!lead) {
     return (
-      <div className="text-center py-20">
-        <p className="text-gray-500">Lead not found.</p>
-        <Link href="/admin/leads" className="text-blue-600 text-sm mt-2 inline-block">Back to Leads</Link>
-      </div>
+      <Card>
+        <EmptyState
+          title="Lead not found"
+          action={<Button variant="outline" href="/admin/leads"><ArrowLeft /> Back to leads</Button>}
+        />
+      </Card>
     )
   }
 
   const assignee = lead.assignedToId?.userId
+  const refLink  = refHref(lead.referenceType, lead.referenceId)
+  const overdue  = lead.followUpDate && new Date(lead.followUpDate) < new Date()
 
   return (
-    <div className="space-y-6 max-w-5xl">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Link
-            href="/admin/leads"
-            className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </Link>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">{lead.name}</h1>
-            {lead.company && <p className="text-sm text-gray-500">{lead.company}</p>}
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          {lead.status === 'WON' && !lead.convertedAt && (
-            <button
-              onClick={handleConvert}
-              className="flex items-center gap-2 px-3 py-2 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700 transition-colors"
-            >
-              <UserCheck className="w-4 h-4" />
-              Convert to Client
-            </button>
-          )}
-          <button
-            onClick={() => setModalOpen(true)}
-            className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            <Pencil className="w-4 h-4" />
-            Edit
-          </button>
-          {isAdmin && (
-            <button
-              onClick={handleDelete}
-              className="flex items-center gap-2 px-3 py-2 text-red-600 text-sm font-semibold rounded-lg hover:bg-red-50 border border-red-200 transition-colors"
-            >
-              <Trash2 className="w-4 h-4" />
-              Delete
-            </button>
-          )}
-        </div>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title={lead.name}
+        back="/admin/leads"
+        backLabel="Leads"
+        description={[lead.designation, lead.company].filter(Boolean).join(' · ') || undefined}
+        meta={
+          <>
+            <Badge status={lead.status} />
+            {lead.priority && (
+              <Badge variant={PRIORITY_VARIANT[lead.priority] ?? 'default'}>
+                {PRIORITY_LABEL[lead.priority] ?? lead.priority}
+              </Badge>
+            )}
+            {lead.convertedAt && (
+              <Badge variant="success">
+                <UserCheck className="size-3" /> Converted {formatDate(lead.convertedAt)}
+              </Badge>
+            )}
+          </>
+        }
+        actions={
+          <>
+            {isAdmin && (
+              <Button variant="outline" onClick={handleDelete} className="text-red-600 hover:text-red-700">
+                <Trash2 /> Delete
+              </Button>
+            )}
+            <Button variant="outline" onClick={() => setModalOpen(true)}>
+              <Pencil /> Edit
+            </Button>
+            {lead.status === 'WON' && !lead.convertedAt && (
+              <Button onClick={handleConvert}>
+                <UserCheck /> Convert to client
+              </Button>
+            )}
+          </>
+        }
+      />
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Left column — details */}
-        <div className="lg:col-span-2 space-y-6">
+        <div className="space-y-6 lg:col-span-2">
 
           {/* Overview card */}
-          <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 space-y-4">
-            <div className="flex items-start justify-between">
-              <div className="flex items-center gap-3">
-                <Avatar name={lead.name} size="lg" />
-                <div>
-                  <h2 className="font-semibold text-gray-900 text-lg">{lead.name}</h2>
-                  {lead.designation && <p className="text-sm text-gray-500">{lead.designation}</p>}
-                  {lead.convertedAt && (
-                    <span className="inline-flex items-center gap-1 text-xs text-green-600 font-medium mt-1">
-                      <UserCheck className="w-3 h-3" /> Converted {formatDate(lead.convertedAt)}
-                    </span>
-                  )}
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Badge status={lead.status} />
-                {lead.priority && (
-                  <span className={`px-2 py-0.5 rounded text-xs font-medium ${PRIORITY_STYLES[lead.priority]}`}>
-                    {lead.priority}
-                  </span>
+          <Card>
+            <CardHeader>
+              <CardTitle>Details</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-x-8 gap-y-3 text-sm sm:grid-cols-2">
+                {lead.email && (
+                  <div className="flex min-w-0 items-center gap-2 text-gray-700">
+                    <Mail className="size-4 shrink-0 text-gray-400" />
+                    <a href={`mailto:${lead.email}`} className="truncate hover:text-gray-900 hover:underline underline-offset-4">{lead.email}</a>
+                  </div>
+                )}
+                {lead.phone && (
+                  <div className="flex items-center gap-2 text-gray-700">
+                    <Phone className="size-4 shrink-0 text-gray-400" />
+                    <a href={`tel:${lead.phone}`} className="hover:text-gray-900 hover:underline underline-offset-4">{lead.phone}</a>
+                  </div>
+                )}
+                {lead.alternativePhone && (
+                  <div className="flex items-center gap-2 text-gray-700">
+                    <Phone className="size-4 shrink-0 text-gray-400" />
+                    <a href={`tel:${lead.alternativePhone}`} className="hover:text-gray-900 hover:underline underline-offset-4">{lead.alternativePhone}</a>
+                    <span className="text-xs text-muted-foreground">(alt)</span>
+                  </div>
+                )}
+                {lead.company && (
+                  <div className="flex items-center gap-2 text-gray-700">
+                    <Building2 className="size-4 shrink-0 text-gray-400" />
+                    {lead.company}
+                  </div>
+                )}
+                {lead.location && (
+                  <div className="flex items-center gap-2 text-gray-700">
+                    <MapPin className="size-4 shrink-0 text-gray-400" />
+                    {lead.location}
+                  </div>
+                )}
+                {lead.source && (
+                  <div className="flex items-center gap-2 text-gray-700">
+                    <TrendingUp className="size-4 shrink-0 text-gray-400" />
+                    {lead.source}
+                    {lead.platform && <span className="text-muted-foreground">· {lead.platform}</span>}
+                  </div>
+                )}
+                {lead.reference && (
+                  <div className="flex min-w-0 items-center gap-2 text-gray-700">
+                    <User className="size-4 shrink-0 text-gray-400" />
+                    <span className="shrink-0 text-muted-foreground">Ref</span>
+                    {refLink ? (
+                      <Link href={refLink} className="group flex min-w-0 items-center gap-1.5 hover:text-gray-900">
+                        <Badge variant={REF_TYPE_VARIANT[lead.referenceType] ?? 'default'} className="shrink-0">
+                          {REF_TYPE_LABEL[lead.referenceType] ?? lead.referenceType}
+                        </Badge>
+                        <span className="truncate group-hover:underline underline-offset-4">{lead.reference}</span>
+                        <ExternalLink className="size-3 shrink-0 text-gray-400 opacity-0 transition-opacity group-hover:opacity-100" />
+                      </Link>
+                    ) : (
+                      <span className="truncate">{lead.reference}</span>
+                    )}
+                  </div>
+                )}
+                {lead.category && (
+                  <div className="flex items-center gap-2 text-gray-700">
+                    <Tag className="size-4 shrink-0 text-gray-400" />
+                    {lead.category}
+                    {lead.service && <span className="text-muted-foreground">· {lead.service}</span>}
+                  </div>
+                )}
+                {lead.value && (
+                  <div className="flex items-center gap-2 font-medium tabular-nums text-gray-900">
+                    <Wallet className="size-4 shrink-0 text-gray-400" />
+                    {formatValue(lead.value)}
+                  </div>
+                )}
+                {lead.sendingDate && (
+                  <div className="flex items-center gap-2 text-gray-700">
+                    <Calendar className="size-4 shrink-0 text-gray-400" />
+                    <span className="text-muted-foreground">Sent</span> {formatDate(lead.sendingDate)}
+                  </div>
+                )}
+                {lead.followUpDate && (
+                  <div className={`flex items-center gap-2 font-medium ${overdue ? 'text-red-600' : 'text-gray-700'}`}>
+                    <Clock className={`size-4 shrink-0 ${overdue ? '' : 'text-gray-400'}`} />
+                    <span className="font-normal text-muted-foreground">Follow-up</span> {formatDate(lead.followUpDate)}
+                  </div>
                 )}
               </div>
-            </div>
 
-            <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm">
-              {lead.email && (
-                <div className="flex items-center gap-2 text-gray-600">
-                  <Mail className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                  <a href={`mailto:${lead.email}`} className="hover:text-blue-600 truncate">{lead.email}</a>
+              {/* Links */}
+              {lead.links?.length > 0 && (
+                <div className="border-t border-gray-100 pt-4">
+                  <p className="mb-2 text-xs font-medium text-muted-foreground">Links</p>
+                  <div className="flex flex-wrap gap-x-4 gap-y-2">
+                    {lead.links.map((url, i) => (
+                      <a
+                        key={i}
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1 text-[13px] text-gray-900 underline-offset-4 hover:underline"
+                      >
+                        <ExternalLink className="size-3 text-gray-400" />
+                        {url.length > 40 ? url.slice(0, 40) + '…' : url}
+                      </a>
+                    ))}
+                  </div>
                 </div>
               )}
-              {lead.phone && (
-                <div className="flex items-center gap-2 text-gray-600">
-                  <Phone className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                  <a href={`tel:${lead.phone}`} className="hover:text-blue-600">{lead.phone}</a>
-                </div>
-              )}
-              {lead.alternativePhone && (
-                <div className="flex items-center gap-2 text-gray-600">
-                  <Phone className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                  <a href={`tel:${lead.alternativePhone}`} className="hover:text-blue-600">{lead.alternativePhone}</a>
-                  <span className="text-xs text-gray-400">(alt)</span>
-                </div>
-              )}
-              {lead.company && (
-                <div className="flex items-center gap-2 text-gray-600">
-                  <Building2 className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                  {lead.company}
-                </div>
-              )}
-              {lead.location && (
-                <div className="flex items-center gap-2 text-gray-600">
-                  <MapPin className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                  {lead.location}
-                </div>
-              )}
-              {lead.source && (
-                <div className="flex items-center gap-2 text-gray-600">
-                  <TrendingUp className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                  {lead.source}
-                  {lead.platform && <span className="text-gray-400">· {lead.platform}</span>}
-                </div>
-              )}
-              {lead.reference && (
-                <div className="flex items-center gap-2 text-gray-600 col-span-2 sm:col-span-1">
-                  <User className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                  <span className="text-gray-500 shrink-0">Ref:</span>
-                  {refHref(lead.referenceType, lead.referenceId) ? (
-                    <Link
-                      href={refHref(lead.referenceType, lead.referenceId)}
-                      className="flex items-center gap-1.5 hover:text-blue-600 transition-colors group min-w-0"
-                    >
-                      <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded shrink-0 ${REF_TYPE_STYLE[lead.referenceType] ?? 'bg-gray-100 text-gray-600'}`}>
-                        {REF_TYPE_LABEL[lead.referenceType] ?? lead.referenceType}
-                      </span>
-                      <span className="truncate">{lead.reference}</span>
-                      <ExternalLink className="w-3 h-3 shrink-0 opacity-0 group-hover:opacity-100 text-blue-500 transition-opacity" />
-                    </Link>
-                  ) : (
-                    <span className="truncate">{lead.reference}</span>
-                  )}
-                </div>
-              )}
-              {lead.category && (
-                <div className="flex items-center gap-2 text-gray-600">
-                  <Tag className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                  {lead.category}
-                  {lead.service && <span className="text-gray-400">· {lead.service}</span>}
-                </div>
-              )}
-              {lead.value && (
-                <div className="flex items-center gap-2 text-gray-800 font-semibold">
-                  <Wallet className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                  {formatValue(lead.value)}
-                </div>
-              )}
-              {lead.sendingDate && (
-                <div className="flex items-center gap-2 text-gray-600">
-                  <Calendar className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                  <span className="text-gray-500">Sent:</span> {formatDate(lead.sendingDate)}
-                </div>
-              )}
-              {lead.followUpDate && (
-                <div className={`flex items-center gap-2 font-medium ${new Date(lead.followUpDate) < new Date() ? 'text-red-500' : 'text-gray-600'}`}>
-                  <Clock className="w-3.5 h-3.5 shrink-0" />
-                  <span className="text-gray-500 font-normal">Follow-up:</span> {formatDate(lead.followUpDate)}
-                </div>
-              )}
-            </div>
 
-            {/* Links */}
-            {lead.links?.length > 0 && (
-              <div className="pt-2 border-t border-gray-50">
-                <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">Links</p>
-                <div className="flex flex-wrap gap-2">
-                  {lead.links.map((url, i) => (
-                    <a
-                      key={i}
-                      href={url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1 text-xs text-blue-600 hover:underline"
-                    >
-                      <ExternalLink className="w-3 h-3" />
-                      {url.length > 40 ? url.slice(0, 40) + '…' : url}
-                    </a>
-                  ))}
+              {/* Notes */}
+              {lead.notes && (
+                <div className="border-t border-gray-100 pt-4">
+                  <p className="mb-1 text-xs font-medium text-muted-foreground">Notes</p>
+                  <p className="whitespace-pre-wrap text-sm text-gray-700">{lead.notes}</p>
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* Notes */}
-            {lead.notes && (
-              <div className="pt-2 border-t border-gray-50">
-                <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Notes</p>
-                <p className="text-sm text-gray-600 whitespace-pre-wrap">{lead.notes}</p>
-              </div>
-            )}
-
-            {/* Lost reason */}
-            {lead.status === 'LOST' && lead.lostReason && (
-              <div className="pt-2 border-t border-gray-50">
-                <p className="text-xs font-medium text-red-400 uppercase tracking-wider mb-1">Lost Reason</p>
-                <p className="text-sm text-red-600">{lead.lostReason}</p>
-              </div>
-            )}
-          </div>
+              {/* Lost reason */}
+              {lead.status === 'LOST' && lead.lostReason && (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-800">
+                  <span className="font-medium">Lost reason · </span>{lead.lostReason}
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           {/* Quotations */}
-          <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-gray-900 flex items-center gap-2">
-                <FileEdit className="w-4 h-4 text-gray-400" />
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
                 Quotations
-                {quotations.length > 0 && (
-                  <span className="ml-1 px-1.5 py-0.5 bg-gray-100 text-gray-500 text-xs rounded-full">{quotations.length}</span>
-                )}
-              </h3>
-              <Link
-                href={`/admin/quotations/new?sourceType=LEAD&leadId=${id}`}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 transition-colors"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                New Quotation
-              </Link>
-            </div>
-            {quotations.length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-6">No quotations yet.</p>
-            ) : (
-              <div className="space-y-2">
-                {quotations.map((q) => (
-                  <Link
-                    key={q.id}
-                    href={`/admin/quotations/${q.id}`}
-                    className="flex items-center justify-between p-3 rounded-lg border border-gray-100 hover:border-blue-100 hover:bg-blue-50/30 transition-all group"
-                  >
-                    <div className="flex items-center gap-3">
-                      <FileEdit className="w-4 h-4 text-blue-400 shrink-0" />
-                      <div>
-                        <p className="text-sm font-medium text-gray-900 group-hover:text-blue-700">{q.quotationNumber}</p>
-                        {q.recipientName && <p className="text-xs text-gray-400">{q.recipientName}{q.recipientCompany ? ` · ${q.recipientCompany}` : ''}</p>}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3 shrink-0">
-                      <span className="text-sm font-semibold text-gray-700">
-                        {q.currency === 'BDT' ? '৳' : q.currency} {(q.total ?? 0).toLocaleString()}
-                      </span>
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                        q.status === 'ACCEPTED' ? 'bg-green-100 text-green-700' :
-                        q.status === 'REJECTED' ? 'bg-red-100 text-red-600' :
-                        q.status === 'SENT'     ? 'bg-blue-100 text-blue-700' :
-                                                  'bg-gray-100 text-gray-500'
-                      }`}>{q.status}</span>
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Activity log */}
-          <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
-            <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <Activity className="w-4 h-4 text-gray-400" />
-              Activity Log
-            </h3>
-
-            {/* Add activity form */}
-            <form onSubmit={handleAddActivity} className="mb-5">
-              <div className="flex gap-2 mb-2">
-                {['call', 'email', 'meeting', 'note', 'task'].map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => setActType(t)}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-medium capitalize transition-colors ${
-                      actType === t
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                    }`}
-                  >
-                    {t}
-                  </button>
-                ))}
-              </div>
-              <div className="flex gap-2">
-                <input
-                  value={actNote}
-                  onChange={(e) => setActNote(e.target.value)}
-                  placeholder={`Log a ${actType}…`}
-                  className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <button
-                  type="submit"
-                  disabled={actLoading || !actNote.trim()}
-                  className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
-                >
-                  Log
-                </button>
-              </div>
-            </form>
-
-            {/* Activity list */}
-            {activities.length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-6">No activities logged yet.</p>
-            ) : (
-              <div className="space-y-3">
-                {activities.map((act) => {
-                  const Icon = ACTIVITY_ICONS[act.type] ?? FileText
-                  const colorClass = ACTIVITY_COLORS[act.type] ?? 'bg-gray-50 text-gray-600'
-                  return (
-                    <div key={act.id} className="flex gap-3">
-                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${colorClass}`}>
-                        <Icon className="w-3.5 h-3.5" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm text-gray-700">{act.note}</p>
-                        <p className="text-xs text-gray-400 mt-0.5 capitalize">
-                          {act.type}
-                          {act.createdByName && <span className="font-medium text-gray-500"> · {act.createdByName}</span>}
-                          {' · '}{fmtDateTime(act.createdAt)}
-                        </p>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Comments */}
-          <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
-            <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <MessageSquare className="w-4 h-4 text-gray-400" />
-              Comments
-              {lead.comments?.length > 0 && (
-                <span className="ml-1 px-1.5 py-0.5 bg-gray-100 text-gray-500 text-xs rounded-full">{lead.comments.length}</span>
-              )}
-            </h3>
-
-            {/* Comment list */}
-            {lead.comments?.length > 0 ? (
-              <div className="space-y-3 mb-4">
-                {[...lead.comments].reverse().map((c) => (
-                  <div key={c.id} className="flex gap-3 group">
-                    <Avatar name={c.authorName} size="xs" />
-                    <div className="flex-1 bg-gray-50 rounded-lg px-3 py-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-semibold text-gray-700">{c.authorName}</span>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-gray-400">{fmtDateTime(c.createdAt)}</span>
-                          {(isAdmin || c.authorId === session?.user?.id) && (
-                            <button
-                              onClick={() => handleDeleteComment(c.id)}
-                              className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-500 transition-all"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                          )}
+                {quotations.length > 0 && <Badge>{quotations.length}</Badge>}
+              </CardTitle>
+              <CardAction>
+                <Button variant="outline" size="sm" href={`/admin/quotations/new?sourceType=LEAD&leadId=${id}`}>
+                  <Plus /> New quotation
+                </Button>
+              </CardAction>
+            </CardHeader>
+            <CardContent>
+              {quotations.length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">No quotations yet</p>
+              ) : (
+                <div className="divide-y divide-gray-100 rounded-lg border border-gray-200/80">
+                  {quotations.map((q) => (
+                    <Link
+                      key={q.id}
+                      href={`/admin/quotations/${q.id}`}
+                      className="flex items-center justify-between gap-3 px-3 py-2.5 transition-colors first:rounded-t-lg last:rounded-b-lg hover:bg-gray-50"
+                    >
+                      <div className="flex min-w-0 items-center gap-3">
+                        <FileEdit className="size-4 shrink-0 text-gray-400" />
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-gray-900">{q.quotationNumber}</p>
+                          {q.recipientName && <p className="truncate text-xs text-muted-foreground">{q.recipientName}{q.recipientCompany ? ` · ${q.recipientCompany}` : ''}</p>}
                         </div>
                       </div>
-                      <p className="text-sm text-gray-600 mt-0.5 whitespace-pre-wrap">{c.text}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-gray-400 text-center py-4 mb-4">No comments yet.</p>
-            )}
+                      <div className="flex shrink-0 items-center gap-3">
+                        <span className="text-sm font-medium tabular-nums text-gray-900">
+                          {q.currency === 'BDT' ? '৳' : q.currency} {(q.total ?? 0).toLocaleString()}
+                        </span>
+                        <Badge variant={QUOTE_VARIANT[q.status] ?? 'default'}>{humanize(q.status)}</Badge>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
-            {/* Add comment */}
-            <form onSubmit={handleAddComment} className="flex gap-2">
-              <input
-                ref={commentInputRef}
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-                placeholder="Add a comment…"
-                className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <button
-                type="submit"
-                disabled={cmtLoading || !comment.trim()}
-                className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
-              >
-                <Send className="w-4 h-4" />
-              </button>
-            </form>
-          </div>
+          {/* Activity log */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Activity</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {/* Add activity form */}
+              <form onSubmit={handleAddActivity} className="mb-5 space-y-2">
+                <Tabs
+                  size="sm"
+                  value={actType}
+                  onChange={setActType}
+                  tabs={['call', 'email', 'meeting', 'note', 'task'].map((t) => ({ value: t, label: t.charAt(0).toUpperCase() + t.slice(1) }))}
+                />
+                <div className="flex gap-2">
+                  <Input
+                    value={actNote}
+                    onChange={(e) => setActNote(e.target.value)}
+                    placeholder={`Log a ${actType}…`}
+                  />
+                  <Button type="submit" variant="outline" disabled={actLoading || !actNote.trim()}>
+                    Log
+                  </Button>
+                </div>
+              </form>
+
+              {/* Activity list */}
+              {activities.length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">No activity yet</p>
+              ) : (
+                <div className="space-y-3">
+                  {activities.map((act) => {
+                    const Icon = ACTIVITY_ICONS[act.type] ?? FileText
+                    return (
+                      <div key={act.id} className="flex gap-3">
+                        <div className="flex size-7 shrink-0 items-center justify-center rounded-md border border-gray-200/80 bg-white shadow-xs">
+                          <Icon className="size-3.5 text-gray-500" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm text-gray-900">{act.note}</p>
+                          <p className="mt-0.5 text-xs capitalize text-muted-foreground">
+                            {act.type}
+                            {act.createdByName && <span className="font-medium text-gray-600"> · {act.createdByName}</span>}
+                            {' · '}{fmtDateTime(act.createdAt)}
+                          </p>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Comments */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                Comments
+                {lead.comments?.length > 0 && <Badge>{lead.comments.length}</Badge>}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {/* Comment list */}
+              {lead.comments?.length > 0 ? (
+                <div className="mb-4 space-y-3">
+                  {[...lead.comments].reverse().map((c) => (
+                    <div key={c.id} className="group flex gap-3">
+                      <Avatar name={c.authorName} size="xs" />
+                      <div className="flex-1 rounded-lg bg-gray-50 px-3 py-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-medium text-gray-900">{c.authorName}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground">{fmtDateTime(c.createdAt)}</span>
+                            {(isAdmin || c.authorId === session?.user?.id) && (
+                              <button
+                                onClick={() => handleDeleteComment(c.id)}
+                                className="text-gray-400 opacity-0 transition-all hover:text-red-600 group-hover:opacity-100"
+                                aria-label="Delete comment"
+                              >
+                                <Trash2 className="size-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        <p className="mt-0.5 whitespace-pre-wrap text-sm text-gray-700">{c.text}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mb-4 py-4 text-center text-sm text-muted-foreground">No comments yet</p>
+              )}
+
+              {/* Add comment */}
+              <form onSubmit={handleAddComment} className="flex gap-2">
+                <Input
+                  ref={commentInputRef}
+                  value={comment}
+                  onChange={(e) => setComment(e.target.value)}
+                  placeholder="Add a comment…"
+                />
+                <Button type="submit" variant="outline" size="icon" disabled={cmtLoading || !comment.trim()} aria-label="Send comment">
+                  <Send />
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Right column — meta */}
         <div className="space-y-4">
           {/* Assigned to */}
-          <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Assigned To</p>
+          <Card className="p-5">
+            <p className="mb-3 text-sm font-semibold text-gray-900">Assignee</p>
             {assignee ? (
               <div className="flex items-center gap-3">
                 <Avatar name={assignee.name} src={assignee.avatar} size="sm" />
-                <div>
-                  <p className="text-sm font-medium text-gray-800">{assignee.name}</p>
-                  {assignee.email && <p className="text-xs text-gray-400">{assignee.email}</p>}
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-gray-900">{assignee.name}</p>
+                  {assignee.email && <p className="truncate text-xs text-muted-foreground">{assignee.email}</p>}
                 </div>
               </div>
             ) : (
-              <p className="text-sm text-gray-400">Unassigned</p>
+              <p className="text-sm text-muted-foreground">Unassigned</p>
             )}
-          </div>
-
-          {/* Key dates */}
-          <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 space-y-3">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Timeline</p>
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-gray-500">Created</span>
-                <span className="text-gray-700 font-medium">{formatDate(lead.createdAt)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-500">Updated</span>
-                <span className="text-gray-700 font-medium">{formatDate(lead.updatedAt)}</span>
-              </div>
-              {lead.sendingDate && (
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Proposal Sent</span>
-                  <span className="text-gray-700 font-medium">{formatDate(lead.sendingDate)}</span>
-                </div>
-              )}
-              {lead.followUpDate && (
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Follow-up</span>
-                  <span className={`font-medium ${new Date(lead.followUpDate) < new Date() ? 'text-red-500' : 'text-gray-700'}`}>
-                    {formatDate(lead.followUpDate)}
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
+          </Card>
 
           {/* Value */}
           {lead.value && (
-            <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Deal Value</p>
-              <p className="text-2xl font-bold text-gray-900">{formatValue(lead.value)}</p>
-            </div>
+            <Card className="p-5">
+              <p className="text-[13px] font-medium text-muted-foreground">Deal value</p>
+              <p className="mt-1 text-2xl font-semibold tracking-tight tabular-nums text-gray-900">{formatValue(lead.value)}</p>
+            </Card>
           )}
 
+          {/* Key dates */}
+          <Card className="p-5">
+            <p className="mb-3 text-sm font-semibold text-gray-900">Timeline</p>
+            <dl className="space-y-2 text-sm">
+              <MetaRow label="Created">{formatDate(lead.createdAt)}</MetaRow>
+              <MetaRow label="Updated">{formatDate(lead.updatedAt)}</MetaRow>
+              {lead.sendingDate && <MetaRow label="Proposal sent">{formatDate(lead.sendingDate)}</MetaRow>}
+              {lead.followUpDate && (
+                <MetaRow label="Follow-up" className={overdue ? 'text-red-600' : undefined}>
+                  {formatDate(lead.followUpDate)}
+                </MetaRow>
+              )}
+            </dl>
+          </Card>
+
           {/* Classification */}
-          <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 space-y-2 text-sm">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Classification</p>
-            {lead.businessCategory && (
-              <div className="flex justify-between">
-                <span className="text-gray-500">Business</span>
-                <span className="text-gray-700 font-medium">{lead.businessCategory}</span>
-              </div>
-            )}
-            {lead.category && (
-              <div className="flex justify-between">
-                <span className="text-gray-500">Category</span>
-                <span className="text-gray-700 font-medium">{lead.category}</span>
-              </div>
-            )}
-            {lead.service && (
-              <div className="flex justify-between">
-                <span className="text-gray-500">Service</span>
-                <span className="text-gray-700 font-medium">{lead.service}</span>
-              </div>
-            )}
-            {lead.source && (
-              <div className="flex justify-between">
-                <span className="text-gray-500">Source</span>
-                <span className="text-gray-700 font-medium">{lead.source}</span>
-              </div>
-            )}
-            {lead.platform && (
-              <div className="flex justify-between">
-                <span className="text-gray-500">Platform</span>
-                <span className="text-gray-700 font-medium">{lead.platform}</span>
-              </div>
-            )}
-            {lead.reference && (
-              <div className="flex justify-between items-center gap-2">
-                <span className="text-gray-500 shrink-0">Reference</span>
-                {refHref(lead.referenceType, lead.referenceId) ? (
-                  <Link
-                    href={refHref(lead.referenceType, lead.referenceId)}
-                    className="flex items-center gap-1.5 min-w-0 hover:text-blue-600 transition-colors group"
-                  >
-                    <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded shrink-0 ${REF_TYPE_STYLE[lead.referenceType] ?? 'bg-gray-100 text-gray-600'}`}>
-                      {REF_TYPE_LABEL[lead.referenceType] ?? lead.referenceType}
-                    </span>
-                    <span className="text-gray-700 font-medium truncate">{lead.reference}</span>
-                    <ExternalLink className="w-3 h-3 shrink-0 opacity-0 group-hover:opacity-100 text-blue-500 transition-opacity" />
-                  </Link>
-                ) : (
-                  <span className="text-gray-700 font-medium truncate">{lead.reference}</span>
-                )}
-              </div>
-            )}
-          </div>
+          <Card className="p-5">
+            <p className="mb-3 text-sm font-semibold text-gray-900">Classification</p>
+            <dl className="space-y-2 text-sm">
+              {lead.businessCategory && <MetaRow label="Business">{lead.businessCategory}</MetaRow>}
+              {lead.category && <MetaRow label="Category">{lead.category}</MetaRow>}
+              {lead.service && <MetaRow label="Service">{lead.service}</MetaRow>}
+              {lead.source && <MetaRow label="Source">{lead.source}</MetaRow>}
+              {lead.platform && <MetaRow label="Platform">{lead.platform}</MetaRow>}
+              {lead.reference && (
+                <div className="flex items-center justify-between gap-2">
+                  <dt className="shrink-0 text-muted-foreground">Reference</dt>
+                  <dd className="min-w-0">
+                    {refLink ? (
+                      <Link href={refLink} className="group flex min-w-0 items-center gap-1.5">
+                        <Badge variant={REF_TYPE_VARIANT[lead.referenceType] ?? 'default'} className="shrink-0">
+                          {REF_TYPE_LABEL[lead.referenceType] ?? lead.referenceType}
+                        </Badge>
+                        <span className="truncate font-medium text-gray-900 underline-offset-4 group-hover:underline">{lead.reference}</span>
+                      </Link>
+                    ) : (
+                      <span className="block truncate font-medium text-gray-900">{lead.reference}</span>
+                    )}
+                  </dd>
+                </div>
+              )}
+            </dl>
+          </Card>
         </div>
       </div>
 
@@ -714,6 +617,15 @@ export default function LeadDetailPage() {
         lead={lead}
         onSuccess={() => fetchLead()}
       />
+    </div>
+  )
+}
+
+function MetaRow({ label, className, children }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <dt className="shrink-0 text-muted-foreground">{label}</dt>
+      <dd className={cn('truncate text-right font-medium text-gray-900', className)}>{children}</dd>
     </div>
   )
 }

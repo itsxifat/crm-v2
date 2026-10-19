@@ -7,6 +7,12 @@ import {
 } from 'lucide-react'
 import { PageLoader } from '@/components/ui/LoadingSpinner'
 import EmptyState from '@/components/ui/EmptyState'
+import Button from '@/components/ui/Button'
+import { Card } from '@/components/ui/Card'
+import { Input, NativeSelect, Label, Field } from '@/components/ui/Input'
+import PageHeader from '@/components/ui/PageHeader'
+import Tabs from '@/components/ui/Tabs'
+import Badge from '@/components/ui/Badge'
 import { usePermission } from '@/components/auth/Can'
 import DepositModal from '@/components/tax/DepositModal'
 import { cn } from '@/lib/utils'
@@ -17,7 +23,7 @@ import FileReturnModal from './_components/FileReturnModal'
 import DraftModal from './_components/DraftModal'
 import FiledHistory, { FilingStatusBadge, FilingEditModal } from './_components/FiledHistory'
 import {
-  fmtAmount, fmtDay, fmtPeriod, toNum, round2, todayKey, readJson, RETURN_TYPE_LABELS, inputCls, labelCls, btnPrimary, btnGhost,
+  fmtAmount, fmtDay, fmtPeriod, toNum, round2, todayKey, readJson, RETURN_TYPE_LABELS,
 } from './_lib/format'
 
 const DRIFT_KEYS = [
@@ -145,78 +151,77 @@ function VatReturnContent() {
 
   if (error && !resp) {
     return (
-      <div className="bg-white border border-gray-100 rounded-xl">
+      <Card>
         <EmptyState
           icon={AlertTriangle}
-          title="Could not load the VAT return"
+          title="Couldn't load the VAT return"
           description={error}
-          action={<button type="button" onClick={load} className={btnPrimary}>Try again</button>}
+          action={<Button onClick={load}>Try again</Button>}
         />
-      </div>
+      </Card>
     )
   }
 
   return (
-    <div className="space-y-5">
-      {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-gray-900">VAT return (Mushak-9.1)</h1>
-          <p className="text-sm text-gray-500">
-            Computed from the tax ledger. Submit on the NBR eVAT portal, then record the filing here.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <button type="button" onClick={load} disabled={loading} className={btnGhost} aria-label="Refresh">
-            <RefreshCw className={cn('w-4 h-4', loading && 'animate-spin')} />
-            <span className="hidden sm:inline">Refresh</span>
-          </button>
-          <button type="button" onClick={openPrint} disabled={!period} className={btnGhost}>
-            <Printer className="w-4 h-4" /> Working paper
-          </button>
-          {perms.canFile && !filed && (
-            <button
-              type="button"
-              onClick={() => setDraftOpen(true)}
-              disabled={!period || unfileable}
-              title={unfileable ? rangeProblem?.message : undefined}
-              className={btnGhost}
-            >
-              <Receipt className="w-4 h-4" /> Challans
-            </button>
-          )}
-          {canDeposit && period && (!filed || balanceDue > 0.005) && (
-            <button
-              type="button"
-              onClick={() => setPayOpen(true)}
-              disabled={unfileable}
-              className={btnGhost}
-              title={unfileable ? rangeProblem?.message : 'Record a treasury challan / e-payment for this return (note 58)'}
-            >
-              <Landmark className="w-4 h-4" /> Pay VAT
-            </button>
-          )}
-          {perms.canFile && (
-            <button
-              type="button"
-              onClick={() => setFileOpen(true)}
-              disabled={!period || !periodEnded || unfileable}
-              title={unfileable ? rangeProblem?.message : (!periodEnded ? 'A return can be filed after the tax period ends' : undefined)}
-              className={btnPrimary}
-            >
-              <Send className="w-4 h-4" /> {filed ? 'File amended return' : 'File return'}
-            </button>
-          )}
-        </div>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="VAT return"
+        meta={<Badge variant="outline">Mushak-9.1</Badge>}
+        actions={
+          <>
+            <Button variant="outline" size="icon" onClick={load} disabled={loading} aria-label="Refresh" title="Refresh">
+              <RefreshCw className={cn('size-4', loading && 'animate-spin')} />
+            </Button>
+            <Button variant="outline" onClick={openPrint} disabled={!period}>
+              <Printer /> Working paper
+            </Button>
+            {/* Titles sit on a wrapper: disabled Buttons ignore the pointer, so their own tooltip would never show. */}
+            {perms.canFile && !filed && (
+              <span className="inline-flex" title={unfileable ? rangeProblem?.message : undefined}>
+                <Button
+                  variant="outline"
+                  onClick={() => setDraftOpen(true)}
+                  disabled={!period || unfileable}
+                >
+                  <Receipt /> Challans
+                </Button>
+              </span>
+            )}
+            {canDeposit && period && (!filed || balanceDue > 0.005) && (
+              <span className="inline-flex" title={unfileable ? rangeProblem?.message : 'Record a treasury challan / e-payment for this return (note 58)'}>
+                <Button
+                  variant="outline"
+                  onClick={() => setPayOpen(true)}
+                  disabled={unfileable}
+                >
+                  <Landmark /> Pay VAT
+                </Button>
+              </span>
+            )}
+            {perms.canFile && (
+              <span className="inline-flex" title={unfileable ? rangeProblem?.message : (!periodEnded ? 'A return can be filed after the tax period ends' : undefined)}>
+                <Button
+                  onClick={() => setFileOpen(true)}
+                  disabled={!period || !periodEnded || unfileable}
+                >
+                  <Send /> {filed ? 'File amended return' : 'File return'}
+                </Button>
+              </span>
+            )}
+          </>
+        }
+      />
 
       {/* Period picker */}
-      <div className="bg-white border border-gray-100 rounded-xl p-4">
-        <div className="flex flex-col md:flex-row md:items-end gap-3">
-          <div className="flex-1 min-w-0">
-            <label className={labelCls}>Return period {settings?.returnFrequency && <span className="text-gray-400 font-normal">· {settings.returnFrequency === 'QUARTERLY' ? 'quarterly' : 'monthly'} returns</span>}</label>
-            <select
-              className={inputCls}
+      <Card className="p-5">
+        <div className="flex flex-col gap-3 md:flex-row md:items-end">
+          <div className="min-w-0 flex-1">
+            <Label htmlFor="vat-return-period">
+              Return period
+              {settings?.returnFrequency && <span className="ml-1 font-normal text-muted-foreground">· {settings.returnFrequency === 'QUARTERLY' ? 'quarterly' : 'monthly'}</span>}
+            </Label>
+            <NativeSelect
+              id="vat-return-period"
               value={period?.key ?? ''}
               onChange={e => {
                 const p = resp?.periods?.find(x => x.key === e.target.value)
@@ -234,130 +239,122 @@ function VatReturnContent() {
                   {p.overdue ? ' · overdue' : (!p.status && p.ended ? ` · due ${fmtDay(p.dueDate)}` : '')}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </div>
-          <button type="button" onClick={() => setCustomOpen(v => !v)} className={btnGhost}>
-            <CalendarRange className="w-4 h-4" /> Custom range
-          </button>
+          <Button variant={customOpen ? 'secondary' : 'outline'} onClick={() => setCustomOpen(v => !v)}>
+            <CalendarRange /> Custom range
+          </Button>
         </div>
         {customOpen && (
-          <div className="mt-3 grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-3 items-end">
-            <div>
-              <label className={labelCls}>From month</label>
-              <input type="month" className={inputCls} value={customStart} onChange={e => setCustomStart(e.target.value)} />
-            </div>
-            <div>
-              <label className={labelCls}>To month</label>
-              <input type="month" className={inputCls} value={customEnd} onChange={e => setCustomEnd(e.target.value)} />
-            </div>
-            <button type="button" onClick={applyCustom} disabled={!customStart || !customEnd || customStart > customEnd} className={btnPrimary}>
+          <div className="mt-4 grid grid-cols-1 items-end gap-3 sm:grid-cols-[1fr_1fr_auto]">
+            <Field label="From month">
+              <Input type="month" value={customStart} onChange={e => setCustomStart(e.target.value)} />
+            </Field>
+            <Field label="To month">
+              <Input type="month" value={customEnd} onChange={e => setCustomEnd(e.target.value)} />
+            </Field>
+            <Button variant="secondary" onClick={applyCustom} disabled={!customStart || !customEnd || customStart > customEnd}>
               Show
-            </button>
+            </Button>
           </div>
         )}
         {period && (
-          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500">
-            <span>Tax period: <span className="font-medium text-gray-700">{fmtPeriod(period.start)}{period.end !== period.start ? ` – ${fmtPeriod(period.end)}` : ''}</span></span>
-            <span>Due: <span className={cn('font-medium', !filed && periodEnded && todayKey() > period.dueDate ? 'text-red-600' : 'text-gray-700')}>{fmtDay(period.dueDate)}</span></span>
+          <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-muted-foreground">
+            <span>Tax period <span className="font-medium text-gray-900">{fmtPeriod(period.start)}{period.end !== period.start ? ` – ${fmtPeriod(period.end)}` : ''}</span></span>
+            <span>Due <span className={cn('font-medium', !filed && periodEnded && todayKey() > period.dueDate ? 'text-red-600' : 'text-gray-900')}>{fmtDay(period.dueDate)}</span></span>
             {settings?.taxLockedUntil && (
-              <span className="inline-flex items-center gap-1"><Lock className="w-3 h-3" /> VAT entries locked to {fmtDay(settings.taxLockedUntil)}</span>
+              <span className="inline-flex items-center gap-1"><Lock className="size-3.5" /> VAT entries locked to {fmtDay(settings.taxLockedUntil)}</span>
             )}
-            {loading && <span className="inline-flex items-center gap-1"><RefreshCw className="w-3 h-3 animate-spin" /> Updating…</span>}
+            {loading && <span className="inline-flex items-center gap-1"><RefreshCw className="size-3.5 animate-spin" /> Updating…</span>}
           </div>
         )}
-      </div>
+      </Card>
 
       {error && resp && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+        <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-800">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-red-600" />
+          <span>{error}</span>
+        </div>
       )}
 
       {rangeProblem && (
-        <div className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          <AlertTriangle className="w-4 h-4 shrink-0 hidden sm:block" />
+        <div className="flex flex-col gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800 sm:flex-row sm:items-center">
+          <AlertTriangle className="hidden size-4 shrink-0 text-amber-600 sm:block" />
           <p className="flex-1">
-            {rangeProblem.message}. These figures are for reference only — challans cannot be saved, VAT cannot be paid and the return cannot be filed for this range.
+            {rangeProblem.message}. Reference only — this range can&apos;t be saved, paid or filed.
           </p>
           {rangeProblem.suggest && (
-            <button type="button" onClick={() => selectPeriod(rangeProblem.suggest.start, rangeProblem.suggest.end)} className={btnGhost}>
+            <Button variant="outline" size="sm" onClick={() => selectPeriod(rangeProblem.suggest.start, rangeProblem.suggest.end)}>
               Open {rangeProblem.suggest.label ?? `${rangeProblem.suggest.start} – ${rangeProblem.suggest.end}`}
-            </button>
+            </Button>
           )}
         </div>
       )}
 
       {/* Filing status */}
       {filed ? (
-        <div className="bg-white border border-gray-100 rounded-xl p-4 space-y-3">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <Card className="space-y-4 p-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-start gap-3">
-              <CheckCircle2 className="w-5 h-5 text-emerald-600 mt-0.5 shrink-0" />
-              <div>
-                <p className="text-sm font-semibold text-gray-900 flex items-center gap-2 flex-wrap">
+              <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-600" />
+              <div className="min-w-0">
+                <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-gray-900">
                   {filing.status === 'AMENDED' ? 'Amended return recorded' : 'Return filed'}
                   <FilingStatusBadge status={filing.status} />
                 </p>
-                <p className="text-xs text-gray-500 mt-0.5">
+                <p className="mt-0.5 text-[13px] text-muted-foreground">
                   {RETURN_TYPE_LABELS[filing.returnType] ?? filing.returnType} · submitted {fmtDay(filing.filedAt)}
-                  {filing.filedBy?.name ? ` · recorded by ${filing.filedBy.name}` : ''}
+                  {filing.filedBy?.name ? ` · by ${filing.filedBy.name}` : ''}
                   {filing.acknowledgementNo ? ` · ack ${filing.acknowledgementNo}` : ' · no acknowledgement no. yet'}
                 </p>
                 {filing.attachmentUrl && (
-                  <a href={filing.attachmentUrl} target="_blank" rel="noopener noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs text-blue-600 hover:underline">
-                    <Paperclip className="w-3 h-3" /> Return copy
+                  <a href={filing.attachmentUrl} target="_blank" rel="noopener noreferrer" className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-gray-900 underline-offset-4 hover:underline">
+                    <Paperclip className="size-3.5 text-gray-500" /> Return copy
                   </a>
                 )}
               </div>
             </div>
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex flex-wrap items-center gap-2">
               {hasSnapshot && (
-                <div className="inline-flex rounded-lg border border-gray-200 p-0.5 bg-gray-50">
-                  {[{ v: 'filed', l: 'As filed' }, { v: 'live', l: 'Live ledger' }].map(o => (
-                    <button
-                      key={o.v}
-                      type="button"
-                      onClick={() => setView(o.v)}
-                      className={cn('px-3 py-1.5 text-xs font-medium rounded-md', view === o.v ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-800')}
-                    >
-                      {o.l}
-                    </button>
-                  ))}
-                </div>
+                <Tabs
+                  size="sm"
+                  value={view}
+                  onChange={setView}
+                  tabs={[{ value: 'filed', label: 'As filed' }, { value: 'live', label: 'Live ledger' }]}
+                />
               )}
               {perms.canFile && (
-                <button type="button" onClick={() => setEditFiling(filing)} className={btnGhost}>Acknowledgement</button>
+                <Button variant="outline" size="sm" onClick={() => setEditFiling(filing)}>Acknowledgement</Button>
               )}
             </div>
           </div>
           {drift.length > 0 && (
-            <div className="flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-              <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
-              <div>
+            <div className="flex gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600" />
+              <div className="min-w-0">
                 <p className="font-medium">
                   {carryDrift
                     ? 'The balance brought forward from the earlier return changed after this return was filed.'
                     : 'The tax ledger changed after this return was filed.'}
                 </p>
-                <ul className="mt-1 text-xs space-y-0.5">
+                <ul className="mt-1 space-y-0.5 text-xs tabular-nums">
                   {drift.map(d => (
                     <li key={d.key}>{d.label}: filed Tk {fmtAmount(d.filed)} → now Tk {fmtAmount(d.live)}</li>
                   ))}
                 </ul>
-                {carryDrift ? (
-                  <p className="text-xs mt-1">
-                    The earlier return was amended (or filed / its opening balance changed) after this one. Submit an amended return (s.66) for this
-                    period with “File amended return”, then amend each later filed return in turn so the corrected balance reaches them.
-                  </p>
-                ) : (
-                  <p className="text-xs mt-1">If the change belongs to this period, submit an amended return (s.66) and record it with “File amended return”.</p>
-                )}
+                <p className="mt-1.5 text-xs">
+                  {carryDrift
+                    ? 'File an amended return (s.66) for this period, then amend each later filed return in turn.'
+                    : 'If the change belongs to this period, file an amended return (s.66).'}
+                </p>
               </div>
             </div>
           )}
-        </div>
+        </Card>
       ) : filing?.status === 'DRAFT' ? (
-        <div className="rounded-lg border border-amber-100 bg-amber-50/70 px-4 py-3 text-sm text-amber-800 flex items-start gap-2">
-          <Receipt className="w-4 h-4 mt-0.5 shrink-0" />
-          <span>Draft in progress — {filing.challans?.length || 0} challan(s) saved{filing.notes ? ` · ${filing.notes}` : ''}. Not filed yet.</span>
+        <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
+          <Receipt className="mt-0.5 size-4 shrink-0 text-amber-600" />
+          <span>Draft — {filing.challans?.length || 0} challan(s) saved{filing.notes ? ` · ${filing.notes}` : ''}. Not filed yet.</span>
         </div>
       ) : null}
 

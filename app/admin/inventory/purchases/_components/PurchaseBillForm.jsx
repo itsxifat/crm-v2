@@ -10,6 +10,10 @@ import DatePicker from '@/components/ui/DatePicker'
 import FileUpload from '@/components/ui/FileUpload'
 import DocPreview from '@/components/ui/DocPreview'
 import PeoplePicker from '@/components/ui/PeoplePicker'
+import Button from '@/components/ui/Button'
+import Badge from '@/components/ui/Badge'
+import { Card, CardTitle } from '@/components/ui/Card'
+import { Label, inputClass, selectClass, textareaClass } from '@/components/ui/Input'
 import WithholdingFields, { emptyWithholding } from '@/components/tax/WithholdingFields'
 import { usePermission } from '@/components/auth/Can'
 import { cn } from '@/lib/utils'
@@ -22,14 +26,18 @@ import {
   qtyText, serialsOf, tk, unitCostOf,
 } from './billMath'
 
-const ic = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-gray-900 disabled:bg-gray-50'
-const lc = 'block text-xs font-medium text-gray-600 mb-1'
-const card = 'bg-white border border-gray-100 rounded-xl'
+const ic = inputClass
+const sc = selectClass
+
+/** Compact label for the dense line-item cells. */
+function CellLabel({ className, ...props }) {
+  return <Label className={cn('mb-1.5 text-xs font-medium text-muted-foreground', className)} {...props} />
+}
 
 const TYPE_STYLE = {
-  ASSET:      { label: 'Asset',       cls: 'bg-blue-50 text-blue-700',     icon: Laptop },
-  CONSUMABLE: { label: 'Consumable',  cls: 'bg-teal-50 text-teal-700',     icon: Package },
-  EXPENSE:    { label: 'Expense',     cls: 'bg-gray-100 text-gray-600',    icon: Receipt },
+  ASSET:      { label: 'Asset',       variant: 'primary', icon: Laptop },
+  CONSUMABLE: { label: 'Consumable',  variant: 'teal',    icon: Package },
+  EXPENSE:    { label: 'Expense',     variant: 'default', icon: Receipt },
 }
 
 function newForm(presetVendor) {
@@ -213,7 +221,7 @@ export default function PurchaseBillForm({ bill = null, options, presetVendor = 
         body: payloadJson,
       })
       const json = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(json.error || 'Could not save the bill')
+      if (!res.ok) throw new Error(json.error || "Couldn't save the bill")
       baseline.current = payloadJson
       if (!receive) toast.success(bill ? 'Draft saved' : `Draft ${json.data?.billNo ?? ''} saved`)
       onSaved?.(json.data, { receive })
@@ -236,7 +244,7 @@ export default function PurchaseBillForm({ bill = null, options, presetVendor = 
   const hasPsr = form.vendor ? Boolean(form.vendor.hasPsr) : Boolean(form.oneOffPsr)
 
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 items-start">
+    <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-3">
       <datalist id="pb-vat-rates">
         {VAT_RATE_OPTIONS.map(r => <option key={r} value={r} />)}
       </datalist>
@@ -245,73 +253,76 @@ export default function PurchaseBillForm({ bill = null, options, presetVendor = 
       </datalist>
 
       {/* ── Left: supplier + lines ── */}
-      <div className="xl:col-span-2 space-y-4 min-w-0">
-        <section className={cn(card, 'p-4 space-y-3')}>
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold text-gray-900">Supplier & documents</h2>
+      <div className="min-w-0 space-y-6 xl:col-span-2">
+        <Card className="space-y-5 p-5 sm:p-6">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <CardTitle as="h2">Supplier & documents</CardTitle>
             {form.vendor && !form.vendor.bin && form.supplierVatType === 'REGISTERED' && (
-              <span className="text-[11px] text-amber-700">Vendor has no BIN on file — enter it from the Mushak-6.3</span>
+              <span className="inline-flex items-center gap-1.5 text-xs text-amber-700">
+                <AlertTriangle className="size-3.5" /> No BIN on file — enter it from the Mushak-6.3
+              </span>
             )}
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div className="sm:col-span-2">
-              <label className={lc}>Supplier <span className="text-red-500">*</span></label>
+              <Label required>Supplier</Label>
               {!form.vendor && form.vendorName ? (
                 <div className="flex items-center gap-2">
                   <input value={form.vendorName} onChange={e => set({ vendorName: e.target.value })} className={ic} maxLength={200} placeholder="Supplier name" />
-                  <button type="button" onClick={() => set({ vendorName: '' })} className="shrink-0 text-xs text-gray-500 hover:text-gray-900 underline underline-offset-2">
+                  <Button variant="ghost" size="sm" onClick={() => set({ vendorName: '' })}>
                     Pick vendor
-                  </button>
+                  </Button>
                 </div>
               ) : (
                 <VendorPicker value={form.vendor} onChange={pickVendor} onOneOff={(name) => set({ vendor: null, vendorName: name })} />
               )}
             </div>
             <div>
-              <label className={lc}>Bill date <span className="text-red-500">*</span></label>
+              <Label required>Bill date</Label>
               <DatePicker value={form.billDate} onChange={v => set({ billDate: v })} clearable={false} />
             </div>
             <div>
-              <label className={lc}>Supplier BIN</label>
-              <input value={form.supplierBin} onChange={e => set({ supplierBin: e.target.value })} className={cn(ic, binProblem && submitted && 'border-red-300')} placeholder="000123456-0101" maxLength={20} />
-              <p className={cn('mt-1 text-[11px]', binProblem ? 'text-red-600' : 'text-gray-400')}>{binProblem ?? 'BIN is 13 digits, e.g. 000123456-0101'}</p>
+              <Label>Supplier BIN</Label>
+              <input value={form.supplierBin} onChange={e => set({ supplierBin: e.target.value })} aria-invalid={Boolean(binProblem && submitted) || undefined}
+                className={ic} placeholder="000123456-0101" maxLength={20} />
+              {binProblem && <p className="mt-1.5 text-xs text-red-600">{binProblem}</p>}
             </div>
             <div>
-              <label className={lc}>Supplier VAT status</label>
-              <select value={form.supplierVatType} onChange={e => set({ supplierVatType: e.target.value })} className={ic}>
+              <Label>Supplier VAT status</Label>
+              <select value={form.supplierVatType} onChange={e => set({ supplierVatType: e.target.value })} className={sc}>
                 {SUPPLIER_VAT_TYPES.map(t => <option key={t} value={t}>{SUPPLIER_VAT_TYPE_LABELS[t] ?? t}</option>)}
               </select>
             </div>
             <div>
-              <label className={lc}>Supplier invoice no.</label>
+              <Label>Supplier invoice no.</Label>
               <input value={form.supplierInvoiceNo} onChange={e => set({ supplierInvoiceNo: e.target.value })} className={ic} maxLength={100} placeholder="INV-2026-0412" />
             </div>
             <div>
-              <label className={lc}>Mushak-6.3 no.</label>
-              <input value={form.mushakNo} onChange={e => set({ mushakNo: e.target.value })} className={ic} maxLength={100} placeholder="Tax invoice number" />
+              <Label>Mushak-6.3 no.</Label>
+              <input value={form.mushakNo} onChange={e => set({ mushakNo: e.target.value })} className={ic} maxLength={100} placeholder="Tax invoice no." />
             </div>
             <div>
-              <label className={lc}>Mushak-6.3 date</label>
+              <Label>Mushak-6.3 date</Label>
               <DatePicker value={form.mushakDate} onChange={v => set({ mushakDate: v })} placeholder="Same as bill" />
             </div>
             {!form.vendor && form.vendorName && (
-              <label className="flex items-center gap-2 text-sm text-gray-700 self-end pb-2">
+              <label className="flex items-center gap-2 self-end pb-2 text-sm text-gray-700">
                 <input type="checkbox" checked={form.oneOffPsr} onChange={e => set({ oneOffPsr: e.target.checked })} className="rounded border-gray-300" />
                 Supplier showed PSR
               </label>
             )}
           </div>
 
-          <div>
-            <label className={lc}>Bill / Mushak scans</label>
+          <div className="border-t border-gray-100 pt-5">
+            <Label>Bill / Mushak scans</Label>
             <div className="space-y-2">
               {form.attachments.map((url) => (
                 <div key={url} className="flex items-center gap-2">
-                  <DocPreview url={url} compact className="flex-1 min-w-0" />
-                  <button type="button" onClick={() => set(f => ({ attachments: f.attachments.filter(a => a !== url) }))}
-                    className="p-1.5 text-gray-400 hover:text-red-600" aria-label="Remove attachment">
-                    <X className="w-4 h-4" />
-                  </button>
+                  <DocPreview url={url} compact className="min-w-0 flex-1" />
+                  <Button variant="ghost" size="icon-sm" onClick={() => set(f => ({ attachments: f.attachments.filter(a => a !== url) }))}
+                    className="text-gray-400 hover:text-red-600" aria-label="Remove attachment">
+                    <X />
+                  </Button>
                 </div>
               ))}
               {form.attachments.length < 20 && (
@@ -320,26 +331,22 @@ export default function PurchaseBillForm({ bill = null, options, presetVendor = 
               )}
             </div>
           </div>
-        </section>
+        </Card>
 
-        <section className={cn(card, 'p-4 space-y-3')}>
-          <div className="flex flex-wrap items-center justify-between gap-2">
+        <Card className="space-y-4 p-5 sm:p-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="text-sm font-semibold text-gray-900">Items</h2>
-              <p className="text-xs text-gray-500">
+              <CardTitle as="h2">Items</CardTitle>
+              <p className="mt-0.5 text-xs text-muted-foreground">
                 {qtyText(counts.assets)} asset{counts.assets === 1 ? '' : 's'} to tag · {counts.stock} stock line{counts.stock === 1 ? '' : 's'} · {counts.expense} expense line{counts.expense === 1 ? '' : 's'}
               </p>
             </div>
             <div className="flex flex-wrap gap-1.5">
-              {Object.entries(TYPE_STYLE).map(([type, s]) => {
-                const Icon = s.icon
-                return (
-                  <button key={type} type="button" onClick={() => addLine(type)}
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium border border-gray-200 rounded-lg hover:bg-gray-50">
-                    <Plus className="w-3.5 h-3.5" /><Icon className="w-3.5 h-3.5 text-gray-400" /> {s.label}
-                  </button>
-                )
-              })}
+              {Object.entries(TYPE_STYLE).map(([type, s]) => (
+                <Button key={type} variant="outline" size="xs" onClick={() => addLine(type)}>
+                  <Plus /> {s.label}
+                </Button>
+              ))}
             </div>
           </div>
 
@@ -364,60 +371,61 @@ export default function PurchaseBillForm({ bill = null, options, presetVendor = 
               />
             ))}
           </div>
-        </section>
+        </Card>
 
-        <section className={cn(card, 'p-4')}>
-          <label className={lc}>Notes</label>
-          <textarea value={form.notes} onChange={e => set({ notes: e.target.value })} rows={2} maxLength={2000} className={ic}
-            placeholder="Delivery details, warranty terms, who approved the purchase…" />
-        </section>
+        <Card className="p-5 sm:p-6">
+          <Label>Notes</Label>
+          <textarea value={form.notes} onChange={e => set({ notes: e.target.value })} rows={2} maxLength={2000} className={cn(textareaClass, 'min-h-[64px]')}
+            placeholder="Delivery, warranty, approval…" />
+        </Card>
       </div>
 
       {/* ── Right: totals, VAT credit, withholding, actions ── */}
-      <div className="space-y-4 xl:sticky xl:top-4">
-        <section className={cn(card, 'p-4 space-y-2 text-sm')}>
-          <h2 className="text-sm font-semibold text-gray-900 mb-1">Totals</h2>
-          <Row label="Subtotal (excl. VAT)" value={tk(totals.subtotal)} />
-          <Row label="VAT" value={tk(totals.vatTotal)} />
-          {totals.sdTotal > 0 && <Row label="Supplementary duty" value={tk(totals.sdTotal)} />}
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-gray-500">Other costs</span>
-            <input type="number" min="0" step="0.01" inputMode="decimal" value={form.otherCosts}
-              onChange={e => set({ otherCosts: e.target.value })}
-              className="w-32 border border-gray-200 rounded-lg px-2 py-1 text-sm text-right focus:outline-none focus:ring-2 focus:ring-gray-900" placeholder="0.00" />
+      <div className="space-y-6 xl:sticky xl:top-4">
+        <Card>
+          <div className="space-y-2.5 p-5 text-sm">
+            <CardTitle as="h2" className="mb-3">Totals</CardTitle>
+            <Row label="Subtotal (excl. VAT)" value={tk(totals.subtotal)} />
+            <Row label="VAT" value={tk(totals.vatTotal)} />
+            {totals.sdTotal > 0 && <Row label="Supplementary duty" value={tk(totals.sdTotal)} />}
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-muted-foreground" title="Delivery / installation — added to the cost of assets and stock pro rata">Other costs</span>
+              <input type="number" min="0" step="0.01" inputMode="decimal" value={form.otherCosts}
+                onChange={e => set({ otherCosts: e.target.value })}
+                className={cn(ic, 'h-8 w-32 text-right tabular-nums')} placeholder="0.00" />
+            </div>
+            <div className="border-t border-gray-100 pt-2.5">
+              <Row label="Bill total" value={tk(totals.total)} strong />
+            </div>
           </div>
-          {num(form.otherCosts) > 0 && <p className="text-[11px] text-gray-400">Delivery / installation — added to the cost of assets and stock pro rata.</p>}
-          <div className="border-t border-gray-100 pt-2">
-            <Row label="Bill total" value={tk(totals.total)} strong />
-          </div>
-        </section>
 
-        <section className={cn(card, 'p-4 space-y-2')}>
-          <label className={cn('flex items-start gap-2 text-sm', vatBlockedReason ? 'text-gray-400' : 'text-gray-800')}>
-            <input
-              type="checkbox"
-              className="mt-0.5 rounded border-gray-300"
-              disabled={Boolean(vatBlockedReason)}
-              checked={vatCreditable}
-              onChange={e => set({ vatCreditable: e.target.checked, vatCreditableTouched: true })}
-            />
-            <span>
-              <span className="font-medium">VAT creditable</span>
-              <span className="block text-xs text-gray-500">
-                {vatCreditable ? 'VAT is claimed as input tax credit (not added to cost).' : 'VAT is added to the cost of the items.'}
+          <div className="space-y-3 border-t border-gray-100 p-5">
+            <label className={cn('flex items-start gap-2.5 text-sm', vatBlockedReason ? 'text-gray-400' : 'text-gray-900')}>
+              <input
+                type="checkbox"
+                className="mt-0.5 rounded border-gray-300"
+                disabled={Boolean(vatBlockedReason)}
+                checked={vatCreditable}
+                onChange={e => set({ vatCreditable: e.target.checked, vatCreditableTouched: true })}
+              />
+              <span>
+                <span className="font-medium">VAT creditable</span>
+                <span className="block text-xs text-muted-foreground">
+                  {vatCreditable ? 'Claimed as input tax credit' : 'Added to the cost of the items'}
+                </span>
               </span>
-            </span>
-          </label>
-          <ItcHint blocked={vatBlockedReason} itc={itc} claimed={vatCreditable} />
-          <label className="flex items-start gap-2 text-sm text-gray-800 pt-1">
-            <input type="checkbox" className="mt-0.5 rounded border-gray-300" checked={form.bankingChannel}
-              onChange={e => set({ bankingChannel: e.target.checked })} />
-            <span>
-              <span className="font-medium">Paid through bank / MFS</span>
-              <span className="block text-xs text-gray-500">Cash payments attract 50% higher TDS and lose input VAT over ৳ 1,00,000.</span>
-            </span>
-          </label>
-        </section>
+            </label>
+            <ItcHint blocked={vatBlockedReason} itc={itc} claimed={vatCreditable} />
+            <label className="flex items-start gap-2.5 pt-1 text-sm text-gray-900">
+              <input type="checkbox" className="mt-0.5 rounded border-gray-300" checked={form.bankingChannel}
+                onChange={e => set({ bankingChannel: e.target.checked })} />
+              <span>
+                <span className="font-medium">Paid through bank / MFS</span>
+                <span className="block text-xs text-muted-foreground">Cash: 50% higher TDS; no input VAT over ৳ 1,00,000.</span>
+              </span>
+            </label>
+          </div>
+        </Card>
 
         <WithholdingFields
           mode="PAYEE"
@@ -433,38 +441,34 @@ export default function PurchaseBillForm({ bill = null, options, presetVendor = 
           compact
         />
 
-        <section className={cn(card, 'p-4 space-y-3')}>
+        <Card className="space-y-4 p-5">
           <div className="flex items-end justify-between gap-2">
             <div>
-              <p className="text-xs text-gray-500">Net payable to supplier</p>
-              <p className={cn('text-2xl font-semibold', totals.netPayable < 0 ? 'text-red-600' : 'text-gray-900')}>{tk(totals.netPayable)}</p>
+              <p className="text-[13px] text-muted-foreground">Net payable to supplier</p>
+              <p className={cn('mt-0.5 text-2xl font-semibold tracking-tight tabular-nums', totals.netPayable < 0 ? 'text-red-600' : 'text-gray-900')}>{tk(totals.netPayable)}</p>
             </div>
-            {totals.withheld > 0 && <p className="text-xs text-gray-500 text-right">{tk(totals.total)} − {tk(totals.withheld)} withheld</p>}
+            {totals.withheld > 0 && <p className="text-right text-xs text-muted-foreground tabular-nums">{tk(totals.total)} − {tk(totals.withheld)} withheld</p>}
           </div>
 
           {serverError && (
-            <p className="flex items-start gap-2 text-xs text-red-700 bg-red-50 rounded-lg px-3 py-2">
-              <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" /> {serverError}
+            <p className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0" /> {serverError}
             </p>
           )}
 
-          <div className="flex flex-col sm:flex-row xl:flex-col gap-2">
-            <button type="button" onClick={() => save(true)} disabled={Boolean(saving)}
-              className="flex-1 inline-flex items-center justify-center gap-1.5 bg-gray-900 text-white hover:bg-gray-800 rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-60">
-              {saving === 'receive' ? <Loader2 className="w-4 h-4 animate-spin" /> : <PackageCheck className="w-4 h-4" />}
+          <div className="flex flex-col gap-2 sm:flex-row xl:flex-col">
+            <Button onClick={() => save(true)} disabled={Boolean(saving)} loading={saving === 'receive'} className="flex-1"
+              title="Tags each asset, adds consumables to stock and records the payment — or sends it to Accounts">
+              {saving !== 'receive' && <PackageCheck />}
               {bill ? (dirty ? 'Save & receive…' : 'Receive…') : 'Save & receive…'}
-            </button>
-            <button type="button" onClick={() => save(false)} disabled={Boolean(saving) || (bill && !dirty)}
-              className="flex-1 inline-flex items-center justify-center gap-1.5 border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50">
-              {saving === 'draft' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            </Button>
+            <Button variant="outline" onClick={() => save(false)} disabled={Boolean(saving) || (bill && !dirty)} loading={saving === 'draft'} className="flex-1">
+              {saving !== 'draft' && <Save />}
               {bill ? (dirty ? 'Save draft' : 'Saved') : 'Save as draft'}
-            </button>
+            </Button>
             {extraActions}
           </div>
-          <p className="text-[11px] text-gray-400 leading-snug">
-            Receiving tags each asset (one per unit), adds consumables to stock and records the payment — or sends it to Accounts.
-          </p>
-        </section>
+        </Card>
       </div>
     </div>
   )
@@ -473,32 +477,32 @@ export default function PurchaseBillForm({ bill = null, options, presetVendor = 
 function Row({ label, value, strong }) {
   return (
     <div className="flex items-center justify-between gap-3">
-      <span className={strong ? 'font-medium text-gray-900' : 'text-gray-500'}>{label}</span>
-      <span className={strong ? 'font-semibold text-gray-900' : 'text-gray-900'}>{value}</span>
+      <span className={strong ? 'font-medium text-gray-900' : 'text-muted-foreground'}>{label}</span>
+      <span className={cn('tabular-nums', strong ? 'font-semibold text-gray-900' : 'text-gray-900')}>{value}</span>
     </div>
   )
 }
 
 function ItcHint({ blocked, itc, claimed }) {
   if (blocked) {
-    return <p className="flex items-start gap-1.5 text-[11px] text-gray-500"><Info className="w-3 h-3 mt-0.5 shrink-0" />{blocked}</p>
+    return <p className="flex items-start gap-1.5 text-xs text-muted-foreground"><Info className="mt-0.5 size-3.5 shrink-0" />{blocked}</p>
   }
   if (itc.loading && !itc.data) {
-    return <p className="flex items-center gap-1.5 text-[11px] text-gray-400"><Loader2 className="w-3 h-3 animate-spin" /> Checking VAT credit rules…</p>
+    return <p className="flex items-center gap-1.5 text-xs text-gray-400"><Loader2 className="size-3.5 animate-spin" /> Checking VAT credit rules…</p>
   }
   const d = itc.data
   if (!d) return null
   if (d.creditable) {
     return (
-      <p className="flex items-start gap-1.5 text-[11px] text-green-700">
-        <CheckCircle2 className="w-3 h-3 mt-0.5 shrink-0" />
-        Creditable under the VAT rules — keep the Mushak-6.3 with both BINs and claim within 6 tax periods.
+      <p className="flex items-start gap-1.5 text-xs text-emerald-700">
+        <CheckCircle2 className="mt-0.5 size-3.5 shrink-0" />
+        Creditable — keep the Mushak-6.3 with both BINs; claim within 6 tax periods.
       </p>
     )
   }
   return (
-    <p className={cn('flex items-start gap-1.5 text-[11px]', claimed ? 'text-amber-700' : 'text-gray-500')}>
-      <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
+    <p className={cn('flex items-start gap-1.5 text-xs', claimed ? 'text-amber-700' : 'text-muted-foreground')}>
+      <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
       {claimed ? 'Claim may be disallowed: ' : 'Not creditable: '}{d.reasonLabel ?? d.reason}
     </p>
   )
@@ -549,41 +553,41 @@ function LineEditor({
 
   // Capitalisation outcome shown on asset lines.
   let capText = null
-  let capTone = 'text-gray-500'
+  let capTone = 'text-muted-foreground'
   if (line.lineType === 'ASSET') {
-    if (line.capitalize === true) { capText = 'Capitalised (manual)'; capTone = 'text-blue-700' }
+    if (line.capitalize === true) { capText = 'Capitalised (manual)'; capTone = 'text-gray-900' }
     else if (line.capitalize === false) { capText = 'Expensed (manual)'; capTone = 'text-gray-600' }
     else if (cat && cat.capitalize === false) { capText = 'Expensed — category policy'; capTone = 'text-gray-600' }
-    else if (unitCost >= threshold) { capText = `Capitalised — unit cost ≥ ${tk(threshold, 0)}`; capTone = 'text-blue-700' }
+    else if (unitCost >= threshold) { capText = `Capitalised — unit cost ≥ ${tk(threshold, 0)}`; capTone = 'text-gray-900' }
     else { capText = `Expensed — below the ${tk(threshold, 0)} threshold`; capTone = 'text-gray-600' }
   }
 
   return (
-    <div className={cn('rounded-xl border p-3', problems.length ? 'border-red-200 bg-red-50/30' : 'border-gray-100 bg-gray-50/40')}>
-      <div className="flex items-center justify-between gap-2 mb-2">
-        <span className="flex items-center gap-2 min-w-0">
-          <span className="text-xs font-semibold text-gray-400 w-5">{index + 1}</span>
-          <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium', style.cls)}>
-            <TypeIcon className="w-3 h-3" /> {style.label}
-          </span>
-          {cat && <span className="text-[11px] text-gray-400 truncate">{cat.code}</span>}
+    <div className={cn('rounded-lg border p-4', problems.length ? 'border-red-200 bg-red-50/30' : 'border-gray-200/80 bg-white')}>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="w-5 text-xs font-medium tabular-nums text-gray-400">{index + 1}</span>
+          <Badge variant={style.variant}>
+            <TypeIcon className="size-3" /> {style.label}
+          </Badge>
+          {cat && <span className="truncate font-mono text-xs text-gray-400">{cat.code}</span>}
         </span>
-        <span className="flex items-center gap-1">
-          <button type="button" onClick={onDuplicate} className="p-1.5 text-gray-400 hover:text-gray-700 rounded-md hover:bg-white" title="Duplicate line">
-            <Copy className="w-3.5 h-3.5" />
-          </button>
+        <span className="flex items-center gap-0.5">
+          <Button variant="ghost" size="icon-xs" onClick={onDuplicate} className="text-gray-400" title="Duplicate line" aria-label="Duplicate line">
+            <Copy className="size-3.5" />
+          </Button>
           {onRemove && (
-            <button type="button" onClick={onRemove} className="p-1.5 text-gray-400 hover:text-red-600 rounded-md hover:bg-white" title="Remove line">
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
+            <Button variant="ghost" size="icon-xs" onClick={onRemove} className="text-gray-400 hover:text-red-600" title="Remove line" aria-label="Remove line">
+              <Trash2 className="size-3.5" />
+            </Button>
           )}
         </span>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-12 gap-2">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-12">
         <div className="col-span-2 md:col-span-3">
-          <label className={lc}>Category</label>
-          <select value={selectValue} onChange={e => onCategory(e.target.value)} className={ic}>
+          <CellLabel>Category</CellLabel>
+          <select value={selectValue} onChange={e => onCategory(e.target.value)} className={sc}>
             {!line.categoryId && line.lineType !== 'EXPENSE' && <option value={`${line.lineType}:`}>Choose…</option>}
             <optgroup label="Assets — tagged one by one">
               {assetCats.map(x => <option key={x.id} value={`ASSET:${x.id}`}>{x.name}</option>)}
@@ -597,117 +601,117 @@ function LineEditor({
           </select>
         </div>
         <div className="col-span-2 md:col-span-4">
-          <label className={lc}>Description</label>
+          <CellLabel>Description</CellLabel>
           <input value={line.description} onChange={e => onChange({ description: e.target.value })} className={ic} maxLength={300}
             placeholder={line.lineType === 'ASSET' ? 'e.g. Dell Latitude 5440 laptop' : line.lineType === 'CONSUMABLE' ? 'e.g. A4 paper 80gsm' : 'e.g. Installation service'} />
         </div>
         <div className="col-span-1 md:col-span-1">
-          <label className={lc}>Qty</label>
+          <CellLabel>Qty</CellLabel>
           <input type="number" min="0" step={line.lineType === 'ASSET' ? '1' : 'any'} inputMode="decimal" value={line.qty}
-            onChange={e => onChange({ qty: e.target.value })} className={ic} />
+            onChange={e => onChange({ qty: e.target.value })} className={cn(ic, 'tabular-nums')} />
         </div>
         <div className="col-span-1 md:col-span-2">
-          <label className={lc}>Unit price</label>
+          <CellLabel>Unit price</CellLabel>
           <input type="number" min="0" step="0.01" inputMode="decimal" value={line.unitPrice}
-            onChange={e => onChange({ unitPrice: e.target.value })} className={ic} placeholder="excl. VAT" />
+            onChange={e => onChange({ unitPrice: e.target.value })} className={cn(ic, 'tabular-nums')} placeholder="excl. VAT" />
         </div>
         <div className="col-span-1 md:col-span-1">
-          <label className={lc}>VAT %</label>
+          <CellLabel>VAT %</CellLabel>
           <input type="number" min="0" max="100" step="0.1" inputMode="decimal" list="pb-vat-rates" value={line.vatRate}
-            onChange={e => onChange({ vatRate: e.target.value })} className={ic} placeholder="0" />
+            onChange={e => onChange({ vatRate: e.target.value })} className={cn(ic, 'tabular-nums')} placeholder="0" />
         </div>
-        <div className="col-span-1 md:col-span-1 flex flex-col justify-end">
-          <span className="text-[11px] text-gray-400 md:text-right">Total</span>
-          <span className="text-sm font-semibold text-gray-900 md:text-right whitespace-nowrap">{tk(c.lineTotal, 0)}</span>
+        <div className="col-span-1 flex flex-col justify-end md:col-span-1">
+          <span className="text-xs text-muted-foreground md:text-right">Total</span>
+          <span className="flex h-9 items-center whitespace-nowrap text-sm font-semibold tabular-nums text-gray-900 md:justify-end">{tk(c.lineTotal, 0)}</span>
         </div>
       </div>
 
       {line.lineType === 'CONSUMABLE' && (
-        <div className="grid grid-cols-2 md:grid-cols-12 gap-2 mt-2">
+        <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-12">
           <div className="col-span-2 md:col-span-7">
-            <label className={lc}>Stock item</label>
-            <select value={line.stockItemId || ''} onChange={e => onStockItem(e.target.value)} className={ic}>
+            <CellLabel>Stock item</CellLabel>
+            <select value={line.stockItemId || ''} onChange={e => onStockItem(e.target.value)} className={sc}>
               <option value="">New stock item — “{line.description?.trim() || 'description'}”</option>
               {itemsForCat.map(s => <option key={s.id} value={s.id}>{s.name} · {s.sku} ({qtyText(s.qtyOnHand)} {s.unit} on hand)</option>)}
             </select>
           </div>
           <div className="col-span-1 md:col-span-2">
-            <label className={lc}>Unit</label>
+            <CellLabel>Unit</CellLabel>
             <input value={line.unit} onChange={e => onChange({ unit: e.target.value })} list="pb-units" className={ic} maxLength={20} />
           </div>
-          <div className="col-span-1 md:col-span-3 flex flex-col justify-end">
-            <span className="text-[11px] text-gray-400">Cost per {line.unit || 'unit'} into stock</span>
-            <span className="text-sm text-gray-800">{tk(unitCost)}</span>
+          <div className="col-span-1 flex flex-col justify-end md:col-span-3">
+            <span className="text-xs text-muted-foreground">Cost per {line.unit || 'unit'} into stock</span>
+            <span className="flex h-9 items-center text-sm tabular-nums text-gray-900">{tk(unitCost)}</span>
           </div>
         </div>
       )}
 
-      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
-        <span className="text-gray-500">VAT {tk(c.vatAmount)}{c.sdAmount > 0 ? ` · SD ${tk(c.sdAmount)}` : ''}</span>
+      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+        <span className="text-muted-foreground tabular-nums">VAT {tk(c.vatAmount)}{c.sdAmount > 0 ? ` · SD ${tk(c.sdAmount)}` : ''}</span>
         {line.lineType === 'ASSET' && (
           <>
-            <span className="text-gray-500">Unit cost {tk(unitCost)}</span>
+            <span className="text-muted-foreground tabular-nums">Unit cost {tk(unitCost)}</span>
             <span className={capTone}>{capText}</span>
             {serials.length > 0 && (
-              <span className={serials.length === qty ? 'text-green-700' : serials.length > qty ? 'text-red-600' : 'text-amber-700'}>
+              <span className={serials.length === qty ? 'text-emerald-700' : serials.length > qty ? 'text-red-600' : 'text-amber-700'}>
                 {serials.length}/{qtyText(qty)} serials
               </span>
             )}
-            {line.assignee && <span className="text-blue-700">→ {line.assignee.name}</span>}
+            {line.assignee && <span className="text-gray-700">→ {line.assignee.name}</span>}
           </>
         )}
-        <button type="button" onClick={() => setOpen(o => !o)} className="ml-auto inline-flex items-center gap-1 text-gray-600 hover:text-gray-900 font-medium">
-          {open ? 'Less' : line.lineType === 'ASSET' ? 'Serials, assignee & more' : 'More'}
-          <ChevronDown className={cn('w-3.5 h-3.5 transition-transform', open && 'rotate-180')} />
-        </button>
+        <Button variant="ghost" size="xs" onClick={() => setOpen(o => !o)} className="-mr-1.5 ml-auto text-gray-600">
+          {open ? 'Less' : line.lineType === 'ASSET' ? 'Serials & more' : 'More'}
+          <ChevronDown className={cn('size-3.5 transition-transform', open && 'rotate-180')} />
+        </Button>
       </div>
 
       {open && (
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-2 mt-3 pt-3 border-t border-gray-100">
+        <div className="mt-3 grid grid-cols-2 gap-3 border-t border-gray-100 pt-3 md:grid-cols-6">
           {line.lineType === 'ASSET' && (
             <>
               <div className="col-span-1 md:col-span-2">
-                <label className={lc}>Brand</label>
+                <CellLabel>Brand</CellLabel>
                 <input value={line.brand} onChange={e => onChange({ brand: e.target.value })} className={ic} maxLength={100} />
               </div>
               <div className="col-span-1 md:col-span-2">
-                <label className={lc}>Model</label>
+                <CellLabel>Model</CellLabel>
                 <input value={line.model} onChange={e => onChange({ model: e.target.value })} className={ic} maxLength={100} />
               </div>
               <div className="col-span-1 md:col-span-1">
-                <label className={lc}>Capitalise</label>
+                <CellLabel>Capitalise</CellLabel>
                 <select value={line.capitalize === null ? 'AUTO' : line.capitalize ? 'YES' : 'NO'}
-                  onChange={e => onChange({ capitalize: e.target.value === 'AUTO' ? null : e.target.value === 'YES' })} className={ic}>
+                  onChange={e => onChange({ capitalize: e.target.value === 'AUTO' ? null : e.target.value === 'YES' })} className={sc}>
                   <option value="AUTO">Auto</option>
                   <option value="YES">Yes — fixed asset</option>
                   <option value="NO">No — expense</option>
                 </select>
               </div>
               <div className="col-span-1 md:col-span-1">
-                <label className={lc}>Warranty (months)</label>
+                <CellLabel>Warranty (months)</CellLabel>
                 <input type="number" min="0" max="240" step="1" value={line.warrantyMonths}
-                  onChange={e => onChange({ warrantyMonths: e.target.value })} className={ic} placeholder="e.g. 36" />
+                  onChange={e => onChange({ warrantyMonths: e.target.value })} className={cn(ic, 'tabular-nums')} placeholder="e.g. 36" />
               </div>
               <div className="col-span-2 md:col-span-3">
-                <label className={lc}>Assign on receipt to</label>
+                <CellLabel>Assign on receipt to</CellLabel>
                 {canAssign || line.assignee ? (
                   <PeoplePicker types={['EMPLOYEE']} typeFilter={false} value={line.assignee} onChange={p => onChange({ assignee: p })} placeholder="Keep in stock" />
                 ) : (
-                  <p className="text-xs text-gray-400 py-2">Assets go into stock — someone with the assign permission hands them out.</p>
+                  <p className="py-2 text-xs text-gray-400">Stays in stock until assigned.</p>
                 )}
                 {line.assignee && !canAssign && (
-                  <p className="mt-1 text-[11px] text-amber-700">You cannot assign assets — clear this or ask someone who can to receive the bill.</p>
+                  <p className="mt-1.5 text-xs text-amber-700">You can&apos;t assign assets — clear this or ask someone who can to receive the bill.</p>
                 )}
                 {line.assignee && canAssign && cat?.requiresAcknowledgement !== false && (
-                  <p className="mt-1 text-[11px] text-gray-400">They will be asked to acknowledge receipt in My Assets.</p>
+                  <p className="mt-1.5 text-xs text-gray-400">They&apos;ll acknowledge receipt in My Assets.</p>
                 )}
               </div>
             </>
           )}
           {line.lineType !== 'EXPENSE' && (
             <div className={cn('col-span-2', line.lineType === 'ASSET' ? 'md:col-span-3' : 'md:col-span-2')}>
-              <label className={lc}>Location</label>
-              <select value={line.locationId || ''} onChange={e => onChange({ locationId: e.target.value })} className={ic}>
+              <CellLabel>Location</CellLabel>
+              <select value={line.locationId || ''} onChange={e => onChange({ locationId: e.target.value })} className={sc}>
                 <option value="">Not set</option>
                 {locations.map(l => <option key={l.id} value={l.id}>{l.name}{l.code ? ` (${l.code})` : ''}</option>)}
               </select>
@@ -715,43 +719,43 @@ function LineEditor({
           )}
           {line.lineType === 'ASSET' && (
             <div className="col-span-2 md:col-span-6">
-              <label className={lc}>
-                Serial numbers <span className="text-gray-400 font-normal">— one per line, {qtyText(qty)} needed (or leave empty)</span>
-              </label>
+              <CellLabel>
+                Serial numbers <span className="font-normal text-gray-400">· one per line, {qtyText(qty)} needed or none</span>
+              </CellLabel>
               <textarea rows={Math.min(6, Math.max(2, serials.length + 1))} value={line.serialText}
-                onChange={e => onChange({ serialText: e.target.value })} className={cn(ic, 'font-mono text-xs')}
+                onChange={e => onChange({ serialText: e.target.value })} className={cn(textareaClass, 'min-h-0 font-mono text-xs')}
                 placeholder={'SN-1234567\nSN-1234568'} />
             </div>
           )}
           {line.lineType === 'EXPENSE' && (
             <div className="col-span-1 md:col-span-2">
-              <label className={lc}>Unit</label>
+              <CellLabel>Unit</CellLabel>
               <input value={line.unit || ''} onChange={e => onChange({ unit: e.target.value })} list="pb-units" className={ic} maxLength={20} placeholder="e.g. month, job" />
             </div>
           )}
           <div className="col-span-1 md:col-span-2">
-            <label className={lc}>VAT amount <span className="text-gray-400 font-normal">(as on Mushak)</span></label>
+            <CellLabel>VAT amount <span className="font-normal text-gray-400">(as on Mushak)</span></CellLabel>
             <input type="number" min="0" step="0.01" value={line.vatAmount} onChange={e => onChange({ vatAmount: e.target.value })}
-              className={ic} placeholder={c.vatComputed.toFixed(2)} />
+              className={cn(ic, 'tabular-nums')} placeholder={c.vatComputed.toFixed(2)} />
           </div>
           <div className="col-span-1 md:col-span-2">
-            <label className={lc}>SD amount</label>
+            <CellLabel>SD amount</CellLabel>
             <input type="number" min="0" step="0.01" value={line.sdAmount} onChange={e => onChange({ sdAmount: e.target.value })}
-              className={ic} placeholder="0.00" />
+              className={cn(ic, 'tabular-nums')} placeholder="0.00" />
           </div>
         </div>
       )}
 
       {problems.length > 0 && (
-        <ul className="mt-2 space-y-0.5">
+        <ul className="mt-3 space-y-0.5">
           {problems.map(p => (
-            <li key={p} className="flex items-center gap-1.5 text-[11px] text-red-600"><AlertTriangle className="w-3 h-3" /> {p}</li>
+            <li key={p} className="flex items-center gap-1.5 text-xs text-red-600"><AlertTriangle className="size-3.5" /> {p}</li>
           ))}
         </ul>
       )}
       {line.lineType === 'ASSET' && serials.length > 0 && serials.length < qty && !problems.length && (
-        <p className="mt-1 flex items-center gap-1.5 text-[11px] text-amber-700">
-          <FileText className="w-3 h-3" /> Enter all {qtyText(qty)} serial numbers before receiving, or clear the list.
+        <p className="mt-2 flex items-center gap-1.5 text-xs text-amber-700">
+          <FileText className="size-3.5" /> Enter all {qtyText(qty)} serial numbers before receiving, or clear the list.
         </p>
       )}
     </div>

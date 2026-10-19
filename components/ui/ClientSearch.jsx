@@ -88,8 +88,8 @@ export default function ClientSearch({ value, onChange, error, placeholder = 'Se
     <div ref={containerRef} className="relative">
       {/* Selected state */}
       {selected ? (
-        <div className={`flex items-center gap-3 px-3 py-2.5 border rounded-lg bg-white ${error ? 'border-red-400' : 'border-gray-200'}`}>
-          <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center shrink-0">
+        <div className={`flex items-center gap-3 rounded-lg border bg-white px-2.5 py-2 shadow-xs ${error ? 'border-red-400' : 'border-input'}`}>
+          <div className="size-8 rounded-full bg-gray-100 text-gray-700 text-xs font-semibold flex items-center justify-center shrink-0">
             {initials(selected.userId?.name ?? selected.name)}
           </div>
           <div className="flex-1 min-w-0">
@@ -99,14 +99,14 @@ export default function ClientSearch({ value, onChange, error, placeholder = 'Se
             </p>
           </div>
           <button type="button" onClick={clear}
-            className="p-1 text-gray-400 hover:text-red-500 transition-colors shrink-0">
-            <X className="w-4 h-4" />
+            className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-900" aria-label="Clear">
+            <X className="size-4" />
           </button>
         </div>
       ) : (
         /* Search input */
-        <div className={`flex items-center gap-2 px-3 py-2.5 border rounded-lg bg-white ${error ? 'border-red-400' : 'border-gray-200 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-100'}`}>
-          <Search className="w-4 h-4 text-gray-400 shrink-0" />
+        <div className={`flex h-9 items-center gap-2 rounded-lg border bg-white px-3 shadow-xs transition-[box-shadow,border-color] ${error ? 'border-red-400' : 'border-input focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/30'}`}>
+          <Search className="size-4 text-gray-400 shrink-0" />
           <input
             ref={inputRef}
             type="text"
@@ -114,31 +114,30 @@ export default function ClientSearch({ value, onChange, error, placeholder = 'Se
             onChange={handleInput}
             onFocus={() => { if (query) setOpen(true) }}
             placeholder={placeholder}
-            className="flex-1 text-sm bg-transparent outline-none placeholder-gray-400"
+            className="flex-1 border-0 bg-transparent p-0 text-sm outline-none placeholder:text-gray-400 focus:ring-0"
           />
           {loading && (
-            <div className="w-3.5 h-3.5 border border-blue-500 border-t-transparent rounded-full animate-spin shrink-0" />
+            <div className="size-3.5 border-2 border-gray-300 border-t-gray-900 rounded-full animate-spin shrink-0" />
           )}
           {!loading && (
-            <ChevronDown className="w-4 h-4 text-gray-300 shrink-0" />
+            <ChevronDown className="size-4 text-gray-400 shrink-0" />
           )}
         </div>
       )}
 
       {/* Dropdown */}
       {open && !selected && (
-        <div className="absolute z-30 mt-1 w-full bg-white rounded-xl shadow-lg border border-gray-100 max-h-72 overflow-y-auto">
+        <div className="absolute z-30 mt-1.5 w-full max-h-72 overflow-y-auto rounded-xl border border-gray-200/80 bg-white p-1 shadow-lg">
           {loading && (
-            <div className="px-4 py-3 text-sm text-gray-400">Searching…</div>
+            <div className="px-3 py-2.5 text-sm text-gray-400">Searching…</div>
           )}
           {!loading && results.length === 0 && query.trim() && (
             <div className="px-4 py-6 text-center">
-              <p className="text-sm text-gray-500">No clients found for <span className="font-medium">"{query}"</span></p>
-              <p className="text-xs text-gray-400 mt-1">Try name, email, company or phone</p>
+              <p className="text-sm text-gray-500">No matches for <span className="font-medium text-gray-900">&ldquo;{query}&rdquo;</span></p>
             </div>
           )}
           {!loading && results.length === 0 && !query.trim() && (
-            <div className="px-4 py-3 text-sm text-gray-400">Start typing to search clients…</div>
+            <div className="px-3 py-2.5 text-sm text-gray-400">Type to search…</div>
           )}
           {results.map(client => {
             const name    = client.userId?.name ?? '—'
@@ -149,12 +148,12 @@ export default function ClientSearch({ value, onChange, error, placeholder = 'Se
             return (
               <button key={client.id} type="button"
                 onClick={() => select(client)}
-                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-blue-50 transition-colors text-left border-b border-gray-50 last:border-0">
-                <div className="w-9 h-9 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center shrink-0">
+                className="w-full flex items-center gap-3 rounded-lg px-2.5 py-2 hover:bg-gray-100 transition-colors text-left">
+                <div className="size-8 rounded-full bg-gray-100 text-gray-700 text-xs font-semibold flex items-center justify-center shrink-0">
                   {initials(name)}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-gray-900">{name}</p>
+                  <p className="text-sm font-medium text-gray-900">{name}</p>
                   <div className="flex items-center gap-3 mt-0.5 flex-wrap">
                     {company && (
                       <span className="flex items-center gap-1 text-xs text-gray-500">

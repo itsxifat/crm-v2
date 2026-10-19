@@ -1,17 +1,20 @@
+import Link from 'next/link'
 import { cn } from '@/lib/utils'
-import { TrendingUp, TrendingDown } from 'lucide-react'
+import { ArrowDownRight, ArrowUpRight } from 'lucide-react'
 
-const colorMap = {
-  blue:    { bg: 'bg-blue-50',    icon: 'text-blue-600',   ring: 'ring-blue-100' },
-  green:   { bg: 'bg-green-50',   icon: 'text-green-600',  ring: 'ring-green-100' },
-  purple:  { bg: 'bg-purple-50',  icon: 'text-purple-600', ring: 'ring-purple-100' },
-  orange:  { bg: 'bg-orange-50',  icon: 'text-orange-600', ring: 'ring-orange-100' },
-  red:     { bg: 'bg-red-50',     icon: 'text-red-600',    ring: 'ring-red-100' },
-  yellow:  { bg: 'bg-yellow-50',  icon: 'text-yellow-600', ring: 'ring-yellow-100' },
-  pink:    { bg: 'bg-pink-50',    icon: 'text-pink-600',   ring: 'ring-pink-100' },
-  teal:    { bg: 'bg-teal-50',    icon: 'text-teal-600',   ring: 'ring-teal-100' },
-  emerald: { bg: 'bg-emerald-50', icon: 'text-emerald-600',ring: 'ring-emerald-100' },
-  indigo:  { bg: 'bg-indigo-50',  icon: 'text-indigo-600', ring: 'ring-indigo-100' },
+// `color` only tints the icon, so alert states (red/orange/yellow) still read at a glance.
+const iconTint = {
+  blue:    'text-blue-600',
+  green:   'text-emerald-600',
+  emerald: 'text-emerald-600',
+  purple:  'text-violet-600',
+  indigo:  'text-indigo-600',
+  orange:  'text-orange-600',
+  red:     'text-red-600',
+  yellow:  'text-amber-600',
+  pink:    'text-pink-600',
+  teal:    'text-teal-600',
+  gray:    'text-gray-500',
 }
 
 export default function StatsCard({
@@ -21,42 +24,45 @@ export default function StatsCard({
   change,
   changeLabel,
   positive,
-  color = 'blue',
+  color = 'gray',
   href,
   className,
 }) {
-  const colors  = colorMap[color] ?? colorMap.blue
-  const Wrapper = href ? 'a' : 'div'
-
-  return (
-    <Wrapper
-      href={href}
-      className={cn(
-        'bg-white rounded-xl border border-gray-100 shadow-sm p-6 flex items-start justify-between',
-        href && 'hover:shadow-md transition-shadow duration-200 cursor-pointer',
-        className
-      )}
-    >
-      <div className="min-w-0">
-        <p className="text-sm font-medium text-gray-500 truncate">{title}</p>
-        <p className="mt-1 text-2xl font-bold text-gray-900 tracking-tight">{value}</p>
-        {(change !== undefined || changeLabel) && (
-          <div className={cn('mt-2 flex items-center gap-1 text-xs font-medium', positive !== false ? 'text-green-600' : 'text-red-600')}>
-            {positive !== false ? (
-              <TrendingUp className="w-3.5 h-3.5" />
-            ) : (
-              <TrendingDown className="w-3.5 h-3.5" />
-            )}
-            {change !== undefined && <span>{change}</span>}
-            {changeLabel && <span className="text-gray-500 font-normal">{changeLabel}</span>}
+  const body = (
+    <>
+      <div className="flex items-center justify-between gap-3">
+        <p className="truncate text-[13px] font-medium text-muted-foreground">{title}</p>
+        {Icon && (
+          <div className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-gray-200/80 bg-white shadow-xs">
+            <Icon className={cn('size-4', iconTint[color] ?? iconTint.gray)} />
           </div>
         )}
       </div>
-      {Icon && (
-        <div className={cn('w-12 h-12 rounded-xl flex items-center justify-center ring-4 shrink-0', colors.bg, colors.ring)}>
-          <Icon className={cn('w-5 h-5', colors.icon)} />
+      <p className="mt-2 text-2xl font-semibold tracking-tight text-gray-900 tabular-nums">{value}</p>
+      {(change !== undefined || changeLabel) && (
+        <div className="mt-1.5 flex items-center gap-1.5 text-xs">
+          {change !== undefined && (
+            <span className={cn(
+              'inline-flex items-center gap-0.5 font-medium',
+              positive !== false ? 'text-emerald-600' : 'text-red-600'
+            )}>
+              {positive !== false ? <ArrowUpRight className="size-3.5" /> : <ArrowDownRight className="size-3.5" />}
+              {change}
+            </span>
+          )}
+          {changeLabel && <span className="text-muted-foreground">{changeLabel}</span>}
         </div>
       )}
-    </Wrapper>
+    </>
   )
+
+  const classes = cn(
+    'block rounded-xl border border-gray-200/80 bg-gradient-to-b from-white to-gray-50/60 p-5 shadow-xs',
+    href && 'transition-all duration-200 hover:border-gray-300 hover:shadow-md',
+    className
+  )
+
+  return href
+    ? <Link href={href} className={classes}>{body}</Link>
+    : <div className={classes}>{body}</div>
 }

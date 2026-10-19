@@ -2,13 +2,15 @@
 
 import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
-import { AlertTriangle, Loader2 } from 'lucide-react'
+import { AlertTriangle } from 'lucide-react'
 import Modal, { ModalFooter } from '@/components/ui/Modal'
+import Button from '@/components/ui/Button'
+import { Field, Input, Label, NativeSelect } from '@/components/ui/Input'
 import DatePicker from '@/components/ui/DatePicker'
 import { dhakaDayKey } from '@/lib/dhakaTime'
 import { STOCK_UNITS } from '@/lib/inventory/constants'
 import VendorPicker from '../../purchases/_components/VendorPicker'
-import { ic, lc, num, tk } from './stockShared'
+import { num, tk } from './stockShared'
 
 const blankForm = (today) => ({
   name: '',
@@ -85,7 +87,7 @@ export default function StockItemModal({ open, onOpenChange, item = null, catego
         body: JSON.stringify(body),
       })
       const json = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(json.error || 'Could not save the item')
+      if (!res.ok) throw new Error(json.error || "Couldn't save the item")
       toast.success(isEdit ? 'Item updated' : `${json.data?.sku ?? 'Item'} added`)
       onSaved?.(json.data)
       onOpenChange(false)
@@ -98,100 +100,82 @@ export default function StockItemModal({ open, onOpenChange, item = null, catego
 
   return (
     <Modal open={open} onOpenChange={(v) => { if (!saving) onOpenChange(v) }} title={isEdit ? `Edit ${item?.sku ?? 'item'}` : 'Add stock item'}
-      description={isEdit ? 'Quantities change only through movements.' : 'Consumables are tracked by quantity at moving average cost.'} size="lg">
+      description={isEdit ? 'Quantities change only through movements.' : undefined} size="lg">
       <datalist id="stock-units">{STOCK_UNITS.map(u => <option key={u} value={u} />)}</datalist>
-      <div className="space-y-4">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div className="sm:col-span-2">
-            <label className={lc}>Item name <span className="text-red-500">*</span></label>
-            <input value={form.name} onChange={e => set({ name: e.target.value })} className={ic} maxLength={200} placeholder="e.g. A4 paper 80gsm (ream)" autoFocus />
-          </div>
-          <div>
-            <label className={lc}>SKU <span className="text-gray-400 font-normal">(auto if blank)</span></label>
-            <input value={form.sku} onChange={e => set({ sku: e.target.value.toUpperCase() })} className={ic} maxLength={40} placeholder="STA-0001" />
-          </div>
-          <div>
-            <label className={lc}>Category</label>
-            <select value={form.categoryId} onChange={e => set({ categoryId: e.target.value })} className={ic}>
+      <div className="space-y-5">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <Field label="Item name" required className="sm:col-span-2">
+            <Input value={form.name} onChange={e => set({ name: e.target.value })} maxLength={200} placeholder="e.g. A4 paper 80gsm (ream)" autoFocus />
+          </Field>
+          <Field label="SKU">
+            <Input value={form.sku} onChange={e => set({ sku: e.target.value.toUpperCase() })} maxLength={40} placeholder="Auto if blank" />
+          </Field>
+          <Field label="Category">
+            <NativeSelect value={form.categoryId} onChange={e => set({ categoryId: e.target.value })}>
               <option value="">Uncategorised</option>
               {consumableCats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className={lc}>Unit</label>
-            <input value={form.unit} onChange={e => set({ unit: e.target.value })} list="stock-units" className={ic} maxLength={20} />
-          </div>
-          <div>
-            <label className={lc}>Store location</label>
-            <select value={form.locationId} onChange={e => set({ locationId: e.target.value })} className={ic}>
+            </NativeSelect>
+          </Field>
+          <Field label="Unit">
+            <Input value={form.unit} onChange={e => set({ unit: e.target.value })} list="stock-units" maxLength={20} />
+          </Field>
+          <Field label="Store location">
+            <NativeSelect value={form.locationId} onChange={e => set({ locationId: e.target.value })}>
               <option value="">Not set</option>
               {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-            </select>
-          </div>
+            </NativeSelect>
+          </Field>
           <div>
-            <label className={lc}>Reorder level</label>
-            <input type="number" min="0" step="any" value={form.reorderLevel} onChange={e => set({ reorderLevel: e.target.value })} className={ic} placeholder="0 = alert only when empty" />
+            <Label title="0 = alert only when empty">Reorder level</Label>
+            <Input type="number" min="0" step="any" value={form.reorderLevel} onChange={e => set({ reorderLevel: e.target.value })} placeholder="0" />
           </div>
-          <div>
-            <label className={lc}>Reorder quantity</label>
-            <input type="number" min="0" step="any" value={form.reorderQty} onChange={e => set({ reorderQty: e.target.value })} className={ic} placeholder="Suggested order size" />
-          </div>
-          <div className="sm:col-span-1">
-            <label className={lc}>Preferred vendor</label>
+          <Field label="Reorder quantity">
+            <Input type="number" min="0" step="any" value={form.reorderQty} onChange={e => set({ reorderQty: e.target.value })} placeholder="0" />
+          </Field>
+          <Field label="Preferred vendor" className="sm:col-span-1">
             <VendorPicker value={form.vendor} onChange={v => set({ vendor: v })} placeholder="Optional" />
-          </div>
-          <div className="sm:col-span-3">
-            <label className={lc}>Notes</label>
-            <input value={form.notes} onChange={e => set({ notes: e.target.value })} className={ic} maxLength={1000} placeholder="Brand preference, storage instructions…" />
-          </div>
+          </Field>
+          <Field label="Notes" className="sm:col-span-3">
+            <Input value={form.notes} onChange={e => set({ notes: e.target.value })} maxLength={1000} placeholder="Brand, storage…" />
+          </Field>
         </div>
 
         {isEdit ? (
-          <label className="flex items-start gap-2 text-sm text-gray-800">
+          <label className="flex items-start gap-2.5 text-sm text-gray-900">
             <input type="checkbox" className="mt-0.5 rounded border-gray-300" checked={form.isActive} onChange={e => set({ isActive: e.target.checked })} />
             <span>
               <span className="font-medium">Active</span>
-              <span className="block text-xs text-gray-500">Inactive items are hidden from purchase bills and cannot be issued{num(item?.qtyOnHand) > 0 ? ` — ${num(item.qtyOnHand)} ${item.unit} still on hand` : ''}.</span>
+              <span className="block text-xs text-muted-foreground">Inactive items can&apos;t be bought or issued{num(item?.qtyOnHand) > 0 ? ` — ${num(item.qtyOnHand)} ${item.unit} still on hand` : ''}.</span>
             </span>
           </label>
         ) : (
-          <div className="rounded-xl border border-gray-100 p-3 space-y-3">
-            <div>
-              <p className="text-sm font-medium text-gray-900">Opening stock <span className="text-gray-400 font-normal">(optional)</span></p>
-              <p className="text-xs text-gray-500">What is already in the store today. New purchases come in through purchase bills.</p>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div>
-                <label className={lc}>Quantity</label>
-                <input type="number" min="0" step="any" value={form.openingQty} onChange={e => set({ openingQty: e.target.value })} className={ic} />
-              </div>
-              <div>
-                <label className={lc}>Unit cost (BDT)</label>
-                <input type="number" min="0" step="0.01" value={form.openingCost} onChange={e => set({ openingCost: e.target.value })} className={ic} />
-                {hasOpening && form.openingCost !== '' && <p className="mt-1 text-[11px] text-gray-400">Value {tk(num(form.openingQty) * num(form.openingCost))}</p>}
-              </div>
-              <div>
-                <label className={lc}>As of</label>
+          <div className="space-y-4 rounded-lg border border-gray-200/80 p-4">
+            <p className="text-sm font-semibold text-gray-900">Opening stock <span className="font-normal text-muted-foreground">· optional</span></p>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <Field label="Quantity">
+                <Input type="number" min="0" step="any" value={form.openingQty} onChange={e => set({ openingQty: e.target.value })} />
+              </Field>
+              <Field label="Unit cost (BDT)" hint={hasOpening && form.openingCost !== '' ? `Value ${tk(num(form.openingQty) * num(form.openingCost))}` : null}>
+                <Input type="number" min="0" step="0.01" value={form.openingCost} onChange={e => set({ openingCost: e.target.value })} />
+              </Field>
+              <Field label="As of">
                 <DatePicker value={form.openingDate} onChange={v => set({ openingDate: v || today })} clearable={false} />
-              </div>
+              </Field>
             </div>
           </div>
         )}
 
         {error && (
-          <p className="flex items-start gap-2 text-sm text-red-700 bg-red-50 rounded-lg px-3 py-2">
-            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" /> {error}
+          <p className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" /> {error}
           </p>
         )}
       </div>
       <ModalFooter>
-        <button type="button" onClick={() => onOpenChange(false)} disabled={saving}
-          className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 bg-white">Cancel</button>
-        <button type="button" onClick={submit} disabled={saving}
-          className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 disabled:opacity-50 flex items-center gap-1.5">
-          {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+        <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
+        <Button onClick={submit} loading={saving}>
           {isEdit ? 'Save changes' : 'Add item'}
-        </button>
+        </Button>
       </ModalFooter>
     </Modal>
   )

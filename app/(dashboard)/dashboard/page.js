@@ -2,7 +2,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Lead, Project, Client, Task, Invoice, Transaction } from '@/models'
-import { formatCurrency, formatDate } from '@/lib/utils'
+import { formatCurrency, formatDate, cn } from '@/lib/utils'
 import {
   TrendingUp,
   Users,
@@ -10,11 +10,16 @@ import {
   Wallet,
   Clock,
   CheckCircle2,
-  AlertCircle,
   ArrowUpRight,
   ArrowDownRight,
 } from 'lucide-react'
 import Link from 'next/link'
+import { buttonVariants } from '@/components/ui/Button'
+import { Card, CardHeader, CardTitle, CardAction } from '@/components/ui/Card'
+import PageHeader from '@/components/ui/PageHeader'
+import StatsCard from '@/components/ui/StatsCard'
+import Badge from '@/components/ui/Badge'
+import EmptyState from '@/components/ui/EmptyState'
 
 async function getDashboardStats() {
   await connectDB()
@@ -63,21 +68,40 @@ async function getDashboardStats() {
   }
 }
 
-const STATUS_COLORS = {
-  NEW:         'bg-blue-100 text-blue-700',
-  CONTACTED:   'bg-purple-100 text-purple-700',
-  PROPOSAL_SENT: 'bg-yellow-100 text-yellow-700',
-  NEGOTIATION: 'bg-orange-100 text-orange-700',
-  WON:         'bg-green-100 text-green-700',
-  LOST:        'bg-red-100 text-red-700',
-  PLANNING:    'bg-blue-100 text-blue-700',
-  IN_PROGRESS: 'bg-yellow-100 text-yellow-700',
-  ON_HOLD:     'bg-gray-100 text-gray-600',
-  COMPLETED:   'bg-green-100 text-green-700',
-  CANCELLED:   'bg-red-100 text-red-700',
+const STATUS_VARIANT = {
+  NEW:           'primary',
+  CONTACTED:     'purple',
+  PROPOSAL_SENT: 'warning',
+  NEGOTIATION:   'orange',
+  WON:           'success',
+  LOST:          'danger',
+  PLANNING:      'primary',
+  IN_PROGRESS:   'warning',
+  ON_HOLD:       'default',
+  COMPLETED:     'success',
+  CANCELLED:     'danger',
 }
 
+// "IN_PROGRESS" → "In progress" (display only)
+const humanize = (s) => s ? (s.charAt(0) + s.slice(1).toLowerCase()).replace(/_/g, ' ') : ''
+
 export const metadata = { title: 'Dashboard' }
+
+function ListCard({ title, href, children }) {
+  return (
+    <Card className="overflow-hidden">
+      <CardHeader className="pb-3">
+        <CardTitle>{title}</CardTitle>
+        <CardAction>
+          <Link href={href} className={cn(buttonVariants({ variant: 'ghost', size: 'xs' }), '-mr-1.5 -mt-1 text-muted-foreground')}>
+            View all <ArrowUpRight className="size-3.5" />
+          </Link>
+        </CardAction>
+      </CardHeader>
+      <div className="divide-y divide-gray-100 border-t border-gray-100">{children}</div>
+    </Card>
+  )
+}
 
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions)
@@ -85,222 +109,167 @@ export default async function DashboardPage() {
 
   const statCards = [
     {
-      label:   'Total Leads',
+      label:   'Total leads',
       value:   stats.totalLeads,
       icon:    TrendingUp,
-      color:   'text-blue-600',
-      bg:      'bg-blue-50',
       href:    '/leads',
       change:  '+12%',
       up:      true,
     },
     {
-      label:   'Active Projects',
+      label:   'Active projects',
       value:   stats.activeProjects,
       icon:    Briefcase,
-      color:   'text-purple-600',
-      bg:      'bg-purple-50',
       href:    '/projects',
       change:  '+3',
       up:      true,
     },
     {
-      label:   'Total Clients',
+      label:   'Total clients',
       value:   stats.totalClients,
       icon:    Users,
-      color:   'text-green-600',
-      bg:      'bg-green-50',
       href:    '/clients',
       change:  '+5%',
       up:      true,
     },
     {
-      label:   'Monthly Revenue',
+      label:   'Monthly revenue',
       value:   formatCurrency(stats.monthlyRevenue),
       icon:    Wallet,
-      color:   'text-emerald-600',
-      bg:      'bg-emerald-50',
       href:    '/finance',
       change:  '+18%',
       up:      true,
     },
     {
-      label:   'Pending Invoices',
+      label:   'Pending invoices',
       value:   stats.pendingInvoices,
       icon:    Clock,
-      color:   'text-yellow-600',
-      bg:      'bg-yellow-50',
+      color:   stats.overdueInvoices > 0 ? 'red' : 'gray',
       href:    '/invoices',
-      change:  stats.overdueInvoices > 0 ? `${stats.overdueInvoices} overdue` : 'All on-time',
+      change:  stats.overdueInvoices > 0 ? `${stats.overdueInvoices} overdue` : undefined,
+      note:    stats.overdueInvoices > 0 ? undefined : 'All on time',
       up:      stats.overdueInvoices === 0,
     },
     {
-      label:   'Open Tasks',
+      label:   'Open tasks',
       value:   stats.pendingTasks,
       icon:    CheckCircle2,
-      color:   'text-pink-600',
-      bg:      'bg-pink-50',
       href:    '/tasks',
-      change:  'Across all projects',
+      note:    'Across all projects',
       up:      true,
     },
   ]
 
+  const firstName = session?.user?.name?.split(' ')[0]
+
   return (
     <div className="space-y-6">
-      {/* Page header */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">
-          Good {getGreeting()}, {session?.user?.name?.split(' ')[0]} 👋
-        </h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Here&apos;s what&apos;s happening in your agency today.
-        </p>
-      </div>
+      <PageHeader
+        title="Dashboard"
+        description={`Good ${getGreeting()}${firstName ? `, ${firstName}` : ''}`}
+      />
 
       {/* Stats grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
-        {statCards.map((card) => {
-          const Icon = card.icon
-          return (
-            <Link
-              key={card.label}
-              href={card.href}
-              className="card p-6 hover:shadow-card-hover transition-shadow duration-200 group"
-            >
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="stats-label">{card.label}</p>
-                  <p className="stats-value">{card.value}</p>
-                  <div className={card.up ? 'stats-change-positive' : 'stats-change-negative'}>
-                    {card.up
-                      ? <ArrowUpRight className="w-3 h-3" />
-                      : <AlertCircle   className="w-3 h-3" />
-                    }
-                    <span>{card.change}</span>
-                  </div>
-                </div>
-                <div className={`w-12 h-12 ${card.bg} rounded-xl flex-center group-hover:scale-110 transition-transform duration-200`}>
-                  <Icon className={`w-5 h-5 ${card.color}`} />
-                </div>
-              </div>
-            </Link>
-          )
-        })}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        {statCards.map((card) => (
+          <StatsCard
+            key={card.label}
+            title={card.label}
+            value={card.value}
+            icon={card.icon}
+            color={card.color ?? 'gray'}
+            href={card.href}
+            change={card.change}
+            positive={card.up}
+            changeLabel={card.note}
+          />
+        ))}
       </div>
 
       {/* Two-column grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Recent Leads */}
-        <div className="card">
-          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-            <h2 className="font-semibold text-gray-900">Recent Leads</h2>
-            <Link href="/leads" className="text-xs font-medium text-primary hover:underline">
-              View all
-            </Link>
-          </div>
-          <div className="divide-y divide-gray-50">
-            {stats.recentLeads.length === 0 ? (
-              <p className="px-6 py-8 text-center text-sm text-gray-400">No leads yet.</p>
-            ) : (
-              stats.recentLeads.map((lead) => (
-                <Link
-                  key={lead.id}
-                  href={`/leads/${lead.id}`}
-                  className="flex items-center justify-between px-6 py-3.5 hover:bg-gray-50 transition-colors"
-                >
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">{lead.name}</p>
-                    <p className="text-xs text-gray-500 truncate">{lead.company ?? lead.email ?? '—'}</p>
-                  </div>
-                  <div className="flex items-center gap-3 shrink-0 ml-4">
-                    {lead.value && (
-                      <span className="text-xs font-semibold text-gray-700">
-                        {formatCurrency(lead.value)}
-                      </span>
-                    )}
-                    <span className={`badge text-2xs ${STATUS_COLORS[lead.status] ?? 'bg-gray-100 text-gray-600'}`}>
-                      {lead.status.replace('_', ' ')}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {/* Recent leads */}
+        <ListCard title="Recent leads" href="/leads">
+          {stats.recentLeads.length === 0 ? (
+            <EmptyState icon={TrendingUp} title="No leads yet" className="py-10" />
+          ) : (
+            stats.recentLeads.map((lead) => (
+              <Link
+                key={lead.id}
+                href={`/leads/${lead.id}`}
+                className="flex items-center justify-between gap-4 px-5 py-3 transition-colors hover:bg-gray-50/70"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-gray-900">{lead.name}</p>
+                  <p className="truncate text-xs text-muted-foreground">{lead.company ?? lead.email ?? '—'}</p>
+                </div>
+                <div className="flex shrink-0 items-center gap-3">
+                  {lead.value && (
+                    <span className="text-sm font-medium tabular-nums text-gray-900">
+                      {formatCurrency(lead.value)}
                     </span>
-                  </div>
-                </Link>
-              ))
-            )}
-          </div>
-        </div>
+                  )}
+                  <Badge variant={STATUS_VARIANT[lead.status] ?? 'default'}>{humanize(lead.status)}</Badge>
+                </div>
+              </Link>
+            ))
+          )}
+        </ListCard>
 
-        {/* Recent Projects */}
-        <div className="card">
-          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-            <h2 className="font-semibold text-gray-900">Active Projects</h2>
-            <Link href="/projects" className="text-xs font-medium text-primary hover:underline">
-              View all
-            </Link>
-          </div>
-          <div className="divide-y divide-gray-50">
-            {stats.recentProjects.length === 0 ? (
-              <p className="px-6 py-8 text-center text-sm text-gray-400">No projects yet.</p>
-            ) : (
-              stats.recentProjects.map((project) => (
-                <Link
-                  key={project.id}
-                  href={`/projects/${project.id}`}
-                  className="flex items-center justify-between px-6 py-3.5 hover:bg-gray-50 transition-colors"
-                >
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">{project.name}</p>
-                    <p className="text-xs text-gray-500 truncate">
-                      {project.clientId?.userId?.name ?? project.clientId?.company ?? '—'}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-3 shrink-0 ml-4">
-                    {project.budget && (
-                      <span className="text-xs font-semibold text-gray-700">
-                        {formatCurrency(project.budget, project.currency)}
-                      </span>
-                    )}
-                    <span className={`badge text-2xs ${STATUS_COLORS[project.status] ?? 'bg-gray-100 text-gray-600'}`}>
-                      {project.status.replace('_', ' ')}
+        {/* Recent projects */}
+        <ListCard title="Active projects" href="/projects">
+          {stats.recentProjects.length === 0 ? (
+            <EmptyState icon={Briefcase} title="No projects yet" className="py-10" />
+          ) : (
+            stats.recentProjects.map((project) => (
+              <Link
+                key={project.id}
+                href={`/projects/${project.id}`}
+                className="flex items-center justify-between gap-4 px-5 py-3 transition-colors hover:bg-gray-50/70"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-gray-900">{project.name}</p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {project.clientId?.userId?.name ?? project.clientId?.company ?? '—'}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-3">
+                  {project.budget && (
+                    <span className="text-sm font-medium tabular-nums text-gray-900">
+                      {formatCurrency(project.budget, project.currency)}
                     </span>
-                  </div>
-                </Link>
-              ))
-            )}
-          </div>
-        </div>
+                  )}
+                  <Badge variant={STATUS_VARIANT[project.status] ?? 'default'}>{humanize(project.status)}</Badge>
+                </div>
+              </Link>
+            ))
+          )}
+        </ListCard>
       </div>
 
-      {/* Recent Transactions */}
+      {/* Recent transactions */}
       {stats.recentTransactions.length > 0 && (
-        <div className="card">
-          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-            <h2 className="font-semibold text-gray-900">Recent Transactions</h2>
-            <Link href="/finance" className="text-xs font-medium text-primary hover:underline">
-              View all
-            </Link>
-          </div>
-          <div className="divide-y divide-gray-50">
-            {stats.recentTransactions.map((tx) => (
-              <div key={tx.id} className="flex items-center justify-between px-6 py-3.5">
-                <div className="flex items-center gap-3">
-                  <div className={`w-8 h-8 rounded-lg flex-center ${tx.type === 'INCOME' ? 'bg-green-50' : 'bg-red-50'}`}>
-                    {tx.type === 'INCOME'
-                      ? <ArrowUpRight   className="w-4 h-4 text-green-600" />
-                      : <ArrowDownRight className="w-4 h-4 text-red-600" />
-                    }
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">{tx.description}</p>
-                    <p className="text-xs text-gray-500">{tx.category} · {formatDate(tx.date)}</p>
-                  </div>
+        <ListCard title="Recent transactions" href="/finance">
+          {stats.recentTransactions.map((tx) => (
+            <div key={tx.id} className="flex items-center justify-between gap-4 px-5 py-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-gray-200/80 bg-white shadow-xs">
+                  {tx.type === 'INCOME'
+                    ? <ArrowUpRight   className="size-4 text-emerald-600" />
+                    : <ArrowDownRight className="size-4 text-red-600" />
+                  }
                 </div>
-                <span className={`text-sm font-semibold ${tx.type === 'INCOME' ? 'text-green-600' : 'text-red-600'}`}>
-                  {tx.type === 'INCOME' ? '+' : '-'}{formatCurrency(tx.amount, tx.currency)}
-                </span>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-gray-900">{tx.description}</p>
+                  <p className="text-xs text-muted-foreground">{tx.category} · {formatDate(tx.date)}</p>
+                </div>
               </div>
-            ))}
-          </div>
-        </div>
+              <span className={`shrink-0 text-sm font-medium tabular-nums ${tx.type === 'INCOME' ? 'text-emerald-600' : 'text-red-600'}`}>
+                {tx.type === 'INCOME' ? '+' : '-'}{formatCurrency(tx.amount, tx.currency)}
+              </span>
+            </div>
+          ))}
+        </ListCard>
       )}
     </div>
   )

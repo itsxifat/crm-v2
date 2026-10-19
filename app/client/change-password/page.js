@@ -1,11 +1,15 @@
 'use client'
 
 import { useState } from 'react'
+import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { useSession, signOut } from 'next-auth/react'
-import { Lock, Loader2, ShieldCheck, Eye, EyeOff, Check, X } from 'lucide-react'
+import { Eye, EyeOff, Check, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { passwordChecklist, isStrongPassword } from '@/lib/passwordPolicy'
+import Button from '@/components/ui/Button'
+import { Input, Field } from '@/components/ui/Input'
+import { cn } from '@/lib/utils'
 
 export default function ClientChangePasswordPage() {
   const router = useRouter()
@@ -49,82 +53,68 @@ export default function ClientChangePasswordPage() {
     }
   }
 
-  const ic = 'w-full border border-gray-200 rounded-xl pl-10 pr-10 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
-
   return (
-    <div className="fixed inset-0 z-50 bg-gray-50 flex items-center justify-center p-4">
-      <div className="w-full max-w-md bg-white rounded-2xl border border-gray-100 shadow-sm p-7">
-        <div className="flex items-center gap-3 mb-1">
-          <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center">
-            <ShieldCheck className="w-5 h-5 text-blue-600" />
-          </div>
-          <h1 className="text-lg font-semibold text-gray-900">{firstTime ? 'Set your password' : 'Change password'}</h1>
-        </div>
-        <p className="text-sm text-gray-500 mb-6">
-          {firstTime
-            ? 'Choose a strong password to finish setting up your account.'
-            : 'Update the password you use to sign in.'}
-        </p>
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-gray-50 p-4">
+      <div className="w-full max-w-sm">
+        <Image src="/en-logo.png" alt="Enfinito" width={112} height={26} className="mx-auto mb-8 h-[22px] w-auto object-contain" priority />
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {!firstTime && (
-            <div className="relative">
-              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
+        <div className="rounded-xl border border-gray-200/80 bg-white p-6 shadow-xs">
+          <h1 className="text-lg font-semibold tracking-tight text-gray-900">{firstTime ? 'Set your password' : 'Change password'}</h1>
+          {firstTime && <p className="mt-1 text-sm text-muted-foreground">Finish setting up your account.</p>}
+
+          <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+            {!firstTime && (
+              <Field label="Current password">
+                <Input
+                  type={show ? 'text' : 'password'}
+                  value={oldPassword}
+                  onChange={e => setOldPassword(e.target.value)}
+                  autoComplete="current-password"
+                  required
+                />
+              </Field>
+            )}
+            <Field label="New password">
+              <div className="relative">
+                <Input
+                  type={show ? 'text' : 'password'}
+                  value={newPassword}
+                  onChange={e => setNewPassword(e.target.value)}
+                  autoComplete="new-password"
+                  className="pr-9"
+                  required
+                />
+                <button type="button" onClick={() => setShow(s => !s)} aria-label={show ? 'Hide passwords' : 'Show passwords'}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700">
+                  {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                </button>
+              </div>
+            </Field>
+            <Field label="Confirm password">
+              <Input
                 type={show ? 'text' : 'password'}
-                value={oldPassword}
-                onChange={e => setOldPassword(e.target.value)}
-                placeholder="Current password"
-                className={ic}
+                value={confirm}
+                onChange={e => setConfirm(e.target.value)}
+                autoComplete="new-password"
                 required
               />
-            </div>
-          )}
-          <div className="relative">
-            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type={show ? 'text' : 'password'}
-              value={newPassword}
-              onChange={e => setNewPassword(e.target.value)}
-              placeholder="New password"
-              className={ic}
-              required
-            />
-            <button type="button" onClick={() => setShow(s => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-              {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-            </button>
-          </div>
-          <div className="relative">
-            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type={show ? 'text' : 'password'}
-              value={confirm}
-              onChange={e => setConfirm(e.target.value)}
-              placeholder="Confirm new password"
-              className={ic}
-              required
-            />
-          </div>
+            </Field>
 
-          {/* Strength checklist */}
-          <ul className="grid grid-cols-2 gap-1.5">
-            {checks.map(c => (
-              <li key={c.key} className={`flex items-center gap-1.5 text-xs ${c.passed ? 'text-green-600' : 'text-gray-400'}`}>
-                {c.passed ? <Check className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
-                {c.label}
-              </li>
-            ))}
-          </ul>
+            {/* Strength checklist */}
+            <ul className="grid grid-cols-2 gap-1.5">
+              {checks.map(c => (
+                <li key={c.key} className={cn('flex items-center gap-1.5 text-xs', c.passed ? 'text-emerald-600' : 'text-gray-400')}>
+                  {c.passed ? <Check className="size-3.5" /> : <X className="size-3.5" />}
+                  {c.label}
+                </li>
+              ))}
+            </ul>
 
-          <button
-            type="submit"
-            disabled={saving}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 disabled:opacity-60 transition-colors"
-          >
-            {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-            {firstTime ? 'Set password & continue' : 'Update password'}
-          </button>
-        </form>
+            <Button type="submit" loading={saving} className="w-full">
+              {firstTime ? 'Set password & continue' : 'Update password'}
+            </Button>
+          </form>
+        </div>
       </div>
     </div>
   )

@@ -53,7 +53,8 @@ export default function ActionMenu({ items = [], align = 'right' }) {
       <button
         ref={btnRef}
         onClick={(e) => { e.stopPropagation(); setOpen(o => !o) }}
-        className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+        className="inline-flex size-8 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-900 data-[open=true]:bg-gray-100 data-[open=true]:text-gray-900"
+        data-open={open}
         aria-label="Actions"
       >
         <MoreHorizontal className="w-4 h-4" />
@@ -63,19 +64,19 @@ export default function ActionMenu({ items = [], align = 'right' }) {
         <div
           ref={menuRef}
           style={{ position: 'fixed', top: coords.top, left: coords.left, width: 200 }}
-          className="z-[60] bg-white border border-gray-100 rounded-xl shadow-lg py-1"
+          className="z-[60] rounded-xl border border-gray-200/80 bg-white p-1 shadow-lg animate-in fade-in-0 zoom-in-95 duration-100"
           onClick={(e) => e.stopPropagation()}
         >
           {items.filter(Boolean).map((it, i) => {
-            const cls = `w-full flex items-center gap-2 px-4 py-2 text-sm text-left transition-colors ${
-              it.danger ? 'text-rose-600 hover:bg-rose-50' : 'text-gray-700 hover:bg-gray-50'
+            const cls = `w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-left transition-colors ${
+              it.danger ? 'text-red-600 hover:bg-red-50' : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
             } ${it.disabled ? 'opacity-40 cursor-not-allowed' : ''}`
             const Icon = it.icon
             const inner = (
               <>
-                {Icon && <Icon className="w-4 h-4 shrink-0" />}
+                {Icon && <Icon className={`size-4 shrink-0 ${it.danger ? '' : 'opacity-60'}`} />}
                 <span className="flex-1">{it.label}</span>
-                {it.hint && <span className="text-[10px] text-gray-400">{it.hint}</span>}
+                {it.hint && <span className="text-[11px] text-gray-400">{it.hint}</span>}
               </>
             )
             if (it.href && !it.disabled) {

@@ -43,13 +43,13 @@ export default function DataTable({
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-gray-100 bg-gray-50/60">
+            <tr className="border-b border-gray-100">
               {columns.map((col) => (
                 <th
                   key={col.key ?? col.label}
                   className={cn(
-                    'px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap',
-                    col.sortable && 'cursor-pointer select-none hover:text-gray-700',
+                    'h-10 px-4 text-left align-middle text-xs font-medium text-muted-foreground whitespace-nowrap',
+                    col.sortable && 'cursor-pointer select-none hover:text-gray-900',
                     col.className
                   )}
                   onClick={() => col.sortable && handleSort(col.key)}
@@ -57,15 +57,15 @@ export default function DataTable({
                   <div className="flex items-center gap-1.5">
                     {col.label}
                     {col.sortable && (
-                      <span className="text-gray-300">
+                      <span className="text-gray-400">
                         {sortKey === col.key ? (
                           sortDir === 'asc' ? (
-                            <ChevronUp className="w-3.5 h-3.5 text-blue-500" />
+                            <ChevronUp className="size-3.5 text-gray-900" />
                           ) : (
-                            <ChevronDown className="w-3.5 h-3.5 text-blue-500" />
+                            <ChevronDown className="size-3.5 text-gray-900" />
                           )
                         ) : (
-                          <ChevronsUpDown className="w-3.5 h-3.5" />
+                          <ChevronsUpDown className="size-3.5" />
                         )}
                       </span>
                     )}
@@ -74,13 +74,13 @@ export default function DataTable({
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-50">
+          <tbody className="divide-y divide-gray-100">
             {loading ? (
               Array.from({ length: 5 }).map((_, i) => (
                 <tr key={i}>
                   {columns.map((col) => (
                     <td key={col.key ?? col.label} className="px-4 py-3">
-                      <div className="h-4 bg-gray-100 rounded animate-pulse" />
+                      <div className="h-4 rounded-md bg-gray-100 animate-pulse" />
                     </td>
                   ))}
                 </tr>
@@ -101,12 +101,12 @@ export default function DataTable({
                   key={row.id ?? rowIdx}
                   onClick={() => onRowClick?.(row)}
                   className={cn(
-                    'group hover:bg-blue-50/30 transition-colors',
+                    'group transition-colors hover:bg-gray-50/70',
                     onRowClick && 'cursor-pointer'
                   )}
                 >
                   {columns.map((col) => (
-                    <td key={col.key ?? col.label} className={cn('px-4 py-3 text-gray-700', col.cellClassName)}>
+                    <td key={col.key ?? col.label} className={cn('px-4 py-3 align-middle text-gray-700', col.cellClassName)}>
                       {col.render ? col.render(row) : row[col.key]}
                     </td>
                   ))}

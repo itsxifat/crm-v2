@@ -5,6 +5,10 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { ArrowLeft, ArrowRight, Lock, LockOpen, RefreshCw, Scale } from 'lucide-react'
 import { PageLoader } from '@/components/ui/LoadingSpinner'
 import EmptyState from '@/components/ui/EmptyState'
+import PageHeader from '@/components/ui/PageHeader'
+import Badge from '@/components/ui/Badge'
+import Button from '@/components/ui/Button'
+import { Card, CardTitle } from '@/components/ui/Card'
 import { usePermission } from '@/components/auth/Can'
 import { dayKeyLabel } from '@/lib/finance/fiscal'
 import { cn } from '@/lib/utils'
@@ -18,7 +22,7 @@ import AssetsStockStep from './_components/AssetsStockStep'
 import ReviewStep from './_components/ReviewStep'
 import PositionCard from './_components/PositionCard'
 import PeriodLockCard from './_components/PeriodLockCard'
-import { apiFetch, btnGhost, parseAmount } from './_components/shared'
+import { apiFetch, parseAmount } from './_components/shared'
 
 function OpeningBalancesContent() {
   const router = useRouter()
@@ -129,45 +133,40 @@ function OpeningBalancesContent() {
 
   if (error && !data) {
     return (
-      <EmptyState
-        icon={Scale}
-        title="Couldn't load opening balances"
-        description={error}
-        action={<button type="button" className={btnGhost} onClick={() => load()}><RefreshCw className="w-4 h-4" /> Try again</button>}
-      />
+      <Card>
+        <EmptyState
+          icon={Scale}
+          title="Couldn't load opening balances"
+          description={error}
+          action={<Button variant="outline" onClick={() => load()}><RefreshCw /> Try again</Button>}
+        />
+      </Card>
     )
   }
   if (!data) return null
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="text-xl font-semibold text-gray-900">Opening balances</h1>
-          <p className="text-sm text-gray-500">
-            Where the business stood the day before it started using the CRM — money, tax, assets and what clients owed.
-            {data.asOfDate && <> Figures are as at the end of <span className="font-medium text-gray-700">{dayKeyLabel(data.asOfDate)}</span>.</>}
-          </p>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <span className={cn(
-            'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium',
-            data.openingLocked ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700',
-          )}>
-            {data.openingLocked ? <Lock className="w-3.5 h-3.5" /> : <LockOpen className="w-3.5 h-3.5" />}
-            {data.openingLocked ? 'Locked' : 'Draft — not locked'}
-          </span>
-          <button type="button" onClick={refreshAll} className="p-2 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100" aria-label="Refresh">
-            <RefreshCw className={cn('w-4 h-4', loading && 'animate-spin')} />
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title="Opening balances"
+        description={data.asOfDate ? `As at end of ${dayKeyLabel(data.asOfDate)}` : undefined}
+        meta={
+          <Badge variant={data.openingLocked ? 'success' : 'warning'}>
+            {data.openingLocked ? <Lock className="size-3" /> : <LockOpen className="size-3" />}
+            {data.openingLocked ? 'Locked' : 'Not locked'}
+          </Badge>
+        }
+        actions={
+          <Button variant="outline" size="icon" onClick={refreshAll} aria-label="Refresh">
+            <RefreshCw className={cn(loading && 'animate-spin')} />
+          </Button>
+        }
+      />
 
       <Stepper step={step} done={done} onStep={setStep} />
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-        <div className="lg:col-span-2 space-y-6 min-w-0">
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-3">
+        <div className="min-w-0 space-y-6 lg:col-span-2">
           {step === 1 && <GoLiveStep data={data} canEdit={canManage} onSaved={refreshAll} />}
           {step === 2 && (
             <MoneyAccountsStep
@@ -194,13 +193,13 @@ function OpeningBalancesContent() {
           )}
 
           <div className="flex items-center justify-between gap-2">
-            <button type="button" className={btnGhost} disabled={step === 1} onClick={() => setStep(step - 1)}>
-              <ArrowLeft className="w-4 h-4" /> Back
-            </button>
+            <Button variant="ghost" disabled={step === 1} onClick={() => setStep(step - 1)}>
+              <ArrowLeft /> Back
+            </Button>
             {step < STEPS.length && (
-              <button type="button" className={btnGhost} onClick={() => setStep(step + 1)}>
-                Next: {STEPS[step].label} <ArrowRight className="w-4 h-4" />
-              </button>
+              <Button variant="outline" onClick={() => setStep(step + 1)}>
+                Next: {STEPS[step].label} <ArrowRight />
+              </Button>
             )}
           </div>
         </div>
@@ -210,11 +209,15 @@ function OpeningBalancesContent() {
             <PositionCard position={livePosition} tax={data.tax} asOfDate={data.asOfDate} dirty={dirty} />
           )}
           {step === 5 && (
-            <div className="bg-white border border-gray-100 rounded-xl p-4 text-sm text-gray-600 space-y-2">
-              <p className="font-medium text-gray-900">How to check the figures</p>
-              <p>Total assets and liabilities should match your last balance sheet (or the accountant&apos;s trial balance) at {data.asOfDate ? dayKeyLabel(data.asOfDate) : 'the day before go-live'}.</p>
-              <p>The opening equity should equal paid-up capital plus retained earnings on that balance sheet. A big difference usually means a missing account, a payable not entered, or assets still to import.</p>
-            </div>
+            <Card className="space-y-1.5 p-5">
+              <CardTitle>Checking the figures</CardTitle>
+              <p
+                className="text-[13px] leading-relaxed text-muted-foreground"
+                title="A big difference usually means a missing account, a payable not entered, or assets still to import."
+              >
+                Totals should match your balance sheet at {data.asOfDate ? dayKeyLabel(data.asOfDate) : 'the day before go-live'}; equity should equal paid-up capital plus retained earnings.
+              </p>
+            </Card>
           )}
         </div>
       </div>

@@ -2,29 +2,27 @@
 
 import { useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import toast from 'react-hot-toast'
-import { Eye, Pencil, Trash2, UserCheck, MoreHorizontal, Phone, Mail, MapPin, MessageSquare, ChevronDown, Check } from 'lucide-react'
+import { Eye, Pencil, Trash2, UserCheck, Phone, Mail, MapPin, MessageSquare, ChevronDown, Check, Users, Link as LinkIcon } from 'lucide-react'
 import Badge from '@/components/ui/Badge'
 import Avatar from '@/components/ui/Avatar'
+import ActionMenu from '@/components/ui/ActionMenu'
+import EmptyState from '@/components/ui/EmptyState'
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table'
 import ConvertLeadModal from '@/components/admin/leads/ConvertLeadModal'
 import { formatCurrency, formatDate } from '@/lib/utils'
 
 // Value is a masked string ('••••••') for users without pii.financial.view
 const formatValue = (v) => (typeof v === 'string' ? v : formatCurrency(v))
 
-const PRIORITY_STYLES = {
-  LOW:    'bg-gray-100 text-gray-500',
-  NORMAL: 'bg-blue-50 text-blue-600',
-  HIGH:   'bg-orange-100 text-orange-600',
-  URGENT: 'bg-red-100 text-red-600',
-}
+const PRIORITY_VARIANT = { LOW: 'default', NORMAL: 'primary', HIGH: 'orange', URGENT: 'danger' }
+const PRIORITY_LABEL   = { LOW: 'Low', NORMAL: 'Normal', HIGH: 'High', URGENT: 'Urgent' }
 
 const STATUS_OPTIONS = [
   { value: 'NEW',           label: 'New' },
   { value: 'CONTACTED',     label: 'Contacted' },
-  { value: 'PROPOSAL_SENT', label: 'Proposal Sent' },
+  { value: 'PROPOSAL_SENT', label: 'Proposal sent' },
   { value: 'NEGOTIATION',   label: 'Negotiation' },
   { value: 'WON',           label: 'Won' },
   { value: 'LOST',          label: 'Lost' },
@@ -90,87 +88,26 @@ function StatusPill({ lead, onStatusChange }) {
         ref={btnRef}
         onClick={toggle}
         disabled={updating}
-        className="flex items-center gap-1 group disabled:opacity-60"
+        className="group flex items-center gap-1 disabled:opacity-60"
       >
         <Badge status={lead.status} />
-        <ChevronDown className="w-3 h-3 text-gray-400 group-hover:text-gray-600 transition-colors" />
+        <ChevronDown className="size-3 text-gray-400 transition-colors group-hover:text-gray-700" />
       </button>
       {anchor && (
         <PortalDropdown anchor={anchor} onClose={() => setAnchor(null)} align="left">
-          <div className="w-44 bg-white rounded-xl shadow-xl border border-gray-100 py-1 overflow-hidden">
+          <div className="w-44 overflow-hidden rounded-xl border border-gray-200/80 bg-white p-1 shadow-lg">
             {STATUS_OPTIONS.map(s => (
               <button
                 key={s.value}
                 onClick={(e) => { e.stopPropagation(); changeStatus(s.value) }}
-                className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left hover:bg-gray-50 transition-colors"
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-gray-100"
               >
                 <Badge status={s.value} />
                 {s.value === lead.status && (
-                  <Check className="w-3 h-3 text-blue-600 ml-auto shrink-0" />
+                  <Check className="ml-auto size-4 shrink-0 text-gray-900" />
                 )}
               </button>
             ))}
-          </div>
-        </PortalDropdown>
-      )}
-    </>
-  )
-}
-
-function ActionMenu({ lead, onEdit, onDelete, onConvert }) {
-  const [anchor, setAnchor] = useState(null)
-  const btnRef = useRef(null)
-
-  function toggle(e) {
-    e.stopPropagation()
-    if (anchor) { setAnchor(null); return }
-    setAnchor(btnRef.current.getBoundingClientRect())
-  }
-
-  return (
-    <>
-      <button
-        ref={btnRef}
-        onClick={toggle}
-        className="p-1.5 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
-      >
-        <MoreHorizontal className="w-4 h-4" />
-      </button>
-      {anchor && (
-        <PortalDropdown anchor={anchor} onClose={() => setAnchor(null)} align="right">
-          <div className="w-44 bg-white rounded-xl shadow-xl border border-gray-100 py-1 overflow-hidden">
-            <Link
-              href={`/admin/leads/${lead.id}`}
-              className="flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-              onClick={() => setAnchor(null)}
-            >
-              <Eye className="w-3.5 h-3.5 text-gray-400" />
-              View Details
-            </Link>
-            <button
-              onClick={() => { setAnchor(null); onEdit(lead) }}
-              className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-            >
-              <Pencil className="w-3.5 h-3.5 text-gray-400" />
-              Edit Lead
-            </button>
-            {lead.status === 'WON' && !lead.convertedAt && (
-              <button
-                onClick={() => { setAnchor(null); onConvert(lead) }}
-                className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-green-700 hover:bg-green-50 transition-colors"
-              >
-                <UserCheck className="w-3.5 h-3.5 text-green-500" />
-                Convert to Client
-              </button>
-            )}
-            <div className="border-t border-gray-100 my-1" />
-            <button
-              onClick={() => { setAnchor(null); onDelete(lead) }}
-              className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              Delete
-            </button>
           </div>
         </PortalDropdown>
       )}
@@ -200,213 +137,185 @@ export default function LeadsTable({ leads = [], onEdit, onRefresh, onStatusChan
   const handleConvert = (lead) => setConvertLead(lead)
 
   if (!leads.length) {
-    return (
-      <div className="flex flex-col items-center justify-center py-20 text-center">
-        <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mb-4">
-          <svg className="w-8 h-8 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
-        </div>
-        <p className="text-gray-500 font-medium">No leads found</p>
-        <p className="text-sm text-gray-400 mt-1">Try adjusting your filters or add a new lead</p>
-      </div>
-    )
+    return <EmptyState icon={Users} title="No leads found" description="Try adjusting your filters." />
   }
 
   return (
     <>
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-gray-100 bg-gray-50/60">
-            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">
-              Name / Company
-            </th>
-            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap hidden sm:table-cell">
-              Contact
-            </th>
-            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap hidden lg:table-cell">
-              Source / Platform
-            </th>
-            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">
-              Status
-            </th>
-            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap hidden md:table-cell">
-              Value
-            </th>
-            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap hidden xl:table-cell">
-              Assigned To
-            </th>
-            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap hidden lg:table-cell">
-              Follow-up
-            </th>
-            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap hidden xl:table-cell">
-              Notes
-            </th>
-            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">
-              Actions
-            </th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-50">
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Name</TableHead>
+          <TableHead className="hidden sm:table-cell">Contact</TableHead>
+          <TableHead className="hidden lg:table-cell">Source</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead className="hidden text-right md:table-cell">Value</TableHead>
+          <TableHead className="hidden xl:table-cell">Assignee</TableHead>
+          <TableHead className="hidden lg:table-cell">Follow-up</TableHead>
+          <TableHead className="hidden xl:table-cell">Notes</TableHead>
+          <TableHead className="w-12"><span className="sr-only">Actions</span></TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
           {leads.map((lead) => (
-            <tr
+            <TableRow
               key={lead.id}
-              className="group hover:bg-blue-50/30 transition-colors cursor-pointer"
+              className="group cursor-pointer"
               onClick={() => router.push(`/admin/leads/${lead.id}`)}
             >
               {/* Name / Company */}
-              <td className="px-4 py-3">
+              <TableCell>
                 <div className="flex items-center gap-3">
                   <Avatar name={lead.name} size="sm" />
                   <div className="min-w-0">
-                    <p className="font-medium text-gray-900 truncate max-w-[160px] sm:max-w-[200px]">{lead.name}</p>
+                    <p className="max-w-[160px] truncate font-medium text-gray-900 sm:max-w-[200px]">{lead.name}</p>
                     {lead.designation && (
-                      <p className="text-xs text-gray-500 truncate max-w-[160px]">{lead.designation}</p>
+                      <p className="max-w-[160px] truncate text-xs text-muted-foreground">{lead.designation}</p>
                     )}
                     {lead.company && (
-                      <p className="text-xs text-gray-400 truncate max-w-[160px]">{lead.company}</p>
+                      <p className="max-w-[160px] truncate text-xs text-muted-foreground">{lead.company}</p>
                     )}
                     {lead.location && (
-                      <p className="hidden sm:flex items-center gap-1 text-xs text-gray-400 truncate max-w-[160px]">
-                        <MapPin className="w-2.5 h-2.5 shrink-0" />{lead.location}
+                      <p className="hidden max-w-[160px] items-center gap-1 truncate text-xs text-gray-400 sm:flex">
+                        <MapPin className="size-3 shrink-0" />{lead.location}
                       </p>
                     )}
                     {lead.convertedAt && (
-                      <span className="inline-flex items-center gap-1 text-xs text-green-600 font-medium">
-                        <UserCheck className="w-3 h-3" /> Converted
+                      <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600">
+                        <UserCheck className="size-3" /> Converted
                       </span>
                     )}
                     {/* Mobile-only: show value + priority inline */}
-                    <div className="flex items-center gap-1.5 mt-1 md:hidden">
+                    <div className="mt-1 flex items-center gap-1.5 md:hidden">
                       {lead.value && (
-                        <span className="text-xs font-semibold text-gray-700">{formatValue(lead.value)}</span>
+                        <span className="text-xs font-medium tabular-nums text-gray-700">{formatValue(lead.value)}</span>
                       )}
                       {lead.priority && lead.priority !== 'NORMAL' && (
-                        <span className={`inline-flex items-center px-1 py-0.5 rounded text-[10px] font-medium ${PRIORITY_STYLES[lead.priority] ?? ''}`}>
-                          {lead.priority}
-                        </span>
+                        <Badge variant={PRIORITY_VARIANT[lead.priority] ?? 'default'}>{PRIORITY_LABEL[lead.priority] ?? lead.priority}</Badge>
                       )}
                     </div>
                   </div>
                 </div>
-              </td>
+              </TableCell>
 
               {/* Contact */}
-              <td className="px-4 py-3 hidden sm:table-cell">
+              <TableCell className="hidden sm:table-cell">
                 <div className="space-y-0.5">
                   {lead.email && (
                     <a
                       href={`mailto:${lead.email}`}
                       onClick={(e) => e.stopPropagation()}
-                      className="flex items-center gap-1 text-xs text-gray-500 hover:text-blue-600 transition-colors"
+                      className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-gray-900"
                     >
-                      <Mail className="w-3 h-3 shrink-0" />
-                      <span className="truncate max-w-[140px]">{lead.email}</span>
+                      <Mail className="size-3 shrink-0" />
+                      <span className="max-w-[140px] truncate">{lead.email}</span>
                     </a>
                   )}
                   {lead.phone && (
                     <a
                       href={`tel:${lead.phone}`}
                       onClick={(e) => e.stopPropagation()}
-                      className="flex items-center gap-1 text-xs text-gray-500 hover:text-blue-600 transition-colors"
+                      className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-gray-900"
                     >
-                      <Phone className="w-3 h-3 shrink-0" />
+                      <Phone className="size-3 shrink-0" />
                       {lead.phone}
                     </a>
                   )}
                 </div>
-              </td>
+              </TableCell>
 
               {/* Source / Platform */}
-              <td className="px-4 py-3 hidden lg:table-cell">
+              <TableCell className="hidden lg:table-cell">
                 <div className="space-y-0.5">
-                  {lead.source && <p className="text-xs text-gray-600">{lead.source}</p>}
-                  {lead.platform && <p className="text-xs text-gray-400">{lead.platform}</p>}
+                  {lead.source && <p className="text-xs text-gray-700">{lead.source}</p>}
+                  {lead.platform && <p className="text-xs text-muted-foreground">{lead.platform}</p>}
                   {lead.businessCategory && (
-                    <p className="text-xs text-indigo-500">{lead.businessCategory}</p>
+                    <p className="text-xs text-muted-foreground">{lead.businessCategory}</p>
                   )}
                   {!lead.source && !lead.platform && !lead.businessCategory && (
                     <span className="text-xs text-gray-300">—</span>
                   )}
                 </div>
-              </td>
+              </TableCell>
 
               {/* Status + Priority */}
-              <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                <div className="space-y-1">
+              <TableCell onClick={(e) => e.stopPropagation()}>
+                <div className="flex flex-col items-start gap-1">
                   <StatusPill lead={lead} onStatusChange={onStatusChange} />
                   {lead.priority && lead.priority !== 'NORMAL' && (
-                    <span className={`hidden md:inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${PRIORITY_STYLES[lead.priority] ?? ''}`}>
-                      {lead.priority}
-                    </span>
+                    <Badge variant={PRIORITY_VARIANT[lead.priority] ?? 'default'} className="hidden md:inline-flex">
+                      {PRIORITY_LABEL[lead.priority] ?? lead.priority}
+                    </Badge>
                   )}
                 </div>
-              </td>
+              </TableCell>
 
               {/* Value */}
-              <td className="px-4 py-3 hidden md:table-cell">
-                <span className="text-sm font-semibold text-gray-800">
+              <TableCell className="hidden text-right tabular-nums md:table-cell">
+                <span className="font-medium text-gray-900">
                   {lead.value ? formatValue(lead.value) : '—'}
                 </span>
-              </td>
+              </TableCell>
 
               {/* Assigned To */}
-              <td className="px-4 py-3 hidden xl:table-cell">
+              <TableCell className="hidden xl:table-cell">
                 {lead.assignedToId ? (
                   <div className="flex items-center gap-2">
                     <Avatar name={lead.assignedToId.userId?.name ?? ''} size="xs" src={lead.assignedToId.userId?.avatar} />
-                    <span className="text-xs text-gray-600 truncate max-w-[100px]">
+                    <span className="max-w-[100px] truncate text-xs text-gray-700">
                       {lead.assignedToId.userId?.name ?? '—'}
                     </span>
                   </div>
                 ) : (
                   <span className="text-xs text-gray-400">Unassigned</span>
                 )}
-              </td>
+              </TableCell>
 
               {/* Follow-up */}
-              <td className="px-4 py-3 whitespace-nowrap hidden lg:table-cell">
+              <TableCell className="hidden whitespace-nowrap lg:table-cell">
                 {lead.followUpDate ? (
-                  <span className={`text-xs font-medium ${new Date(lead.followUpDate) < new Date() ? 'text-red-500' : 'text-gray-500'}`}>
+                  <span className={`text-xs font-medium ${new Date(lead.followUpDate) < new Date() ? 'text-red-600' : 'text-muted-foreground'}`}>
                     {formatDate(lead.followUpDate)}
                   </span>
                 ) : (
-                  <span className="text-xs text-gray-400">—</span>
+                  <span className="text-xs text-gray-300">—</span>
                 )}
-              </td>
+              </TableCell>
 
               {/* Notes / Comments */}
-              <td className="px-4 py-3 hidden xl:table-cell">
-                <div className="flex items-center gap-2">
+              <TableCell className="hidden xl:table-cell">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   {lead.comments?.length > 0 && (
-                    <span className="flex items-center gap-1 text-xs text-gray-400">
-                      <MessageSquare className="w-3 h-3" />{lead.comments.length}
+                    <span className="flex items-center gap-1">
+                      <MessageSquare className="size-3" />{lead.comments.length}
                     </span>
                   )}
                   {lead.links?.length > 0 && (
-                    <span className="text-xs text-blue-400">{lead.links.length} link{lead.links.length > 1 ? 's' : ''}</span>
+                    <span className="flex items-center gap-1">
+                      <LinkIcon className="size-3" />{lead.links.length}
+                    </span>
                   )}
                   {!lead.comments?.length && !lead.links?.length && (
-                    <span className="text-xs text-gray-300">—</span>
+                    <span className="text-gray-300">—</span>
                   )}
                 </div>
-              </td>
+              </TableCell>
 
               {/* Actions */}
-              <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+              <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                 <ActionMenu
-                  lead={lead}
-                  onEdit={onEdit}
-                  onDelete={handleDelete}
-                  onConvert={handleConvert}
+                  items={[
+                    { label: 'View details', icon: Eye, href: `/admin/leads/${lead.id}` },
+                    { label: 'Edit', icon: Pencil, onClick: () => onEdit(lead) },
+                    lead.status === 'WON' && !lead.convertedAt && { label: 'Convert to client', icon: UserCheck, onClick: () => handleConvert(lead) },
+                    { label: 'Delete', icon: Trash2, danger: true, onClick: () => handleDelete(lead) },
+                  ]}
                 />
-              </td>
-            </tr>
+              </TableCell>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
-    </div>
+      </TableBody>
+    </Table>
 
     <ConvertLeadModal
       open={!!convertLead}

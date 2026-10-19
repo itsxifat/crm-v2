@@ -2,13 +2,15 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useSession } from 'next-auth/react'
-import {
-  Loader2, Upload, Plus, X, ShieldCheck, Clock, AlertCircle,
-  BadgeCheck, FileText, Building2, User as UserIcon,
-} from 'lucide-react'
+import { Upload, Plus, X, Clock, AlertCircle, BadgeCheck, FileText } from 'lucide-react'
 import toast, { Toaster } from 'react-hot-toast'
-
-const inputCls = 'w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition bg-white text-gray-800 placeholder:text-gray-400'
+import PageHeader from '@/components/ui/PageHeader'
+import Button from '@/components/ui/Button'
+import Badge from '@/components/ui/Badge'
+import EmptyState from '@/components/ui/EmptyState'
+import { PageLoader } from '@/components/ui/LoadingSpinner'
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
+import { Input, Textarea, NativeSelect, Label, Field } from '@/components/ui/Input'
 
 const DOC_TYPES = ['NID', 'PASSPORT', 'TRADE_LICENSE', 'TIN', 'CV', 'PORTFOLIO', 'OTHER']
 const DOC_LABELS = {
@@ -17,21 +19,10 @@ const DOC_LABELS = {
 }
 
 const STATUS_META = {
-  CREATED:          { label: 'Not Started',   bg: 'bg-gray-100',  text: 'text-gray-600',   icon: AlertCircle },
-  INCOMPLETE:       { label: 'Incomplete',    bg: 'bg-amber-50',  text: 'text-amber-700',  icon: AlertCircle },
-  PENDING_APPROVAL: { label: 'Under Review',  bg: 'bg-blue-50',   text: 'text-blue-700',   icon: Clock },
-  APPROVED:         { label: 'Verified',      bg: 'bg-green-50',  text: 'text-green-700',  icon: BadgeCheck },
-}
-
-function Field({ label, required, children }) {
-  return (
-    <div>
-      <label className="block text-xs font-medium text-gray-500 mb-1.5">
-        {label}{required && <span className="text-red-400 ml-0.5">*</span>}
-      </label>
-      {children}
-    </div>
-  )
+  CREATED:          { label: 'Not started',   variant: 'default', icon: AlertCircle },
+  INCOMPLETE:       { label: 'Incomplete',    variant: 'warning', icon: AlertCircle },
+  PENDING_APPROVAL: { label: 'Under review',  variant: 'primary', icon: Clock },
+  APPROVED:         { label: 'Verified',      variant: 'success', icon: BadgeCheck },
 }
 
 export default function FreelancerVerificationPage() {
@@ -130,7 +121,7 @@ export default function FreelancerVerificationPage() {
       if (!res.ok) throw new Error(json.error ?? 'Save failed')
       setFl(prev => ({ ...prev, ...json.data, profileCompletionPct: json.profileCompletionPct, profileStatus: json.profileStatus }))
       toast.success(json.profileStatus === 'PENDING_APPROVAL'
-        ? 'Submitted for verification!'
+        ? 'Submitted for verification'
         : 'Saved')
       // Refresh the session so the gate reflects the new status promptly.
       update?.()
@@ -141,16 +132,12 @@ export default function FreelancerVerificationPage() {
     }
   }
 
-  if (loading) return (
-    <div className="flex items-center justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
-  )
+  if (loading) return <PageLoader />
 
   if (!fl) return (
-    <div className="max-w-md mx-auto mt-16 bg-white rounded-2xl border border-gray-100 p-8 text-center">
-      <AlertCircle className="w-10 h-10 text-amber-400 mx-auto mb-3" />
-      <h1 className="text-lg font-semibold text-gray-900">Profile not set up yet</h1>
-      <p className="text-sm text-gray-500 mt-1">Your record isn’t ready. Please contact your admin.</p>
-    </div>
+    <Card className="mx-auto mt-10 max-w-md">
+      <EmptyState icon={AlertCircle} title="Profile not set up yet" description="Your record isn’t ready. Please contact your admin." />
+    </Card>
   )
 
   const status = fl.profileStatus ?? 'CREATED'
@@ -160,131 +147,131 @@ export default function FreelancerVerificationPage() {
   const locked = fl.kycApproved
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
+    <div className="max-w-3xl space-y-6">
       <Toaster position="top-center" />
 
-      {/* Header */}
-      <div className="bg-white border border-gray-100 rounded-2xl p-6">
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="w-11 h-11 rounded-xl bg-purple-100 flex items-center justify-center shrink-0">
-            {isAgency ? <Building2 className="w-5 h-5 text-purple-700" /> : <ShieldCheck className="w-5 h-5 text-purple-700" />}
-          </div>
-          <div className="flex-1 min-w-0">
-            <h1 className="text-xl font-semibold text-gray-900">{isAgency ? 'Agency Verification' : 'Identity Verification'}</h1>
-            <p className="text-sm text-gray-400">Complete your KYC to unlock full portal access</p>
-          </div>
-          <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium ${meta.bg} ${meta.text}`}>
-            <Icon className="w-4 h-4" /> {meta.label}
-          </span>
-        </div>
+      <PageHeader
+        title={isAgency ? 'Agency verification' : 'Identity verification'}
+        description="Complete KYC to unlock the portal"
+        meta={<Badge variant={meta.variant}><Icon className="size-3.5" />{meta.label}</Badge>}
+      />
 
-        <div className="mt-4">
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-sm font-medium text-gray-600">Completion</span>
-            <span className={`text-sm font-bold ${pct === 100 ? 'text-green-600' : 'text-purple-600'}`}>{pct}%</span>
-          </div>
-          <div className="w-full bg-gray-100 rounded-full h-2.5">
-            <div className={`h-2.5 rounded-full transition-all duration-700 ${pct === 100 ? 'bg-green-500' : 'bg-purple-500'}`} style={{ width: `${pct}%` }} />
-          </div>
-          {status === 'PENDING_APPROVAL' && (
-            <p className="text-xs text-blue-600 mt-2 font-medium">Your submission is under review. You’ll be notified once verified.</p>
-          )}
-          {status === 'APPROVED' && (
-            <p className="text-xs text-green-600 mt-2 font-medium">You’re verified — you have full portal access.</p>
-          )}
-          {fl.reviewNotes && status === 'INCOMPLETE' && (
-            <div className="mt-3 flex items-start gap-2 p-3 bg-red-50 border border-red-100 rounded-xl text-sm text-red-700">
-              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-              <div><span className="font-medium">Reviewer note: </span>{fl.reviewNotes}</div>
-            </div>
-          )}
+      {/* Progress */}
+      <Card className="p-5">
+        <div className="flex items-center justify-between text-sm">
+          <span className="font-medium text-gray-900">Completion</span>
+          <span className={`font-semibold tabular-nums ${pct === 100 ? 'text-emerald-600' : 'text-gray-900'}`}>{pct}%</span>
         </div>
-      </div>
+        <div className="mt-2 h-2 w-full rounded-full bg-gray-100">
+          <div className={`h-2 rounded-full transition-all duration-700 ${pct === 100 ? 'bg-emerald-500' : 'bg-gray-900'}`} style={{ width: `${pct}%` }} />
+        </div>
+        {status === 'PENDING_APPROVAL' && (
+          <p className="mt-3 text-[13px] text-muted-foreground">Under review. You’ll be notified once verified.</p>
+        )}
+        {status === 'APPROVED' && (
+          <p className="mt-3 text-[13px] text-emerald-700">Verified — you have full portal access.</p>
+        )}
+        {fl.reviewNotes && status === 'INCOMPLETE' && (
+          <div className="mt-3 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-800">
+            <AlertCircle className="mt-0.5 size-4 shrink-0" />
+            <div><span className="font-medium">Reviewer note: </span>{fl.reviewNotes}</div>
+          </div>
+        )}
+      </Card>
 
       {/* Form */}
-      <div className="bg-white border border-gray-100 rounded-2xl p-6 space-y-5">
-        {isAgency ? (
-          <>
-            <div className="flex items-center gap-2 text-sm font-semibold text-gray-600"><Building2 className="w-4 h-4" /> Agency Details</div>
-            <div className="grid sm:grid-cols-2 gap-4">
-              <Field label="Agency Name" required><input className={inputCls} disabled={locked} value={form.agencyInfo.agencyName} onChange={e => setNested('agencyInfo', 'agencyName', e.target.value)} /></Field>
-              <Field label="Agency Type"><input className={inputCls} disabled={locked} value={form.agencyInfo.type} onChange={e => setNested('agencyInfo', 'type', e.target.value)} placeholder="e.g. Design Studio" /></Field>
-            </div>
-            <Field label="Address" required><input className={inputCls} disabled={locked} value={form.address} onChange={e => set('address', e.target.value)} /></Field>
+      {isAgency ? (
+        <>
+          <Card>
+            <CardHeader><CardTitle>Agency details</CardTitle></CardHeader>
+            <CardContent className="grid gap-4 sm:grid-cols-2">
+              <Field label="Agency name" required><Input disabled={locked} value={form.agencyInfo.agencyName} onChange={e => setNested('agencyInfo', 'agencyName', e.target.value)} /></Field>
+              <Field label="Agency type"><Input disabled={locked} value={form.agencyInfo.type} onChange={e => setNested('agencyInfo', 'type', e.target.value)} placeholder="e.g. Design Studio" /></Field>
+              <Field label="Address" required className="sm:col-span-2"><Input disabled={locked} value={form.address} onChange={e => set('address', e.target.value)} /></Field>
+            </CardContent>
+          </Card>
 
-            <div className="flex items-center gap-2 text-sm font-semibold text-gray-600 pt-2"><UserIcon className="w-4 h-4" /> Contact Person</div>
-            <div className="grid sm:grid-cols-2 gap-4">
-              <Field label="Name" required><input className={inputCls} disabled={locked} value={form.contactPerson.name} onChange={e => setNested('contactPerson', 'name', e.target.value)} /></Field>
-              <Field label="Phone" required><input className={inputCls} disabled={locked} value={form.contactPerson.phone} onChange={e => setNested('contactPerson', 'phone', e.target.value)} /></Field>
-              <Field label="Email"><input className={inputCls} disabled={locked} value={form.contactPerson.email} onChange={e => setNested('contactPerson', 'email', e.target.value)} /></Field>
-              <Field label="Designation"><input className={inputCls} disabled={locked} value={form.contactPerson.designation} onChange={e => setNested('contactPerson', 'designation', e.target.value)} /></Field>
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="flex items-center gap-2 text-sm font-semibold text-gray-600"><UserIcon className="w-4 h-4" /> Identity</div>
-            <div className="grid sm:grid-cols-2 gap-4">
-              <Field label="NID Number" required><input className={inputCls} disabled={locked} value={form.nidNumber} onChange={e => set('nidNumber', e.target.value)} /></Field>
-              <Field label="Passport Number"><input className={inputCls} disabled={locked} value={form.passportNumber} onChange={e => set('passportNumber', e.target.value)} /></Field>
-            </div>
-            <Field label="Address" required><input className={inputCls} disabled={locked} value={form.address} onChange={e => set('address', e.target.value)} /></Field>
-            <Field label="Skills" required><input className={inputCls} disabled={locked} value={form.skills} onChange={e => set('skills', e.target.value)} placeholder="e.g. React, Node.js, UI Design" /></Field>
-            <Field label="Bio"><textarea rows={3} className={inputCls} disabled={locked} value={form.bio} onChange={e => set('bio', e.target.value)} /></Field>
-            <Field label="Portfolio Links"><input className={inputCls} disabled={locked} value={form.portfolioLinks} onChange={e => set('portfolioLinks', e.target.value)} placeholder="https://…" /></Field>
-          </>
-        )}
+          <Card>
+            <CardHeader><CardTitle>Contact person</CardTitle></CardHeader>
+            <CardContent className="grid gap-4 sm:grid-cols-2">
+              <Field label="Name" required><Input disabled={locked} value={form.contactPerson.name} onChange={e => setNested('contactPerson', 'name', e.target.value)} /></Field>
+              <Field label="Phone" required><Input disabled={locked} value={form.contactPerson.phone} onChange={e => setNested('contactPerson', 'phone', e.target.value)} /></Field>
+              <Field label="Email"><Input disabled={locked} value={form.contactPerson.email} onChange={e => setNested('contactPerson', 'email', e.target.value)} /></Field>
+              <Field label="Designation"><Input disabled={locked} value={form.contactPerson.designation} onChange={e => setNested('contactPerson', 'designation', e.target.value)} /></Field>
+            </CardContent>
+          </Card>
+        </>
+      ) : (
+        <Card>
+          <CardHeader><CardTitle>Identity</CardTitle></CardHeader>
+          <CardContent className="grid gap-4 sm:grid-cols-2">
+            <Field label="NID number" required><Input disabled={locked} value={form.nidNumber} onChange={e => set('nidNumber', e.target.value)} /></Field>
+            <Field label="Passport number"><Input disabled={locked} value={form.passportNumber} onChange={e => set('passportNumber', e.target.value)} /></Field>
+            <Field label="Address" required className="sm:col-span-2"><Input disabled={locked} value={form.address} onChange={e => set('address', e.target.value)} /></Field>
+            <Field label="Skills" required className="sm:col-span-2"><Input disabled={locked} value={form.skills} onChange={e => set('skills', e.target.value)} placeholder="e.g. React, Node.js, UI Design" /></Field>
+            <Field label="Bio" className="sm:col-span-2"><Textarea rows={3} disabled={locked} value={form.bio} onChange={e => set('bio', e.target.value)} /></Field>
+            <Field label="Portfolio links" className="sm:col-span-2"><Input disabled={locked} value={form.portfolioLinks} onChange={e => set('portfolioLinks', e.target.value)} placeholder="https://…" /></Field>
+          </CardContent>
+        </Card>
+      )}
 
-        {/* Documents */}
-        <div className="flex items-center gap-2 text-sm font-semibold text-gray-600 pt-2"><FileText className="w-4 h-4" /> Documents <span className="text-red-400">*</span></div>
-        {(form.documents ?? []).length === 0 ? (
-          <p className="text-sm text-gray-400 py-3 border border-dashed border-gray-200 rounded-xl text-center">No documents uploaded yet</p>
-        ) : (
-          <div className="space-y-2">
-            {(form.documents ?? []).map((d, i) => (
-              <div key={i} className="flex items-center gap-3 p-2.5 border border-gray-100 rounded-xl">
-                <FileText className="w-4 h-4 text-gray-400 shrink-0" />
-                <a href={d.url} target="_blank" rel="noreferrer" className="text-sm text-gray-700 hover:text-purple-600 truncate flex-1">{d.name || DOC_LABELS[d.type] || d.type}</a>
-                {!locked && <button onClick={() => removeDoc(i)} className="text-gray-400 hover:text-red-500"><X className="w-4 h-4" /></button>}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {!locked && (
-          <div className="flex flex-wrap items-end gap-3 p-3 bg-gray-50 rounded-xl">
-            <div>
-              <p className="text-xs text-gray-400 mb-1">Type</p>
-              <select value={addType} onChange={e => { setAddType(e.target.value); setAddName('') }} className="px-2 py-2 border border-gray-200 rounded-lg text-sm bg-white">
-                {DOC_TYPES.map(t => <option key={t} value={t}>{DOC_LABELS[t]}</option>)}
-              </select>
+      {/* Documents */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Documents<span className="ml-0.5 text-red-500">*</span></CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {(form.documents ?? []).length === 0 ? (
+            <p className="rounded-lg border border-dashed border-gray-200 py-6 text-center text-sm text-muted-foreground">No documents yet</p>
+          ) : (
+            <div className="divide-y divide-gray-100 rounded-lg border border-gray-200/80">
+              {(form.documents ?? []).map((d, i) => (
+                <div key={i} className="flex items-center gap-3 px-3 py-2">
+                  <FileText className="size-4 shrink-0 text-gray-400" />
+                  <a href={d.url} target="_blank" rel="noreferrer" className="flex-1 truncate text-sm font-medium text-gray-900 underline-offset-4 hover:underline">{d.name || DOC_LABELS[d.type] || d.type}</a>
+                  {!locked && (
+                    <Button variant="ghost" size="icon-xs" onClick={() => removeDoc(i)} aria-label="Remove document" className="text-gray-400 hover:text-red-600">
+                      <X />
+                    </Button>
+                  )}
+                </div>
+              ))}
             </div>
-            {addType === 'OTHER' && (
+          )}
+
+          {!locked && (
+            <div className="flex flex-wrap items-end gap-3 rounded-lg bg-gray-50 p-3">
               <div>
-                <p className="text-xs text-gray-400 mb-1">Name</p>
-                <input value={addName} onChange={e => setAddName(e.target.value)} placeholder="Document name" className="px-2 py-2 border border-gray-200 rounded-lg text-sm bg-white w-44" />
+                <Label htmlFor="doc-type">Type</Label>
+                <NativeSelect id="doc-type" value={addType} onChange={e => { setAddType(e.target.value); setAddName('') }} className="w-44">
+                  {DOC_TYPES.map(t => <option key={t} value={t}>{DOC_LABELS[t]}</option>)}
+                </NativeSelect>
               </div>
-            )}
-            <div>
-              <p className="text-xs text-gray-400 mb-1">File</p>
-              <button type="button" disabled={docUploading} onClick={() => fileRef.current?.click()} className="flex items-center gap-1.5 px-3 py-2 border-2 border-dashed border-gray-300 rounded-lg text-sm text-gray-500 hover:border-purple-400 hover:text-purple-600 hover:bg-purple-50 transition disabled:opacity-50">
-                {docUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+              {addType === 'OTHER' && (
+                <div>
+                  <Label htmlFor="doc-name">Name</Label>
+                  <Input id="doc-name" value={addName} onChange={e => setAddName(e.target.value)} placeholder="Document name" className="w-44" />
+                </div>
+              )}
+              <Button variant="outline" loading={docUploading} onClick={() => fileRef.current?.click()}>
+                {!docUploading && <Plus />}
                 {docUploading ? 'Uploading…' : 'Upload'}
-              </button>
+              </Button>
               <input ref={fileRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={e => { uploadDoc(e.target.files?.[0]); e.target.value = '' }} />
             </div>
-          </div>
-        )}
+          )}
+        </CardContent>
+      </Card>
 
-        {!locked && (
-          <div className="pt-2">
-            <button onClick={handleSave} disabled={saving} className="inline-flex items-center gap-2 px-5 py-2.5 bg-purple-600 text-white text-sm font-medium rounded-xl hover:bg-purple-700 transition disabled:opacity-50">
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-              {saving ? 'Saving…' : 'Save & Submit'}
-            </button>
-            <p className="text-xs text-gray-400 mt-2">Complete all required fields (*) to submit for verification.</p>
-          </div>
-        )}
-      </div>
+      {!locked && (
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          <p className="mr-auto text-[13px] text-muted-foreground">Fill all required fields to submit.</p>
+          <Button onClick={handleSave} loading={saving}>
+            {!saving && <Upload />}
+            {saving ? 'Saving…' : 'Save & submit'}
+          </Button>
+        </div>
+      )}
     </div>
   )
 }

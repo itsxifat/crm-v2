@@ -2,14 +2,18 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams } from 'next/navigation'
-import Link from 'next/link'
-import Image from 'next/image'
 import {
-  ArrowLeft, LogIn, Clock, Monitor, Globe, Activity,
-  ChevronLeft, ChevronRight, AlertCircle, Filter,
+  Clock, Monitor, Globe, Activity,
 } from 'lucide-react'
 import Select from '@/components/ui/Select'
 import DatePicker from '@/components/ui/DatePicker'
+import Button from '@/components/ui/Button'
+import { Card } from '@/components/ui/Card'
+import PageHeader from '@/components/ui/PageHeader'
+import Badge from '@/components/ui/Badge'
+import Avatar from '@/components/ui/Avatar'
+import EmptyState from '@/components/ui/EmptyState'
+import Pagination from '@/components/ui/Pagination'
 import { cn } from '@/lib/utils'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -37,22 +41,13 @@ function timeAgo(date) {
 
 // ─── Role config ──────────────────────────────────────────────────────────────
 
-const ROLE_BADGE = {
-  SUPER_ADMIN: 'bg-violet-100 text-violet-700',
-  MANAGER:     'bg-blue-100 text-blue-700',
-  EMPLOYEE:    'bg-emerald-100 text-emerald-700',
-  FREELANCER:  'bg-orange-100 text-orange-700',
-  CLIENT:      'bg-cyan-100 text-cyan-700',
-  VENDOR:      'bg-slate-100 text-slate-600',
-}
-
-const ROLE_DOT = {
-  SUPER_ADMIN: 'bg-violet-500',
-  MANAGER:     'bg-blue-500',
-  EMPLOYEE:    'bg-emerald-500',
-  FREELANCER:  'bg-orange-500',
-  CLIENT:      'bg-cyan-500',
-  VENDOR:      'bg-slate-400',
+const ROLE_VARIANT = {
+  SUPER_ADMIN: 'purple',
+  MANAGER:     'primary',
+  EMPLOYEE:    'success',
+  FREELANCER:  'orange',
+  CLIENT:      'teal',
+  VENDOR:      'default',
 }
 
 const ROLE_LABEL = {
@@ -67,94 +62,57 @@ const ROLE_LABEL = {
 // ─── Action config ────────────────────────────────────────────────────────────
 
 const ACTION_CONFIG = {
-  LOGIN:         { label: 'Login',         bg: 'bg-emerald-50', text: 'text-emerald-700', icon: LogIn    },
-  CREATE:        { label: 'Create',        bg: 'bg-blue-50',    text: 'text-blue-700',    icon: Activity },
-  UPDATE:        { label: 'Update',        bg: 'bg-amber-50',   text: 'text-amber-700',   icon: Activity },
-  DELETE:        { label: 'Delete',        bg: 'bg-red-50',     text: 'text-red-700',     icon: Activity },
-  SEND:          { label: 'Send',          bg: 'bg-violet-50',  text: 'text-violet-700',  icon: Activity },
-  STATUS_CHANGE: { label: 'Status Change', bg: 'bg-cyan-50',    text: 'text-cyan-700',    icon: Activity },
-  APPROVE:       { label: 'Approve',       bg: 'bg-teal-50',    text: 'text-teal-700',    icon: Activity },
-  REJECT:        { label: 'Reject',        bg: 'bg-orange-50',  text: 'text-orange-700',  icon: Activity },
-  CONVERT:       { label: 'Convert',       bg: 'bg-indigo-50',  text: 'text-indigo-700',  icon: Activity },
-  PAYMENT:       { label: 'Payment',       bg: 'bg-green-50',   text: 'text-green-700',   icon: Activity },
-  DEACTIVATE:    { label: 'Deactivate',    bg: 'bg-red-50',     text: 'text-red-700',     icon: Activity },
-  REACTIVATE:    { label: 'Reactivate',    bg: 'bg-emerald-50', text: 'text-emerald-700', icon: Activity },
-  MEMBER_ADD:    { label: 'Member Added',  bg: 'bg-blue-50',    text: 'text-blue-700',    icon: Activity },
-  MEMBER_REMOVE: { label: 'Member Removed',bg: 'bg-orange-50',  text: 'text-orange-700',  icon: Activity },
-  PASSWORD_RESET_APPROVE: { label: 'Reset Approved', bg: 'bg-teal-50',   text: 'text-teal-700',   icon: Activity },
-  PASSWORD_RESET_REJECT:  { label: 'Reset Rejected', bg: 'bg-red-50',    text: 'text-red-700',    icon: Activity },
+  LOGIN:         { label: 'Login',          variant: 'success' },
+  CREATE:        { label: 'Create',         variant: 'primary' },
+  UPDATE:        { label: 'Update',         variant: 'warning' },
+  DELETE:        { label: 'Delete',         variant: 'danger'  },
+  SEND:          { label: 'Send',           variant: 'purple'  },
+  STATUS_CHANGE: { label: 'Status change',  variant: 'teal'    },
+  APPROVE:       { label: 'Approve',        variant: 'teal'    },
+  REJECT:        { label: 'Reject',         variant: 'orange'  },
+  CONVERT:       { label: 'Convert',        variant: 'indigo'  },
+  PAYMENT:       { label: 'Payment',        variant: 'success' },
+  DEACTIVATE:    { label: 'Deactivate',     variant: 'danger'  },
+  REACTIVATE:    { label: 'Reactivate',     variant: 'success' },
+  MEMBER_ADD:    { label: 'Member added',   variant: 'primary' },
+  MEMBER_REMOVE: { label: 'Member removed', variant: 'orange'  },
+  PASSWORD_RESET_APPROVE: { label: 'Reset approved', variant: 'teal'   },
+  PASSWORD_RESET_REJECT:  { label: 'Reset rejected', variant: 'danger' },
   // Inventory & assets
-  ASSIGN:        { label: 'Assign',        bg: 'bg-blue-50',    text: 'text-blue-700',    icon: Activity },
-  RETURN:        { label: 'Return',        bg: 'bg-teal-50',    text: 'text-teal-700',    icon: Activity },
-  TRANSFER:      { label: 'Transfer',      bg: 'bg-indigo-50',  text: 'text-indigo-700',  icon: Activity },
-  DISPOSE:       { label: 'Dispose',       bg: 'bg-orange-50',  text: 'text-orange-700',  icon: Activity },
-  WRITE_OFF:     { label: 'Write-off',     bg: 'bg-red-50',     text: 'text-red-700',     icon: Activity },
-  SELL:          { label: 'Sell',          bg: 'bg-green-50',   text: 'text-green-700',   icon: Activity },
-  DEPRECIATE:    { label: 'Depreciate',    bg: 'bg-violet-50',  text: 'text-violet-700',  icon: Activity },
+  ASSIGN:        { label: 'Assign',         variant: 'primary' },
+  RETURN:        { label: 'Return',         variant: 'teal'    },
+  TRANSFER:      { label: 'Transfer',       variant: 'indigo'  },
+  DISPOSE:       { label: 'Dispose',        variant: 'orange'  },
+  WRITE_OFF:     { label: 'Write-off',      variant: 'danger'  },
+  SELL:          { label: 'Sell',           variant: 'success' },
+  DEPRECIATE:    { label: 'Depreciate',     variant: 'purple'  },
   // Finance & tax
-  RECONCILE:     { label: 'Reconcile',     bg: 'bg-emerald-50', text: 'text-emerald-700', icon: Activity },
-  LOCK:          { label: 'Lock',          bg: 'bg-amber-50',   text: 'text-amber-700',   icon: Activity },
-  UNLOCK:        { label: 'Unlock',        bg: 'bg-orange-50',  text: 'text-orange-700',  icon: Activity },
-  FILE_RETURN:   { label: 'File Return',   bg: 'bg-violet-50',  text: 'text-violet-700',  icon: Activity },
-  DEPOSIT:       { label: 'Deposit',       bg: 'bg-green-50',   text: 'text-green-700',   icon: Activity },
-  ISSUE_NOTE:    { label: 'Issue Note',    bg: 'bg-cyan-50',    text: 'text-cyan-700',    icon: Activity },
-  VOID:          { label: 'Void',          bg: 'bg-red-50',     text: 'text-red-700',     icon: Activity },
-  ARCHIVE:       { label: 'Archive',       bg: 'bg-gray-100',   text: 'text-gray-700',    icon: Activity },
-  RESTORE:       { label: 'Restore',       bg: 'bg-emerald-50', text: 'text-emerald-700', icon: Activity },
-  REVERSE:       { label: 'Reverse',       bg: 'bg-orange-50',  text: 'text-orange-700',  icon: Activity },
-  UNDO:          { label: 'Undo',          bg: 'bg-amber-50',   text: 'text-amber-700',   icon: Activity },
-  CANCEL:        { label: 'Cancel',        bg: 'bg-red-50',     text: 'text-red-700',     icon: Activity },
-  EXPORT:        { label: 'Export',        bg: 'bg-gray-100',   text: 'text-gray-700',    icon: Activity },
-  IMPORT:        { label: 'Import',        bg: 'bg-sky-50',     text: 'text-sky-700',     icon: Activity },
+  RECONCILE:     { label: 'Reconcile',      variant: 'success' },
+  LOCK:          { label: 'Lock',           variant: 'warning' },
+  UNLOCK:        { label: 'Unlock',         variant: 'orange'  },
+  FILE_RETURN:   { label: 'File return',    variant: 'purple'  },
+  DEPOSIT:       { label: 'Deposit',        variant: 'success' },
+  ISSUE_NOTE:    { label: 'Issue note',     variant: 'teal'    },
+  VOID:          { label: 'Void',           variant: 'danger'  },
+  ARCHIVE:       { label: 'Archive',        variant: 'default' },
+  RESTORE:       { label: 'Restore',        variant: 'success' },
+  REVERSE:       { label: 'Reverse',        variant: 'orange'  },
+  UNDO:          { label: 'Undo',           variant: 'warning' },
+  CANCEL:        { label: 'Cancel',         variant: 'danger'  },
+  EXPORT:        { label: 'Export',         variant: 'default' },
+  IMPORT:        { label: 'Import',         variant: 'primary' },
+}
+
+// Timeline dot colour per badge variant (static class names so Tailwind generates them).
+const DOT = {
+  success: 'bg-emerald-500', primary: 'bg-blue-500',   warning: 'bg-amber-500', danger: 'bg-red-500',
+  purple:  'bg-violet-500',  teal:    'bg-teal-500',   orange:  'bg-orange-500', indigo: 'bg-indigo-500',
+  default: 'bg-gray-400',
 }
 
 function ActionBadge({ action }) {
-  const cfg = ACTION_CONFIG[action] ?? { label: action, bg: 'bg-gray-100', text: 'text-gray-600', icon: Activity }
-  const Icon = cfg.icon
-  return (
-    <span className={cn('inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full', cfg.bg, cfg.text)}>
-      <Icon className="w-3 h-3" />
-      {cfg.label}
-    </span>
-  )
-}
-
-// ─── User info card ────────────────────────────────────────────────────────────
-
-function UserCard({ user }) {
-  if (!user) return null
-  const dotCls   = ROLE_DOT[user.role]   ?? 'bg-gray-400'
-  const badgeCls = ROLE_BADGE[user.role] ?? 'bg-gray-100 text-gray-600'
-
-  return (
-    <div className="bg-white rounded-xl border border-gray-100 p-5 flex items-center gap-4">
-      <div className={cn('w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold text-white shrink-0', dotCls)}>
-        {user.avatar
-          ? <Image src={user.avatar} alt="" width={48} height={48} className="w-12 h-12 rounded-full object-cover" />
-          : (user.name ?? '?').charAt(0).toUpperCase()
-        }
-      </div>
-      <div className="min-w-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          <p className="font-semibold text-gray-900">{user.name}</p>
-          <span className={cn('text-xs font-medium px-2 py-0.5 rounded-full', badgeCls)}>
-            {ROLE_LABEL[user.role] ?? user.role}
-          </span>
-          <span className={cn(
-            'text-xs font-medium px-2 py-0.5 rounded-full',
-            user.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500',
-          )}>
-            {user.isActive ? 'Active' : 'Inactive'}
-          </span>
-        </div>
-        <p className="text-sm text-gray-500 mt-0.5">{user.email}</p>
-        <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
-          <Clock className="w-3 h-3" />
-          Last login: {user.lastLogin ? formatDate(user.lastLogin) : 'Never'}
-        </p>
-      </div>
-    </div>
-  )
+  const cfg = ACTION_CONFIG[action] ?? { label: action, variant: 'default' }
+  return <Badge variant={cfg.variant}>{cfg.label}</Badge>
 }
 
 // ─── Log timeline ─────────────────────────────────────────────────────────────
@@ -163,31 +121,27 @@ function LogRow({ log, index }) {
   const [expanded, setExpanded] = useState(false)
 
   return (
-    <div className={cn('flex gap-4 group', index > 0 && 'border-t border-gray-50')}>
+    <div className={cn('group flex gap-4', index > 0 && 'border-t border-gray-100')}>
       {/* Timeline spine */}
-      <div className="flex flex-col items-center pt-4">
-        {/* Dot takes the badge's text colour — class names built at runtime are never generated by Tailwind. */}
-        <div className={cn(
-          'w-2 h-2 rounded-full shrink-0 bg-current',
-          ACTION_CONFIG[log.action]?.text ?? 'text-gray-300',
-        )} />
-        <div className="w-px flex-1 bg-gray-100 mt-1" />
+      <div className="flex flex-col items-center pt-5">
+        <div className={cn('size-2 shrink-0 rounded-full', DOT[ACTION_CONFIG[log.action]?.variant] ?? 'bg-gray-300')} />
+        <div className="mt-1 w-px flex-1 bg-gray-100" />
       </div>
 
       {/* Content */}
-      <div className="flex-1 py-3.5 pb-4 min-w-0">
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2 flex-wrap">
+      <div className="min-w-0 flex-1 py-3.5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
             <ActionBadge action={log.action} />
-            <span className="text-sm text-gray-700">
+            <span className="text-sm text-gray-900">
               {log.entity}
               {log.entityId && log.entityId !== log.user?.id && (
-                <span className="text-gray-400 text-xs ml-1">#{log.entityId.slice(-6)}</span>
+                <span className="ml-1 font-mono text-xs text-muted-foreground">#{log.entityId.slice(-6)}</span>
               )}
             </span>
           </div>
           <span
-            className="text-xs text-gray-400 whitespace-nowrap cursor-default"
+            className="cursor-default whitespace-nowrap text-xs text-muted-foreground"
             title={formatDate(log.createdAt)}
           >
             {timeAgo(log.createdAt)}
@@ -195,15 +149,15 @@ function LogRow({ log, index }) {
         </div>
 
         {/* Meta row */}
-        <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+        <div className="mt-1.5 flex flex-wrap items-center gap-3">
           {log.ipAddress && (
-            <span className="flex items-center gap-1 text-xs text-gray-400">
-              <Globe className="w-3 h-3" /> {log.ipAddress}
+            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+              <Globe className="size-3" /> {log.ipAddress}
             </span>
           )}
           {log.userAgent && (
-            <span className="flex items-center gap-1 text-xs text-gray-400 truncate max-w-xs">
-              <Monitor className="w-3 h-3 shrink-0" />
+            <span className="flex max-w-xs items-center gap-1 truncate text-xs text-muted-foreground">
+              <Monitor className="size-3 shrink-0" />
               <span className="truncate">{log.userAgent.substring(0, 60)}{log.userAgent.length > 60 ? '…' : ''}</span>
             </span>
           )}
@@ -213,13 +167,14 @@ function LogRow({ log, index }) {
         {log.changes && (
           <div className="mt-1.5">
             <button
+              type="button"
               onClick={() => setExpanded(e => !e)}
-              className="text-xs text-gray-400 hover:text-gray-700 underline underline-offset-2 transition-colors"
+              className="text-xs font-medium text-gray-500 underline-offset-4 transition-colors hover:text-gray-900 hover:underline"
             >
               {expanded ? 'Hide details' : 'Show details'}
             </button>
             {expanded && (
-              <pre className="mt-1.5 text-xs bg-gray-50 rounded-lg p-2.5 overflow-x-auto text-gray-600 border border-gray-100">
+              <pre className="mt-1.5 overflow-x-auto rounded-lg bg-gray-50 p-3 text-xs text-gray-700">
                 {log.changes}
               </pre>
             )}
@@ -280,80 +235,84 @@ export default function UserActivityLogPage() {
   useEffect(() => { setPage(1) }, [actionFilter, fromDate, toDate])
   useEffect(() => { loadLogs() }, [loadLogs])
 
-  return (
-    <div className="space-y-5 max-w-3xl">
-      {/* Back */}
-      <Link
-        href="/admin/activity-logs"
-        className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900 transition-colors"
-      >
-        <ArrowLeft className="w-4 h-4" />
-        Back to Activity Logs
-      </Link>
+  const filtered = !!(actionFilter || fromDate || toDate)
 
-      {/* User info */}
-      {userLoading ? (
-        <div className="h-24 bg-gray-100 rounded-xl animate-pulse" />
-      ) : (
-        <UserCard user={user} />
-      )}
+  return (
+    <div className="max-w-3xl space-y-6">
+      <PageHeader
+        back="/admin/activity-logs"
+        backLabel="Activity logs"
+        title={userLoading
+          ? <span className="inline-block h-7 w-48 animate-pulse rounded-md bg-gray-100 align-middle" />
+          : (user?.name ?? 'User activity')}
+        meta={!userLoading && user ? (
+          <>
+            <Badge variant={ROLE_VARIANT[user.role] ?? 'default'}>{ROLE_LABEL[user.role] ?? user.role}</Badge>
+            <Badge variant={user.isActive ? 'success' : 'default'} dot>{user.isActive ? 'Active' : 'Inactive'}</Badge>
+          </>
+        ) : null}
+      >
+        {!userLoading && user && (
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+            <span className="inline-flex items-center gap-2">
+              <Avatar name={user.name ?? '?'} src={user.avatar} size="xs" />
+              {user.email}
+            </span>
+            <span className="inline-flex items-center gap-1 text-xs">
+              <Clock className="size-3" />
+              Last login {user.lastLogin ? formatDate(user.lastLogin) : 'never'}
+            </span>
+          </div>
+        )}
+      </PageHeader>
 
       {/* Filters */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="flex items-center gap-1.5 text-sm text-gray-500">
-          <Filter className="w-3.5 h-3.5" />
-          Filters:
-        </div>
+      <div className="flex flex-wrap items-center gap-2">
         <Select
           value={actionFilter}
           onChange={v => setActionFilter(v ?? '')}
           options={Object.entries(ACTION_CONFIG).map(([action, cfg]) => ({ value: action, label: cfg.label }))}
-          placeholder="All Actions"
+          placeholder="All actions"
           size="sm"
+          className="w-full sm:w-44"
         />
         <div className="flex items-center gap-1.5">
           <DatePicker value={fromDate || null} onChange={v => setFromDate(v ?? '')} />
-          <span className="text-gray-400 text-xs">to</span>
+          <span className="text-xs text-muted-foreground">to</span>
           <DatePicker value={toDate || null} onChange={v => setToDate(v ?? '')} />
         </div>
-        {(actionFilter || fromDate || toDate) && (
-          <button
+        {filtered && (
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => { setActionFilter(''); setFromDate(''); setToDate('') }}
-            className="text-xs text-gray-400 hover:text-gray-700 transition-colors"
           >
             Clear
-          </button>
+          </Button>
+        )}
+        {!logsLoading && (
+          <p className="text-xs text-muted-foreground tabular-nums sm:ml-auto">
+            {meta.total} activit{meta.total !== 1 ? 'ies' : 'y'}{filtered ? ' (filtered)' : ''}
+          </p>
         )}
       </div>
 
-      {/* Log count */}
-      {!logsLoading && (
-        <p className="text-xs text-gray-400">
-          {meta.total} activit{meta.total !== 1 ? 'ies' : 'y'} found
-          {(actionFilter || fromDate || toDate) ? ' (filtered)' : ''}
-          {' '}· Logs retained for 356 days
-        </p>
-      )}
-
       {/* Timeline */}
-      <div className="bg-white rounded-xl border border-gray-100 px-5 overflow-hidden">
+      <Card className="overflow-hidden px-5">
         {logsLoading ? (
           <div className="space-y-4 py-4">
             {Array.from({ length: 5 }).map((_, i) => (
               <div key={i} className="flex gap-4">
-                <div className="w-2 h-2 mt-4 rounded-full bg-gray-200 shrink-0" />
+                <div className="mt-4 size-2 shrink-0 rounded-full bg-gray-200" />
                 <div className="flex-1 space-y-1.5 py-3">
-                  <div className="h-4 bg-gray-100 rounded w-40 animate-pulse" />
-                  <div className="h-3 bg-gray-100 rounded w-64 animate-pulse" />
+                  <div className="h-4 w-40 animate-pulse rounded-md bg-gray-100" />
+                  <div className="h-3 w-64 animate-pulse rounded-md bg-gray-100" />
                 </div>
               </div>
             ))}
           </div>
         ) : logs.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-14 gap-2 text-gray-400">
-            <AlertCircle className="w-6 h-6" />
-            <p className="text-sm">No activity found</p>
-          </div>
+          <EmptyState icon={Activity} title="No activity found" />
         ) : (
           <div>
             {logs.map((log, i) => (
@@ -361,27 +320,11 @@ export default function UserActivityLogPage() {
             ))}
           </div>
         )}
-      </div>
+      </Card>
 
       {/* Pagination */}
       {meta.pages > 1 && (
-        <div className="flex items-center justify-between text-sm text-gray-500">
-          <button
-            onClick={() => setPage(p => Math.max(1, p - 1))}
-            disabled={page <= 1}
-            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-200 text-xs hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <ChevronLeft className="w-3.5 h-3.5" /> Prev
-          </button>
-          <span className="text-xs">Page {page} of {meta.pages}</span>
-          <button
-            onClick={() => setPage(p => Math.min(meta.pages, p + 1))}
-            disabled={page >= meta.pages}
-            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-200 text-xs hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            Next <ChevronRight className="w-3.5 h-3.5" />
-          </button>
-        </div>
+        <Pagination page={page} pages={meta.pages} onChange={setPage} />
       )}
     </div>
   )

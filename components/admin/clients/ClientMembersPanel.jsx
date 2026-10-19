@@ -2,8 +2,13 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import toast from 'react-hot-toast'
-import { UserPlus, Trash2, Loader2, Crown, Mail, Phone } from 'lucide-react'
+import { UserPlus, Trash2, Loader2, Crown, Users } from 'lucide-react'
 import Avatar from '@/components/ui/Avatar'
+import Button from '@/components/ui/Button'
+import Badge from '@/components/ui/Badge'
+import EmptyState from '@/components/ui/EmptyState'
+import LoadingSpinner from '@/components/ui/LoadingSpinner'
+import { Input } from '@/components/ui/Input'
 
 /**
  * People who can access this company (CompanyMembership rows).
@@ -71,64 +76,60 @@ export default function ClientMembersPanel({ clientId }) {
     }
   }
 
-  const ic = 'border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
-
   return (
     <div className="space-y-5">
       {/* Add person */}
-      <form onSubmit={addMember} className="bg-gray-50 border border-gray-100 rounded-xl p-4">
-        <p className="text-sm font-semibold text-gray-700 mb-1 flex items-center gap-1.5">
-          <UserPlus className="w-4 h-4 text-gray-400" /> Add a person to this company
+      <form onSubmit={addMember} className="rounded-lg bg-gray-50 p-4">
+        <p
+          className="mb-3 text-sm font-medium text-gray-900"
+          title="Existing emails are linked without a new password; new emails get an account and login credentials."
+        >
+          Add a person
         </p>
-        <p className="text-xs text-gray-400 mb-3">
-          Enter an email. If the person already exists they’re simply linked (no new password); otherwise an account is created and login credentials are sent.
-        </p>
-        <div className="grid sm:grid-cols-3 gap-2">
-          <input className={ic} type="email" placeholder="Email *" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} required />
-          <input className={ic} placeholder="Name" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
-          <input className={ic} placeholder="Phone" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
-        </div>
-        <div className="flex justify-end mt-3">
-          <button type="submit" disabled={adding} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-60 transition-colors">
-            {adding ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
+        <div className="grid gap-2 sm:grid-cols-[1fr_1fr_1fr_auto]">
+          <Input type="email" placeholder="Email *" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} required />
+          <Input placeholder="Name" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+          <Input placeholder="Phone" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
+          <Button type="submit" loading={adding}>
+            {!adding && <UserPlus />}
             Add person
-          </button>
+          </Button>
         </div>
       </form>
 
       {/* Members list */}
       {loading ? (
-        <div className="flex items-center justify-center py-10 text-gray-400"><Loader2 className="w-5 h-5 animate-spin" /></div>
+        <LoadingSpinner className="py-10" />
       ) : members.length === 0 ? (
-        <p className="text-center py-8 text-sm text-gray-400">No people linked to this company yet.</p>
+        <EmptyState icon={Users} title="No people linked yet" className="py-8" />
       ) : (
-        <div className="divide-y divide-gray-50 border border-gray-100 rounded-xl overflow-hidden">
+        <div className="divide-y divide-gray-100 overflow-hidden rounded-lg border border-gray-200/80">
           {members.map(m => (
-            <div key={m.userId} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors">
+            <div key={m.userId} className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-gray-50/70">
               <Avatar name={m.name} src={m.avatar} size="sm" />
-              <div className="flex-1 min-w-0">
+              <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <p className="text-sm font-medium text-gray-800 truncate">{m.name}</p>
+                  <p className="truncate text-sm font-medium text-gray-900">{m.name}</p>
                   {m.role === 'OWNER' && (
-                    <span className="inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700">
-                      <Crown className="w-3 h-3" /> Owner
-                    </span>
+                    <Badge variant="warning"><Crown className="size-3" /> Owner</Badge>
                   )}
-                  {!m.isActive && <span className="text-[11px] text-gray-400">(inactive)</span>}
+                  {!m.isActive && <Badge>Inactive</Badge>}
                 </div>
-                <div className="flex items-center gap-3 text-xs text-gray-400 mt-0.5">
-                  <span className="flex items-center gap-1 truncate"><Mail className="w-3 h-3" /> {m.email}</span>
-                  {m.phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" /> {m.phone}</span>}
+                <div className="mt-0.5 flex items-center gap-3 text-xs text-muted-foreground">
+                  <span className="truncate">{m.email}</span>
+                  {m.phone && <span className="tabular-nums">{m.phone}</span>}
                 </div>
               </div>
-              <button
+              <Button
+                variant="ghost"
+                size="icon-sm"
                 onClick={() => removeMember(m)}
                 disabled={removing === m.userId}
-                className="p-2 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
+                className="text-gray-400 hover:bg-red-50 hover:text-red-600"
                 title="Remove access"
               >
-                {removing === m.userId ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-              </button>
+                {removing === m.userId ? <Loader2 className="animate-spin" /> : <Trash2 />}
+              </Button>
             </div>
           ))}
         </div>

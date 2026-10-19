@@ -1,7 +1,6 @@
 'use client'
 
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
-import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import toast from 'react-hot-toast'
 import {
@@ -16,6 +15,10 @@ import StatsCard from '@/components/ui/StatsCard'
 import ActionMenu from '@/components/ui/ActionMenu'
 import EmptyState from '@/components/ui/EmptyState'
 import Modal, { ModalFooter } from '@/components/ui/Modal'
+import Button, { buttonVariants } from '@/components/ui/Button'
+import { Card } from '@/components/ui/Card'
+import PageHeader from '@/components/ui/PageHeader'
+import Tabs from '@/components/ui/Tabs'
 import { PageLoader } from '@/components/ui/LoadingSpinner'
 import { InventoryBadge } from '@/components/inventory/AssetStatusBadge'
 import { Can, usePermission } from '@/components/auth/Can'
@@ -93,7 +96,7 @@ function StockPage() {
     try {
       const res = await fetch(`/api/inventory/stock?${itemsQuery({ page, limit: 30 })}`)
       const json = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(json.error || 'Could not load stock items')
+      if (!res.ok) throw new Error(json.error || "Couldn't load stock items")
       if (id !== seq.current) return
       setRows(json.data ?? [])
       setMeta(json.meta ?? null)
@@ -180,22 +183,28 @@ function StockPage() {
       key: 'name', label: 'Item', sortable: true,
       render: (i) => (
         <div className="min-w-[180px]">
-          <button type="button" onClick={(e) => { e.stopPropagation(); setHistoryId(i.id) }} className="font-medium text-gray-900 hover:underline text-left">
+          <button type="button" onClick={(e) => { e.stopPropagation(); setHistoryId(i.id) }} className="text-left font-medium text-gray-900 underline-offset-4 hover:underline">
             {i.name}
           </button>
-          <p className="text-[11px] text-gray-400">{i.sku}{i.location ? ` · ${i.location.name}` : ''}</p>
+          <p className="text-xs text-gray-400">{i.sku}{i.location ? ` · ${i.location.name}` : ''}</p>
         </div>
       ),
     },
     { key: 'category', label: 'Category', render: (i) => <span className="text-gray-600">{i.category?.name ?? '—'}</span> },
     {
-      key: 'qtyOnHand', label: 'On hand', sortable: true,
+      key: 'qtyOnHand', label: 'On hand', sortable: true, className: '[&>div]:justify-end', cellClassName: 'text-right tabular-nums',
       render: (i) => <span className={cn('font-medium whitespace-nowrap', i.status === 'OUT' ? 'text-red-600' : i.status === 'LOW' ? 'text-amber-700' : 'text-gray-900')}>{qtyText(i.qtyOnHand)} {i.unit}</span>,
     },
-    { key: 'avgCost', label: 'Avg cost', sortable: true, render: (i) => <span className="whitespace-nowrap">{tk(i.avgCost)}</span> },
-    { key: 'stockValue', label: 'Value', sortable: true, render: (i) => <span className="whitespace-nowrap">{tk(i.stockValue, 0)}</span> },
     {
-      key: 'reorderLevel', label: 'Reorder at',
+      key: 'avgCost', label: 'Avg cost', sortable: true, className: '[&>div]:justify-end', cellClassName: 'text-right tabular-nums',
+      render: (i) => <span className="whitespace-nowrap">{tk(i.avgCost)}</span>,
+    },
+    {
+      key: 'stockValue', label: 'Value', sortable: true, className: '[&>div]:justify-end', cellClassName: 'text-right tabular-nums',
+      render: (i) => <span className="whitespace-nowrap">{tk(i.stockValue, 0)}</span>,
+    },
+    {
+      key: 'reorderLevel', label: 'Reorder at', className: '[&>div]:justify-end', cellClassName: 'text-right tabular-nums',
       render: (i) => <span className="text-gray-500 whitespace-nowrap">{i.reorderLevel ? `${qtyText(i.reorderLevel)} ${i.unit}` : '—'}</span>,
     },
     {
@@ -226,98 +235,91 @@ function StockPage() {
   ]
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-gray-900">Consumables</h1>
-          <p className="text-sm text-gray-500">Office supplies, pantry and toner — tracked by quantity at moving average cost.</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <a href={`/api/inventory/stock?${itemsQuery({ format: 'csv' })}`}
-            className="inline-flex items-center gap-1.5 border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 rounded-lg px-3 py-2 text-sm font-medium">
-            <Download className="w-4 h-4" /> Export CSV
-          </a>
-          <Can perm="inventory.manage">
-            <button type="button" onClick={() => setItemModal({ open: true, item: null })}
-              className="inline-flex items-center gap-1.5 bg-gray-900 text-white hover:bg-gray-800 rounded-lg px-4 py-2 text-sm font-medium">
-              <Plus className="w-4 h-4" /> Add item
-            </button>
-          </Can>
-        </div>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Consumables"
+        actions={(
+          <>
+            <a href={`/api/inventory/stock?${itemsQuery({ format: 'csv' })}`} className={buttonVariants({ variant: 'outline' })}>
+              <Download /> Export CSV
+            </a>
+            <Can perm="inventory.manage">
+              <Button onClick={() => setItemModal({ open: true, item: null })}>
+                <Plus /> Add item
+              </Button>
+            </Can>
+          </>
+        )}
+      />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatsCard title="Items" value={summary ? summary.items : '—'} icon={Boxes} color="blue" />
         <StatsCard title="Stock value" value={summary ? tk(summary.value, 0) : '—'} icon={Wallet} color="green" />
         <StatsCard title="Low stock" value={summary ? summary.low : '—'} icon={AlertTriangle} color="yellow" />
         <StatsCard title="Out of stock" value={summary ? summary.out : '—'} icon={PackageX} color="red" />
       </div>
 
-      <div className="flex gap-1 border-b border-gray-200">
-        {[{ id: 'items', label: 'Items' }, { id: 'movements', label: 'Movements' }].map(t => (
-          <button key={t.id} type="button" onClick={() => setTab(t.id)}
-            className={cn('px-4 py-2 text-sm font-medium -mb-px border-b-2', tab === t.id ? 'border-gray-900 text-gray-900' : 'border-transparent text-gray-500 hover:text-gray-800')}>
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        variant="underline"
+        value={tab}
+        onChange={setTab}
+        tabs={[{ value: 'items', label: 'Items' }, { value: 'movements', label: 'Movements' }]}
+      />
 
       {tab === 'items' ? (
         <>
-          <div className="bg-white border border-gray-100 rounded-xl p-4 flex flex-wrap items-center gap-3">
-            <SearchInput value={search} onChange={setSearch} placeholder="SKU or item name…" className="w-full sm:w-64" />
+          <div className="flex flex-wrap items-center gap-2">
+            <SearchInput value={search} onChange={setSearch} placeholder="Search SKU or name…" className="w-full sm:w-64" />
             <FilterSelect value={categoryId} onChange={v => setCategoryId(v ?? '')} options={consumableCats.map(c => ({ value: c.id, label: c.name }))} placeholder="All categories" />
             <FilterSelect value={status} onChange={v => setStatus(v || 'active')} options={STATUS_FILTERS} placeholder="Active" />
             <FilterSelect value={sort} onChange={v => setSort(v || 'name')} options={SORT_OPTIONS} placeholder="Sort" />
-            <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+            <label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-input bg-white px-3 text-sm text-gray-700 shadow-xs hover:bg-gray-50">
               <input type="checkbox" checked={lowOnly} onChange={e => setLowOnly(e.target.checked)} className="rounded border-gray-300" />
-              Low / out of stock only
+              Low / out of stock
             </label>
             {hasFilters && (
-              <button type="button" onClick={() => { setSearch(''); setCategoryId(''); setLowOnly(false); setStatus('active') }}
-                className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900">
-                <RotateCcw className="w-3.5 h-3.5" /> Reset
-              </button>
+              <Button variant="ghost" size="sm" onClick={() => { setSearch(''); setCategoryId(''); setLowOnly(false); setStatus('active') }}>
+                <RotateCcw /> Reset
+              </Button>
             )}
           </div>
 
-          <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+          <Card className="overflow-hidden">
             {error ? (
-              <EmptyState icon={AlertCircle} title="Could not load stock" description={error}
-                action={<button type="button" onClick={load} className="text-sm font-medium text-gray-900 underline">Try again</button>} />
+              <EmptyState icon={AlertCircle} title="Couldn't load stock" description={error}
+                action={<Button variant="outline" size="sm" onClick={load}>Try again</Button>} />
             ) : !loading && rows.length === 0 && !hasFilters ? (
               <EmptyState icon={Boxes} title="No consumables yet"
-                description="Stock items are created when a purchase bill with consumable lines is received, or add one here with its opening stock."
-                action={(
+                description="Added from purchase bills or by hand."
+                action={(canManage || can('inventory.purchase')) ? (
                   <div className="flex flex-wrap justify-center gap-2">
                     {canManage && (
-                      <button type="button" onClick={() => setItemModal({ open: true, item: null })}
-                        className="inline-flex items-center gap-1.5 bg-gray-900 text-white hover:bg-gray-800 rounded-lg px-4 py-2 text-sm font-medium">
-                        <Plus className="w-4 h-4" /> Add item
-                      </button>
+                      <Button variant="outline" size="sm" onClick={() => setItemModal({ open: true, item: null })}>
+                        <Plus /> Add item
+                      </Button>
                     )}
                     {can('inventory.purchase') && (
-                      <Link href="/admin/inventory/purchases/new" className="inline-flex items-center gap-1.5 border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 rounded-lg px-4 py-2 text-sm font-medium">
-                        <ShoppingCart className="w-4 h-4" /> New purchase bill
-                      </Link>
+                      <Button variant="outline" size="sm" href="/admin/inventory/purchases/new">
+                        <ShoppingCart /> New purchase bill
+                      </Button>
                     )}
                   </div>
-                )}
+                ) : null}
               />
             ) : (
               <>
                 <DataTable columns={columns} data={rows} loading={loading} emptyIcon={Boxes}
-                  emptyTitle={lowOnly ? 'Nothing is running low' : 'No items match these filters'}
+                  emptyTitle={lowOnly ? 'Nothing is running low' : 'No results'}
                   emptyDescription={lowOnly ? 'Every active item is above its reorder level.' : 'Try a different search or clear the filters.'}
                   onRowClick={(i) => setHistoryId(i.id)} />
                 {meta && meta.pages > 1 && (
-                  <div className="px-4 py-3 border-t border-gray-100">
+                  <div className="border-t border-gray-100 px-4 py-3">
                     <Pagination meta={meta} onPageChange={setPage} />
                   </div>
                 )}
               </>
             )}
-          </div>
+          </Card>
         </>
       ) : (
         <MovementsTab
@@ -353,13 +355,10 @@ function StockPage() {
       />
 
       <Modal open={Boolean(deleteItem)} onOpenChange={(v) => { if (!v && !busy) setDeleteItem(null) }} title={`Delete ${deleteItem?.name ?? 'item'}?`}
-        description="Only items that never had a movement can be deleted." size="sm">
-        <p className="text-sm text-gray-600">Items with stock history are kept for the records — deactivate them instead.</p>
+        description="This can't be undone. Items with stock history can only be deactivated." size="sm">
         <ModalFooter>
-          <button type="button" onClick={() => setDeleteItem(null)} disabled={busy}
-            className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 bg-white">Keep</button>
-          <button type="button" onClick={confirmDelete} disabled={busy}
-            className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50">Delete</button>
+          <Button variant="outline" onClick={() => setDeleteItem(null)} disabled={busy}>Keep</Button>
+          <Button variant="destructive" onClick={confirmDelete} loading={busy}>Delete</Button>
         </ModalFooter>
       </Modal>
     </div>

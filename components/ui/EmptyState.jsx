@@ -3,23 +3,21 @@ import { Inbox } from 'lucide-react'
 
 export default function EmptyState({
   icon: Icon = Inbox,
-  title = 'No results found',
+  title = 'Nothing here yet',
   description,
   action,
   className,
 }) {
   return (
-    <div className={cn('flex flex-col items-center justify-center py-16 px-4 text-center', className)}>
-      <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mb-4">
-        <Icon className="w-8 h-8 text-gray-400" />
+    <div className={cn('flex flex-col items-center justify-center px-4 py-12 text-center', className)}>
+      <div className="mb-4 flex size-11 items-center justify-center rounded-xl border border-gray-200/80 bg-white shadow-xs">
+        <Icon className="size-5 text-gray-500" />
       </div>
-      <h3 className="text-base font-semibold text-gray-900 mb-1">{title}</h3>
+      <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
       {description && (
-        <p className="text-sm text-gray-500 max-w-sm">{description}</p>
+        <p className="mt-1 max-w-sm text-sm text-muted-foreground">{description}</p>
       )}
-      {action && (
-        <div className="mt-4">{action}</div>
-      )}
+      {action && <div className="mt-5">{action}</div>}
     </div>
   )
 }

@@ -5,16 +5,23 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
 import {
-  ArrowLeft, Pencil, Trash2, Send, Printer, Loader2,
+  ArrowLeft, Pencil, Trash2, Send, Printer,
   X, Wallet, Clock, AlertTriangle, XCircle,
-  PlusCircle, ExternalLink, CreditCard, Layers,
-  FileText, Copy, FileMinus, FilePlus, Percent, Ban, CheckCircle2, Info, ShieldAlert, RotateCcw,
+  PlusCircle, ExternalLink, CreditCard, Layers, ChevronRight,
+  FileText, Copy, FileMinus, FilePlus, Percent, Ban, CheckCircle2, Info, ShieldAlert, RotateCcw, RefreshCw,
 } from 'lucide-react'
 import FileUpload from '@/components/ui/FileUpload'
 import TkAmt from '@/components/ui/TkAmt'
 import Select from '@/components/ui/Select'
 import DatePicker from '@/components/ui/DatePicker'
 import Modal, { ModalFooter } from '@/components/ui/Modal'
+import Button, { buttonVariants } from '@/components/ui/Button'
+import { Card, CardHeader, CardTitle, CardAction, CardContent } from '@/components/ui/Card'
+import PageHeader from '@/components/ui/PageHeader'
+import Badge from '@/components/ui/Badge'
+import EmptyState from '@/components/ui/EmptyState'
+import LoadingSpinner, { PageLoader } from '@/components/ui/LoadingSpinner'
+import { Label, inputClass } from '@/components/ui/Input'
 import InvoicePrintView, { openInvoicePrint, buyerBinOf } from '@/components/shared/InvoicePrintView'
 import WithholdingFields, { emptyWithholding, invoiceAllowsVds } from '@/components/tax/WithholdingFields'
 import ReverseClientPaymentModal from '@/components/finance/ReverseClientPaymentModal'
@@ -38,40 +45,40 @@ const num = (v) => {
 }
 
 const STATUS_STYLES = {
-  DRAFT:          { badge: 'bg-gray-100 text-gray-600',     label: 'Draft' },
-  SENT:           { badge: 'bg-blue-100 text-blue-700',     label: 'Sent' },
-  PARTIALLY_PAID: { badge: 'bg-yellow-100 text-yellow-700', label: 'Partially Paid' },
-  PAID:           { badge: 'bg-green-100 text-green-700',   label: 'Paid' },
-  OVERDUE:        { badge: 'bg-red-100 text-red-600',       label: 'Overdue' },
-  CANCELLED:      { badge: 'bg-gray-100 text-gray-500',     label: 'Cancelled' },
+  DRAFT:          { variant: 'default', label: 'Draft' },
+  SENT:           { variant: 'primary', label: 'Sent' },
+  PARTIALLY_PAID: { variant: 'warning', label: 'Partially paid' },
+  PAID:           { variant: 'success', label: 'Paid' },
+  OVERDUE:        { variant: 'danger',  label: 'Overdue' },
+  CANCELLED:      { variant: 'outline', label: 'Cancelled' },
 }
 
 
 const CONFIRMATION_STATUS = {
-  PENDING_CONFIRMATION: { badge: 'bg-yellow-100 text-yellow-700', label: 'Pending Approval' },
-  CONFIRMED:            { badge: 'bg-green-100 text-green-700',   label: 'Confirmed' },
-  REJECTED:             { badge: 'bg-red-100 text-red-600',       label: 'Rejected' },
-  REVERSING:            { badge: 'bg-amber-100 text-amber-700',   label: 'Reversing…' },
-  REVERSED:             { badge: 'bg-gray-100 text-gray-600',     label: 'Reversed' },
+  PENDING_CONFIRMATION: { variant: 'warning', label: 'Pending approval' },
+  CONFIRMED:            { variant: 'success', label: 'Confirmed' },
+  REJECTED:             { variant: 'danger',  label: 'Rejected' },
+  REVERSING:            { variant: 'orange',  label: 'Reversing…' },
+  REVERSED:             { variant: 'default', label: 'Reversed' },
 }
 
 // PAID is set automatically when payment is fully confirmed — it cannot be set manually
 const TRANSITION_ACTIONS = {
   DRAFT: [
-    { action: 'SENT',      label: 'Mark as Sent',    icon: Send,          cls: 'bg-blue-600 hover:bg-blue-700 text-white' },
-    { action: 'CANCELLED', label: 'Cancel Invoice',  icon: XCircle,       cls: 'bg-red-500 hover:bg-red-600 text-white' },
+    { action: 'SENT',      label: 'Mark as sent',    icon: Send },
+    { action: 'CANCELLED', label: 'Cancel invoice',  icon: XCircle, danger: true },
   ],
   SENT: [
-    { action: 'PARTIALLY_PAID', label: 'Partial Payment', icon: Wallet,    cls: 'bg-yellow-500 hover:bg-yellow-600 text-white' },
-    { action: 'OVERDUE',        label: 'Mark Overdue',    icon: AlertTriangle, cls: 'bg-orange-500 hover:bg-orange-600 text-white' },
-    { action: 'CANCELLED',      label: 'Cancel Invoice',  icon: XCircle,       cls: 'bg-red-500 hover:bg-red-600 text-white' },
+    { action: 'PARTIALLY_PAID', label: 'Partial payment', icon: Wallet },
+    { action: 'OVERDUE',        label: 'Mark overdue',    icon: AlertTriangle },
+    { action: 'CANCELLED',      label: 'Cancel invoice',  icon: XCircle, danger: true },
   ],
   PARTIALLY_PAID: [
-    { action: 'OVERDUE',   label: 'Mark Overdue',   icon: AlertTriangle, cls: 'bg-orange-500 hover:bg-orange-600 text-white' },
+    { action: 'OVERDUE',   label: 'Mark overdue',   icon: AlertTriangle },
   ],
   OVERDUE: [
-    { action: 'PARTIALLY_PAID', label: 'Back to Partial', icon: Wallet, cls: 'bg-yellow-500 hover:bg-yellow-600 text-white' },
-    { action: 'CANCELLED',      label: 'Cancel Invoice',  icon: XCircle,    cls: 'bg-red-500 hover:bg-red-600 text-white' },
+    { action: 'PARTIALLY_PAID', label: 'Back to partial', icon: Wallet },
+    { action: 'CANCELLED',      label: 'Cancel invoice',  icon: XCircle, danger: true },
   ],
   PAID:      [],
   CANCELLED: [],
@@ -79,6 +86,31 @@ const TRANSITION_ACTIONS = {
 
 const NOTEABLE_STATUSES = ['SENT', 'PARTIALLY_PAID', 'OVERDUE', 'PAID']
 const WITHHOLDABLE_STATUSES = ['SENT', 'PARTIALLY_PAID', 'OVERDUE']
+
+const warnIcon = <AlertTriangle className="size-4 shrink-0 text-amber-600" />
+
+// Hand-built dialog shell (matches components/ui/Modal).
+function DialogShell({ title, description, onClose, maxWidth = 'max-w-md', children, footer }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-[2px]">
+      <div className={cn('flex max-h-[92vh] w-full flex-col rounded-2xl border border-gray-200/80 bg-white shadow-2xl', maxWidth)}>
+        <div className="flex shrink-0 items-start justify-between gap-4 px-6 pb-3 pt-5">
+          <div className="min-w-0">
+            <h3 className="text-base font-semibold tracking-tight text-gray-900">{title}</h3>
+            {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
+          </div>
+          <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close" className="-mr-1.5 -mt-0.5 text-gray-400">
+            <X />
+          </Button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-6 pb-5 pt-1">{children}</div>
+        <div className="flex shrink-0 justify-end gap-2 rounded-b-2xl border-t border-gray-100 bg-gray-50/60 px-6 py-3.5">
+          {footer}
+        </div>
+      </div>
+    </div>
+  )
+}
 
 // ─── Status Change Modal ───────────────────────────────────────────────────────
 
@@ -98,8 +130,8 @@ function StatusChangeModal({ invoice, onClose, onDone }) {
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error)
-      toast.success(action === 'SENT' && vat ? 'Invoice issued — output VAT recorded' : 'Invoice status updated')
-      if (json.warning) toast(json.warning, { icon: '⚠️', duration: 9000 })
+      toast.success(action === 'SENT' && vat ? 'Invoice issued — output VAT recorded' : 'Status updated')
+      if (json.warning) toast(json.warning, { icon: warnIcon, duration: 9000 })
       onDone()
       onClose()
     } catch (err) { toast.error(err.message) }
@@ -109,52 +141,50 @@ function StatusChangeModal({ invoice, onClose, onDone }) {
   if (actions.length === 0) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-base font-semibold">Update Status</h3>
-          <button onClick={onClose}><X className="w-4 h-4 text-gray-400" /></button>
-        </div>
-        <div className="space-y-2">
-          {actions.map(a => {
-            const Icon = a.icon
-            return (
-              <button key={a.action} onClick={() => setAction(a.action)}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 text-left transition-all ${
-                  action === a.action ? 'border-blue-500 bg-blue-50' : 'border-gray-100 hover:border-gray-200'
-                }`}>
-                <Icon className="w-4 h-4 text-gray-500" />
-                <span className="text-sm font-medium text-gray-800">{a.label}</span>
-              </button>
-            )
-          })}
-        </div>
-        {action === 'PARTIALLY_PAID' && (
-          <div>
-            <p className="text-xs text-gray-500">
-              The paid amount comes from confirmed payments only. Use Record Payment to add a new payment.
-            </p>
-          </div>
-        )}
-        {action === 'SENT' && vat && (
-          <p className="text-xs text-gray-500">
-            Issuing is the VAT tax point: the issue time and both parties&apos; BINs are fixed on the invoice and its output VAT is recorded for the VAT return.
-          </p>
-        )}
-        {action === 'CANCELLED' && vat && invoice.status !== 'DRAFT' && (
-          <p className="text-xs text-gray-500">
-            Cancelling voids the output VAT. Once the VAT is in a filed return this is refused — issue a credit note (Mushak-6.7) instead.
-          </p>
-        )}
-        <div className="flex gap-2 justify-end">
-          <button onClick={onClose} className="px-4 py-2 text-sm border border-gray-200 rounded-xl hover:bg-gray-50">Cancel</button>
-          <button onClick={submit} disabled={!action || saving}
-            className="px-5 py-2 text-sm font-medium text-white bg-blue-600 rounded-xl hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2">
-            {saving && <Loader2 className="w-4 h-4 animate-spin" />} Confirm
-          </button>
-        </div>
+    <DialogShell
+      title="Update status"
+      onClose={onClose}
+      maxWidth="max-w-sm"
+      footer={
+        <>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={submit} disabled={!action} loading={saving}>Confirm</Button>
+        </>
+      }
+    >
+      <div className="space-y-2">
+        {actions.map(a => {
+          const Icon = a.icon
+          const selected = action === a.action
+          return (
+            <button key={a.action} onClick={() => setAction(a.action)}
+              className={cn(
+                'flex w-full items-center gap-3 rounded-lg border px-3.5 py-2.5 text-left transition-colors',
+                selected ? 'border-gray-900 bg-gray-50 ring-1 ring-gray-900' : 'border-gray-200 hover:bg-gray-50'
+              )}>
+              <Icon className={cn('size-4', a.danger ? 'text-red-500' : 'text-gray-500')} />
+              <span className="text-sm font-medium text-gray-900">{a.label}</span>
+            </button>
+          )
+        })}
       </div>
-    </div>
+      {action === 'PARTIALLY_PAID' && (
+        <p className="mt-3 text-[13px] text-muted-foreground">
+          Paid amount comes from confirmed payments only.
+        </p>
+      )}
+      {action === 'SENT' && vat && (
+        <p className="mt-3 text-[13px] text-muted-foreground">
+          Issuing fixes the VAT tax point and both BINs, and records output VAT.
+        </p>
+      )}
+      {action === 'CANCELLED' && vat && invoice.status !== 'DRAFT' && (
+        <p className="mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+          Voids the output VAT. If it&apos;s in a filed return, issue a credit note (Mushak-6.7) instead.
+        </p>
+      )}
+    </DialogShell>
   )
 }
 
@@ -186,51 +216,50 @@ function RecordPaymentModal({ invoice, onClose, onSaved }) {
     finally { setSaving(false) }
   }
 
-  const ic = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900'
+  const ic = inputClass
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-xl border border-gray-200 w-full max-w-md p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-base font-semibold text-gray-900">Record Payment</h3>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100"><X className="w-4 h-4 text-gray-400" /></button>
+    <DialogShell
+      title="Record payment"
+      description="Accounts confirms it before it counts as income."
+      onClose={onClose}
+      footer={
+        <>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={save} loading={saving}>
+            {!saving && <CreditCard />} Record payment
+          </Button>
+        </>
+      }
+    >
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <Label required>Amount (BDT)</Label>
+          <input type="number" step="0.01" min="0" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} onKeyDown={e => { if (e.key === '-' || e.key === 'e') e.preventDefault() }} placeholder="0.00" className={ic} />
         </div>
-        <p className="text-xs text-gray-400 border border-gray-100 rounded-lg px-3 py-2">
-          Payment will be sent to Accounts for confirmation before being added to income.
-        </p>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Amount (BDT) *</label>
-            <input type="number" step="0.01" min="0" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} onKeyDown={e => { if (e.key === '-' || e.key === 'e') e.preventDefault() }} placeholder="0.00" className={ic} />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Method</label>
-            <Select value={form.paymentMethod} onChange={v => setForm(f => ({ ...f, paymentMethod: v ?? 'BANK_TRANSFER' }))}
-              options={paymentMethods}
-              placeholder="Select method…"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Payment Date</label>
-            <DatePicker value={form.paymentDate || null} onChange={v => setForm(f => ({ ...f, paymentDate: v ?? '' }))} />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Description</label>
-            <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Invoice ref, note…" className={ic} />
-          </div>
-          <div className="col-span-2">
-            <FileUpload label="Payment Proof / Receipt *" value={form.receiptUrl} onUploaded={url => setForm(f => ({ ...f, receiptUrl: url }))} />
-          </div>
+        <div>
+          <Label>Method</Label>
+          <Select value={form.paymentMethod} onChange={v => setForm(f => ({ ...f, paymentMethod: v ?? 'BANK_TRANSFER' }))}
+            options={paymentMethods}
+            placeholder="Select…"
+          />
         </div>
-        <div className="flex gap-2 justify-end">
-          <button onClick={onClose} className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
-          <button onClick={save} disabled={saving}
-            className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 disabled:opacity-40 flex items-center gap-2">
-            {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-            <CreditCard className="w-4 h-4" /> Record Payment
-          </button>
+        <div>
+          <Label>Payment date</Label>
+          <DatePicker value={form.paymentDate || null} onChange={v => setForm(f => ({ ...f, paymentDate: v ?? '' }))} />
+        </div>
+        <div>
+          <Label>Description</Label>
+          <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Optional" className={ic} />
+        </div>
+        <div className="col-span-2">
+          <FileUpload
+            label={<>Payment proof<span className="ml-0.5 text-red-500">*</span></>}
+            value={form.receiptUrl}
+            onUploaded={url => setForm(f => ({ ...f, receiptUrl: url }))}
+          />
         </div>
       </div>
-    </div>
+    </DialogShell>
   )
 }
 
@@ -289,8 +318,8 @@ function WithholdingModal({ invoice, open, onOpenChange, onSaved }) {
         const detail = json?.details?.fieldErrors ? Object.values(json.details.fieldErrors).flat()[0] : null
         throw new Error(detail || json.error || (res.status === 404 ? 'Recording withholding is not available yet.' : 'Failed to record withholding'))
       }
-      toast.success('Withholding recorded — the invoice is settled by it')
-      if (json.warning) toast(json.warning, { icon: '⚠️', duration: 8000 })
+      toast.success('Withholding recorded')
+      if (json.warning) toast(json.warning, { icon: warnIcon, duration: 8000 })
       onSaved()
       onOpenChange(false)
     } catch (err) {
@@ -302,18 +331,17 @@ function WithholdingModal({ invoice, open, onOpenChange, onSaved }) {
 
   return (
     <Modal open={open} onOpenChange={(v) => { if (!saving) onOpenChange(v) }}
-      title="Record VDS / TDS withheld by the client"
-      description={`Invoice ${invoice.invoiceNumber} · due ${fmt(due)}`} size="lg">
+      title="Record VDS / TDS withheld"
+      description={`${invoice.invoiceNumber} · due ${fmt(due)}`} size="lg">
       <div className="space-y-4">
-        <p className="text-xs text-gray-500">
-          Use this when the client deducted VAT (VDS) or income tax (TDS / AIT) at source and paid us the rest.
-          The withheld amount settles the invoice like cash; collect the Mushak-6.6 and the TDS certificate to claim the credit.
-          Cash received is recorded separately through Record Payment.
+        <p className="text-[13px] text-muted-foreground"
+          title="Use this when the client deducted VAT (VDS) or income tax (TDS / AIT) at source and paid us the rest. Cash received is recorded separately through Record payment.">
+          Settles the invoice like cash. Collect the Mushak-6.6 / TDS certificate.
         </p>
-        <div className="grid grid-cols-3 gap-3 rounded-xl border border-gray-100 bg-gray-50/70 px-4 py-3 text-xs text-gray-600">
-          <span>Taxable value<span className="block font-semibold text-gray-900">{fmt(taxable)}</span></span>
-          <span>VAT<span className="block font-semibold text-gray-900">{fmt(vat)}</span></span>
-          <span>Due<span className="block font-semibold text-gray-900">{fmt(due)}</span></span>
+        <div className="grid grid-cols-3 gap-3 rounded-lg bg-gray-50 px-4 py-3 text-xs text-muted-foreground">
+          <span>Taxable value<span className="mt-0.5 block text-sm font-semibold tabular-nums text-gray-900">{fmt(taxable)}</span></span>
+          <span>VAT<span className="mt-0.5 block text-sm font-semibold tabular-nums text-gray-900">{fmt(vat)}</span></span>
+          <span>Due<span className="mt-0.5 block text-sm font-semibold tabular-nums text-gray-900">{fmt(due)}</span></span>
         </div>
         <WithholdingFields
           mode="CUSTOMER"
@@ -325,30 +353,28 @@ function WithholdingModal({ invoice, open, onOpenChange, onSaved }) {
           defaultOpen
           vdsAllowed={invoiceAllowsVds(invoice)}
         />
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Date withheld *</label>
+            <Label required>Date withheld</Label>
             <DatePicker value={date} onChange={v => setDate(v ?? dhakaDayKey())} clearable={false} />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Note</label>
-            <input value={note} onChange={e => setNote(e.target.value)} maxLength={500} placeholder="e.g. per client's payment advice"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900" />
+            <Label>Note</Label>
+            <input value={note} onChange={e => setNote(e.target.value)} maxLength={500} placeholder="Optional"
+              className={inputClass} />
           </div>
         </div>
-        <div className="flex items-center justify-between rounded-xl border border-gray-100 px-4 py-3">
-          <span className="text-sm text-gray-600">Settles</span>
-          <span className={cn('text-sm font-semibold', over ? 'text-red-600' : 'text-gray-900')}>{fmt(withheld)} of {fmt(due)} due</span>
+        <div className="flex items-center justify-between rounded-lg border border-gray-200/80 px-4 py-3">
+          <span className="text-sm text-muted-foreground">Settles</span>
+          <span className={cn('text-sm font-semibold tabular-nums', over ? 'text-red-600' : 'text-gray-900')}>{fmt(withheld)} of {fmt(due)} due</span>
         </div>
-        {over && <p className="text-xs text-red-600">The withheld total is more than the amount still due.</p>}
+        {over && <p className="text-xs text-red-600">Withheld total is more than the amount due.</p>}
       </div>
-      <ModalFooter className="-mx-4 sm:-mx-6 -mb-4 mt-5">
-        <button type="button" onClick={() => onOpenChange(false)} disabled={saving}
-          className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
-        <button type="button" onClick={submit} disabled={saving || withheld <= 0 || over}
-          className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 disabled:opacity-50 flex items-center gap-1.5">
-          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Percent className="w-4 h-4" />} Record withholding
-        </button>
+      <ModalFooter>
+        <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
+        <Button onClick={submit} disabled={withheld <= 0 || over} loading={saving}>
+          {!saving && <Percent />} Record withholding
+        </Button>
       </ModalFooter>
     </Modal>
   )
@@ -376,72 +402,67 @@ function PaymentHistory({ invoiceId, onChanged }) {
 
   useEffect(() => { load() }, [load])
 
-  if (loading) return (
-    <div className="flex justify-center py-6">
-      <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-    </div>
-  )
+  if (loading) return <LoadingSpinner size="sm" className="py-6" />
 
   if (payments.length === 0) return (
-    <p className="text-sm text-gray-400 text-center py-6">No payment requests yet.</p>
+    <p className="py-6 text-center text-sm text-muted-foreground">No payment requests yet</p>
   )
 
   return (
-    <div className="divide-y divide-gray-50">
+    <div className="divide-y divide-gray-100">
       {payments.map(p => {
         const cs = CONFIRMATION_STATUS[p.status] ?? CONFIRMATION_STATUS.PENDING_CONFIRMATION
         const vds = num(p.vdsAmount)
         const tds = num(p.tdsAmount)
         return (
-          <div key={p.id} className="flex items-start justify-between gap-4 py-4">
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-sm font-semibold text-gray-900">{fmt(p.amount)}</span>
-                <span className="text-xs text-gray-400">{p.paymentMethod === 'WITHHOLDING' ? 'Withholding only' : fmtMethod(p.paymentMethod)}</span>
-                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${cs.badge}`}>
-                  {cs.label}
-                </span>
+          <div key={p.id} className="flex items-start justify-between gap-4 py-3.5 first:pt-0 last:pb-0">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-semibold tabular-nums text-gray-900">{fmt(p.amount)}</span>
+                <span className="text-xs text-muted-foreground">{p.paymentMethod === 'WITHHOLDING' ? 'Withholding only' : fmtMethod(p.paymentMethod)}</span>
+                <Badge variant={cs.variant}>{cs.label}</Badge>
               </div>
               {(vds > 0 || tds > 0) && (
-                <p className="text-xs text-gray-500 mt-0.5">
+                <p className="mt-0.5 text-xs text-gray-600">
                   {vds > 0 && <>VDS {fmt(vds)}</>}{vds > 0 && tds > 0 && ' · '}{tds > 0 && <>TDS {fmt(tds)}</>} withheld by client
                 </p>
               )}
-              <p className="text-xs text-gray-500 mt-0.5">{p.description}</p>
-              <p className="text-xs text-gray-400 mt-0.5">
-                Date: {fmtDate(p.paymentDate)}
+              {p.description && <p className="mt-0.5 text-xs text-gray-600">{p.description}</p>}
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {fmtDate(p.paymentDate)}
                 {p.submittedBy?.name && ` · Submitted by ${p.submittedBy.name}`}
                 {p.confirmedBy?.name && ` · Reviewed by ${p.confirmedBy.name}`}
               </p>
               {p.status === 'REJECTED' && p.rejectionNote && (
-                <p className="text-xs text-red-500 mt-1">Rejection note: {p.rejectionNote}</p>
+                <p className="mt-1 text-xs text-red-600">Rejected: {p.rejectionNote}</p>
               )}
               {p.status === 'REVERSED' && (
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="mt-1 text-xs text-muted-foreground">
                   Reversed{p.reversedAt ? ` ${fmtDate(p.reversedAt)}` : ''}{p.reversedBy?.name ? ` by ${p.reversedBy.name}` : ''}
                   {p.reversalTransactionId?.txnId ? ` (${p.reversalTransactionId.txnId})` : ''}
                   {p.reversalReason ? ` — ${p.reversalReason}` : ''}
                 </p>
               )}
             </div>
-            <div className="shrink-0 flex items-center gap-2">
+            <div className="flex shrink-0 items-center gap-1">
               {p.receiptUrl && (
                 <a href={p.receiptUrl} target="_blank" rel="noreferrer"
-                  className="text-xs text-blue-500 hover:text-blue-700 flex items-center gap-1">
-                  <ExternalLink className="w-3 h-3" /> Proof
+                  className={buttonVariants({ variant: 'ghost', size: 'xs' })}>
+                  <ExternalLink /> Proof
                 </a>
               )}
               {p.status === 'PENDING_CONFIRMATION' && (
                 <Link href="/admin/accounts?tab=confirmations"
-                  className="text-xs text-amber-600 hover:text-amber-700 flex items-center gap-1">
-                  <Clock className="w-3 h-3" /> Review
+                  className={cn(buttonVariants({ variant: 'ghost', size: 'xs' }), 'text-amber-700 hover:text-amber-800')}>
+                  <Clock /> Review
                 </Link>
               )}
               {p.status === 'CONFIRMED' && canReverse && (
-                <button onClick={() => setReversing(p)} title="Reverse this payment (wrong amount, account, VDS / TDS or date)"
-                  className="text-xs text-red-500 hover:text-red-700 flex items-center gap-1">
-                  <RotateCcw className="w-3 h-3" /> Reverse
-                </button>
+                <Button variant="ghost" size="xs" onClick={() => setReversing(p)}
+                  title="Reverse this payment (wrong amount, account, VDS / TDS or date)"
+                  className="text-red-600 hover:bg-red-50 hover:text-red-700">
+                  <RotateCcw /> Reverse
+                </Button>
               )}
             </div>
           </div>
@@ -463,8 +484,8 @@ function PaymentHistory({ invoiceId, onChanged }) {
 function Field({ label, children, className }) {
   return (
     <div className={cn('min-w-0', className)}>
-      <p className="text-[11px] font-medium uppercase tracking-wide text-gray-400">{label}</p>
-      <div className="text-sm text-gray-900 mt-0.5 break-words">{children}</div>
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <div className="mt-0.5 break-words text-sm font-medium text-gray-900">{children}</div>
     </div>
   )
 }
@@ -486,82 +507,81 @@ function VatPanel({ invoice, company, money }) {
 
   if (!vat) {
     return (
-      <div className="bg-white rounded-2xl border border-gray-100 p-5">
-        <div className="flex items-center gap-2 mb-2">
-          <FileText className="w-4 h-4 text-gray-400" />
-          <h2 className="text-sm font-semibold text-gray-900">VAT</h2>
-          <span className="ml-auto inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium bg-gray-100 text-gray-600">No VAT</span>
+      <Card className="h-full p-5">
+        <div className="mb-2 flex items-center gap-2">
+          <CardTitle>VAT</CardTitle>
+          <Badge className="ml-auto">No VAT</Badge>
         </div>
-        <p className="text-sm text-gray-500">
-          This invoice carries no VAT treatment, so it is not a tax invoice (Mushak-6.3) and has no output VAT.
-          {invoice.status === 'DRAFT' && ' Edit the draft to set a VAT treatment if this supply is VAT-able.'}
+        <p className="text-sm text-muted-foreground"
+          title="This invoice carries no VAT treatment, so it is not a tax invoice (Mushak-6.3) and has no output VAT.">
+          Not a tax invoice (Mushak-6.3) — no output VAT.
+          {invoice.status === 'DRAFT' && ' Edit the draft to set a VAT treatment.'}
         </p>
-        {mfs > 0 && <p className="text-xs text-gray-400 mt-2">MFS charge {invoice.taxRate ?? 0}% ({money(mfs)}) is a payment surcharge, not VAT.</p>}
-      </div>
+        {mfs > 0 && <p className="mt-2 text-xs text-muted-foreground">MFS charge {invoice.taxRate ?? 0}% ({money(mfs)}) is a payment surcharge, not VAT.</p>}
+      </Card>
     )
   }
 
   let vatStatus
-  if (invoice.status === 'DRAFT') vatStatus = { icon: Info, cls: 'text-gray-500', text: 'Output VAT is recorded when the invoice is issued (marked as sent).' }
-  else if (invoice.status === 'CANCELLED') vatStatus = { icon: Ban, cls: 'text-gray-500', text: 'Invoice cancelled — its output VAT was voided.' }
-  else if (invoice.outputVatEntryId) vatStatus = { icon: CheckCircle2, cls: 'text-green-600', text: 'Output VAT recorded for the VAT return.' }
-  else vatStatus = { icon: ShieldAlert, cls: 'text-amber-600', text: 'Output VAT is not recorded yet — use Send to retry, or ask the tax team.' }
+  if (invoice.status === 'DRAFT') vatStatus = { icon: Info, cls: 'text-muted-foreground', text: 'Output VAT is recorded on issue (marked as sent).' }
+  else if (invoice.status === 'CANCELLED') vatStatus = { icon: Ban, cls: 'text-muted-foreground', text: 'Cancelled — output VAT voided.' }
+  else if (invoice.outputVatEntryId) vatStatus = { icon: CheckCircle2, cls: 'text-emerald-600', text: 'Output VAT recorded for the VAT return.' }
+  else vatStatus = { icon: ShieldAlert, cls: 'text-amber-700', text: 'Output VAT not recorded yet — use Send to retry, or ask the tax team.' }
   const StatusIcon = vatStatus.icon
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4">
+    <Card className="h-full space-y-4 p-5">
       <div className="flex flex-wrap items-center gap-2">
-        <FileText className="w-4 h-4 text-gray-400" />
-        <h2 className="text-sm font-semibold text-gray-900">VAT (Mushak-6.3)</h2>
-        <span className="inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium bg-indigo-50 text-indigo-700">{treatmentLabel}</span>
+        <CardTitle>VAT (Mushak-6.3)</CardTitle>
+        <Badge variant="indigo">{treatmentLabel}</Badge>
         {issued && (
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-1.5">
             <a href={`/api/invoices/${invoice.id}/mushak`} target="_blank" rel="noopener noreferrer"
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-800">
-              <Printer className="w-3.5 h-3.5" /> Mushak-6.3
+              className={buttonVariants({ variant: 'outline', size: 'xs' })}>
+              <Printer /> Mushak-6.3
             </a>
             <a href={`/api/invoices/${invoice.id}/mushak?copy=duplicate`} target="_blank" rel="noopener noreferrer"
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50">
-              <Copy className="w-3.5 h-3.5" /> Duplicate copy
+              className={buttonVariants({ variant: 'ghost', size: 'xs' })}>
+              <Copy /> Duplicate
             </a>
           </div>
         )}
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <Field label="Taxable value">{money(taxable)}</Field>
         {sd > 0 && <Field label="SD">{money(sd)}</Field>}
         <Field label={invoiceVatLabel(invoice)}>{money(num(invoice.vatAmount))}</Field>
         {mfs > 0 && <Field label={`MFS charge (${invoice.taxRate ?? 0}%)`}><span className="text-gray-600">{money(mfs)}</span></Field>}
         <Field label="Service code">{invoice.serviceCode || <span className="text-gray-400">—</span>}</Field>
-        <Field label="Tax point (issued)">{invoice.issuedAt ? fmtDateTime(invoice.issuedAt) : <span className="text-gray-400">{issued ? fmtDate(invoice.sentAt ?? invoice.issueDate) : 'On issue'}</span>}</Field>
+        <Field label="Tax point (issued)">{invoice.issuedAt ? fmtDateTime(invoice.issuedAt) : <span className="font-normal text-muted-foreground">{issued ? fmtDate(invoice.sentAt ?? invoice.issueDate) : 'On issue'}</span>}</Field>
         {invoice.deliveryDestination && <Field label="Delivery destination" className="col-span-2">{invoice.deliveryDestination}</Field>}
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div className="rounded-xl border border-gray-100 px-3 py-2.5">
-          <p className="text-[11px] font-medium uppercase tracking-wide text-gray-400">Seller BIN</p>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="rounded-lg bg-gray-50 px-3 py-2.5">
+          <p className="text-xs text-muted-foreground">Seller BIN</p>
           {sellerBin
-            ? <p className="text-sm font-mono text-gray-900 mt-0.5">{sellerBin}</p>
-            : <p className="text-xs text-amber-700 mt-0.5 flex items-center gap-1"><AlertTriangle className="w-3.5 h-3.5" /> Not set — Tax &amp; VAT → Tax Settings</p>}
-          <p className="text-xs text-gray-500 truncate">{invoice.seller?.name || company.name || ''}</p>
+            ? <p className="mt-0.5 font-mono text-sm text-gray-900">{sellerBin}</p>
+            : <p className="mt-0.5 flex items-center gap-1 text-xs text-amber-700"><AlertTriangle className="size-3.5" /> Not set — Tax &amp; VAT → Tax Settings</p>}
+          <p className="truncate text-xs text-muted-foreground">{invoice.seller?.name || company.name || ''}</p>
         </div>
-        <div className="rounded-xl border border-gray-100 px-3 py-2.5">
-          <p className="text-[11px] font-medium uppercase tracking-wide text-gray-400">Buyer BIN</p>
+        <div className="rounded-lg bg-gray-50 px-3 py-2.5">
+          <p className="text-xs text-muted-foreground">Buyer BIN</p>
           {buyerBin
-            ? <p className="text-sm font-mono text-gray-900 mt-0.5">{buyerBin}</p>
-            : <p className={cn('text-xs mt-0.5 flex items-center gap-1', needBuyerBin ? 'text-amber-700' : 'text-gray-400')}>
-                {needBuyerBin && <AlertTriangle className="w-3.5 h-3.5" />}
+            ? <p className="mt-0.5 font-mono text-sm text-gray-900">{buyerBin}</p>
+            : <p className={cn('mt-0.5 flex items-center gap-1 text-xs', needBuyerBin ? 'text-amber-700' : 'text-gray-400')}>
+                {needBuyerBin && <AlertTriangle className="size-3.5" />}
                 {needBuyerBin ? `Missing — required on Mushak-6.3 above Tk ${BUYER_BIN_THRESHOLD.toLocaleString('en-BD')}` : 'Not recorded'}
               </p>}
-          <p className="text-xs text-gray-500 truncate">{invoice.buyer?.name || invoice.clientId?.company || invoice.clientId?.userId?.name || ''}</p>
+          <p className="truncate text-xs text-muted-foreground">{invoice.buyer?.name || invoice.clientId?.company || invoice.clientId?.userId?.name || ''}</p>
         </div>
       </div>
 
       <p className={cn('flex items-start gap-2 text-xs', vatStatus.cls)}>
-        <StatusIcon className="w-3.5 h-3.5 mt-0.5 shrink-0" /> {vatStatus.text}
+        <StatusIcon className="mt-px size-3.5 shrink-0" /> {vatStatus.text}
       </p>
-    </div>
+    </Card>
   )
 }
 
@@ -586,43 +606,41 @@ function SettlementPanel({ invoice, money, refunded, canWithhold, onWithhold }) 
   ]
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <Wallet className="w-4 h-4 text-gray-400" />
-        <h2 className="text-sm font-semibold text-gray-900">Settlement</h2>
+    <Card className="h-full p-5">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <CardTitle>Settlement</CardTitle>
         {canWithhold && (
-          <button type="button" onClick={onWithhold}
-            className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50">
-            <Percent className="w-3.5 h-3.5" /> Record VDS/TDS withheld
-          </button>
+          <Button variant="outline" size="xs" onClick={onWithhold} className="ml-auto">
+            <Percent /> Record VDS/TDS
+          </Button>
         )}
       </div>
-      <div className="divide-y divide-gray-50">
+      <div className="divide-y divide-gray-100">
         {rows.map(r => (
           <div key={r.label} className="flex items-start justify-between gap-3 py-2">
             <div className="min-w-0">
               <p className={cn('text-sm', r.strong ? 'font-medium text-gray-900' : 'text-gray-600')}>{r.label}</p>
-              {r.sub && <p className="text-xs text-gray-400">{r.sub}</p>}
-              {r.hint && <p className="text-xs text-amber-600">{r.hint}</p>}
+              {r.sub && <p className="text-xs text-muted-foreground">{r.sub}</p>}
+              {r.hint && <p className="text-xs text-amber-700">{r.hint}</p>}
             </div>
-            <p className={cn('text-sm whitespace-nowrap', r.strong ? 'font-semibold text-gray-900' : (r.value > 0 ? 'text-gray-900' : 'text-gray-300'))}>{money(r.value)}</p>
+            <p className={cn('whitespace-nowrap text-sm tabular-nums', r.strong ? 'font-semibold text-gray-900' : (r.value > 0 ? 'text-gray-900' : 'text-gray-300'))}>{money(r.value)}</p>
           </div>
         ))}
         {refunded > 0 && (
           <div className="flex items-start justify-between gap-3 py-2">
             <div>
               <p className="text-sm text-gray-600">Refunded to client</p>
-              <p className="text-xs text-gray-400">Credit notes paid back (not part of the settled amount)</p>
+              <p className="text-xs text-muted-foreground">Not part of the settled amount</p>
             </div>
-            <p className="text-sm text-gray-900 whitespace-nowrap">−{money(refunded)}</p>
+            <p className="whitespace-nowrap text-sm tabular-nums text-gray-900">−{money(refunded)}</p>
           </div>
         )}
         <div className="flex items-center justify-between gap-3 pt-3">
           <p className="text-sm font-semibold text-gray-900">Due</p>
-          <p className={cn('text-base font-bold whitespace-nowrap', due > 0.01 ? 'text-red-500' : 'text-green-600')}>{money(due)}</p>
+          <p className={cn('whitespace-nowrap text-base font-semibold tabular-nums', due > 0.01 ? 'text-red-600' : 'text-emerald-600')}>{money(due)}</p>
         </div>
       </div>
-    </div>
+    </Card>
   )
 }
 
@@ -633,80 +651,80 @@ function NotesPanel({ invoice, notes, loading, error, money, canManage, canViewT
   const reasonLabel = (v) => CREDIT_NOTE_REASONS.find(r => r.value === v)?.label ?? v
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 p-6">
-      <div className="flex flex-wrap items-center gap-2 mb-4">
-        <FileMinus className="w-4 h-4 text-gray-400" />
-        <h2 className="text-sm font-semibold text-gray-900">Credit &amp; debit notes</h2>
-        <div className="ml-auto flex flex-wrap items-center gap-2">
+    <Card>
+      <CardHeader>
+        <CardTitle>Credit &amp; debit notes</CardTitle>
+        <CardAction className="flex-wrap justify-end gap-1.5">
           {canViewTax && notes.length > 0 && (
-            <Link href={`/admin/tax/notes?invoiceId=${invoice.id}`} className="text-xs text-gray-500 hover:text-gray-800">View in Tax</Link>
+            <Link href={`/admin/tax/notes?invoiceId=${invoice.id}`} className={buttonVariants({ variant: 'ghost', size: 'xs' })}>View in Tax</Link>
           )}
           {canManage && noteable && (
             <>
-              <button type="button" onClick={() => onNew('CREDIT')}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50">
-                <FileMinus className="w-3.5 h-3.5" /> Credit note
-              </button>
-              <button type="button" onClick={() => onNew('DEBIT')}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50">
-                <FilePlus className="w-3.5 h-3.5" /> Debit note
-              </button>
+              <Button variant="outline" size="xs" onClick={() => onNew('CREDIT')}>
+                <FileMinus /> Credit note
+              </Button>
+              <Button variant="outline" size="xs" onClick={() => onNew('DEBIT')}>
+                <FilePlus /> Debit note
+              </Button>
             </>
           )}
-        </div>
-      </div>
+        </CardAction>
+      </CardHeader>
 
-      {loading ? (
-        <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-gray-300" /></div>
-      ) : error ? (
-        <p className="text-sm text-red-600 text-center py-4">{error}</p>
-      ) : notes.length === 0 ? (
-        <p className="text-sm text-gray-400 text-center py-6">
-          No notes on this invoice.{canManage && noteable ? ' Issue a credit note for a discount, cancelled or returned supply, or a debit note for an extra charge.' : ''}
-        </p>
-      ) : (
-        <div className="divide-y divide-gray-50">
-          {notes.map(n => {
-            const debit = n.kind === 'DEBIT'
-            const cancelled = n.status === 'CANCELLED'
-            return (
-              <div key={n.id} className={cn('flex flex-wrap items-start justify-between gap-3 py-3', cancelled && 'opacity-60')}>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-sm font-semibold text-gray-900">{n.noteNo}</span>
-                    <span className={cn('inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium', debit ? 'bg-amber-50 text-amber-700' : 'bg-teal-50 text-teal-700')}>
-                      {debit ? 'Debit · Mushak-6.8' : 'Credit · Mushak-6.7'}
-                    </span>
-                    {cancelled && <span className="inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium bg-gray-100 text-gray-500">Cancelled</span>}
+      <CardContent>
+        {loading ? (
+          <LoadingSpinner size="sm" className="py-6" />
+        ) : error ? (
+          <p className="py-4 text-center text-sm text-red-600">{error}</p>
+        ) : notes.length === 0 ? (
+          <p className="py-6 text-center text-sm text-muted-foreground"
+            title={canManage && noteable ? 'Issue a credit note for a discount, cancelled or returned supply, or a debit note for an extra charge.' : undefined}>
+            No notes yet
+          </p>
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {notes.map(n => {
+              const debit = n.kind === 'DEBIT'
+              const cancelled = n.status === 'CANCELLED'
+              return (
+                <div key={n.id} className={cn('flex flex-wrap items-start justify-between gap-3 py-3 first:pt-0 last:pb-0', cancelled && 'opacity-60')}>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-sm font-semibold text-gray-900">{n.noteNo}</span>
+                      <Badge variant={debit ? 'warning' : 'teal'}>
+                        {debit ? 'Debit · Mushak-6.8' : 'Credit · Mushak-6.7'}
+                      </Badge>
+                      {cancelled && <Badge>Cancelled</Badge>}
+                    </div>
+                    <p className="mt-0.5 text-xs text-gray-600">
+                      {fmtDateTime(n.issuedAt)} · {reasonLabel(n.reason)}{n.reasonText ? ` — ${n.reasonText}` : ''}
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {debit ? 'Added to the invoice' : n.settlement === 'REFUND' ? `Refunded${n.refundAccountId?.name ? ` from ${n.refundAccountId.name}` : ''}` : 'Adjusted against the invoice'}
+                      {num(n.vatAmount) > 0 && <> · VAT {money(n.vatAmount)}</>}
+                      {cancelled && n.cancelReason ? ` · Cancelled: ${n.cancelReason}` : ''}
+                    </p>
                   </div>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    {fmtDateTime(n.issuedAt)} · {reasonLabel(n.reason)}{n.reasonText ? ` — ${n.reasonText}` : ''}
-                  </p>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    {debit ? 'Added to the invoice' : n.settlement === 'REFUND' ? `Refunded${n.refundAccountId?.name ? ` from ${n.refundAccountId.name}` : ''}` : 'Adjusted against the invoice'}
-                    {num(n.vatAmount) > 0 && <> · VAT {money(n.vatAmount)}</>}
-                    {cancelled && n.cancelReason ? ` · Cancelled: ${n.cancelReason}` : ''}
-                  </p>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <span className={cn('mr-2 whitespace-nowrap text-sm font-semibold tabular-nums', debit ? 'text-amber-700' : 'text-teal-700')}>
+                      {debit ? '+' : '−'}{money(n.totalAmount)}
+                    </span>
+                    <a href={`/api/credit-notes/${n.id}/print`} target="_blank" rel="noopener noreferrer" title="Print" aria-label="Print"
+                      className={cn(buttonVariants({ variant: 'ghost', size: 'icon-sm' }), 'text-gray-500')}><Printer /></a>
+                    <a href={`/api/credit-notes/${n.id}/print?copy=duplicate`} target="_blank" rel="noopener noreferrer" title="Print duplicate" aria-label="Print duplicate"
+                      className={cn(buttonVariants({ variant: 'ghost', size: 'icon-sm' }), 'text-gray-500')}><Copy /></a>
+                    {canManage && !cancelled && (
+                      <Button variant="ghost" size="icon-sm" onClick={() => onCancel(n)} title="Cancel note" aria-label="Cancel note"
+                        className="text-gray-500 hover:bg-red-50 hover:text-red-600"><Ban /></Button>
+                    )}
+                  </div>
                 </div>
-                <div className="flex items-center gap-3 shrink-0">
-                  <span className={cn('text-sm font-semibold whitespace-nowrap', debit ? 'text-amber-700' : 'text-teal-700')}>
-                    {debit ? '+' : '−'}{money(n.totalAmount)}
-                  </span>
-                  <a href={`/api/credit-notes/${n.id}/print`} target="_blank" rel="noopener noreferrer" title="Print"
-                    className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100"><Printer className="w-4 h-4" /></a>
-                  <a href={`/api/credit-notes/${n.id}/print?copy=duplicate`} target="_blank" rel="noopener noreferrer" title="Print duplicate"
-                    className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100"><Copy className="w-4 h-4" /></a>
-                  {canManage && !cancelled && (
-                    <button type="button" onClick={() => onCancel(n)} title="Cancel note"
-                      className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50"><Ban className="w-4 h-4" /></button>
-                  )}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      )}
-    </div>
+              )
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 
@@ -790,7 +808,7 @@ export default function InvoiceDetailPage() {
   }, [])
 
   async function handleDelete() {
-    if (!confirm(`Delete invoice ${invoice?.invoiceNumber}? This cannot be undone.`)) return
+    if (!confirm(`Delete invoice ${invoice?.invoiceNumber}? This can't be undone.`)) return
     try {
       const res = await fetch(`/api/invoices/${id}`, { method: 'DELETE' })
       if (!res.ok) throw new Error((await res.json()).error)
@@ -799,16 +817,13 @@ export default function InvoiceDetailPage() {
     } catch (err) { toast.error(err.message) }
   }
 
-  if (loading) return (
-    <div className="flex justify-center py-20">
-      <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-    </div>
-  )
+  if (loading) return <PageLoader />
   if (!invoice) return (
-    <div className="text-center py-20">
-      <p className="text-gray-500">Invoice not found.</p>
-      <Link href="/admin/invoices" className="text-blue-600 text-sm mt-2 inline-block">Back to invoices</Link>
-    </div>
+    <EmptyState
+      icon={FileText}
+      title="Invoice not found"
+      action={<Button variant="outline" size="sm" href="/admin/invoices">Back to invoices</Button>}
+    />
   )
 
   const s       = STATUS_STYLES[invoice.status] ?? STATUS_STYLES.DRAFT
@@ -829,19 +844,17 @@ export default function InvoiceDetailPage() {
   if (printMode) {
     return (
       <div>
-        <div className="print:hidden flex items-center gap-3 mb-4 px-4 pt-4">
-          <button onClick={() => setPrintMode(false)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-200 rounded-xl hover:bg-gray-50">
-            <ArrowLeft className="w-4 h-4" /> Back
-          </button>
-          <button onClick={() => openInvoicePrint(invoice.invoiceNumber)}
-            className="flex items-center gap-1.5 px-4 py-1.5 text-sm bg-blue-600 text-white rounded-xl hover:bg-blue-700">
-            <Printer className="w-4 h-4" /> Print / Save PDF
-          </button>
+        <div className="mb-4 flex flex-wrap items-center gap-2 print:hidden">
+          <Button variant="outline" onClick={() => setPrintMode(false)}>
+            <ArrowLeft /> Back
+          </Button>
+          <Button onClick={() => openInvoicePrint(invoice.invoiceNumber)}>
+            <Printer /> Print / save PDF
+          </Button>
           {isVat && invoice.status !== 'DRAFT' && (
             <a href={`/api/invoices/${invoice.id}/mushak`} target="_blank" rel="noopener noreferrer"
-              className="flex items-center gap-1.5 px-4 py-1.5 text-sm border border-gray-200 rounded-xl hover:bg-gray-50">
-              <FileText className="w-4 h-4" /> Mushak-6.3
+              className={buttonVariants({ variant: 'outline' })}>
+              <FileText /> Mushak-6.3
             </a>
           )}
         </div>
@@ -850,126 +863,115 @@ export default function InvoiceDetailPage() {
     )
   }
 
+  const due = Math.max(0, invoice.total - (invoice.paidAmount ?? 0))
+
   return (
     <div className="space-y-6 pb-10">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <Link href="/admin/invoices" className="p-1.5 rounded-xl text-gray-400 hover:bg-gray-100">
-            <ArrowLeft className="w-4 h-4" />
-          </Link>
-          <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-xl font-bold text-gray-900 font-mono">{invoice.invoiceNumber}</h1>
-              <span className={`px-2.5 py-1 text-xs font-bold rounded-xl ${s.badge}`}>{s.label}</span>
-            </div>
-            <p className="text-sm text-gray-500 mt-0.5">
-              {invoice.clientId?.userId?.name} {invoice.clientId?.company ? `· ${invoice.clientId.company}` : ''}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 shrink-0 flex-wrap sm:justify-end">
-          {/* Record Payment button — shown for SENT / PARTIALLY_PAID / OVERDUE */}
-          {canRecordPayment && (
-            <button
-              onClick={() => setPaymentModal(true)}
-              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors">
-              <PlusCircle className="w-4 h-4" /> Record Payment
-            </button>
-          )}
-          {actions.length > 0 && (
-            <button onClick={() => setStatusModal(true)}
-              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-colors">
-              Update Status
-            </button>
-          )}
-          <button onClick={() => setPrintMode(true)}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-purple-50 text-purple-700 rounded-xl hover:bg-purple-100 transition-colors">
-            <Printer className="w-4 h-4" /> Print / PDF
-          </button>
-          {isVat && invoice.status !== 'DRAFT' && (
-            <a href={`/api/invoices/${invoice.id}/mushak`} target="_blank" rel="noopener noreferrer"
-              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-indigo-50 text-indigo-700 rounded-xl hover:bg-indigo-100 transition-colors">
-              <FileText className="w-4 h-4" /> Mushak-6.3
-            </a>
-          )}
-          {invoice.status === 'DRAFT' && (
-            <>
-              <Link href={`/admin/invoices/${id}/edit`}
-                className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-200 rounded-xl hover:bg-gray-50 text-gray-600">
-                <Pencil className="w-3.5 h-3.5" /> Edit
-              </Link>
-              <button onClick={handleDelete}
-                className="flex items-center gap-1.5 px-3 py-2 text-sm border border-red-100 text-red-600 rounded-xl hover:bg-red-50">
-                <Trash2 className="w-3.5 h-3.5" /> Delete
-              </button>
-            </>
-          )}
-        </div>
-      </div>
+      <PageHeader
+        back="/admin/invoices"
+        backLabel="Invoices"
+        title={invoice.invoiceNumber}
+        meta={<Badge variant={s.variant} dot>{s.label}</Badge>}
+        description={<>{invoice.clientId?.userId?.name} {invoice.clientId?.company ? `· ${invoice.clientId.company}` : ''}</>}
+        actions={
+          <>
+            {invoice.status === 'DRAFT' && (
+              <Button variant="ghost" size="icon" onClick={handleDelete} title="Delete" aria-label="Delete invoice"
+                className="text-gray-500 hover:bg-red-50 hover:text-red-600">
+                <Trash2 />
+              </Button>
+            )}
+            {invoice.status === 'DRAFT' && (
+              <Button variant="outline" href={`/admin/invoices/${id}/edit`}>
+                <Pencil /> Edit
+              </Button>
+            )}
+            {isVat && invoice.status !== 'DRAFT' && (
+              <a href={`/api/invoices/${invoice.id}/mushak`} target="_blank" rel="noopener noreferrer"
+                className={buttonVariants({ variant: 'outline' })}>
+                <FileText /> Mushak-6.3
+              </a>
+            )}
+            <Button variant="outline" onClick={() => setPrintMode(true)}>
+              <Printer /> Print / PDF
+            </Button>
+            {actions.length > 0 && (
+              <Button variant={canRecordPayment ? 'outline' : 'default'} onClick={() => setStatusModal(true)}>
+                <RefreshCw /> Update status
+              </Button>
+            )}
+            {/* Record payment — shown for SENT / PARTIALLY_PAID / OVERDUE */}
+            {canRecordPayment && (
+              <Button onClick={() => setPaymentModal(true)}>
+                <PlusCircle /> Record payment
+              </Button>
+            )}
+          </>
+        }
+      />
 
       {/* Part of a combined invoice */}
       {combined && (
         <Link href={`/admin/invoices/combined/${combined.id}`}
-          className="flex items-center justify-between gap-3 rounded-2xl border border-blue-100 bg-blue-50/70 px-5 py-3.5 hover:bg-blue-100/70 transition-colors">
-          <div className="flex items-center gap-3 min-w-0">
-            <Layers className="w-4 h-4 text-blue-600 shrink-0" />
+          className="flex items-center justify-between gap-3 rounded-xl border border-gray-200/80 bg-white px-4 py-3 shadow-xs transition-colors hover:bg-gray-50/70"
+          title="The combined document re-totals itself whenever any of the project's invoices changes.">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-gray-200/80 bg-white shadow-xs">
+              <Layers className="size-4 text-gray-600" />
+            </div>
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-blue-900">
+              <p className="text-sm font-medium text-gray-900">
                 Part of combined invoice {combined.combinedNumber}
               </p>
-              <p className="text-xs text-blue-700/80">
-                This project carries {siblingCount} invoice{siblingCount === 1 ? '' : 's'} — the combined document
-                re-totals itself whenever any of them changes.
+              <p className="text-xs text-muted-foreground">
+                {siblingCount} invoice{siblingCount === 1 ? '' : 's'} on this project
               </p>
             </div>
           </div>
-          <ExternalLink className="w-4 h-4 text-blue-500 shrink-0" />
+          <ChevronRight className="size-4 shrink-0 text-gray-400" />
         </Link>
       )}
 
-      {/* Payable / Paid / Due summary */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-white rounded-2xl border border-gray-100 p-4">
-          <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-1">Payable</p>
-          <p className="text-lg font-bold text-gray-900"><TkAmt value={invoice.total} decimals={2} /></p>
+      {/* Payable / Paid / Due summary + progress */}
+      <Card className="p-5">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div>
+            <p className="text-[13px] font-medium text-muted-foreground">Payable</p>
+            <p className="mt-1 text-2xl font-semibold tracking-tight text-gray-900"><TkAmt value={invoice.total} decimals={2} /></p>
+          </div>
+          <div>
+            <p className="text-[13px] font-medium text-muted-foreground">Paid</p>
+            <p className="mt-1 text-2xl font-semibold tracking-tight text-emerald-600"><TkAmt value={invoice.paidAmount ?? 0} decimals={2} /></p>
+          </div>
+          <div>
+            <p className="text-[13px] font-medium text-muted-foreground">Due</p>
+            <p className={cn('mt-1 text-2xl font-semibold tracking-tight', (invoice.total - (invoice.paidAmount ?? 0)) > 0.01 ? 'text-red-600' : 'text-emerald-600')}>
+              <TkAmt value={due} decimals={2} />
+            </p>
+          </div>
         </div>
-        <div className="bg-white rounded-2xl border border-gray-100 p-4">
-          <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-1">Paid</p>
-          <p className="text-lg font-bold text-green-600"><TkAmt value={invoice.paidAmount ?? 0} decimals={2} /></p>
-        </div>
-        <div className="bg-white rounded-2xl border border-gray-100 p-4">
-          <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-1">Due</p>
-          <p className={`text-lg font-bold ${(invoice.total - (invoice.paidAmount ?? 0)) > 0.01 ? 'text-red-500' : 'text-green-600'}`}>
-            <TkAmt value={Math.max(0, invoice.total - (invoice.paidAmount ?? 0))} decimals={2} />
-          </p>
-        </div>
-      </div>
 
-      {/* Payment progress bar (shown when partially/fully paid) */}
-      {invoice.paidAmount > 0 && (
-        <div className="bg-white rounded-2xl border border-gray-100 p-5">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-gray-700">Payment Progress</span>
-            <span className="text-sm text-gray-500"><TkAmt value={invoice.paidAmount} decimals={2} /> of <TkAmt value={invoice.total} decimals={2} /></span>
+        {/* Payment progress (shown when partially/fully paid) */}
+        {invoice.paidAmount > 0 && (
+          <div className="mt-5 border-t border-gray-100 pt-4">
+            <div className="h-1.5 overflow-hidden rounded-full bg-gray-100">
+              <div
+                className="h-full rounded-full bg-emerald-500 transition-all"
+                style={{ width: `${Math.min(100, (invoice.paidAmount / invoice.total) * 100).toFixed(1)}%` }}
+              />
+            </div>
+            <div className="mt-2 flex justify-between text-xs">
+              <span className="font-medium text-emerald-600">
+                {((invoice.paidAmount / invoice.total) * 100).toFixed(0)}% paid
+              </span>
+              {balance > 0 && <span className="font-medium text-amber-700">Balance <TkAmt value={balance} decimals={2} /></span>}
+            </div>
           </div>
-          <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-green-500 rounded-full transition-all"
-              style={{ width: `${Math.min(100, (invoice.paidAmount / invoice.total) * 100).toFixed(1)}%` }}
-            />
-          </div>
-          <div className="flex justify-between mt-1.5">
-            <span className="text-xs text-green-600 font-medium">
-              {((invoice.paidAmount / invoice.total) * 100).toFixed(0)}% paid
-            </span>
-            {balance > 0 && <span className="text-xs text-amber-600 font-medium">Balance: <TkAmt value={balance} decimals={2} /></span>}
-          </div>
-        </div>
-      )}
+        )}
+      </Card>
 
       {/* VAT summary + settlement breakdown */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
         <div className="lg:col-span-3">
           <VatPanel invoice={invoice} company={company} money={money} />
         </div>
@@ -1000,23 +1002,26 @@ export default function InvoiceDetailPage() {
       )}
 
       {/* Invoice print preview */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-x-auto">
+      <Card className="overflow-x-auto">
         <InvoicePrintView invoice={invoice} payments={payments} company={company} />
-      </div>
+      </Card>
 
       {/* Payment history */}
-      <div className="bg-white rounded-2xl border border-gray-100 p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-semibold text-gray-900">Payment Requests</h2>
+      <Card>
+        <CardHeader>
+          <CardTitle>Payment requests</CardTitle>
           {canRecordPayment && (
-            <button onClick={() => setPaymentModal(true)}
-              className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1 font-medium">
-              <PlusCircle className="w-3.5 h-3.5" /> Add Payment
-            </button>
+            <CardAction>
+              <Button variant="ghost" size="xs" onClick={() => setPaymentModal(true)}>
+                <PlusCircle /> Add payment
+              </Button>
+            </CardAction>
           )}
-        </div>
-        <PaymentHistory key={historyKey} invoiceId={id} onChanged={() => { load(); loadNotes() }} />
-      </div>
+        </CardHeader>
+        <CardContent>
+          <PaymentHistory key={historyKey} invoiceId={id} onChanged={() => { load(); loadNotes() }} />
+        </CardContent>
+      </Card>
 
       {/* Modals */}
       {statusModal && (

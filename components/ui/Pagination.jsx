@@ -18,7 +18,7 @@ export default function Pagination({ page: pageProp, pages: pagesProp, total: to
   if (pages <= 1) return null
 
   const getPageNumbers = () => {
-    const delta = 2
+    const delta = 1
     const range = []
     for (let i = Math.max(2, page - delta); i <= Math.min(pages - 1, page + delta); i++) {
       range.push(i)
@@ -37,43 +37,34 @@ export default function Pagination({ page: pageProp, pages: pagesProp, total: to
   const from = hasRange ? (page - 1) * limit + 1 : 0
   const to   = hasRange ? Math.min(page * limit, total) : 0
 
+  const navBtn = 'inline-flex h-8 items-center gap-1 rounded-md px-2.5 text-[13px] font-medium text-gray-700 transition-colors hover:bg-gray-100 disabled:pointer-events-none disabled:opacity-40'
+
   return (
-    <div className="flex items-center justify-between">
-      {hasRange ? (
-        <p className="text-sm text-gray-500">
-          Showing <span className="font-medium text-gray-700">{from}</span>–<span className="font-medium text-gray-700">{to}</span> of <span className="font-medium text-gray-700">{total}</span> results
-        </p>
-      ) : (
-        <p className="text-sm text-gray-500">Page {page} of {pages}</p>
-      )}
+    <div className="flex flex-col-reverse items-center justify-between gap-3 sm:flex-row">
+      <p className="text-[13px] text-muted-foreground tabular-nums">
+        {hasRange ? <>{from}–{to} of {total}</> : <>Page {page} of {pages}</>}
+      </p>
       <div className="flex items-center gap-1">
-        <button
-          onClick={() => onPageChange(page - 1)}
-          disabled={page === 1}
-          className={cn(
-            'p-2 rounded-lg border text-sm font-medium transition-colors',
-            page === 1
-              ? 'border-gray-100 text-gray-300 cursor-not-allowed'
-              : 'border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-gray-300'
-          )}
-        >
-          <ChevronLeft className="w-4 h-4" />
+        <button onClick={() => onPageChange(page - 1)} disabled={page === 1} className={navBtn} aria-label="Previous page">
+          <ChevronLeft className="size-4" />
+          <span className="hidden sm:inline">Previous</span>
         </button>
 
         {getPageNumbers().map((p, idx) =>
           p === '...' ? (
-            <span key={`ellipsis-${idx}`} className="px-2 py-2 text-gray-400">
-              <MoreHorizontal className="w-4 h-4" />
+            <span key={`ellipsis-${idx}`} className="inline-flex size-8 items-center justify-center text-gray-400">
+              <MoreHorizontal className="size-4" />
             </span>
           ) : (
             <button
               key={p}
               onClick={() => onPageChange(p)}
+              aria-current={p === page ? 'page' : undefined}
               className={cn(
-                'min-w-[36px] h-9 px-2 rounded-lg border text-sm font-medium transition-colors',
+                'inline-flex size-8 items-center justify-center rounded-md text-[13px] font-medium tabular-nums transition-colors',
                 p === page
-                  ? 'border-blue-500 bg-blue-500 text-white'
-                  : 'border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-gray-300'
+                  ? 'border border-gray-200 bg-white text-gray-900 shadow-xs'
+                  : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
               )}
             >
               {p}
@@ -81,17 +72,9 @@ export default function Pagination({ page: pageProp, pages: pagesProp, total: to
           )
         )}
 
-        <button
-          onClick={() => onPageChange(page + 1)}
-          disabled={page === pages}
-          className={cn(
-            'p-2 rounded-lg border text-sm font-medium transition-colors',
-            page === pages
-              ? 'border-gray-100 text-gray-300 cursor-not-allowed'
-              : 'border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-gray-300'
-          )}
-        >
-          <ChevronRight className="w-4 h-4" />
+        <button onClick={() => onPageChange(page + 1)} disabled={page === pages} className={navBtn} aria-label="Next page">
+          <span className="hidden sm:inline">Next</span>
+          <ChevronRight className="size-4" />
         </button>
       </div>
     </div>

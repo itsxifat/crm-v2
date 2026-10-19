@@ -4,6 +4,12 @@ import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import toast, { Toaster } from 'react-hot-toast'
+import PageHeader from '@/components/ui/PageHeader'
+import Button from '@/components/ui/Button'
+import Tabs from '@/components/ui/Tabs'
+import { PageLoader } from '@/components/ui/LoadingSpinner'
+import { Card, CardFooter } from '@/components/ui/Card'
+import { Input, NativeSelect, Field } from '@/components/ui/Input'
 
 const ACCOUNT_TYPES = ['Personal', 'Agent', 'Merchant']
 const AGENCY_TYPES  = ['Production House', 'Design Studio', 'Marketing Agency', 'IT Company', 'Other']
@@ -67,7 +73,7 @@ export default function FreelancerSetupPage() {
 
     if (method === 'BANK') {
       if (!bank.bankName || !bank.accountNumber || !bank.accountName) {
-        toast.error('Bank Name, Account Number and Account Name are required')
+        toast.error('Bank name, account number and account name are required')
         return
       }
     } else {
@@ -90,7 +96,7 @@ export default function FreelancerSetupPage() {
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error ?? 'Failed to save')
-      toast.success('Payment method saved!')
+      toast.success('Payment method saved')
       router.push('/freelancer')
     } catch (err) {
       toast.error(err.message)
@@ -100,133 +106,99 @@ export default function FreelancerSetupPage() {
   }
 
   if (status === 'loading' || loadingProfile) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-      </div>
-    )
+    return <PageLoader />
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4 py-12">
+    <div className="max-w-3xl space-y-6">
       <Toaster position="top-center" />
-      <div className="bg-white rounded-2xl shadow-lg w-full max-w-lg overflow-hidden">
-        {/* Header */}
-        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-8 py-6">
-          <h1 className="text-xl font-bold text-white">Set Up Payment Method</h1>
-          <p className="text-blue-200 text-sm mt-1">Choose how you want to receive payments</p>
-        </div>
+      <PageHeader title="Payment method" />
 
-        <form onSubmit={handleSubmit} className="px-8 py-8 space-y-6">
+      <Card as="form" onSubmit={handleSubmit}>
+        <div className="space-y-6 p-6">
           {/* Method Selector */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-3">Payment Method</label>
-            <div className="flex gap-3">
-              {['BANK', 'BKASH'].map(m => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => setMethod(m)}
-                  className={`flex-1 py-2.5 rounded-xl border-2 text-sm font-semibold transition-colors ${
-                    method === m
-                      ? 'border-blue-600 bg-blue-50 text-blue-700'
-                      : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
-                  }`}
-                >
-                  {m === 'BKASH' ? 'bKash' : 'Bank Transfer'}
-                </button>
-              ))}
-            </div>
-          </div>
+          <Tabs
+            value={method}
+            onChange={setMethod}
+            tabs={[
+              { value: 'BANK',  label: 'Bank transfer' },
+              { value: 'BKASH', label: 'bKash' },
+            ]}
+          />
 
           {/* BANK Fields */}
           {method === 'BANK' && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                {[
-                  { label: 'Bank Name *',      key: 'bankName',      placeholder: 'e.g. Dutch-Bangla Bank' },
-                  { label: 'Account Number *', key: 'accountNumber', placeholder: '0000000000' },
-                  { label: 'Account Name *',   key: 'accountName',   placeholder: 'Your full name' },
-                  { label: 'Routing Number',   key: 'routingNumber', placeholder: '090000000' },
-                  { label: 'Swift Code',       key: 'swiftCode',     placeholder: 'DBBLBDDH' },
-                  { label: 'Branch',           key: 'branch',        placeholder: 'Gulshan Branch' },
-                ].map(({ label, key, placeholder }) => (
-                  <div key={key}>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
-                    <input
-                      type="text"
-                      value={bank[key]}
-                      onChange={e => setBank(b => ({ ...b, [key]: e.target.value }))}
-                      placeholder={placeholder}
-                      className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
-                    />
-                  </div>
-                ))}
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Division</label>
-                <input
+            <div className="grid gap-4 sm:grid-cols-2">
+              {[
+                { label: 'Bank name',      key: 'bankName',      placeholder: 'e.g. Dutch-Bangla Bank', required: true },
+                { label: 'Account number', key: 'accountNumber', placeholder: '0000000000',             required: true },
+                { label: 'Account name',   key: 'accountName',   placeholder: 'Full name',              required: true },
+                { label: 'Routing number', key: 'routingNumber', placeholder: '090000000' },
+                { label: 'SWIFT code',     key: 'swiftCode',     placeholder: 'DBBLBDDH' },
+                { label: 'Branch',         key: 'branch',        placeholder: 'e.g. Gulshan' },
+              ].map(({ label, key, placeholder, required }) => (
+                <Field key={key} label={label} htmlFor={`bank-${key}`} required={required}>
+                  <Input
+                    id={`bank-${key}`}
+                    type="text"
+                    value={bank[key]}
+                    onChange={e => setBank(b => ({ ...b, [key]: e.target.value }))}
+                    placeholder={placeholder}
+                  />
+                </Field>
+              ))}
+              <Field label="Division" htmlFor="bank-division" className="sm:col-span-2">
+                <Input
+                  id="bank-division"
                   type="text"
                   value={bank.division}
                   onChange={e => setBank(b => ({ ...b, division: e.target.value }))}
                   placeholder="e.g. Dhaka"
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
                 />
-              </div>
+              </Field>
             </div>
           )}
 
           {/* bKash Fields */}
           {method === 'BKASH' && (
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Account Type</label>
-                <select
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Account type" htmlFor="bkash-type">
+                <NativeSelect
+                  id="bkash-type"
                   value={bkash.accountType}
                   onChange={e => setBkash(b => ({ ...b, accountType: e.target.value }))}
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
                 >
                   {ACCOUNT_TYPES.map(t => <option key={t}>{t}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Account Name</label>
-                <input
+                </NativeSelect>
+              </Field>
+              <Field label="Account name" htmlFor="bkash-name">
+                <Input
+                  id="bkash-name"
                   type="text"
                   value={bkash.accountName}
                   onChange={e => setBkash(b => ({ ...b, accountName: e.target.value }))}
-                  placeholder="Name on bKash account"
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                  placeholder="Account holder"
                 />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Account Number *</label>
-                <input
+              </Field>
+              <Field label="Account number" htmlFor="bkash-number" required className="sm:col-span-2">
+                <Input
+                  id="bkash-number"
                   type="text"
                   value={bkash.accountNumber}
                   onChange={e => setBkash(b => ({ ...b, accountNumber: e.target.value }))}
                   placeholder="01XXXXXXXXX"
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
                 />
-              </div>
+              </Field>
             </div>
           )}
+        </div>
 
-          <button
-            type="submit"
-            disabled={submitting}
-            className="w-full py-3 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 disabled:opacity-60 transition-colors text-sm flex items-center justify-center gap-2"
-          >
-            {submitting && (
-              <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-              </svg>
-            )}
-            {submitting ? 'Saving…' : 'Save Payment Method'}
-          </button>
-        </form>
-      </div>
+        <CardFooter className="justify-end px-6">
+          <Button type="submit" loading={submitting}>
+            {submitting ? 'Saving…' : 'Save payment method'}
+          </Button>
+        </CardFooter>
+      </Card>
     </div>
   )
 }

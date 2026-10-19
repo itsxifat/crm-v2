@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { cn, formatCurrency } from '@/lib/utils'
 import { formatMoney } from '@/lib/currencies'
 import { accountTypeLabel } from '@/lib/finance/constants'
+import { selectClass } from '@/components/ui/Input'
 
 // ── Module-level cache shared by every picker on the page (30s TTL) ──────────
 const CACHE_TTL_MS = 30 * 1000
@@ -132,9 +133,8 @@ function pickAccount(options, paymentMethod) {
   return options.find(a => a.isDefault) ?? null
 }
 
-const BASE_CLASS =
-  'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white text-gray-900 ' +
-  'focus:outline-none focus:ring-2 focus:ring-gray-900 disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed'
+// Same look as the shared NativeSelect (components/ui/Input).
+const BASE_CLASS = selectClass
 
 /**
  * Native <select> of ACTIVE money accounts (bank / cash / wallet …).
@@ -222,7 +222,7 @@ export default function MoneyAccountSelect({
   let emptyLabel = placeholder
   if (loading) emptyLabel = 'Loading accounts…'
   else if (error && !accounts.length) emptyLabel = 'Could not load accounts'
-  else if (!options.length) emptyLabel = 'No money accounts — add one in Finance → Money Accounts'
+  else if (!options.length) emptyLabel = 'No money accounts — add one in Finance → Money accounts'
 
   return (
     <select

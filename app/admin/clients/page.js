@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   Users, Wallet, TrendingUp, FolderOpen,
-  Plus, MoreHorizontal, Pencil, Trash2, Eye, RotateCcw,
-  Mail, Phone, Building2, Globe,
+  Plus, Pencil, Trash2, Eye, RotateCcw,
+  Phone, Globe,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import Link from 'next/link'
@@ -14,31 +14,24 @@ import Pagination from '@/components/ui/Pagination'
 import ClientModal from '@/components/admin/clients/ClientModal'
 import { Can, usePermission } from '@/components/auth/Can'
 import TkAmt from '@/components/ui/TkAmt'
+import Button from '@/components/ui/Button'
+import { Card } from '@/components/ui/Card'
+import PageHeader from '@/components/ui/PageHeader'
+import Tabs from '@/components/ui/Tabs'
+import Badge from '@/components/ui/Badge'
+import StatsCard from '@/components/ui/StatsCard'
+import EmptyState from '@/components/ui/EmptyState'
+import ActionMenu from '@/components/ui/ActionMenu'
+import { PageLoader } from '@/components/ui/LoadingSpinner'
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const fmt = (n) => n ? `৳ ${Number(n).toLocaleString('en-BD', { minimumFractionDigits: 0 })}` : '—'
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 
-function StatCard({ label, value, icon: Icon, color }) {
-  const colors = {
-    blue:   'bg-blue-50 text-blue-600',
-    green:  'bg-green-50 text-green-600',
-    purple: 'bg-purple-50 text-purple-600',
-    yellow: 'bg-yellow-50 text-yellow-600',
-  }
-  return (
-    <div className="bg-white rounded-xl border border-gray-100 p-5 flex items-center gap-4">
-      <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${colors[color]}`}>
-        <Icon className="w-5 h-5" />
-      </div>
-      <div>
-        <p className="text-xs text-gray-500">{label}</p>
-        <p className="text-xl font-bold text-gray-900">{value}</p>
-      </div>
-    </div>
-  )
-}
+const KYC_VARIANT = { NOT_SUBMITTED: 'default', PENDING: 'warning', VERIFIED: 'success', REJECTED: 'danger' }
+const KYC_LABEL   = { NOT_SUBMITTED: 'No KYC', PENDING: 'Pending', VERIFIED: 'Verified', REJECTED: 'Rejected' }
 
 // ─── Row Menu ─────────────────────────────────────────────────────────────────
 
@@ -47,60 +40,17 @@ function RowMenu({ client, onEdit, onDeactivate, onReactivate }) {
   // PATCH /api/clients/[id]/status is SUPER_ADMIN-only
   const { role } = usePermission()
   const canToggleStatus = role === 'SUPER_ADMIN'
-  const [open, setOpen]   = useState(false)
-  const [pos,  setPos]    = useState({ top: 0, left: 0 })
-  const btnRef            = useRef(null)
-
-  useEffect(() => {
-    if (!open) return
-    const close = () => setOpen(false)
-    document.addEventListener('click', close)
-    return () => document.removeEventListener('click', close)
-  }, [open])
-
-  function toggle(e) {
-    e.stopPropagation()
-    if (!open) {
-      const rect = btnRef.current.getBoundingClientRect()
-      setPos({ top: rect.bottom + window.scrollY + 4, left: rect.right + window.scrollX - 160 })
-    }
-    setOpen(o => !o)
-  }
 
   return (
-    <>
-      <button ref={btnRef} onClick={toggle}
-        className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
-        <MoreHorizontal className="w-4 h-4" />
-      </button>
-      {open && (
-        <div
-          style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 9999 }}
-          className="w-40 bg-white border border-gray-100 rounded-xl shadow-lg py-1"
-          onClick={e => e.stopPropagation()}
-        >
-          <Link href={`/admin/clients/${client.id}`}
-            className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
-            <Eye className="w-3.5 h-3.5" /> View
-          </Link>
-          <button onClick={() => { setOpen(false); onEdit(client) }}
-            className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
-            <Pencil className="w-3.5 h-3.5" /> Edit
-          </button>
-          {!canToggleStatus ? null : isActive ? (
-            <button onClick={() => { setOpen(false); onDeactivate(client) }}
-              className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50">
-              <Trash2 className="w-3.5 h-3.5" /> Deactivate
-            </button>
-          ) : (
-            <button onClick={() => { setOpen(false); onReactivate(client) }}
-              className="w-full flex items-center gap-2 px-4 py-2 text-sm text-green-600 hover:bg-green-50">
-              <RotateCcw className="w-3.5 h-3.5" /> Reactivate
-            </button>
-          )}
-        </div>
-      )}
-    </>
+    <ActionMenu
+      items={[
+        { label: 'View', icon: Eye, href: `/admin/clients/${client.id}` },
+        { label: 'Edit', icon: Pencil, onClick: () => onEdit(client) },
+        canToggleStatus && (isActive
+          ? { label: 'Deactivate', icon: Trash2, danger: true, onClick: () => onDeactivate(client) }
+          : { label: 'Reactivate', icon: RotateCcw, onClick: () => onReactivate(client) }),
+      ]}
+    />
   )
 }
 
@@ -141,11 +91,11 @@ export default function ClientsPage() {
   function handleSaved(client, _, emailSent, linkedToExisting) {
     if (!editingClient) {
       if (emailSent) {
-        toast.success('Client created! An activation link was sent to their email.', { duration: 6000 })
+        toast.success('Client created. Activation link emailed.', { duration: 6000 })
       } else if (linkedToExisting) {
-        toast.success('Client created and linked to the existing account. They have been notified in the portal.', { duration: 6000 })
+        toast.success('Client created and linked to existing account.', { duration: 6000 })
       } else {
-        toast.success('Client created! (Email delivery failed — check SMTP config)', { duration: 6000 })
+        toast.success('Client created. Activation email failed (check SMTP).', { duration: 6000 })
       }
     } else {
       toast.success('Client updated')
@@ -178,198 +128,164 @@ export default function ClientsPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Clients</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Manage client accounts and relationships</p>
-        </div>
-        <Can perm="sales.customers.create">
-          <button
-            onClick={() => { setEditingClient(null); setModalOpen(true) }}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            <Plus className="w-4 h-4" /> Add Client
-          </button>
-        </Can>
-      </div>
+      <PageHeader
+        title="Clients"
+        actions={
+          <Can perm="sales.customers.create">
+            <Button onClick={() => { setEditingClient(null); setModalOpen(true) }}>
+              <Plus /> New client
+            </Button>
+          </Can>
+        }
+      />
 
       {/* Stats */}
       {stats && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard label="Total Clients"   value={stats.totalClients}                                       icon={Users}      color="blue"   />
-          <StatCard label="Total Revenue"   value={fmt(stats.totalRevenue)}                                  icon={Wallet} color="green"  />
-          <StatCard label="Outstanding"     value={fmt(stats.outstandingBalance)}                            icon={TrendingUp} color="yellow" />
-          <StatCard label="Active Projects" value={stats.activeProjectCount ?? 0}                            icon={FolderOpen} color="purple" />
+          <StatsCard title="Total clients"   value={stats.totalClients}            icon={Users}      />
+          <StatsCard title="Total revenue"   value={fmt(stats.totalRevenue)}       icon={Wallet}     />
+          <StatsCard title="Outstanding"     value={fmt(stats.outstandingBalance)} icon={TrendingUp} color="yellow" />
+          <StatsCard title="Active projects" value={stats.activeProjectCount ?? 0} icon={FolderOpen} />
         </div>
       )}
 
       {/* Table */}
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm">
+      <Card className="overflow-hidden">
         {/* Toolbar */}
-        <div className="px-4 sm:px-6 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-            <SearchInput
-              value={search}
-              onChange={(v) => { setSearch(v); setPage(1) }}
-              placeholder="Search by name, email, company…"
-              className="w-full sm:w-80"
-            />
-            <div className="inline-flex rounded-lg border border-gray-200 p-0.5 bg-gray-50">
-              {[
-                { key: '',           label: 'All' },
-                { key: 'INDIVIDUAL', label: 'Individuals' },
-                { key: 'COMPANY',    label: 'Companies' },
-              ].map(t => (
-                <button
-                  key={t.key}
-                  onClick={() => { setTypeFilter(t.key); setPage(1) }}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                    typeFilter === t.key ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  {t.label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <span className="text-sm text-gray-400">{meta.total} client{meta.total !== 1 ? 's' : ''}</span>
+        <div className="flex flex-wrap items-center gap-2 border-b border-gray-100 p-3">
+          <SearchInput
+            value={search}
+            onChange={(v) => { setSearch(v); setPage(1) }}
+            placeholder="Search…"
+            className="w-full sm:w-64"
+          />
+          <Tabs
+            size="sm"
+            value={typeFilter}
+            onChange={(v) => { setTypeFilter(v); setPage(1) }}
+            tabs={[
+              { value: '',           label: 'All' },
+              { value: 'INDIVIDUAL', label: 'Individuals' },
+              { value: 'COMPANY',    label: 'Companies' },
+            ]}
+          />
+          <span className="ml-auto text-[13px] text-muted-foreground tabular-nums">{meta.total} client{meta.total !== 1 ? 's' : ''}</span>
         </div>
 
         {loading ? (
-          <div className="flex items-center justify-center py-20">
-            <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-          </div>
+          <PageLoader />
         ) : clients.length === 0 ? (
-          <div className="text-center py-20">
-            <Users className="w-12 h-12 text-gray-200 mx-auto mb-3" />
-            <p className="text-gray-500 font-medium">No clients found</p>
-            {search && <p className="text-gray-400 text-sm mt-1">Try a different search term</p>}
-          </div>
+          <EmptyState
+            icon={Users}
+            title={search ? 'No results' : 'No clients yet'}
+            description={search ? 'Try a different search.' : undefined}
+          />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1050px]">
-              <thead>
-                <tr className="border-b border-gray-100 bg-gray-50">
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Client</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Company</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Contact</th>
-                  <th className="px-6 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide">Projects</th>
-                  <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Revenue</th>
-                  <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Outstanding</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Joined</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">KYC</th>
-                  <th className="px-6 py-3 w-12" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {clients.map((client) => {
-                  const isActive = client.isActive !== false && client.userId?.isActive !== false
-                  return (
-                    <tr key={client.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <Avatar name={client.userId?.name} src={client.userId?.avatar} size="sm" />
-                          <div>
-                            <div className="flex items-center gap-1.5">
-                              <Link href={`/admin/clients/${client.id}`}
-                                className="text-sm font-semibold text-gray-900 hover:text-blue-600 transition-colors">
-                                {client.userId?.name ?? '—'}
-                              </Link>
-                              <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${client.clientType === 'COMPANY' ? 'bg-violet-100 text-violet-700' : 'bg-blue-100 text-blue-700'}`}>
-                                {client.clientType === 'COMPANY' ? 'Company' : 'Individual'}
-                              </span>
-                            </div>
-                            <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-1">
-                              <Mail className="w-3 h-3" />
-                              {client.userId?.email ?? '—'}
-                            </p>
-                            {client.clientCode && (
-                              <p className="text-xs text-gray-400 mt-0.5 font-mono">#{client.clientCode}</p>
-                            )}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        {client.company ? (
+          <Table className="min-w-[1050px]">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Client</TableHead>
+                <TableHead>Company</TableHead>
+                <TableHead>Contact</TableHead>
+                <TableHead className="text-center">Projects</TableHead>
+                <TableHead className="text-right">Revenue</TableHead>
+                <TableHead className="text-right">Outstanding</TableHead>
+                <TableHead>Joined</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>KYC</TableHead>
+                <TableHead className="w-12" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {clients.map((client) => {
+                const isActive = client.isActive !== false && client.userId?.isActive !== false
+                const kycStatus = client.kyc?.status ?? 'NOT_SUBMITTED'
+                return (
+                  <TableRow key={client.id}>
+                    <TableCell>
+                      <div className="flex items-center gap-3">
+                        <Avatar name={client.userId?.name} src={client.userId?.avatar} size="sm" />
+                        <div className="min-w-0">
                           <div className="flex items-center gap-1.5">
-                            <Building2 className="w-3.5 h-3.5 text-gray-300 shrink-0" />
-                            <span className="text-sm text-gray-700">{client.company}</span>
+                            <Link href={`/admin/clients/${client.id}`}
+                              className="font-medium text-gray-900 hover:underline underline-offset-4">
+                              {client.userId?.name ?? '—'}
+                            </Link>
+                            <Badge variant={client.clientType === 'COMPANY' ? 'purple' : 'default'}>
+                              {client.clientType === 'COMPANY' ? 'Company' : 'Individual'}
+                            </Badge>
                           </div>
-                        ) : <span className="text-sm text-gray-300">—</span>}
-                        {client.website && (
-                          <a href={client.website} target="_blank" rel="noreferrer"
-                            className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-600 mt-0.5">
-                            <Globe className="w-3 h-3" />
-                            {client.website.replace(/^https?:\/\//, '')}
-                          </a>
-                        )}
-                      </td>
-                      <td className="px-6 py-4">
-                        {client.userId?.phone ? (
-                          <div className="flex items-center gap-1.5 text-xs text-gray-600">
-                            <Phone className="w-3.5 h-3.5 text-gray-300" />
-                            {client.userId.phone}
-                          </div>
-                        ) : <span className="text-xs text-gray-300">—</span>}
-                        {client.country && (
-                          <p className="text-xs text-gray-400 mt-0.5">{client.country}</p>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 text-center">
-                        <p className="text-sm font-medium text-gray-800">{client.activeProjectCount ?? 0}</p>
-                        <p className="text-xs text-gray-400">active</p>
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <p className="text-sm font-semibold text-gray-900"><TkAmt value={client.totalRevenue} /></p>
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        {client.outstandingBalance > 0 ? (
-                          <TkAmt value={client.outstandingBalance} className="text-sm font-medium text-amber-600" />
-                        ) : (
-                          <span className="text-sm text-gray-300">—</span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4">
-                        <p className="text-xs text-gray-500">{fmtDate(client.createdAt)}</p>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${isActive ? 'text-green-700' : 'text-gray-400'}`}>
-                          <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-green-500' : 'bg-gray-300'}`} />
-                          {isActive ? 'Active' : 'Inactive'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        {(() => {
-                          const s = client.kyc?.status ?? 'NOT_SUBMITTED'
-                          const MAP = {
-                            NOT_SUBMITTED: 'bg-gray-100 text-gray-500',
-                            PENDING:       'bg-yellow-50 text-yellow-700',
-                            VERIFIED:      'bg-green-50 text-green-700',
-                            REJECTED:      'bg-red-50 text-red-600',
-                          }
-                          const LABELS = { NOT_SUBMITTED: 'No KYC', PENDING: 'Pending', VERIFIED: 'Verified', REJECTED: 'Rejected' }
-                          return <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${MAP[s]}`}>{LABELS[s]}</span>
-                        })()}
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <RowMenu client={client} onEdit={openEdit} onDeactivate={handleDeactivate} onReactivate={handleReactivate} />
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+                          <p className="mt-0.5 text-xs text-muted-foreground">{client.userId?.email ?? '—'}</p>
+                          {client.clientCode && (
+                            <p className="mt-0.5 font-mono text-xs text-gray-400">#{client.clientCode}</p>
+                          )}
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      {client.company ? (
+                        <span className="text-gray-700">{client.company}</span>
+                      ) : <span className="text-gray-300">—</span>}
+                      {client.website && (
+                        <a href={client.website} target="_blank" rel="noreferrer"
+                          className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground hover:text-gray-900 hover:underline underline-offset-4">
+                          <Globe className="size-3" />
+                          {client.website.replace(/^https?:\/\//, '')}
+                        </a>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {client.userId?.phone ? (
+                        <div className="flex items-center gap-1.5 text-xs text-gray-600 tabular-nums">
+                          <Phone className="size-3.5 text-gray-400" />
+                          {client.userId.phone}
+                        </div>
+                      ) : <span className="text-xs text-gray-300">—</span>}
+                      {client.country && (
+                        <p className="mt-0.5 text-xs text-muted-foreground">{client.country}</p>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <p className="font-medium text-gray-900 tabular-nums">{client.activeProjectCount ?? 0}</p>
+                      <p className="text-xs text-muted-foreground">active</p>
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      <span className="font-medium text-gray-900"><TkAmt value={client.totalRevenue} /></span>
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {client.outstandingBalance > 0 ? (
+                        <TkAmt value={client.outstandingBalance} className="font-medium text-amber-600" />
+                      ) : (
+                        <span className="text-gray-300">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                      {fmtDate(client.createdAt)}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={isActive ? 'success' : 'default'} dot>
+                        {isActive ? 'Active' : 'Inactive'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={KYC_VARIANT[kycStatus]}>{KYC_LABEL[kycStatus]}</Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <RowMenu client={client} onEdit={openEdit} onDeactivate={handleDeactivate} onReactivate={handleReactivate} />
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
         )}
 
         {meta.pages > 1 && (
-          <div className="px-6 py-4 border-t border-gray-100">
+          <div className="border-t border-gray-100 px-4 py-3">
             <Pagination page={meta.page} pages={meta.pages} onChange={setPage} />
           </div>
         )}
-      </div>
+      </Card>
 
       <ClientModal
         open={modalOpen}

@@ -1,10 +1,11 @@
 'use client'
 
 import { Suspense } from 'react'
-import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Landmark, FileOutput, FileCheck, BadgePercent, FileClock, ClipboardList, ArrowLeft } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { Landmark, FileOutput, FileCheck, BadgePercent, FileClock, ClipboardList } from 'lucide-react'
+import PageHeader from '@/components/ui/PageHeader'
+import Tabs from '@/components/ui/Tabs'
+import { PageLoader } from '@/components/ui/LoadingSpinner'
 import TdsDepositTab from './_components/TdsDepositTab'
 import IssueCertificatesTab from './_components/IssueCertificatesTab'
 import CollectCertificatesTab from './_components/CollectCertificatesTab'
@@ -32,32 +33,24 @@ function WithholdingPage() {
   }
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-col gap-1">
-        <Link href="/admin/tax" className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800 w-fit"><ArrowLeft className="w-3.5 h-3.5" /> Tax dashboard</Link>
-        <h1 className="text-xl font-semibold text-gray-900">Withholding tax</h1>
-        <p className="text-sm text-gray-500">TDS / AIT and VDS: deposit what you deducted, issue and collect certificates, and prepare the quarterly return.</p>
-      </div>
+    <div className="space-y-6">
+      <PageHeader title="Withholding tax" back="/admin/tax" backLabel="Tax dashboard" />
 
-      <div className="-mx-4 sm:mx-0 overflow-x-auto">
-        <div className="flex min-w-max gap-1 px-4 sm:px-0 border-b border-gray-200">
-          {TABS.map(t => (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => setTab(t.key)}
-              className={cn(
-                'inline-flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium border-b-2 -mb-px whitespace-nowrap transition-colors',
-                tab === t.key ? 'border-gray-900 text-gray-900' : 'border-transparent text-gray-500 hover:text-gray-800',
-              )}
-            >
-              <t.icon className="w-4 h-4" />
+      <Tabs
+        variant="underline"
+        value={tab}
+        onChange={setTab}
+        tabs={TABS.map(t => ({
+          value: t.key,
+          icon: t.icon,
+          label: (
+            <>
               <span className="hidden md:inline">{t.label}</span>
               <span className="md:hidden">{t.short}</span>
-            </button>
-          ))}
-        </div>
-      </div>
+            </>
+          ),
+        }))}
+      />
 
       {tab === 'tds-deposit' && <TdsDepositTab />}
       {tab === 'vds-issue' && <IssueCertificatesTab key="vds" type="VDS" />}
@@ -71,7 +64,7 @@ function WithholdingPage() {
 
 export default function WithholdingTaxPage() {
   return (
-    <Suspense fallback={<div className="py-24 text-center text-sm text-gray-400">Loading…</div>}>
+    <Suspense fallback={<PageLoader />}>
       <WithholdingPage />
     </Suspense>
   )

@@ -2,12 +2,13 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
-import { Loader2, Info } from 'lucide-react'
 import Modal, { ModalFooter } from '@/components/ui/Modal'
+import Button from '@/components/ui/Button'
+import { Input, Textarea, NativeSelect, Field } from '@/components/ui/Input'
 import { taxCodeProblems, VAT_TREATMENTS, tdsRateText } from '@/lib/tax/catalog'
 import { addDays } from '@/lib/finance/fiscal'
 import { invalidateTaxCodesCache } from '@/components/tax/TaxCodeSelect'
-import { readJson, todayKey, inputCls, labelCls, btnPrimary, btnGhost } from '../../vat-return/_lib/format'
+import { readJson, todayKey } from '../../vat-return/_lib/format'
 
 const TREATMENTS = VAT_TREATMENTS.filter(t => t.value !== 'NONE')
 
@@ -145,7 +146,7 @@ export default function TaxCodeModal({ open, mode, kind, row, onClose, onSaved }
               })
               await readJson(res2)
             } catch (err) {
-              toast.error(`New version saved, but the old one could not be closed: ${err.message}`)
+              toast.error(`New version saved, but the old one couldn’t be closed: ${err.message}`)
             }
           }
         }
@@ -168,18 +169,14 @@ export default function TaxCodeModal({ open, mode, kind, row, onClose, onSaved }
       ? `New rate version — ${row?.code ?? ''}`
       : `Edit ${row?.code ?? ''}`
 
-  const err = (k) => errors[k] ? <p className="text-[11px] text-red-600 mt-1">{errors[k]}</p> : null
   const rateInput = (k, label, hint) => (
-    <div>
-      <label className={labelCls}>{label}</label>
+    <Field label={label} hint={hint} error={errors[k]}>
       <div className="relative">
-        <input type="number" min="0" max="100" step="0.01" inputMode="decimal" className={`${inputCls} pr-8`}
+        <Input type="number" min="0" max="100" step="0.01" inputMode="decimal" className="pr-8 tabular-nums" invalid={!!errors[k]}
           value={form[k]} onChange={e => set({ [k]: e.target.value })} />
-        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">%</span>
+        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">%</span>
       </div>
-      {hint && <p className="text-[11px] text-gray-400 mt-1">{hint}</p>}
-      {err(k)}
-    </div>
+    </Field>
   )
 
   return (
@@ -188,117 +185,100 @@ export default function TaxCodeModal({ open, mode, kind, row, onClose, onSaved }
       onOpenChange={(v) => { if (!v && !saving) onClose() }}
       title={title}
       description={mode === 'version'
-        ? 'Rates change with each Finance Act. Add the new rate from its effective date; past entries keep the old rate.'
-        : (systemLocked ? 'Built-in code — the code and effective-from date are fixed. Use "New rate version" to change a rate from a date.' : undefined)}
+        ? 'Starts on its effective date; past entries keep the old rate.'
+        : (systemLocked ? 'Built-in: code and start date are fixed — use “New rate version” to change a rate.' : undefined)}
       size="lg"
     >
       <div className="space-y-4">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div>
-            <label className={labelCls}>Code</label>
-            <input className={`${inputCls} font-mono uppercase`} value={form.code} disabled={codeLocked} maxLength={32}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <Field label="Code" required error={errors.code}>
+            <Input className="font-mono uppercase" value={form.code} disabled={codeLocked} maxLength={32} invalid={!!errors.code}
               onChange={e => set({ code: e.target.value })} placeholder={isVat ? 'S099.10' : '90-OTHER'} />
-            {err('code')}
-          </div>
-          <div className="sm:col-span-2">
-            <label className={labelCls}>Label</label>
-            <input className={inputCls} value={form.label} maxLength={200} onChange={e => set({ label: e.target.value })} />
-            {err('label')}
-          </div>
+          </Field>
+          <Field label="Label" required error={errors.label} className="sm:col-span-2">
+            <Input value={form.label} maxLength={200} invalid={!!errors.label} onChange={e => set({ label: e.target.value })} />
+          </Field>
         </div>
-        <div>
-          <label className={labelCls}>Description</label>
-          <textarea rows={2} className={`${inputCls} resize-none`} value={form.description} maxLength={2000} onChange={e => set({ description: e.target.value })} />
-        </div>
+        <Field label="Description">
+          <Textarea rows={2} className="min-h-0 resize-none" value={form.description} maxLength={2000} onChange={e => set({ description: e.target.value })} />
+        </Field>
 
         {isVat ? (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {rateInput('vatRate', 'VAT rate', 'Rate the supplier charges')}
-            {rateInput('vdsRate', 'VDS rate', 'Deducted at source by a VDS entity (0 = none)')}
-            <div>
-              <label className={labelCls}>Treatment</label>
-              <select className={inputCls} value={form.treatment} onChange={e => set({ treatment: e.target.value })}>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            {rateInput('vatRate', 'VAT rate')}
+            {rateInput('vdsRate', 'VDS rate', '0 = no VDS')}
+            <Field label="Treatment" hint="Sets the Mushak-9.1 note">
+              <NativeSelect value={form.treatment} onChange={e => set({ treatment: e.target.value })}>
                 {TREATMENTS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-              </select>
-              <p className="text-[11px] text-gray-400 mt-1">Decides the Mushak-9.1 note (4 / 7 / 1 / 3)</p>
-            </div>
+              </NativeSelect>
+            </Field>
           </div>
         ) : (
-          <div className="space-y-3">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div>
-                <label className={labelCls}>Section (ITA 2023)</label>
-                <input className={inputCls} value={form.section} maxLength={10} onChange={e => set({ section: e.target.value })} placeholder="90" />
-                {err('section')}
-              </div>
-              <div className="sm:col-span-2">
-                <label className={labelCls}>Basis</label>
-                <select className={inputCls} value={form.basis} onChange={e => set({ basis: e.target.value })}>
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <Field label="Section (ITA 2023)" error={errors.section}>
+                <Input value={form.section} maxLength={10} invalid={!!errors.section} onChange={e => set({ section: e.target.value })} placeholder="90" />
+              </Field>
+              <Field label="Basis" className="sm:col-span-2">
+                <NativeSelect value={form.basis} onChange={e => set({ basis: e.target.value })}>
                   <option value="GROSS">Rate on the gross bill</option>
-                  <option value="COMMISSION_OR_GROSS">Higher of a rate on commission or a rate on the gross bill</option>
-                </select>
-              </div>
+                  <option value="COMMISSION_OR_GROSS">Higher of a rate on commission or on the gross bill</option>
+                </NativeSelect>
+              </Field>
             </div>
             {form.basis === 'COMMISSION_OR_GROSS' ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 {rateInput('commissionRate', 'Rate on commission')}
                 {rateInput('grossRate', 'Rate on gross bill')}
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 {rateInput('rateCompany', 'Rate — company / firm')}
                 {rateInput('rateIndividual', 'Rate — individual')}
               </div>
             )}
-            <p className="text-[11px] text-gray-500 flex items-start gap-1.5">
-              <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-              Preview: {tdsRateText({ ...payload, code: payload.code })}. The rate rises by 50% when the payee has no PSR or is not paid through a bank (s.142).
+            <p className="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-600">
+              <span className="font-medium text-gray-900">Preview:</span> {tdsRateText({ ...payload, code: payload.code })}. +50% if the payee has no PSR or isn’t paid through a bank (s.142).
             </p>
           </div>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label className={labelCls}>Effective from</label>
-            <input type="date" className={inputCls} value={form.effectiveFrom} disabled={systemLocked}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field label="Effective from" error={errors.effectiveFrom}>
+            <Input type="date" value={form.effectiveFrom} disabled={systemLocked} invalid={!!errors.effectiveFrom}
               onChange={e => set({ effectiveFrom: e.target.value })} />
-            {err('effectiveFrom')}
-          </div>
-          <div>
-            <label className={labelCls}>Effective to (optional)</label>
-            <input type="date" className={inputCls} value={form.effectiveTo} min={form.effectiveFrom || undefined}
+          </Field>
+          <Field label="Effective to" error={errors.effectiveTo}>
+            <Input type="date" value={form.effectiveTo} min={form.effectiveFrom || undefined} invalid={!!errors.effectiveTo}
               onChange={e => set({ effectiveTo: e.target.value })} />
-            {err('effectiveTo')}
-          </div>
+          </Field>
         </div>
 
-        <div>
-          <label className={labelCls}>Source / legal reference</label>
-          <textarea rows={2} className={`${inputCls} resize-none`} value={form.notes} maxLength={2000}
-            onChange={e => set({ notes: e.target.value })} placeholder="e.g. Withholding Tax Rules 2026 (SRO 273-Ain/Aykor-5/2026), Rule 4" />
-        </div>
+        <Field label="Source / legal reference">
+          <Textarea rows={2} className="min-h-0 resize-none" value={form.notes} maxLength={2000}
+            onChange={e => set({ notes: e.target.value })} placeholder="e.g. SRO 273-Ain/Aykor-5/2026, Rule 4" />
+        </Field>
 
         {mode === 'edit' && (
           <label className="inline-flex items-center gap-2 text-sm text-gray-700">
-            <input type="checkbox" className="rounded border-gray-300" checked={form.isActive} onChange={e => set({ isActive: e.target.checked })} />
+            <input type="checkbox" checked={form.isActive} onChange={e => set({ isActive: e.target.checked })} />
             Active (offered in forms)
           </label>
         )}
         {mode === 'version' && (
           <label className="flex items-start gap-2 text-sm text-gray-700">
-            <input type="checkbox" className="mt-0.5 rounded border-gray-300" checked={closePrevious} onChange={e => setClosePrevious(e.target.checked)} />
-            <span>End the current version ({row?.effectiveFromDay} onwards) the day before the new rate starts</span>
+            <input type="checkbox" className="mt-0.5" checked={closePrevious} onChange={e => setClosePrevious(e.target.checked)} />
+            <span>End the {row?.effectiveFromDay} version the day before the new rate starts</span>
           </label>
         )}
 
         {error && <p className="text-sm text-red-600">{error}</p>}
       </div>
-      <ModalFooter className="-mx-4 sm:-mx-6 -mb-4 mt-5">
-        <button type="button" onClick={onClose} disabled={saving} className={btnGhost}>Cancel</button>
-        <button type="button" onClick={save} disabled={saving} className={btnPrimary}>
-          {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+      <ModalFooter>
+        <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
+        <Button onClick={save} loading={saving}>
           {mode === 'edit' ? 'Save changes' : mode === 'version' ? 'Add version' : 'Add code'}
-        </button>
+        </Button>
       </ModalFooter>
     </Modal>
   )

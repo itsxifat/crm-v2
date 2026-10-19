@@ -3,14 +3,17 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { AlertTriangle, CalendarClock, ShieldCheck, Lock } from 'lucide-react'
+import { AlertTriangle, CalendarClock, ShieldCheck, Lock, ChevronDown } from 'lucide-react'
 import { PageLoader } from '@/components/ui/LoadingSpinner'
 import EmptyState from '@/components/ui/EmptyState'
-import { cn } from '@/lib/utils'
+import PageHeader from '@/components/ui/PageHeader'
+import Tabs from '@/components/ui/Tabs'
+import Button from '@/components/ui/Button'
+import { Card } from '@/components/ui/Card'
 import { ProfileForm, VatSettingsForm, IncomeTaxForm } from './_components/ProfileForms'
 import { RATES_VERIFIED_AS_OF } from '@/lib/tax/catalog'
 import TaxCodesTable from './_components/TaxCodesTable'
-import { readJson, fmtDay, btnPrimary } from '../vat-return/_lib/format'
+import { readJson, fmtDay } from '../vat-return/_lib/format'
 
 const TABS = [
   { key: 'profile', label: 'Tax profile' },
@@ -66,53 +69,35 @@ function TaxSettingsContent() {
   const isCodes = tab === 'vat-codes' || tab === 'tds-sections'
 
   return (
-    <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-semibold text-gray-900">Tax settings</h1>
-        <p className="text-sm text-gray-500">Company tax identity, VAT and income-tax settings, and the VAT / TDS rate tables.</p>
-      </div>
+    <div className="space-y-6">
+      <PageHeader title="Tax settings" />
 
-      <div className="border-b border-gray-200 overflow-x-auto">
-        <nav className="flex gap-1 min-w-max" aria-label="Tax settings">
-          {TABS.map(t => (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => setTab(t.key)}
-              className={cn(
-                'px-3 sm:px-4 py-2.5 text-sm font-medium border-b-2 -mb-px whitespace-nowrap',
-                tab === t.key ? 'border-gray-900 text-gray-900' : 'border-transparent text-gray-500 hover:text-gray-800',
-              )}
-            >
-              {t.label}
-            </button>
-          ))}
-        </nav>
-      </div>
+      <Tabs
+        variant="underline"
+        value={tab}
+        onChange={setTab}
+        tabs={TABS.map(t => ({ value: t.key, label: t.label }))}
+      />
 
       {isCodes ? (
         <>
-          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 flex gap-3">
-            <CalendarClock className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
-            <div className="text-sm text-amber-900 space-y-1">
-              <p className="font-medium">Rates change with each Finance Act, usually from 1 July.</p>
-              <p className="text-xs text-amber-800">
-                Review these tables every July. Don&apos;t overwrite an old rate — add a <span className="font-semibold">new rate version</span> from
-                its effective date so earlier invoices, bills and certificates keep the rate that applied then. Rows marked
-                <span className="mx-1 px-1.5 py-0.5 rounded bg-amber-100 text-[10px] font-semibold">Verify</span>need confirmation from your tax adviser.
-              </p>
-            </div>
+          <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
+            <CalendarClock className="mt-0.5 size-4 shrink-0" />
+            <p>
+              Rates change with each Finance Act (usually 1 July). Add a <span className="font-medium">new rate version</span> instead
+              of overwriting, so past documents keep their rate. Rows marked <span className="font-medium">Verify</span> need adviser confirmation.
+            </p>
           </div>
-          <div className="rounded-xl border border-gray-100 bg-white p-4 flex gap-3">
-            <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
-            <div className="text-xs text-gray-600 space-y-1">
-              <p className="text-sm font-medium text-gray-900">Built-in rates verified as of {fmtDay(RATES_VERIFIED_AS_OF)}</p>
-              <ul className="list-disc ml-4 space-y-0.5">
-                {SOURCES.map(s => <li key={s}>{s}</li>)}
-              </ul>
-              <p>Each row shows its own source and when it was last changed.</p>
-            </div>
-          </div>
+          <Card as="details" className="group px-4 py-3">
+            <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium text-gray-900 [&::-webkit-details-marker]:hidden">
+              <ShieldCheck className="size-4 text-emerald-600" />
+              Built-in rates verified as of {fmtDay(RATES_VERIFIED_AS_OF)}
+              <ChevronDown className="ml-auto size-4 text-gray-400 transition-transform group-open:rotate-180" />
+            </summary>
+            <ul className="ml-6 mt-2 list-disc space-y-0.5 text-xs text-muted-foreground">
+              {SOURCES.map(s => <li key={s}>{s}</li>)}
+            </ul>
+          </Card>
           <TaxCodesTable
             key={tab}
             kind={tab === 'vat-codes' ? 'VAT_SERVICE' : 'TDS_SECTION'}
@@ -122,27 +107,27 @@ function TaxSettingsContent() {
       ) : loading && !profile ? (
         <PageLoader />
       ) : error && !profile ? (
-        <div className="bg-white border border-gray-100 rounded-xl">
-          <EmptyState icon={AlertTriangle} title="Could not load tax settings" description={error}
-            action={<button type="button" onClick={load} className={btnPrimary}>Try again</button>} />
-        </div>
+        <Card>
+          <EmptyState icon={AlertTriangle} title="Couldn’t load tax settings" description={error}
+            action={<Button variant="outline" onClick={load}>Try again</Button>} />
+        </Card>
       ) : profile ? (
-        <div className="space-y-4 max-w-4xl">
+        <div className="max-w-4xl space-y-4">
           {!profile.canEdit && (
-            <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-gray-600 flex items-center gap-2">
-              <Lock className="w-4 h-4" /> You can view these settings. Changing them needs the “Manage tax entries, certificates, codes & tax profile” permission.
+            <div className="flex items-center gap-2 rounded-lg border border-gray-200/80 bg-gray-50 px-3 py-2.5 text-sm text-gray-600">
+              <Lock className="size-4 shrink-0" /> View only — editing needs the “Manage tax entries, certificates, codes &amp; tax profile” permission.
             </div>
           )}
           {tab === 'profile' && <ProfileForm profile={profile} onSaved={setProfile} />}
           {tab === 'vat' && <VatSettingsForm profile={profile} onSaved={setProfile} />}
           {tab === 'income-tax' && <IncomeTaxForm profile={profile} onSaved={setProfile} />}
           {(profile.taxLockedUntil || profile.lockedUntil || profile.goLiveDate) && (
-            <div className="rounded-lg border border-gray-100 bg-white px-4 py-3 text-xs text-gray-500 flex flex-wrap gap-x-5 gap-y-1">
-              {profile.goLiveDate && <span>Go-live: <span className="text-gray-800 font-medium">{fmtDay(profile.goLiveDate)}</span></span>}
-              {profile.lockedUntil && <span>Books locked to: <span className="text-gray-800 font-medium">{fmtDay(profile.lockedUntil)}</span></span>}
-              {profile.taxLockedUntil && <span>VAT entries locked to: <span className="text-gray-800 font-medium">{fmtDay(profile.taxLockedUntil)}</span> (last filed return)</span>}
-              <Link href="/admin/finance/opening-balances" className="text-blue-600 hover:underline">Opening balances &amp; period locks</Link>
-            </div>
+            <Card className="flex flex-wrap items-center gap-x-5 gap-y-1 px-5 py-3 text-[13px] text-muted-foreground">
+              {profile.goLiveDate && <span>Go-live <span className="font-medium text-gray-900">{fmtDay(profile.goLiveDate)}</span></span>}
+              {profile.lockedUntil && <span>Books locked to <span className="font-medium text-gray-900">{fmtDay(profile.lockedUntil)}</span></span>}
+              {profile.taxLockedUntil && <span>VAT entries locked to <span className="font-medium text-gray-900">{fmtDay(profile.taxLockedUntil)}</span> (last filed return)</span>}
+              <Link href="/admin/finance/opening-balances" className="font-medium text-gray-900 underline-offset-4 hover:underline sm:ml-auto">Opening balances &amp; period locks</Link>
+            </Card>
           )}
         </div>
       ) : null}

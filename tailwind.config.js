@@ -1,4 +1,10 @@
 /** @type {import('tailwindcss').Config} */
+const colors = require('tailwindcss/colors')
+
+// Semantic colours are HSL triplets in globals.css so opacity modifiers work
+// (e.g. `bg-primary/90`, `ring-ring/30`).
+const token = (name) => `hsl(var(--${name}) / <alpha-value>)`
+
 module.exports = {
   darkMode: ['class'],
   content: [
@@ -17,63 +23,68 @@ module.exports = {
     },
     extend: {
       colors: {
+        // The whole app is written against `gray-*`; map it onto zinc for a
+        // neutral, shadcn-style palette.
+        gray: colors.zinc,
         primary: {
-          50:  '#eff6ff',
-          100: '#dbeafe',
-          200: '#bfdbfe',
-          300: '#93c5fd',
-          400: '#60a5fa',
-          500: '#3B82F6',
-          600: '#2563eb',
-          700: '#1d4ed8',
-          800: '#1e40af',
-          900: '#1e3a8a',
-          DEFAULT: '#3B82F6',
-          foreground: '#ffffff',
+          ...colors.zinc,
+          DEFAULT:    token('primary'),
+          foreground: token('primary-foreground'),
+        },
+        brand: {
+          50:  '#eef3fe',
+          100: '#dbe5fd',
+          200: '#bccffb',
+          300: '#8eaff7',
+          400: '#5a86f0',
+          500: '#3767e8',
+          600: '#2157e0',
+          700: '#1b45bd',
+          800: '#1c3b98',
+          900: '#1d3678',
+          DEFAULT: '#2157e0',
         },
         sidebar: {
-          DEFAULT:    '#0F172A',
-          foreground: '#94a3b8',
-          accent:     '#1e293b',
-          border:     '#1e293b',
-          active:     '#3B82F6',
-          hover:      '#1e293b',
+          DEFAULT:    token('sidebar'),
+          foreground: token('sidebar-foreground'),
+          accent:     token('sidebar-accent'),
+          border:     token('sidebar-border'),
         },
-        border:     'hsl(var(--border))',
-        input:      'hsl(var(--input))',
-        ring:       'hsl(var(--ring))',
-        background: 'hsl(var(--background))',
-        foreground: 'hsl(var(--foreground))',
+        border:     token('border'),
+        input:      token('input'),
+        ring:       token('ring'),
+        background: token('background'),
+        foreground: token('foreground'),
         secondary: {
-          DEFAULT:    'hsl(var(--secondary))',
-          foreground: 'hsl(var(--secondary-foreground))',
+          DEFAULT:    token('secondary'),
+          foreground: token('secondary-foreground'),
         },
         destructive: {
-          DEFAULT:    'hsl(var(--destructive))',
-          foreground: 'hsl(var(--destructive-foreground))',
+          DEFAULT:    token('destructive'),
+          foreground: token('destructive-foreground'),
         },
         muted: {
-          DEFAULT:    'hsl(var(--muted))',
-          foreground: 'hsl(var(--muted-foreground))',
+          DEFAULT:    token('muted'),
+          foreground: token('muted-foreground'),
         },
         accent: {
-          DEFAULT:    'hsl(var(--accent))',
-          foreground: 'hsl(var(--accent-foreground))',
+          DEFAULT:    token('accent'),
+          foreground: token('accent-foreground'),
         },
         popover: {
-          DEFAULT:    'hsl(var(--popover))',
-          foreground: 'hsl(var(--popover-foreground))',
+          DEFAULT:    token('popover'),
+          foreground: token('popover-foreground'),
         },
         card: {
-          DEFAULT:    'hsl(var(--card))',
-          foreground: 'hsl(var(--card-foreground))',
+          DEFAULT:    token('card'),
+          foreground: token('card-foreground'),
         },
         success: {
-          50:  '#f0fdf4',
-          100: '#dcfce7',
-          500: '#22c55e',
-          600: '#16a34a',
-          DEFAULT: '#22c55e',
+          50:  '#ecfdf5',
+          100: '#d1fae5',
+          500: '#10b981',
+          600: '#059669',
+          DEFAULT: '#10b981',
         },
         warning: {
           50:  '#fffbeb',
@@ -83,29 +94,39 @@ module.exports = {
           DEFAULT: '#f59e0b',
         },
         danger: {
-          50:  '#fff1f2',
-          100: '#ffe4e6',
+          50:  '#fef2f2',
+          100: '#fee2e2',
           500: '#ef4444',
           600: '#dc2626',
           DEFAULT: '#ef4444',
         },
       },
       borderRadius: {
-        lg: 'var(--radius)',
-        md: 'calc(var(--radius) - 2px)',
-        sm: 'calc(var(--radius) - 4px)',
+        DEFAULT: 'calc(var(--radius) - 4px)',
+        sm:   'calc(var(--radius) - 4px)',
+        md:   'calc(var(--radius) - 2px)',
+        lg:   'var(--radius)',
+        xl:   'calc(var(--radius) + 4px)',
+        '2xl': 'calc(var(--radius) + 8px)',
       },
       fontSize: {
-        '2xs': ['0.625rem', { lineHeight: '0.875rem' }],
+        '2xs': ['0.6875rem', { lineHeight: '1rem' }],
       },
       fontFamily: {
-        sans: ['Roboto', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
+        sans: ['var(--font-sans)', 'Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
         mono: ['JetBrains Mono', 'Fira Code', 'Consolas', 'monospace'],
       },
       boxShadow: {
-        card:   '0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)',
-        'card-hover': '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)',
-        sidebar: '4px 0 6px -1px rgb(0 0 0 / 0.1)',
+        xs:   '0 1px 2px 0 rgb(0 0 0 / 0.04)',
+        sm:   '0 1px 2px 0 rgb(0 0 0 / 0.05), 0 1px 3px 0 rgb(0 0 0 / 0.03)',
+        DEFAULT: '0 1px 3px 0 rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.04)',
+        md:   '0 4px 12px -2px rgb(0 0 0 / 0.07), 0 2px 4px -2px rgb(0 0 0 / 0.04)',
+        lg:   '0 12px 28px -6px rgb(0 0 0 / 0.10), 0 4px 10px -4px rgb(0 0 0 / 0.05)',
+        xl:   '0 20px 40px -12px rgb(0 0 0 / 0.14), 0 8px 16px -8px rgb(0 0 0 / 0.06)',
+        '2xl': '0 32px 64px -16px rgb(0 0 0 / 0.22)',
+        card: '0 1px 2px 0 rgb(0 0 0 / 0.04)',
+        'card-hover': '0 4px 12px -2px rgb(0 0 0 / 0.07), 0 2px 4px -2px rgb(0 0 0 / 0.04)',
+        sidebar: 'none',
       },
       keyframes: {
         'accordion-down': {
@@ -140,7 +161,7 @@ module.exports = {
       animation: {
         'accordion-down':  'accordion-down 0.2s ease-out',
         'accordion-up':    'accordion-up 0.2s ease-out',
-        'fade-in':         'fade-in 0.3s ease-out',
+        'fade-in':         'fade-in 0.2s ease-out',
         'slide-in-right':  'slide-in-right 0.3s ease-out',
         'slide-in-left':   'slide-in-left 0.3s ease-out',
         'spin-slow':       'spin-slow 3s linear infinite',
@@ -150,5 +171,6 @@ module.exports = {
   },
   plugins: [
     require('@tailwindcss/forms'),
+    require('tailwindcss-animate'),
   ],
 }

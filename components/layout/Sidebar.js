@@ -1,287 +1,123 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname, useSearchParams } from 'next/navigation'
-import { useSession } from 'next-auth/react'
-import { cn } from '@/lib/utils'
-import { canDo } from '@/lib/rbac'
-import {
-  LayoutDashboard, Users, UserCheck, Briefcase, ClipboardList,
-  FileText, TrendingUp, Settings2,
-  Calendar, Clock, FileSignature,
-  UserCog, Building2, ChevronLeft, ChevronRight,
-  ArrowRightLeft, ArrowDownLeft, ArrowUpRight as ArrowUpRightIcon,
-  CheckCircle, Inbox, ChevronDown, ShieldCheck, Activity, Bell, UserCircle,
-  PieChart, Wallet, Landmark, Globe, Receipt, CreditCard, Percent, Banknote,
-  BellRing, Mail, KeyRound, LineChart, Store, X, MessageCircle, ShieldAlert,
-  Scale, Calculator, FileSpreadsheet, BookOpen, FileCheck, FileMinus, ListChecks,
-  Package, PackageCheck, Laptop, ShoppingCart, Boxes, ClipboardCheck, BarChart3, SlidersHorizontal,
-} from 'lucide-react'
 import Image from 'next/image'
+import { usePathname, useSearchParams, useRouter } from 'next/navigation'
+import { useSession, signOut } from 'next-auth/react'
 import { useState, useEffect, Suspense } from 'react'
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
+import * as Tooltip from '@radix-ui/react-tooltip'
+import { ChevronRight, ChevronsUpDown, LogOut, Settings2, X } from 'lucide-react'
+import { cn, getRoleLabel } from '@/lib/utils'
+import { canDo } from '@/lib/rbac'
+import { ACCOUNT_NAV, canSee, isItemActive, visibleNav } from './nav'
 
-const ROLE_LABELS = {
-  SUPER_ADMIN: 'Super Admin',
-  MANAGER:     'Manager',
-  EMPLOYEE:    'Employee',
-  FREELANCER:  'Freelancer',
-  CLIENT:      'Client',
-  VENDOR:      'Vendor',
-}
+const GROUPS_KEY = 'sidebar:groups'
 
-// ─── Role definitions ─────────────────────────────────────────────────────────
-// SUPER_ADMIN : full access
-// MANAGER     : operational access (no config/settings)
-// EMPLOYEE    : limited — tasks, projects, HR, payment requests only
-// FREELANCER  : portal-only, no admin sidebar
-// CLIENT      : portal-only
+const menuContent = 'z-[70] min-w-[220px] rounded-xl border border-gray-200/80 bg-white p-1 shadow-lg animate-in fade-in-0 zoom-in-95 duration-100'
+const menuItem    = 'flex w-full cursor-pointer select-none items-center gap-2 rounded-md px-2 py-1.5 text-sm text-gray-700 outline-none transition-colors data-[highlighted]:bg-gray-100 data-[highlighted]:text-gray-900'
 
-// ─── Nav structure ────────────────────────────────────────────────────────────
-// Items can have `children` (sub-links, collapsible).
-// `href` on a parent = the base path used for active detection.
-// `tab` on children = query param appended as ?tab=value
-// `basePath` on items with tabs = the path portion for active detection.
+// ─── Pieces ───────────────────────────────────────────────────────────────────
 
-// `permission` — flat RBAC permission string (e.g. 'sales.leads.view'), or an
-// array meaning ANY of them (keep it equal to the page's ROUTE_PERMISSIONS entry).
-// When set, item visibility is gated by canDo(session, permission) for all
-// non-SUPER_ADMIN roles. SUPER_ADMIN always sees everything.
-
-const NAV_SECTIONS = [
-  {
-    label: 'Main',
-    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
-    items: [
-      { href: '/admin', label: 'Dashboard', icon: LayoutDashboard, exact: true, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'dashboard.view' },
-    ],
-  },
-  {
-    label: 'Sales',
-    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
-    items: [
-      { href: '/admin/leads',      label: 'Leads',      icon: TrendingUp,    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'sales.leads.view' },
-      { href: '/admin/clients',    label: 'Customers',  icon: UserCheck,     roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'sales.customers.view' },
-      { href: '/admin/password-requests', label: 'Password Resets', icon: KeyRound, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'sales.customers.passwordReset' },
-      { href: '/admin/quotations', label: 'Quotations', icon: FileSignature, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'sales.quotations.view' },
-      { href: '/admin/invoices',   label: 'Invoices',   icon: FileText,      roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'sales.invoices.view' },
-    ],
-  },
-  {
-    label: 'Projects',
-    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
-    items: [
-      { href: '/admin/projects', label: 'Projects', icon: Briefcase,     roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'projects.view' },
-      { href: '/admin/tasks',    label: 'Tasks',    icon: ClipboardList, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'tasks.view' },
-    ],
-  },
-  {
-    label: 'Finance',
-    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
-    items: [
-      { href: '/admin/accounts',                   label: 'Overview',              icon: PieChart,       roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'finance.overview.view', exact: true },
-      { href: '/admin/finance/accounts',           label: 'Money Accounts',        icon: Landmark,       roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: ['finance.accounts.view', 'finance.accounts.manage', 'finance.accounts.reconcile'] },
-      { href: '/admin/accounts?tab=transactions',  label: 'Transactions',          icon: ArrowRightLeft, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'finance.transactions.view', basePath: '/admin/accounts', tab: 'transactions' },
-      { href: '/admin/accounts?tab=confirmations', label: 'Payment Confirmations', icon: CheckCircle,    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'finance.payments.confirm',  basePath: '/admin/accounts', tab: 'confirmations' },
-      { href: '/admin/accounts?tab=requests',      label: 'Payment Requests',      icon: Inbox,          roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'finance.payments.request',  basePath: '/admin/accounts', tab: 'requests' },
-      { href: '/admin/my-expenses',                label: 'My Expenses',           icon: Receipt,        roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'finance.expenses.submit' },
-      { href: '/admin/salary',                     label: 'Salary',                icon: Banknote,       roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'finance.salary.view' },
-      { href: '/admin/accounts?tab=pl',            label: 'P&L Report',            icon: LineChart,      roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'finance.reports.view',      basePath: '/admin/accounts', tab: 'pl' },
-      { href: '/admin/finance/opening-balances',   label: 'Opening Balances',      icon: Scale,          roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: ['finance.opening.manage', 'finance.periods.lock'] },
-    ],
-  },
-  {
-    label: 'Tax & VAT',
-    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
-    items: [
-      { href: '/admin/tax',              label: 'Tax Dashboard',       icon: Calculator,      roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: ['tax.view', 'tax.manage'], exact: true },
-      { href: '/admin/tax/vat-return',   label: 'VAT Return 9.1',      icon: FileSpreadsheet, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: ['tax.view', 'tax.manage'] },
-      { href: '/admin/tax/registers',    label: 'Registers',           icon: BookOpen,        roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: ['tax.view', 'tax.manage'] },
-      { href: '/admin/tax/withholding',  label: 'Withholding',         icon: Percent,         roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: ['tax.view', 'tax.manage'] },
-      { href: '/admin/tax/certificates', label: 'Certificates',        icon: FileCheck,       roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: ['tax.view', 'tax.manage'] },
-      { href: '/admin/tax/notes',        label: 'Credit/Debit Notes',  icon: FileMinus,       roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: ['tax.view', 'tax.manage', 'tax.notes.manage'] },
-      { href: '/admin/tax/entries',      label: 'Tax Ledger',          icon: ListChecks,      roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: ['tax.view', 'tax.manage'] },
-      { href: '/admin/tax/settings',     label: 'Tax Settings',        icon: Settings2,       roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'tax.manage' },
-    ],
-  },
-  {
-    label: 'Inventory',
-    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
-    items: [
-      // Same any-of sets as lib/rbac ROUTE_PERMISSIONS (and the APIs behind each page).
-      { href: '/admin/inventory',           label: 'Overview',       icon: Package,           roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: ['inventory.view', 'inventory.manage'], exact: true },
-      { href: '/admin/inventory/assets',    label: 'Assets',         icon: Laptop,            roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: ['inventory.view', 'inventory.manage'] },
-      { href: '/admin/inventory/purchases', label: 'Purchases',      icon: ShoppingCart,      roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: ['inventory.view', 'inventory.purchase'] },
-      { href: '/admin/inventory/stock',     label: 'Consumables',    icon: Boxes,             roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: ['inventory.view', 'inventory.manage'] },
-      { href: '/admin/inventory/audits',    label: 'Physical Audit', icon: ClipboardCheck,    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: ['inventory.audit', 'inventory.manage'] },
-      { href: '/admin/inventory/reports',   label: 'Reports',        icon: BarChart3,         roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: ['inventory.view', 'inventory.manage'] },
-      { href: '/admin/inventory/settings',  label: 'Settings',       icon: SlidersHorizontal, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'inventory.manage' },
-    ],
-  },
-  {
-    label: 'HR & People',
-    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
-    items: [
-      { href: '/admin/employees',   label: 'Employees',           icon: Users,       roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'hr.employees.view' },
-      { href: '/admin/freelancers', label: 'Freelancers',         icon: UserCog,     roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'hr.freelancers.manage' },
-      { href: '/admin/vendors',     label: 'Vendors',             icon: Building2,   roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'hr.vendors.manage' },
-      { href: '/admin/agencies',    label: 'Agencies',            icon: Landmark,    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'hr.agencies.manage' },
-      { href: '/admin/attendance',  label: 'Attendance',          icon: Calendar,    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'hr.attendance.view' },
-      { href: '/admin/leaves',      label: 'Leaves',              icon: Clock,       roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'hr.leaves.view' },
-      { href: '/admin/roles',       label: 'Roles & Permissions', icon: ShieldCheck, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'hr.roles.manage' },
-    ],
-  },
-  // Analytics → Reports removed: there is no /admin/reports page yet.
-  {
-    label: 'System',
-    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
-    items: [
-      {
-        href: '/admin/config',
-        label: 'Configuration',
-        icon: Settings2,
-        roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
-        permission: 'system.config.view',
-        children: [
-          { href: '/admin/config?tab=ventures',     tab: 'ventures',     label: 'Ventures & Services', icon: Settings2,     roles: ['SUPER_ADMIN'], permission: 'system.config.view' },
-          { href: '/admin/config?tab=leads',        tab: 'leads',        label: 'Lead Options',        icon: ClipboardList, roles: ['SUPER_ADMIN'], permission: 'system.config.view' },
-          { href: '/admin/config?tab=departments',  tab: 'departments',  label: 'Departments',         icon: Building2,     roles: ['SUPER_ADMIN'], permission: 'system.config.view' },
-          { href: '/admin/config?tab=company',      tab: 'company',      label: 'Company Info',        icon: Building2,     roles: ['SUPER_ADMIN'], permission: 'system.config.view' },
-          { href: '/admin/config?tab=verification', tab: 'verification', label: 'Verification',        icon: ShieldAlert,   roles: ['SUPER_ADMIN'], permission: 'system.config.view' },
-          { href: '/admin/config?tab=payment',      tab: 'payment',      label: 'Payment Methods',     icon: CreditCard,    roles: ['SUPER_ADMIN'], permission: 'system.config.view' },
-          { href: '/admin/config?tab=email',        tab: 'email',        label: 'Email Accounts',      icon: Mail,          roles: ['SUPER_ADMIN'], permission: 'system.config.view' },
-          { href: '/admin/config?tab=whatsapp',     tab: 'whatsapp',     label: 'WhatsApp',            icon: MessageCircle, roles: ['SUPER_ADMIN'], permission: 'system.config.view' },
-        ],
-      },
-      { href: '/admin/activity-logs', label: 'Activity Logs', icon: Activity, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'system.logs.view' },
-    ],
-  },
-  {
-    label: 'Account',
-    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'],
-    items: [
-      // No `permission` — always reachable so employees can complete their profile/KYC
-      // (required when onboarding is ON, optional when OFF), even on a fresh custom role.
-      { href: '/admin/profile',       label: 'My Profile',    icon: UserCircle, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'] },
-      // Self-service: equipment assigned to me (acknowledge / report a problem). No permission.
-      { href: '/admin/my-assets',     label: 'My Assets',     icon: PackageCheck, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'] },
-      { href: '/admin/account',       label: 'My Account',    icon: UserCog, roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'account.profile.view' },
-      { href: '/admin/notifications', label: 'Notifications', icon: Bell,    roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE'], permission: 'account.notifications.view' },
-    ],
-  },
-]
-
-// ─── Nav Item (leaf) ──────────────────────────────────────────────────────────
-
-function NavItem({ item, active, collapsed }) {
-  const Icon = item.icon
+function Tip({ label, enabled, children }) {
+  if (!enabled) return children
   return (
-    <Link
-      href={item.href}
-      title={collapsed ? item.label : undefined}
-      aria-current={active ? 'page' : undefined}
-      className={cn(
-        'group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors duration-150',
-        active
-          ? 'bg-gray-900 text-white shadow-sm'
-          : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900',
-        collapsed && 'justify-center px-0'
-      )}
-    >
-      {/* active accent bar (collapsed mode, where there's no label) */}
-      {active && collapsed && (
-        <span className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-gray-900" />
-      )}
-      <Icon className={cn(
-        'w-[18px] h-[18px] shrink-0 transition-colors',
-        active ? 'text-white' : 'text-gray-400 group-hover:text-gray-700'
-      )} />
-      {!collapsed && <span className="truncate">{item.label}</span>}
-    </Link>
+    <Tooltip.Root delayDuration={0}>
+      <Tooltip.Trigger asChild>{children}</Tooltip.Trigger>
+      <Tooltip.Portal>
+        <Tooltip.Content side="right" sideOffset={10}
+          className="z-[70] rounded-md bg-gray-900 px-2 py-1 text-xs font-medium text-white shadow-md animate-in fade-in-0 zoom-in-95 duration-100">
+          {label}
+        </Tooltip.Content>
+      </Tooltip.Portal>
+    </Tooltip.Root>
   )
 }
 
-// ─── Collapsible nav group ────────────────────────────────────────────────────
+const itemBase = 'group/item flex items-center gap-2.5 rounded-lg text-sm transition-colors duration-150 outline-none focus-visible:ring-2 focus-visible:ring-ring/50'
+const itemIdle = 'text-gray-600 hover:bg-sidebar-accent hover:text-gray-900'
+const itemOn   = 'bg-white font-medium text-gray-900 shadow-sm ring-1 ring-gray-200/70'
 
-function NavGroup({ item, role, sessionUser, pathname, searchParams, collapsed }) {
-  const currentTab   = searchParams?.get('tab') ?? ''
-  const isOnBasePath = pathname === item.href || pathname.startsWith(`${item.href}/`)
-
-  const [open, setOpen] = useState(() => isOnBasePath)
+function NavLink({ item, active, collapsed, onNavigate }) {
   const Icon = item.icon
-
-  const visibleChildren = item.children.filter(c => {
-    if (!c.roles.includes(role)) return false
-    if (role === 'SUPER_ADMIN') return true
-    if (c.permission) return canDo({ user: sessionUser }, c.permission)
-    return true
-  })
-
-  const isChildActive = (child) => {
-    if (!isOnBasePath) return false
-    return currentTab === child.tab
-  }
-
-  const anyChildActive = visibleChildren.some(c => isChildActive(c))
-  const parentActive   = isOnBasePath && !currentTab
-
-  if (collapsed) {
-    const activeNow = parentActive || anyChildActive
-    return (
+  return (
+    <Tip label={item.label} enabled={collapsed}>
       <Link
         href={item.href}
-        title={item.label}
-        className={cn(
-          'group relative flex items-center justify-center py-2.5 rounded-lg text-sm font-medium transition-colors duration-150',
-          activeNow
-            ? 'bg-gray-900 text-white shadow-sm'
-            : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-        )}
+        onClick={onNavigate}
+        aria-current={active ? 'page' : undefined}
+        className={cn(itemBase, 'h-8', collapsed ? 'w-8 justify-center' : 'px-2', active ? itemOn : itemIdle)}
       >
-        {activeNow && <span className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-gray-900" />}
-        <Icon className={cn('w-[18px] h-[18px] shrink-0', activeNow ? 'text-white' : 'text-gray-400 group-hover:text-gray-700')} />
+        <Icon className={cn('size-4 shrink-0', active ? 'text-gray-900' : 'text-gray-500 group-hover/item:text-gray-900')} />
+        {!collapsed && <span className="truncate">{item.label}</span>}
       </Link>
+    </Tip>
+  )
+}
+
+function NavGroup({ group, open, onToggle, collapsed, pathname, searchParams, onNavigate }) {
+  const Icon = group.icon
+  const activeChild = group.items.find(i => isItemActive(i, pathname, searchParams))
+
+  // Icon rail: the group opens as a flyout menu.
+  if (collapsed) {
+    return (
+      <DropdownMenu.Root modal={false}>
+        <Tip label={group.label} enabled>
+          <DropdownMenu.Trigger
+            className={cn(itemBase, 'h-8 w-8 justify-center', activeChild ? itemOn : itemIdle)}
+            aria-label={group.label}
+          >
+            <Icon className={cn('size-4', activeChild ? 'text-gray-900' : 'text-gray-500 group-hover/item:text-gray-900')} />
+          </DropdownMenu.Trigger>
+        </Tip>
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content side="right" align="start" sideOffset={10} className={menuContent}>
+            <DropdownMenu.Label className="px-2 pb-1 pt-1.5 text-xs font-medium text-muted-foreground">{group.label}</DropdownMenu.Label>
+            {group.items.map(item => {
+              const active = item === activeChild
+              return (
+                <DropdownMenu.Item key={item.href} asChild>
+                  <Link href={item.href} className={cn(menuItem, active && 'bg-gray-100 font-medium text-gray-900')}>
+                    <item.icon className="size-4 text-gray-500" />
+                    {item.label}
+                  </Link>
+                </DropdownMenu.Item>
+              )
+            })}
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu.Root>
     )
   }
 
-  const groupActive = parentActive || anyChildActive
   return (
     <div>
-      <div className={cn(
-        'group flex items-center rounded-lg text-sm font-medium transition-colors duration-150',
-        groupActive ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-      )}>
-        <Link href={item.href} className="flex items-center gap-3 flex-1 px-3 py-2.5 min-w-0">
-          <Icon className={cn('w-[18px] h-[18px] shrink-0', groupActive ? 'text-gray-900' : 'text-gray-400 group-hover:text-gray-700')} />
-          <span className="truncate">{item.label}</span>
-        </Link>
-        <button
-          onClick={() => setOpen(o => !o)}
-          aria-label={open ? `Collapse ${item.label}` : `Expand ${item.label}`}
-          className="px-2.5 py-2.5 shrink-0 text-gray-400 hover:text-gray-700"
-        >
-          <ChevronDown className={cn('w-3.5 h-3.5 transition-transform duration-200', open && 'rotate-180')} />
-        </button>
-      </div>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className={cn(itemBase, 'h-8 w-full px-2', itemIdle, activeChild && !open && 'text-gray-900')}
+      >
+        <Icon className={cn('size-4 shrink-0', activeChild ? 'text-gray-900' : 'text-gray-500 group-hover/item:text-gray-900')} />
+        <span className={cn('flex-1 truncate text-left', activeChild && 'font-medium')}>{group.label}</span>
+        <ChevronRight className={cn('size-3.5 shrink-0 text-gray-400 transition-transform duration-200', open && 'rotate-90')} />
+      </button>
 
-      <div className={cn('grid transition-all duration-200 ease-in-out', open ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0')}>
-        <ul className="overflow-hidden mt-0.5 ml-[1.4rem] pl-3 border-l border-gray-200 space-y-0.5">
-          {visibleChildren.map(child => {
-            const CIcon  = child.icon
-            const active = isChildActive(child)
+      <div className={cn('grid transition-[grid-template-rows,opacity] duration-200 ease-out', open ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0')}>
+        <ul className="ml-[17px] min-h-0 space-y-px overflow-hidden border-l border-gray-200 pl-2">
+          {group.items.map((item, i) => {
+            const active = item === activeChild
             return (
-              <li key={child.href}>
+              <li key={item.href} className={cn(i === 0 && 'pt-0.5', i === group.items.length - 1 && 'pb-1')}>
                 <Link
-                  href={child.href}
+                  href={item.href}
+                  onClick={onNavigate}
+                  tabIndex={open ? undefined : -1}
                   aria-current={active ? 'page' : undefined}
-                  className={cn(
-                    'group/c flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-medium transition-colors duration-150',
-                    active
-                      ? 'bg-gray-900 text-white shadow-sm'
-                      : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900'
-                  )}
+                  className={cn(itemBase, 'h-7 px-2 text-[13px]', active ? itemOn : itemIdle)}
                 >
-                  <CIcon className={cn('w-3.5 h-3.5 shrink-0', active ? 'text-white' : 'text-gray-400 group-hover/c:text-gray-700')} />
-                  <span className="truncate">{child.label}</span>
+                  <span className="truncate">{item.label}</span>
                 </Link>
               </li>
             )
@@ -292,222 +128,206 @@ function NavGroup({ item, role, sessionUser, pathname, searchParams, collapsed }
   )
 }
 
-// ─── SidebarContent (needs useSearchParams → wrapped in Suspense) ─────────────
+function UserMenu({ session, collapsed, onNavigate }) {
+  const router = useRouter()
+  const user = session?.user
+  const name = user?.name || 'User'
+  const initials = name.split(' ').filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() || 'U'
+  const links = ACCOUNT_NAV.filter(i => canSee(i, session))
 
-function SidebarContent({ mobileOpen, onMobileClose }) {
-  const pathname          = usePathname()
-  const searchParams      = useSearchParams()
+  async function handleSignOut() {
+    await signOut({ redirect: false })
+    router.push('/login')
+  }
+
+  const avatar = (
+    <span className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-gray-900 text-xs font-semibold text-white">
+      {user?.avatar
+        ? <Image src={user.avatar} alt={name} width={32} height={32} className="size-8 object-cover" />
+        : initials}
+    </span>
+  )
+
+  return (
+    <DropdownMenu.Root modal={false}>
+      <DropdownMenu.Trigger
+        className={cn(
+          'flex w-full items-center gap-2.5 rounded-lg text-left outline-none transition-colors hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring/50 data-[state=open]:bg-sidebar-accent',
+          collapsed ? 'justify-center p-0' : 'p-1.5'
+        )}
+        aria-label="Account menu"
+      >
+        {avatar}
+        {!collapsed && (
+          <>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-medium text-gray-900">{name}</span>
+              <span className="block truncate text-xs text-muted-foreground">{getRoleLabel(user?.role)}</span>
+            </span>
+            <ChevronsUpDown className="size-4 shrink-0 text-gray-400" />
+          </>
+        )}
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content side={collapsed ? 'right' : 'top'} align={collapsed ? 'end' : 'start'} sideOffset={8}
+          className={cn(menuContent, 'w-[--radix-dropdown-menu-trigger-width] min-w-[232px]')}>
+          <div className="flex items-center gap-2.5 px-2 py-2">
+            {avatar}
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium text-gray-900">{name}</p>
+              <p className="truncate text-xs text-muted-foreground">{user?.email}</p>
+            </div>
+          </div>
+          <DropdownMenu.Separator className="-mx-1 my-1 h-px bg-gray-100" />
+          {links.map(item => (
+            <DropdownMenu.Item key={item.href} asChild>
+              <Link href={item.href} onClick={onNavigate} className={menuItem}>
+                <item.icon className="size-4 text-gray-500" />
+                {item.label}
+              </Link>
+            </DropdownMenu.Item>
+          ))}
+          {canDo(session, 'system.config.view') && (
+            <DropdownMenu.Item asChild>
+              <Link href="/admin/config" onClick={onNavigate} className={menuItem}>
+                <Settings2 className="size-4 text-gray-500" />
+                Settings
+              </Link>
+            </DropdownMenu.Item>
+          )}
+          <DropdownMenu.Separator className="-mx-1 my-1 h-px bg-gray-100" />
+          <DropdownMenu.Item onSelect={handleSignOut} className={cn(menuItem, 'text-red-600 data-[highlighted]:bg-red-50 data-[highlighted]:text-red-700')}>
+            <LogOut className="size-4" />
+            Sign out
+          </DropdownMenu.Item>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
+  )
+}
+
+// ─── Sidebar body ─────────────────────────────────────────────────────────────
+
+function SidebarBody({ collapsed, isMobile, onClose }) {
+  const pathname     = usePathname()
+  const searchParams = useSearchParams()
   const { data: session, status } = useSession()
-  const [collapsed, setCollapsed] = useState(false)
-  const role = session?.user?.role
+  const nav = visibleNav(session)
 
-  // Restore + persist the collapsed preference across reloads.
+  // Which groups are expanded: remembered per browser; the active one always opens.
+  const [openGroups, setOpenGroups] = useState({})
   useEffect(() => {
-    try { if (localStorage.getItem('sidebar:collapsed') === '1') setCollapsed(true) } catch {}
+    try { setOpenGroups(JSON.parse(localStorage.getItem(GROUPS_KEY) || '{}')) } catch {}
   }, [])
-  const setCollapsedPersist = (val) => {
-    setCollapsed(val)
-    try { localStorage.setItem('sidebar:collapsed', val ? '1' : '0') } catch {}
+  const activeGroup = nav.find(g => g.items?.some(i => isItemActive(i, pathname, searchParams)))?.label
+  useEffect(() => {
+    if (activeGroup) setOpenGroups(prev => (prev[activeGroup] ? prev : { ...prev, [activeGroup]: true }))
+  }, [activeGroup])
+  function toggleGroup(label) {
+    setOpenGroups(prev => {
+      const next = { ...prev, [label]: !prev[label] }
+      try { localStorage.setItem(GROUPS_KEY, JSON.stringify(next)) } catch {}
+      return next
+    })
   }
 
-  function isActive(item) {
-    if (item.exact) return pathname === item.href.split('?')[0] && !searchParams?.get('tab')
-    const pathToCheck = item.basePath ?? item.href.split('?')[0]
-    const onBasePath  = pathname === pathToCheck || pathname.startsWith(`${pathToCheck}/`)
-    if (item.tab) {
-      return onBasePath && searchParams?.get('tab') === item.tab
-    }
-    return onBasePath
-  }
+  const onNavigate = isMobile ? onClose : undefined
 
-  function itemVisible(item) {
-    if (!item.roles.includes(role)) return false
-    if (role === 'SUPER_ADMIN') return true
-    if (Array.isArray(item.permission)) return item.permission.some(p => canDo(session, p))
-    if (item.permission) return canDo(session, item.permission)
-    return true
-  }
-
-  const sidebarContent = (isMobile = false) => (
+  return (
     <>
-      {/* Logo */}
-      <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200 shrink-0">
-        {(!collapsed || isMobile) && (
-          <div className="flex items-center min-w-0">
-            <Image
-              src="/en-logo.png"
-              alt="Enfinito"
-              width={120}
-              height={28}
-              className="h-7 w-auto object-contain block"
-              onError={e => { e.currentTarget.style.display = 'none' }}
-            />
-          </div>
-        )}
-        {collapsed && !isMobile && (
-          <div className="mx-auto flex items-center justify-center">
-            <Image
-              src="/en-icon.png"
-              alt="Enfinito"
-              width={32}
-              height={32}
-              className="w-8 h-8 object-contain block"
-              onError={e => { e.currentTarget.style.display = 'none' }}
-            />
-          </div>
-        )}
-        {isMobile ? (
-          <button
-            onClick={onMobileClose}
-            className="p-1.5 rounded-md text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors shrink-0"
-          >
-            <X className="w-4 h-4" />
+      {/* Brand */}
+      <div className={cn('flex h-14 shrink-0 items-center', collapsed ? 'justify-center' : 'justify-between px-4')}>
+        <Link href="/admin" onClick={onNavigate} className="flex items-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
+          {collapsed ? (
+            <Image src="/en-icon.png" alt="Enfinito" width={28} height={28} className="size-7 object-contain" />
+          ) : (
+            <Image src="/en-logo.png" alt="Enfinito" width={112} height={26} className="h-[22px] w-auto object-contain" priority />
+          )}
+        </Link>
+        {isMobile && (
+          <button onClick={onClose} className="inline-flex size-8 items-center justify-center rounded-lg text-gray-500 hover:bg-sidebar-accent hover:text-gray-900" aria-label="Close menu">
+            <X className="size-4" />
           </button>
-        ) : !collapsed ? (
-          <button
-            onClick={() => setCollapsedPersist(true)}
-            title="Collapse sidebar"
-            className="p-1.5 rounded-md text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors shrink-0"
-          >
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-        ) : null}
+        )}
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto py-3 px-3 [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-gray-200 hover:[&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-track]:bg-transparent">
-        {/* Session still resolving on the client → show a skeleton instead of an empty (blank) sidebar */}
+      <nav className={cn('flex-1 overflow-y-auto overflow-x-hidden pb-4 pt-1', collapsed ? 'px-3' : 'px-3')}>
         {status === 'loading' ? (
-          <div className="space-y-2 px-1 animate-pulse">
-            {Array.from({ length: 7 }).map((_, i) => (
-              <div key={i} className="h-9 rounded-lg bg-gray-100" />
+          <div className="space-y-1.5">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className={cn('h-8 animate-pulse rounded-lg bg-gray-200/60', collapsed && 'w-8')} />
             ))}
           </div>
-        ) : !role ? (
-          // Authenticated server-side but the client has no session (cookie didn't arrive / fetch failed)
-          (!collapsed || isMobile) && (
-            <div className="px-2 py-6 text-center space-y-3">
-              <p className="text-xs text-gray-400">Couldn’t load your session.</p>
-              <button
-                onClick={() => window.location.reload()}
-                className="text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg px-3 py-1.5 transition-colors"
-              >
+        ) : !session?.user?.role ? (
+          !collapsed && (
+            <div className="px-2 py-6 text-center">
+              <p className="text-xs text-muted-foreground">Couldn&apos;t load your session.</p>
+              <button onClick={() => window.location.reload()} className="mt-3 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-900 shadow-xs hover:bg-gray-50">
                 Reload
               </button>
             </div>
           )
-        ) : NAV_SECTIONS.map((section) => {
-          if (!section.roles.includes(role)) return null
-
-          const visibleItems = section.items.filter(item => itemVisible(item))
-          if (visibleItems.length === 0) return null
-
-          return (
-            <div key={section.label} className="mb-4">
-              {(!collapsed || isMobile) && (
-                <p className="text-2xs font-semibold text-gray-400 uppercase tracking-wider px-3 mb-1">
-                  {section.label}
-                </p>
-              )}
-              <ul className="space-y-0.5">
-                {visibleItems.map((item) => (
-                  <li key={item.href} onClick={isMobile ? onMobileClose : undefined}>
-                    {item.children ? (
-                      <NavGroup
-                        item={item}
-                        role={role}
-                        sessionUser={session?.user}
-                        pathname={pathname}
-                        searchParams={searchParams}
-                        collapsed={collapsed && !isMobile}
-                      />
-                    ) : (
-                      <NavItem item={item} active={isActive(item)} collapsed={collapsed && !isMobile} />
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )
-        })}
+        ) : (
+          <ul className={cn('space-y-0.5', collapsed && 'flex flex-col items-center')}>
+            {nav.map(entry => (
+              <li key={entry.label}>
+                {entry.items ? (
+                  <NavGroup
+                    group={entry}
+                    open={!!openGroups[entry.label]}
+                    onToggle={() => toggleGroup(entry.label)}
+                    collapsed={collapsed}
+                    pathname={pathname}
+                    searchParams={searchParams}
+                    onNavigate={onNavigate}
+                  />
+                ) : (
+                  <NavLink item={entry} active={isItemActive(entry, pathname, searchParams)} collapsed={collapsed} onNavigate={onNavigate} />
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
       </nav>
 
-      {/* Footer: user identity + collapse toggle */}
-      {(() => {
-        const showCollapsed = collapsed && !isMobile
-        const name    = session?.user?.name || 'User'
-        const initial = name.trim().charAt(0).toUpperCase() || 'U'
-        const roleLbl = ROLE_LABELS[role] ?? role ?? ''
-        return (
-          <div className="border-t border-gray-200 p-3 shrink-0">
-            {showCollapsed ? (
-              <div className="flex flex-col items-center gap-2">
-                <Link href="/admin/account" title={`${name} · ${roleLbl}`}
-                  className="w-9 h-9 rounded-full bg-gray-900 text-white flex items-center justify-center text-sm font-semibold hover:bg-gray-700 transition-colors">
-                  {initial}
-                </Link>
-                <button
-                  onClick={() => setCollapsedPersist(false)}
-                  title="Expand sidebar"
-                  className="w-full flex justify-center p-2 rounded-lg text-gray-400 hover:text-gray-900 hover:bg-gray-100 transition-colors"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
-            ) : (
-              <Link
-                href="/admin/account"
-                onClick={isMobile ? onMobileClose : undefined}
-                className="flex items-center gap-3 px-1.5 py-1 rounded-lg hover:bg-gray-100 transition-colors group"
-                title="My Account"
-              >
-                <div className="w-9 h-9 rounded-full bg-gray-900 text-white flex items-center justify-center text-sm font-semibold shrink-0">
-                  {initial}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-gray-900 truncate">{name}</p>
-                  <p className="text-xs text-gray-400 truncate">{roleLbl}</p>
-                </div>
-                <UserCircle className="w-4 h-4 text-gray-300 group-hover:text-gray-500 shrink-0 transition-colors" />
-              </Link>
-            )}
-          </div>
-        )
-      })()}
-    </>
-  )
-
-  return (
-    <>
-      {/* Desktop sidebar */}
-      <aside
-        className={cn(
-          'hidden lg:flex h-screen bg-white border-r border-gray-200 flex-col transition-all duration-300 ease-in-out shrink-0',
-          collapsed ? 'w-16' : 'w-[260px]'
-        )}
-      >
-        {sidebarContent(false)}
-      </aside>
-
-      {/* Mobile sidebar drawer */}
-      <aside
-        className={cn(
-          'fixed inset-y-0 left-0 z-30 w-[260px] bg-white border-r border-gray-200 flex flex-col transition-transform duration-300 ease-in-out lg:hidden',
-          mobileOpen ? 'translate-x-0' : '-translate-x-full'
-        )}
-      >
-        {sidebarContent(true)}
-      </aside>
+      {/* User */}
+      {session?.user && (
+        <div className={cn('shrink-0 p-3', collapsed && 'flex justify-center')}>
+          <UserMenu session={session} collapsed={collapsed} onNavigate={onNavigate} />
+        </div>
+      )}
     </>
   )
 }
 
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
 
-export default function Sidebar({ mobileOpen = false, onMobileClose }) {
+export default function Sidebar({ collapsed = false, mobileOpen = false, onMobileClose }) {
   return (
-    <Suspense fallback={null}>
-      <SidebarContent mobileOpen={mobileOpen} onMobileClose={onMobileClose} />
-    </Suspense>
+    <Tooltip.Provider>
+      <Suspense fallback={null}>
+        {/* Desktop */}
+        <aside
+          className={cn(
+            'hidden h-screen shrink-0 flex-col bg-sidebar transition-[width] duration-200 ease-out lg:flex',
+            collapsed ? 'w-14' : 'w-64'
+          )}
+        >
+          <SidebarBody collapsed={collapsed} isMobile={false} />
+        </aside>
+
+        {/* Mobile drawer */}
+        <aside
+          className={cn(
+            'fixed inset-y-0 left-0 z-40 flex w-72 flex-col bg-sidebar shadow-xl transition-transform duration-300 ease-out lg:hidden',
+            mobileOpen ? 'translate-x-0' : '-translate-x-full'
+          )}
+          aria-hidden={!mobileOpen}
+        >
+          <SidebarBody collapsed={false} isMobile onClose={onMobileClose} />
+        </aside>
+      </Suspense>
+    </Tooltip.Provider>
   )
 }

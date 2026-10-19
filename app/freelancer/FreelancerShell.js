@@ -8,24 +8,28 @@ export default function FreelancerShell({ user, portalType, children }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   return (
-    <div className="min-h-screen bg-gray-50 flex overflow-hidden">
+    <div className="flex h-screen overflow-hidden bg-sidebar">
       <FreelancerSidebar
         user={user}
         portalType={portalType}
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
       />
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <FreelancerHeader
-          user={user}
-          portalType={portalType}
-          onMenuClick={() => setSidebarOpen(true)}
-        />
-        <main className="flex-1 overflow-y-auto scrollbar-thin">
-          <div className="p-4 sm:p-6">
-            {children}
-          </div>
-        </main>
+
+      {/* Inset content panel */}
+      <div className="flex min-w-0 flex-1 flex-col lg:py-2 lg:pr-2">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white lg:rounded-xl lg:border lg:border-gray-200/80 lg:shadow-sm">
+          <FreelancerHeader
+            user={user}
+            portalType={portalType}
+            onMenuClick={() => setSidebarOpen(true)}
+          />
+          <main className="flex-1 overflow-y-auto">
+            <div className="mx-auto w-full max-w-[1600px] p-4 sm:p-6 lg:p-8">
+              {children}
+            </div>
+          </main>
+        </div>
       </div>
     </div>
   )

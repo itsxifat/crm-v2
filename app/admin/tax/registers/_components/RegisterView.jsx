@@ -3,6 +3,8 @@
 import Link from 'next/link'
 import { BookOpen, ExternalLink, Info } from 'lucide-react'
 import EmptyState from '@/components/ui/EmptyState'
+import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
+import { Table, TableHeader, TableBody, TableFooter, TableRow, TableHead, TableCell } from '@/components/ui/Table'
 import { cn } from '@/lib/utils'
 import { fmtAmount, fmtQty, fmtDay } from '../../vat-return/_lib/format'
 
@@ -14,20 +16,24 @@ export default function RegisterView({ reg, showStock, loading }) {
   const columns = reg.columns.filter(c => c.key !== 'part' && (showStock || !c.stock))
   return (
     <div className={cn('space-y-4', loading && 'opacity-60 transition-opacity')}>
-      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold text-gray-900">
-            {reg.form ? `${reg.form} — ` : ''}{reg.title}
-            <span className="ml-2 text-xs font-normal text-gray-500">{reg.label}</span>
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div className="min-w-0">
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm font-semibold text-gray-900">
+            <span>{reg.form ? `${reg.form} — ` : ''}{reg.title}</span>
+            <span className="text-[13px] font-normal text-muted-foreground">{reg.label}</span>
+            {reg.hint && (
+              <span title={reg.hint} aria-label={reg.hint} className="inline-flex cursor-help text-gray-400 hover:text-gray-600">
+                <Info className="size-4" />
+              </span>
+            )}
           </p>
-          <p className="text-xs text-gray-500 mt-0.5">{reg.rule}</p>
-          <p className="text-xs text-gray-500 mt-1 flex items-start gap-1.5"><Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />{reg.hint}</p>
+          {reg.rule && <p className="mt-0.5 text-xs text-muted-foreground">{reg.rule}</p>}
         </div>
         <Summary reg={reg} />
       </div>
 
       {reg.truncated && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
           Only the first 10,000 rows are shown. Choose a shorter period.
         </div>
       )}
@@ -65,8 +71,8 @@ export default function RegisterView({ reg, showStock, loading }) {
 }
 
 const EMPTY_TEXT = {
-  sales:     'No tax invoices, credit or debit notes in this period. Output VAT is recorded when an invoice is sent.',
-  purchases: 'No received purchase bills, purchases with input VAT or paid supplier expenses in this period.',
+  sales:     'No tax invoices, credit or debit notes in this period.',
+  purchases: 'No purchases in this period.',
   vds:       'No VAT deducted at source in this period.',
   tds:       'No income tax deducted at source in this period.',
 }
@@ -101,8 +107,8 @@ function Summary({ reg }) {
   return (
     <div className="flex flex-wrap gap-2 md:justify-end">
       {chips.map(([label, count, amount]) => (
-        <div key={label} className="bg-white border border-gray-100 rounded-lg px-3 py-2 min-w-[120px]">
-          <p className="text-[11px] text-gray-500">{label}</p>
+        <div key={label} className="min-w-[120px] rounded-lg border border-gray-200/80 bg-white px-3 py-2 shadow-xs">
+          <p className="text-xs text-muted-foreground">{label}</p>
           <p className="text-sm font-semibold text-gray-900 tabular-nums">{amount !== null && amount !== undefined ? `Tk ${fmtAmount(amount)}` : count}</p>
         </div>
       ))}
@@ -125,86 +131,86 @@ function cellText(value, type) {
   return value ?? ''
 }
 
+const isNum = (c) => c.type === 'money' || c.type === 'qty'
+
 function RegisterTable({ title, columns, rows, totals, numbered, emptyText }) {
   const hasLinks = rows.some(linkFor)
   const hasTotals = rows.length > 0 && columns.some(c => c.total)
   return (
-    <section className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+    <Card as="section" className="overflow-hidden">
       {title && (
-        <div className="px-4 py-3 border-b border-gray-100 bg-gray-50/60">
-          <h2 className="text-sm font-semibold text-gray-900">{title}</h2>
-        </div>
+        <CardHeader className="border-b border-gray-100 pb-3">
+          <CardTitle as="h2">{title}</CardTitle>
+        </CardHeader>
       )}
       {rows.length === 0 ? (
         <EmptyState icon={BookOpen} title="No entries" description={emptyText} className="py-12" />
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="bg-gray-50 text-gray-600">
+        <Table className="text-xs">
+          <TableHeader className={numbered ? '[&_tr:first-child]:border-b-0' : undefined}>
+            <TableRow>
+              {columns.map(c => (
+                <TableHead key={c.key} className={cn('h-auto whitespace-normal px-3 pb-1.5 pt-3 align-bottom', isNum(c) ? 'text-right' : 'text-left', c.type === 'text' && 'min-w-[120px]')}>
+                  {c.label}
+                </TableHead>
+              ))}
+              {hasLinks && <TableHead className="w-8 px-2" />}
+            </TableRow>
+            {numbered && (
+              <TableRow>
                 {columns.map(c => (
-                  <th key={c.key} className={cn('px-3 py-2 font-medium align-bottom', c.type === 'money' || c.type === 'qty' ? 'text-right' : 'text-left', c.type === 'text' && 'min-w-[120px]')}>
-                    {c.label}
-                  </th>
+                  <TableHead key={c.key} className={cn('h-auto px-3 pb-1.5 pt-0 text-[11px] font-normal tabular-nums text-gray-400', isNum(c) ? 'text-right' : 'text-left')}>{c.no ?? ''}</TableHead>
                 ))}
-                {hasLinks && <th className="w-8" />}
-              </tr>
-              {numbered && (
-                <tr className="text-[10px] text-gray-400 border-b border-gray-100">
-                  {columns.map(c => (
-                    <th key={c.key} className={cn('px-3 pb-1 font-normal', c.type === 'money' || c.type === 'qty' ? 'text-right' : 'text-left')}>{c.no ?? ''}</th>
-                  ))}
-                  {hasLinks && <th />}
-                </tr>
-              )}
-            </thead>
-            <tbody>
-              {rows.map((r, i) => {
-                const href = linkFor(r)
-                return (
-                  <tr key={`${r.entryId ?? r.purchaseBillId ?? r.expenseId ?? 'r'}-${i}`} className={cn('border-b border-gray-50 align-top', r.kind === 'CREDIT_NOTE' && 'bg-red-50/30')}>
-                    {columns.map(c => (
-                      <td
-                        key={c.key}
-                        className={cn(
-                          'px-3 py-2',
-                          c.type === 'money' || c.type === 'qty' ? 'text-right tabular-nums whitespace-nowrap' : 'text-gray-700',
-                          c.type === 'date' && 'whitespace-nowrap',
-                          (c.key === 'challanNo' || c.key.endsWith('Bin') || c.key === 'partyTin' || c.key === 'invoiceNo') && 'font-mono',
-                          c.type === 'money' && Number(r[c.key]) < 0 && 'text-red-600',
-                        )}
-                      >
-                        {cellText(r[c.key], c.type)}
-                      </td>
-                    ))}
-                    {hasLinks && (
-                      <td className="px-2 py-2">
-                        {href && (
-                          <Link href={href} className="text-gray-400 hover:text-gray-700" aria-label="Open source document">
-                            <ExternalLink className="w-3.5 h-3.5" />
-                          </Link>
-                        )}
-                      </td>
-                    )}
-                  </tr>
-                )
-              })}
-            </tbody>
-            {hasTotals && (
-              <tfoot>
-                <tr className="bg-gray-50 font-semibold text-gray-900">
-                  {columns.map((c, i) => (
-                    <td key={c.key} className={cn('px-3 py-2', c.total && 'text-right tabular-nums whitespace-nowrap')}>
-                      {c.total ? fmtAmount(totals?.[c.key] ?? 0) : (i === 0 ? 'Total' : '')}
-                    </td>
-                  ))}
-                  {hasLinks && <td />}
-                </tr>
-              </tfoot>
+                {hasLinks && <TableHead className="h-auto px-2" />}
+              </TableRow>
             )}
-          </table>
-        </div>
+          </TableHeader>
+          <TableBody>
+            {rows.map((r, i) => {
+              const href = linkFor(r)
+              return (
+                <TableRow key={`${r.entryId ?? r.purchaseBillId ?? r.expenseId ?? 'r'}-${i}`} className={cn('align-top', r.kind === 'CREDIT_NOTE' && 'bg-red-50/30')}>
+                  {columns.map(c => (
+                    <TableCell
+                      key={c.key}
+                      className={cn(
+                        'px-3 py-2',
+                        isNum(c) ? 'whitespace-nowrap text-right tabular-nums text-gray-900' : 'text-gray-700',
+                        c.type === 'date' && 'whitespace-nowrap',
+                        (c.key === 'challanNo' || c.key.endsWith('Bin') || c.key === 'partyTin' || c.key === 'invoiceNo') && 'font-mono',
+                        c.type === 'money' && Number(r[c.key]) < 0 && 'text-red-600',
+                      )}
+                    >
+                      {cellText(r[c.key], c.type)}
+                    </TableCell>
+                  ))}
+                  {hasLinks && (
+                    <TableCell className="px-2 py-2">
+                      {href && (
+                        <Link href={href} className="inline-flex text-gray-400 hover:text-gray-900" aria-label="Open source document">
+                          <ExternalLink className="size-3.5" />
+                        </Link>
+                      )}
+                    </TableCell>
+                  )}
+                </TableRow>
+              )
+            })}
+          </TableBody>
+          {hasTotals && (
+            <TableFooter>
+              <tr className="font-semibold text-gray-900">
+                {columns.map((c, i) => (
+                  <td key={c.key} className={cn('px-3 py-2', c.total && 'whitespace-nowrap text-right tabular-nums')}>
+                    {c.total ? fmtAmount(totals?.[c.key] ?? 0) : (i === 0 ? 'Total' : '')}
+                  </td>
+                ))}
+                {hasLinks && <td />}
+              </tr>
+            </TableFooter>
+          )}
+        </Table>
       )}
-    </section>
+    </Card>
   )
 }

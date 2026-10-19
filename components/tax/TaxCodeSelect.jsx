@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { cn } from '@/lib/utils'
+import { selectClass } from '@/components/ui/Input'
 import { catalogCodesFor, tdsRateText, vatServiceLabel } from '@/lib/tax/catalog'
 
 /**
@@ -140,12 +141,7 @@ export default function TaxCodeSelect({
       onChange={handleChange}
       disabled={disabled}
       required={required}
-      className={cn(
-        'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white text-gray-900',
-        'focus:outline-none focus:ring-2 focus:ring-gray-900',
-        'disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed',
-        className,
-      )}
+      className={cn(selectClass, 'h-auto py-[7px]', className)}
     >
       <option value="">{emptyLabel}</option>
       {orphan && <option value={value}>{value}{loading ? '' : ' (not active)'}</option>}

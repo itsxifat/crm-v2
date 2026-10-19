@@ -15,7 +15,12 @@ import CashlessMeter from '@/components/tax/CashlessMeter'
 import DepositModal from '@/components/tax/DepositModal'
 import TaxEntryFormModal from '@/components/tax/TaxEntryFormModal'
 import { TaxPill, DaysLeftBadge } from '@/components/tax/TaxBadges'
-import { tk, fmtDay, fmtPeriod, fetchJson, btnGhost, btnPrimary } from '@/components/tax/taxUi'
+import { tk, fmtDay, fmtPeriod, fetchJson } from '@/components/tax/taxUi'
+import Button, { buttonVariants } from '@/components/ui/Button'
+import { Card, CardHeader, CardTitle, CardDescription, CardAction, CardContent, CardFooter } from '@/components/ui/Card'
+import PageHeader from '@/components/ui/PageHeader'
+import EmptyState from '@/components/ui/EmptyState'
+import { PageLoader } from '@/components/ui/LoadingSpinner'
 import { cn } from '@/lib/utils'
 
 function currentPeriodKey() {
@@ -29,9 +34,9 @@ function shiftPeriod(p, delta) {
 }
 
 const ALERT_STYLE = {
-  danger:  { box: 'border-red-200 bg-red-50',     text: 'text-red-800',   Icon: AlertOctagon,  icon: 'text-red-500' },
-  warning: { box: 'border-amber-200 bg-amber-50', text: 'text-amber-900', Icon: AlertTriangle, icon: 'text-amber-500' },
-  info:    { box: 'border-blue-100 bg-blue-50',   text: 'text-blue-900',  Icon: Info,          icon: 'text-blue-500' },
+  danger:  { box: 'border-red-200 bg-red-50 text-red-800',       Icon: AlertOctagon,  icon: 'text-red-600' },
+  warning: { box: 'border-amber-200 bg-amber-50 text-amber-800', Icon: AlertTriangle, icon: 'text-amber-600' },
+  info:    { box: 'border-blue-200 bg-blue-50 text-blue-800',    Icon: Info,          icon: 'text-blue-600' },
 }
 
 const QUICK_LINKS = [
@@ -43,6 +48,8 @@ const QUICK_LINKS = [
   { href: '/admin/tax/entries',      label: 'Tax ledger',         icon: ListChecks },
   { href: '/admin/tax/settings',     label: 'Tax settings',       icon: Settings2, perm: 'tax.manage' },
 ]
+
+const tileCls = 'block rounded-xl border border-gray-200/80 bg-white p-5 shadow-xs transition-colors hover:border-gray-300'
 
 function VatBreakdown({ vat, canPay, onPay }) {
   if (!vat) return null
@@ -57,46 +64,46 @@ function VatBreakdown({ vat, canPay, onPay }) {
     { label: 'Treasury deposits so far (58)',   value: -vat.deposits },
   ]
   return (
-    <div className="bg-white border border-gray-100 rounded-xl">
-      <div className="flex flex-wrap items-center justify-between gap-2 px-4 sm:px-5 py-3.5 border-b border-gray-100">
-        <div>
-          <h2 className="text-sm font-semibold text-gray-900">VAT — {vat.label}</h2>
-          <p className="text-xs text-gray-500">Due {fmtDay(vat.dueDate)}{vat.provisional ? ' · provisional, the period is still open' : ''}{vat.filed ? ' · filed' : ''}</p>
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="min-w-0">
+          <CardTitle>VAT — {vat.label}</CardTitle>
+          <CardDescription>Due {fmtDay(vat.dueDate)}{vat.provisional ? ' · provisional' : ''}{vat.filed ? ' · filed' : ''}</CardDescription>
         </div>
-        <div className="flex items-center gap-2">
+        <CardAction>
           {vat.filed ? <TaxPill label="Filed" color="green" /> : <DaysLeftBadge daysLeft={vat.daysLeft} />}
-        </div>
-      </div>
-      <dl className="divide-y divide-gray-50">
+        </CardAction>
+      </CardHeader>
+      <dl className="divide-y divide-gray-100 border-t border-gray-100">
         {rows.map(r => (
-          <div key={r.label} className={cn('flex items-center justify-between gap-3 px-4 sm:px-5 py-2 text-sm', r.strong && 'bg-gray-50/60')}>
+          <div key={r.label} className={cn('flex items-center justify-between gap-3 px-5 py-2 text-sm', r.strong && 'bg-gray-50/60')}>
             <dt className={r.strong ? 'font-medium text-gray-900' : 'text-gray-600'}>{r.label}</dt>
             <dd className={cn('tabular-nums', r.strong ? 'font-semibold text-gray-900' : 'text-gray-700')}>
               {r.value < 0 ? `− ${tk(-r.value)}` : tk(r.value)}
             </dd>
           </div>
         ))}
-        <div className="flex items-center justify-between gap-3 px-4 sm:px-5 py-3">
+        <div className="flex items-center justify-between gap-3 px-5 py-3">
           <dt className="text-sm font-semibold text-gray-900">{vat.balanceDue > 0 ? 'Still to pay' : 'Carried forward (65)'}</dt>
-          <dd className={cn('text-base font-bold tabular-nums', vat.balanceDue > 0 ? 'text-red-700' : 'text-gray-900')}>{tk(vat.balanceDue > 0 ? vat.balanceDue : (vat.carryForward ?? vat.closingBalance))}</dd>
+          <dd className={cn('text-base font-semibold tabular-nums', vat.balanceDue > 0 ? 'text-red-700' : 'text-gray-900')}>{tk(vat.balanceDue > 0 ? vat.balanceDue : (vat.carryForward ?? vat.closingBalance))}</dd>
         </div>
       </dl>
-      <div className="flex flex-wrap gap-2 px-4 sm:px-5 py-3 border-t border-gray-100">
-        <Link href={`/admin/tax/vat-return?start=${vat.start}&end=${vat.end}`} className={btnGhost}>Open return <ArrowRight className="w-3.5 h-3.5" /></Link>
-        {canPay && !vat.provisional && vat.balanceDue > 0 && (
-          <button type="button" className={btnPrimary} onClick={() => onPay(vat)}><Landmark className="w-4 h-4" /> Pay {tk(vat.balanceDue)}</button>
-        )}
-      </div>
       {vat.warnings?.length > 0 && (
-        <ul className="px-4 sm:px-5 pb-3 space-y-1.5">
+        <ul className="space-y-1.5 border-t border-gray-100 px-5 py-3">
           {vat.warnings.slice(0, 4).map(w => (
             <li key={w.code} className={cn('flex items-start gap-1.5 text-xs', w.level === 'danger' ? 'text-red-700' : 'text-amber-800')}>
-              <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" /> {w.message}
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" /> {w.message}
             </li>
           ))}
         </ul>
       )}
-    </div>
+      <CardFooter className="flex-wrap">
+        <Button variant="outline" size="sm" href={`/admin/tax/vat-return?start=${vat.start}&end=${vat.end}`}>Open return <ArrowRight /></Button>
+        {canPay && !vat.provisional && vat.balanceDue > 0 && (
+          <Button size="sm" onClick={() => onPay(vat)}><Landmark /> Pay {tk(vat.balanceDue)}</Button>
+        )}
+      </CardFooter>
+    </Card>
   )
 }
 
@@ -170,7 +177,7 @@ function TaxDashboard() {
         ? `Due ${fmtDay(v.dueDate)}${d.vat && d.vat.key !== v.key ? ` · ${d.vat.label} so far ${tk(d.vat.estimatedPayable)}` : ''}`
         : `Output ${tk(v.output)} · input ${tk(v.input)}${v.provisional ? ' · provisional' : ''}`,
       action: isDue && canDeposit && v.balanceDue > 0
-        ? { label: 'Pay VAT now', onClick: () => setPayVat(v) }
+        ? { label: 'Pay VAT', onClick: () => setPayVat(v) }
         : { label: 'Open VAT return', href: `/admin/tax/vat-return?start=${v.start}&end=${v.end}` },
     }
   })()
@@ -179,42 +186,41 @@ function TaxDashboard() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-xl font-semibold text-gray-900">Tax &amp; VAT</h1>
-          <p className="text-sm text-gray-500">
-            {d ? (
-              <>
-                {d.company.name ? `${d.company.name} · ` : ''}
-                BIN {d.company.bin || <span className="text-red-600">not set</span>} · TIN {d.company.tin || <span className="text-red-600">not set</span>} · Income year {d.fiscalYear}
-              </>
-            ) : 'VAT, withholding tax and compliance deadlines at a glance.'}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="inline-flex items-center rounded-lg border border-gray-200 bg-white">
-            <button type="button" className="p-2 text-gray-500 hover:text-gray-900" onClick={() => setPeriod(shiftPeriod(period, -1))} aria-label="Previous month">
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <span className="px-2 text-sm font-medium text-gray-900 min-w-[84px] text-center">{fmtPeriod(period)}</span>
-            <button type="button" className="p-2 text-gray-500 hover:text-gray-900 disabled:opacity-30" onClick={() => setPeriod(shiftPeriod(period, 1))} disabled={period >= nowPeriod} aria-label="Next month">
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
-          <button type="button" className={btnGhost} onClick={load} disabled={loading} aria-label="Refresh">
-            <RefreshCw className={cn('w-4 h-4', loading && 'animate-spin')} />
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title="Tax & VAT"
+        description={d ? (
+          <>
+            {d.company.name ? `${d.company.name} · ` : ''}
+            BIN {d.company.bin || <span className="text-red-600">not set</span>} · TIN {d.company.tin || <span className="text-red-600">not set</span>} · Income year {d.fiscalYear}
+          </>
+        ) : null}
+        actions={
+          <>
+            <div className="inline-flex h-9 items-center rounded-lg border border-input bg-white shadow-xs">
+              <Button variant="ghost" size="icon-sm" className="text-gray-500" onClick={() => setPeriod(shiftPeriod(period, -1))} aria-label="Previous month">
+                <ChevronLeft />
+              </Button>
+              <span className="min-w-[84px] px-1 text-center text-sm font-medium tabular-nums text-gray-900">{fmtPeriod(period)}</span>
+              <Button variant="ghost" size="icon-sm" className="text-gray-500" onClick={() => setPeriod(shiftPeriod(period, 1))} disabled={period >= nowPeriod} aria-label="Next month">
+                <ChevronRight />
+              </Button>
+            </div>
+            <Button variant="outline" size="icon" onClick={load} disabled={loading} aria-label="Refresh" title="Refresh">
+              <RefreshCw className={cn('size-4', loading && 'animate-spin')} />
+            </Button>
+          </>
+        }
+      />
 
       {error && !d && (
-        <div className="bg-white border border-red-100 rounded-xl p-6 text-center">
-          <AlertOctagon className="w-8 h-8 text-red-400 mx-auto" />
-          <p className="mt-2 text-sm font-medium text-gray-900">The tax dashboard could not be loaded</p>
-          <p className="text-sm text-gray-500">{error}</p>
-          <button type="button" className={cn(btnPrimary, 'mt-4')} onClick={load}>Try again</button>
-        </div>
+        <Card>
+          <EmptyState
+            icon={AlertOctagon}
+            title="Couldn't load the tax dashboard"
+            description={error}
+            action={<Button onClick={load}>Try again</Button>}
+          />
+        </Card>
       )}
 
       {/* Alerts */}
@@ -223,14 +229,14 @@ function TaxDashboard() {
           {d.alerts.map((a, i) => {
             const s = ALERT_STYLE[a.level] ?? ALERT_STYLE.info
             return (
-              <div key={i} className={cn('flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between rounded-xl border px-4 py-3', s.box)}>
-                <div className={cn('flex items-start gap-2 text-sm', s.text)}>
-                  <s.Icon className={cn('w-4 h-4 mt-0.5 shrink-0', s.icon)} />
+              <div key={i} className={cn('flex flex-col gap-2 rounded-lg border px-3 py-2.5 text-sm sm:flex-row sm:items-center sm:justify-between', s.box)}>
+                <div className="flex items-start gap-2">
+                  <s.Icon className={cn('mt-0.5 size-4 shrink-0', s.icon)} />
                   <span>{a.message}</span>
                 </div>
                 {a.href && a.action && (
-                  <Link href={a.href} className="self-start sm:self-auto shrink-0 inline-flex items-center gap-1 rounded-lg bg-white/80 border border-white px-3 py-1.5 text-xs font-semibold text-gray-900 hover:bg-white">
-                    {a.action} <ArrowRight className="w-3.5 h-3.5" />
+                  <Link href={a.href} className={cn(buttonVariants({ variant: 'outline', size: 'xs' }), 'self-start sm:self-auto')}>
+                    {a.action} <ArrowRight />
                   </Link>
                 )}
               </div>
@@ -239,14 +245,14 @@ function TaxDashboard() {
         </div>
       )}
       {d && d.alerts?.length === 0 && (
-        <div className="flex items-center gap-2 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-          <CalendarCheck className="w-4 h-4" /> All caught up — no overdue deposits, returns or certificates.
+        <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-800">
+          <CalendarCheck className="size-4 shrink-0 text-emerald-600" /> All caught up — nothing overdue.
         </div>
       )}
 
       {/* KPI cards */}
       {(d || loading) && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           <TaxKpiCard loading={loading && !d} {...vatCard} />
           <TaxKpiCard
             loading={loading && !d}
@@ -255,7 +261,7 @@ function TaxDashboard() {
             title="Input VAT credit available"
             value={tk(d?.inputCredit?.unclaimed)}
             badge={d?.inputCredit?.expiringNextPeriod?.count > 0 ? <TaxPill label={`${d.inputCredit.expiringNextPeriod.count} expiring`} color="amber" /> : null}
-            sub={d ? `${d.inputCredit.count} unclaimed credit${d.inputCredit.count === 1 ? '' : 's'}${d.inputCredit.expiringNextPeriod.count ? ` · ${tk(d.inputCredit.expiringNextPeriod.amount)} expire by ${fmtPeriod(d.inputCredit.expiringNextPeriod.by)}` : ''}` : null}
+            sub={d ? `${d.inputCredit.count} unclaimed${d.inputCredit.expiringNextPeriod.count ? ` · ${tk(d.inputCredit.expiringNextPeriod.amount)} expire by ${fmtPeriod(d.inputCredit.expiringNextPeriod.by)}` : ''}` : null}
             emphasis={d?.inputCredit?.expiringNextPeriod?.count > 0 ? 'warning' : null}
             action={{ label: 'Purchase register', href: '/admin/tax/registers?type=purchases' }}
           />
@@ -266,7 +272,7 @@ function TaxDashboard() {
             title="VDS certificates to collect"
             value={tk(d?.vdsReceivable?.pendingCertificates?.amount)}
             badge={d?.vdsReceivable?.expiring?.count > 0 ? <TaxPill label={`${d.vdsReceivable.expiring.count} expiring`} color="amber" /> : null}
-            sub={d ? `${d.vdsReceivable.pendingCertificates.count} deduction${d.vdsReceivable.pendingCertificates.count === 1 ? '' : 's'} by customers without Mushak-6.6 · ${tk(d.vdsReceivable.received.amount)} ready to claim` : null}
+            sub={d ? `${d.vdsReceivable.pendingCertificates.count} without Mushak-6.6 · ${tk(d.vdsReceivable.received.amount)} ready to claim` : null}
             emphasis={d?.vdsReceivable?.expiring?.count > 0 ? 'warning' : null}
             action={{ label: 'Collect 6.6', href: '/admin/tax/withholding?tab=vds-receivable' }}
           />
@@ -277,7 +283,7 @@ function TaxDashboard() {
             title={`AIT credit — FY ${d?.tdsReceivable?.fy ?? ''}`}
             value={tk(d?.tdsReceivable?.amount)}
             badge={d?.tdsReceivable?.pendingCertificates?.count > 0 ? <TaxPill label={`${d.tdsReceivable.pendingCertificates.count} certificates missing`} color="amber" /> : null}
-            sub={d ? `${d.tdsReceivable.count} deduction${d.tdsReceivable.count === 1 ? '' : 's'} by customers — credit against income tax` : null}
+            sub={d ? `${d.tdsReceivable.count} deduction${d.tdsReceivable.count === 1 ? '' : 's'} by customers` : null}
             action={{ label: 'View AIT credits', href: '/admin/tax/withholding?tab=ait' }}
           />
           <TaxKpiCard
@@ -291,7 +297,7 @@ function TaxDashboard() {
               : d?.tdsPayable?.nextDue ? <TaxPill label={`Next due ${fmtDay(d.tdsPayable.nextDue)}`} color="gray" dot={false} /> : null}
             sub={d ? (tdsOver > 0
               ? `${tk(d.tdsPayable.overdue.amount)} overdue · interest ≈ ${tk(d.tdsPayable.overdue.interestEstimate)}`
-              : `${d.tdsPayable.undeposited.count} deduction${d.tdsPayable.undeposited.count === 1 ? '' : 's'} waiting for a challan`) : null}
+              : `${d.tdsPayable.undeposited.count} awaiting a challan`) : null}
             emphasis={tdsOver > 0 ? 'danger' : (d?.tdsPayable?.dueSoon?.count > 0 ? 'warning' : null)}
             action={d?.tdsPayable?.undeposited?.count > 0 ? { label: tdsOver > 0 ? 'Deposit now' : 'Deposit TDS', href: '/admin/tax/withholding?tab=tds-deposit' } : { label: 'Withholding', href: '/admin/tax/withholding' }}
           />
@@ -302,7 +308,7 @@ function TaxDashboard() {
             title={`Advance tax paid — FY ${d?.advanceTax?.fy ?? ''}`}
             value={tk(d?.advanceTax?.paid)}
             badge={d?.advanceTax?.nextDue ? <DaysLeftBadge daysLeft={d.advanceTax.nextDueDaysLeft} /> : null}
-            sub={d ? `${d.advanceTax.count} payment${d.advanceTax.count === 1 ? '' : 's'}${d.advanceTax.instalmentsPaid?.length ? ` · instalment${d.advanceTax.instalmentsPaid.length === 1 ? '' : 's'} ${d.advanceTax.instalmentsPaid.join(', ')} paid` : ''}${d.advanceTax.nextDue ? ` · next instalment ${fmtDay(d.advanceTax.nextDue)}` : ''}` : null}
+            sub={d ? `${d.advanceTax.count} payment${d.advanceTax.count === 1 ? '' : 's'}${d.advanceTax.instalmentsPaid?.length ? ` · instalment${d.advanceTax.instalmentsPaid.length === 1 ? '' : 's'} ${d.advanceTax.instalmentsPaid.join(', ')} paid` : ''}${d.advanceTax.nextDue ? ` · next ${fmtDay(d.advanceTax.nextDue)}` : ''}` : null}
             action={canDeposit ? { label: 'Record payment', onClick: () => setAdvanceOpen(true) } : { label: 'Tax ledger', href: '/admin/tax/entries?entryType=ADVANCE_TAX' }}
           />
         </div>
@@ -310,38 +316,38 @@ function TaxDashboard() {
 
       {/* Certificates & returns strip */}
       {d && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Link href="/admin/tax/withholding?tab=vds-issue" className="bg-white border border-gray-100 rounded-xl p-4 hover:border-gray-200 transition-colors">
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-medium text-gray-500">Mushak-6.6 to issue (suppliers)</p>
-              <FileOutput className="w-4 h-4 text-gray-300" />
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <Link href="/admin/tax/withholding?tab=vds-issue" className={tileCls}>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[13px] font-medium text-muted-foreground">Mushak-6.6 to issue</p>
+              <FileOutput className="size-4 text-gray-400" />
             </div>
-            <p className="mt-1 text-lg font-semibold text-gray-900">{d.vdsPayable.certificatesToIssue.count} <span className="text-sm font-normal text-gray-500">· {tk(d.vdsPayable.certificatesToIssue.amount)}</span></p>
-            <div className="mt-1 flex flex-wrap gap-1.5">
+            <p className="mt-1.5 text-lg font-semibold tabular-nums text-gray-900">{d.vdsPayable.certificatesToIssue.count} <span className="text-sm font-normal text-muted-foreground">· {tk(d.vdsPayable.certificatesToIssue.amount)}</span></p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
               {d.vdsPayable.certificatesToIssue.ready > 0 && <TaxPill label={`${d.vdsPayable.certificatesToIssue.ready} ready`} color="blue" />}
               {d.vdsPayable.certificatesToIssue.overdue > 0 && <TaxPill label={`${d.vdsPayable.certificatesToIssue.overdue} overdue`} color="red" />}
               {d.vdsPayable.undeposited.count > 0 && <TaxPill label={`${d.vdsPayable.undeposited.count} to deposit`} color="amber" />}
             </div>
           </Link>
-          <Link href="/admin/tax/withholding?tab=tds-certs" className="bg-white border border-gray-100 rounded-xl p-4 hover:border-gray-200 transition-colors">
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-medium text-gray-500">TDS certificates to issue (payees)</p>
-              <FileCheck className="w-4 h-4 text-gray-300" />
+          <Link href="/admin/tax/withholding?tab=tds-certs" className={tileCls}>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[13px] font-medium text-muted-foreground">TDS certificates to issue</p>
+              <FileCheck className="size-4 text-gray-400" />
             </div>
-            <p className="mt-1 text-lg font-semibold text-gray-900">{d.tdsPayable.certificatesToIssue.count} <span className="text-sm font-normal text-gray-500">· {tk(d.tdsPayable.certificatesToIssue.amount)}</span></p>
-            <div className="mt-1 flex flex-wrap gap-1.5">
+            <p className="mt-1.5 text-lg font-semibold tabular-nums text-gray-900">{d.tdsPayable.certificatesToIssue.count} <span className="text-sm font-normal text-muted-foreground">· {tk(d.tdsPayable.certificatesToIssue.amount)}</span></p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
               {d.tdsPayable.certificatesToIssue.ready > 0 && <TaxPill label={`${d.tdsPayable.certificatesToIssue.ready} ready (deposited)`} color="blue" />}
               {d.tdsPayable.certificatesToIssue.overdue > 0 && <TaxPill label={`${d.tdsPayable.certificatesToIssue.overdue} overdue`} color="red" />}
             </div>
           </Link>
           {d.whtReturn && (
-            <Link href={`/admin/tax/withholding?tab=wht-return&quarter=${d.whtReturn.key}`} className="bg-white border border-gray-100 rounded-xl p-4 hover:border-gray-200 transition-colors">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-medium text-gray-500">Withholding return — {d.whtReturn.label}</p>
-                <ClipboardList className="w-4 h-4 text-gray-300" />
+            <Link href={`/admin/tax/withholding?tab=wht-return&quarter=${d.whtReturn.key}`} className={tileCls}>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[13px] font-medium text-muted-foreground">Withholding return — {d.whtReturn.label}</p>
+                <ClipboardList className="size-4 text-gray-400" />
               </div>
-              <p className="mt-1 text-lg font-semibold text-gray-900">{tk(d.whtReturn.totals.deducted)} <span className="text-sm font-normal text-gray-500">deducted</span></p>
-              <div className="mt-1 flex flex-wrap gap-1.5">
+              <p className="mt-1.5 text-lg font-semibold tabular-nums text-gray-900">{tk(d.whtReturn.totals.deducted)} <span className="text-sm font-normal text-muted-foreground">deducted</span></p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
                 {d.whtReturn.filing && ['FILED', 'AMENDED'].includes(d.whtReturn.filing.status)
                   ? <TaxPill label="Filed" color="green" />
                   : <><TaxPill label={`Due ${fmtDay(d.whtReturn.dueDate)}`} color="gray" dot={false} /><DaysLeftBadge daysLeft={d.whtReturn.daysLeft} /></>}
@@ -354,23 +360,25 @@ function TaxDashboard() {
 
       {/* Calendar + VAT + meter */}
       {(d || loading) && (
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-          <div className="lg:col-span-3 space-y-4">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
+          <div className="space-y-4 lg:col-span-3">
             <ComplianceCalendar items={d?.calendar ?? []} loading={loading && !d} />
           </div>
-          <div className="lg:col-span-2 space-y-4">
+          <div className="space-y-4 lg:col-span-2">
             {registered && d?.vat && <VatBreakdown vat={d.vat} canPay={canDeposit} onPay={setPayVat} />}
             <CashlessMeter data={d?.cashless} loading={loading && !d} corporateRate={d?.settings?.corporateRate ?? 27.5} cashlessRate={d?.settings?.cashlessRate ?? 25} />
-            <div className="bg-white border border-gray-100 rounded-xl p-4">
-              <h2 className="text-sm font-semibold text-gray-900 mb-3">Quick links</h2>
-              <div className="grid grid-cols-2 gap-2">
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle>Quick links</CardTitle>
+              </CardHeader>
+              <CardContent className="grid grid-cols-2 gap-2">
                 {QUICK_LINKS.filter(l => !l.perm || can(l.perm)).map(l => (
-                  <Link key={l.href} href={l.href} className="flex items-center gap-2 rounded-lg border border-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 hover:border-gray-200">
-                    <l.icon className="w-4 h-4 text-gray-400" /> {l.label}
+                  <Link key={l.href} href={l.href} className="flex items-center gap-2 rounded-lg border border-gray-200/80 px-3 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-50 hover:text-gray-900">
+                    <l.icon className="size-4 shrink-0 text-gray-500" /> <span className="truncate">{l.label}</span>
                   </Link>
                 ))}
-              </div>
-            </div>
+              </CardContent>
+            </Card>
           </div>
         </div>
       )}
@@ -390,7 +398,7 @@ function TaxDashboard() {
 
 export default function TaxDashboardPage() {
   return (
-    <Suspense fallback={<div className="py-24 text-center text-sm text-gray-400">Loading…</div>}>
+    <Suspense fallback={<PageLoader />}>
       <TaxDashboard />
     </Suspense>
   )
