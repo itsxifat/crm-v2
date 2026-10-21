@@ -64,3 +64,9 @@ export { default as StockMovement }         from './StockMovement.js'
 export { default as PurchaseBill }          from './PurchaseBill.js'
 export { default as DepreciationRun }       from './DepreciationRun.js'
 export { default as AssetAudit }            from './AssetAudit.js'
+
+// ── Mail (shared mailboxes) ──
+export { default as MailAccount }           from './MailAccount.js'
+export { default as MailFolder }            from './MailFolder.js'
+export { default as MailMessage }           from './MailMessage.js'
+export { default as MailOutbox }            from './MailOutbox.js'

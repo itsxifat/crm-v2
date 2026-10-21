@@ -19,7 +19,8 @@ const nextConfig = {
     return [{ source: '/(.*)', headers: securityHeaders }]
   },
   experimental: {
-    serverComponentsExternalPackages: ['bcryptjs', 'mongoose'],
+    instrumentationHook: true, // instrumentation.js starts the mail sync worker
+    serverComponentsExternalPackages: ['bcryptjs', 'mongoose', 'imapflow', 'mailparser', 'nodemailer', 'sanitize-html'],
   },
   images: {
     unoptimized: true,

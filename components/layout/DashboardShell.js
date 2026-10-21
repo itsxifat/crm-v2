@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { usePathname } from 'next/navigation'
 import Sidebar from './Sidebar'
 import Header from './Header'
 import CommandMenu from './CommandMenu'
@@ -11,6 +12,9 @@ export default function DashboardShell({ children }) {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   const [commandOpen, setCommandOpen] = useState(false)
+  const pathname = usePathname()
+  // App-like pages (the mailbox) fill the panel edge to edge and scroll internally.
+  const fullBleed = pathname === '/admin/mail'
 
   // Restore + persist the collapsed rail across reloads.
   useEffect(() => {
@@ -48,11 +52,17 @@ export default function DashboardShell({ children }) {
             onToggleSidebar={toggleCollapsed}
             onSearchClick={() => setCommandOpen(true)}
           />
-          <main className="flex-1 overflow-y-auto">
-            <div className="mx-auto w-full max-w-[1600px] p-4 sm:p-6 lg:p-8">
+          {fullBleed ? (
+            <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
               <RouteGuard>{children}</RouteGuard>
-            </div>
-          </main>
+            </main>
+          ) : (
+            <main className="flex-1 overflow-y-auto">
+              <div className="mx-auto w-full max-w-[1600px] p-4 sm:p-6 lg:p-8">
+                <RouteGuard>{children}</RouteGuard>
+              </div>
+            </main>
+          )}
         </div>
       </div>
 
