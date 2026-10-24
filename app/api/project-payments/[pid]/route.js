@@ -18,6 +18,7 @@ import {
   settleInvoicePayment, settlementSummary, settlementDescription, httpErrorPayload, round2,
   reverseClientSettlement,
 } from '@/lib/paymentLedger'
+import { syncSoon } from '@/lib/encloud/sync'
 import { z } from 'zod'
 
 const optStr = (max) => z.string().max(max).optional().nullable()
@@ -131,6 +132,9 @@ export async function PATCH(request, { params }) {
         }),
         request,
       })
+
+      // Money taken back off the invoice: its files in encloud lock again.
+      if (payment.invoiceId) syncSoon('invoice', payment.invoiceId)
 
       const fresh = await ProjectPayment.findById(payment._id)
         .populate('accountId', 'name type currency last4 bankName mfsProvider')
@@ -316,6 +320,9 @@ export async function PATCH(request, { params }) {
         }),
         request,
       })
+
+      // Paid (or less due): the client's files in encloud follow.
+      if (invoiceId) syncSoon('invoice', invoiceId)
 
       const fresh = await ProjectPayment.findById(payment._id)
         .populate('accountId', 'name type currency last4 bankName mfsProvider')

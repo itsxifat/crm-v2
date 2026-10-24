@@ -101,6 +101,8 @@ const ACTION_CONFIG = {
   CANCEL:        { label: 'Cancel',         variant: 'danger'  },
   EXPORT:        { label: 'Export',         variant: 'default' },
   IMPORT:        { label: 'Import',         variant: 'primary' },
+  // Integrations (encloud)
+  SYNC:          { label: 'Sync',           variant: 'indigo'  },
 }
 
 // Timeline dot colour per badge variant (static class names so Tailwind generates them).

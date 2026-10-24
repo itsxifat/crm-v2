@@ -12,6 +12,7 @@ import { calcPeriodEnd } from '@/lib/ventures'
 import { dhakaDayKey, parseDhakaDay } from '@/lib/dhakaTime'
 import { searchEncrypted } from '@/lib/searchMatch'
 import { logActivity } from '@/lib/logActivity'
+import { syncSoon } from '@/lib/encloud/sync'
 import { z } from 'zod'
 
 const schema = z.object({
@@ -195,6 +196,9 @@ export async function POST(request) {
       changes:  JSON.stringify({ name: project.name, status: project.status }),
       request,
     })
+
+    // The project's folder in encloud (when connected).
+    syncSoon('project', project._id)
 
     return NextResponse.json({ data: j }, { status: 201 })
   } catch (err) {

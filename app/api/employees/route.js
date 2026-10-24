@@ -15,6 +15,7 @@ import { sendEmployeeLoginEmail } from '@/lib/mailer'
 import { sendEmployeeLoginWhatsApp } from '@/lib/whatsapp'
 import { logActivity } from '@/lib/logActivity'
 import { maskList, EMPLOYEE_PII } from '@/lib/pii'
+import { applyDueRevisions } from '@/lib/hr/salaryRevisions'
 
 const createEmployeeSchema = z.object({
   name:                 z.string().min(1, 'Name is required'),
@@ -51,6 +52,8 @@ export async function GET(request) {
     if (denied) return denied
 
     await connectDB()
+    // Approved raises whose month has started show as the salary now.
+    await applyDueRevisions()
 
     const { searchParams } = new URL(request.url)
     const page       = parseInt(searchParams.get('page')  ?? '1',  10)

@@ -16,6 +16,7 @@ import Badge from '@/components/ui/Badge'
 import Avatar from '@/components/ui/Avatar'
 import EmptyState from '@/components/ui/EmptyState'
 import { PageLoader } from '@/components/ui/LoadingSpinner'
+import MySalaryLetters from '@/components/admin/employees/MySalaryLetters'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -621,6 +622,8 @@ export default function EmployeeProfilePage() {
           </div>
         </CardFooter>
       </Card>
+
+      <MySalaryLetters />
     </div>
   )
 }

@@ -22,6 +22,7 @@ import ClientModal from '@/components/admin/clients/ClientModal'
 import { usePermission } from '@/components/auth/Can'
 import ClientMembersPanel from '@/components/admin/clients/ClientMembersPanel'
 import CustomerCompaniesPanel from '@/components/admin/clients/CustomerCompaniesPanel'
+import ClientFilesCard from '@/components/admin/clients/ClientFilesCard'
 import { BIN_REGEX, normalizeBin } from '@/lib/tax/catalog'
 import { isVatQuotation } from '@/lib/quotation'
 
@@ -398,6 +399,8 @@ export default function ClientDetailPage() {
                 )}
               </CardContent>
             </Card>
+
+            <ClientFilesCard clientId={id} />
           </div>
         </div>
       )}

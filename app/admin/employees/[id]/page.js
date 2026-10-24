@@ -28,6 +28,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@
 import AssetPicker from '@/components/inventory/AssetPicker'
 import AssetStatusBadge, { AssetConditionBadge, InventoryBadge } from '@/components/inventory/AssetStatusBadge'
 import { usePermission } from '@/components/auth/Can'
+import EmployeeSalaryTab from '@/components/admin/employees/EmployeeSalaryTab'
 import {
   ACK_META, RECOVERY_STATUS_META, RECOVERY_METHOD_LABELS, DAMAGE_CAUSE_LABELS, CONDITION_OPTIONS,
 } from '@/lib/inventory/constants'
@@ -1115,6 +1116,9 @@ export default function EmployeeProfilePage() {
   const [tab,     setTab]     = useState('overview')
 
   const isHR = ['SUPER_ADMIN', 'MANAGER'].includes(session?.user?.role)
+  const { canAny } = usePermission()
+  // Salary figures are visible to whoever works with salaries (same rule as the API).
+  const canSalary = canAny(['hr.salary.revise', 'hr.salary.approve', 'pii.financial.view', 'finance.salary.pay'])
 
   useEffect(() => {
     fetch(`/api/employees/${id}`)
@@ -1126,6 +1130,11 @@ export default function EmployeeProfilePage() {
       .catch(() => toast.error('Failed to load'))
       .finally(() => setLoading(false))
   }, [id, router])
+
+  // After a salary change: the salary / designation shown in the header follow.
+  function reloadEmployee() {
+    fetch(`/api/employees/${id}`).then(r => r.json()).then(j => { if (j.data) setData(j.data) }).catch(() => {})
+  }
 
   if (loading) return <PageLoader />
 
@@ -1139,6 +1148,7 @@ export default function EmployeeProfilePage() {
 
   const TABS = [
     { id: 'overview',      label: 'Overview'   },
+    ...(canSalary ? [{ id: 'salary', label: 'Salary' }] : []),
     { id: 'documents',     label: 'Documents'  },
     { id: 'assets',        label: 'Assets'     },
     { id: 'company-items', label: 'Company items' },
@@ -1328,6 +1338,10 @@ export default function EmployeeProfilePage() {
       )}
 
       {/* Documents Tab */}
+      {tab === 'salary' && canSalary && (
+        <EmployeeSalaryTab emp={emp} onChanged={reloadEmployee} />
+      )}
+
       {tab === 'documents' && (
         <DocumentsTab emp={emp} empId={id} onUpdated={setData} />
       )}

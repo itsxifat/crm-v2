@@ -13,6 +13,7 @@ import { isValidObjectId } from '@/lib/objectId'
 import { dhakaParts, dhakaDate } from '@/lib/dhakaTime'
 import { logActivity } from '@/lib/logActivity'
 import { buildExpenseTax, expenseSettlement } from '@/lib/expensePayment'
+import { applyDueRevisions, salaryForPeriod, salariesForPeriod } from '@/lib/hr/salaryRevisions'
 
 // Income tax deducted from salary is TDS under ITA 2023 s.86.
 const SALARY_TDS_SECTION = '86-SALARY'
@@ -97,10 +98,13 @@ export async function GET(request) {
       ]
     }
 
+    await applyDueRevisions()
     const employees = await Employee.find(filter)
       .populate('userId', 'name email avatar')
       .sort({ createdAt: -1 })
       .lean()
+    // The salary of THIS period (a raise from a later month does not apply to it).
+    const periodSalaries = await salariesForPeriod(employees, period)
 
     const slips = await SalarySlip.find({ period, employeeId: { $in: employees.map(e => e._id) } })
       .populate({
@@ -130,7 +134,7 @@ export async function GET(request) {
         resigned:    !!e.resigned,
         // Whether an e-TIN is on file (needed for the s.86 salary certificate) — never the TIN itself.
         hasTin:      !!(typeof e.tin === 'string' && e.tin.trim()),
-        baseSalary:  canSeeSalary ? (e.salary ?? null) : maskMoney(e.salary ?? null),
+        baseSalary:  canSeeSalary ? (periodSalaries.get(String(e._id)) ?? null) : maskMoney(periodSalaries.get(String(e._id)) ?? null),
         slip: slip ? {
           id:           slip._id.toString(),
           slipNo:       slip.slipNo,
@@ -235,7 +239,8 @@ export async function POST(request) {
       })
       .filter(it => it.label && Number.isFinite(it.amount) && it.amount > 0)
 
-    const baseSalary       = round2(Number(employee.salary) || 0)
+    // The salary in effect in the slip's own month — not today's, which may already include a later raise.
+    const baseSalary       = round2(Number(await salaryForPeriod(employee, period)) || 0)
     const earningsTotal    = round2(items.filter(i => i.type === 'EARNING').reduce((s, i) => s + i.amount, 0))
     const deductionsTotal  = round2(items.filter(i => i.type === 'DEDUCTION').reduce((s, i) => s + i.amount, 0))
     const taxDeduction     = round2(items.filter(i => i.isTax).reduce((s, i) => s + i.amount, 0))

@@ -46,6 +46,10 @@ const ProjectSchema = new mongoose.Schema(
     briefUpdatedAt: { type: Date, default: null },
     briefUpdatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
 
+    // Where the client gets the project's files: an encloud shared link made from
+    // the project page, or any link staff paste (Google Drive, Dropbox…).
+    driveLink:    { type: String, default: null },
+
     tags:         { type: String, default: null },
     cancelledAt:  { type: Date, default: null },
     cancelReason: { type: String, default: null },

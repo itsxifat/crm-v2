@@ -10,6 +10,7 @@ import { isValidObjectId } from '@/lib/objectId'
 import { ensureCombinedInvoice } from '@/lib/combinedInvoice'
 import { logActivity } from '@/lib/logActivity'
 import { voidInvoiceOutputVat } from '@/lib/tax/invoiceVat'
+import { syncSoon } from '@/lib/encloud/sync'
 import { issueDraftInvoice } from '../send/issue'
 
 // PAID is intentionally excluded from all manual transitions.
@@ -136,6 +137,9 @@ export async function PATCH(request, { params }) {
       }),
       request,
     })
+
+    // Issued → files lock in encloud; cancelled → they unlock.
+    syncSoon('invoice', params.id)
 
     // Masked like GET /api/invoices/:id — the buyer snapshot carries the e-TIN.
     return NextResponse.json({

@@ -11,6 +11,7 @@ import { logActivity } from '@/lib/logActivity'
 import { requirePerm } from '@/lib/rbac'
 import { isValidObjectId } from '@/lib/objectId'
 import { canAccessProject, canViewProjectFinancials } from '@/lib/projectAccess'
+import { syncSoon } from '@/lib/encloud/sync'
 import mongoose from 'mongoose'
 
 // Only the client fields the project UI needs — never the client's KYC,
@@ -213,6 +214,9 @@ export async function PUT(request, { params }) {
       changes:  JSON.stringify({ name: project.name, status: project.status }),
       request,
     })
+
+    // A renamed project renames its encloud folder too (when connected).
+    syncSoon('project', project._id)
 
     return NextResponse.json({ data })
   } catch (err) {

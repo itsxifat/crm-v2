@@ -14,6 +14,7 @@ import { dhakaDayStart } from '@/lib/dhakaTime'
 import { getFinanceSettings } from '@/lib/finance/settings'
 import { VAT_TREATMENTS } from '@/lib/tax/catalog'
 import { BASE_CURRENCY, isValidCurrency } from '@/lib/currencies'
+import { syncSoon } from '@/lib/encloud/sync'
 
 const isBlank = (v) => v === undefined || v === null || v === ''
 
@@ -256,6 +257,9 @@ export async function PUT(request, { params }) {
       }),
       request,
     })
+
+    // A new total changes what the client's files in encloud wait for.
+    syncSoon('invoice', params.id)
 
     return NextResponse.json({ data: maskDoc(session, invoice.toJSON(), INVOICE_PII) })
   } catch (err) {

@@ -15,6 +15,7 @@ import { createNotification } from '@/lib/createNotification'
 import { isValidObjectId } from '@/lib/objectId'
 import { ACTIVE_PROJECT_STATUSES, OUTSTANDING_INVOICE_STATUSES, INVOICE_MONEY_FIELDS, sumInvoiceMoneyBDT } from '@/lib/clientStats'
 import { BIN_REGEX, TIN_REGEX, normalizeBin } from '@/lib/tax/catalog'
+import { syncSoon } from '@/lib/encloud/sync'
 import { z } from 'zod'
 
 // ── Tax identity (BIN / e-TIN / VAT status / withholding behaviour) ──────────
@@ -277,6 +278,9 @@ export async function POST(request) {
       }),
       request,
     })
+
+    // The client's folder in encloud (when connected).
+    syncSoon('client', client._id)
 
     return NextResponse.json({
       data:        maskDoc(session, client.toJSON(), CLIENT_PII),

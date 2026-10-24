@@ -7,6 +7,7 @@ import { Project } from '@/models'
 import { requirePerm } from '@/lib/rbac'
 import { isValidObjectId } from '@/lib/objectId'
 import { allowedStatusTransitions } from '@/lib/projectStatus'
+import { syncSoon } from '@/lib/encloud/sync'
 
 // PATCH /api/projects/:id/status
 export async function PATCH(request, { params }) {
@@ -37,6 +38,7 @@ export async function PATCH(request, { params }) {
       project.cancelReason = note ?? null
     }
     await project.save()
+    syncSoon('project', project._id)
 
     return NextResponse.json({ data: { status: project.status } })
   } catch (err) {

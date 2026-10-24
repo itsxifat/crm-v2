@@ -90,6 +90,7 @@ export const NAV = [
       { href: '/admin/agencies',    label: 'Agencies',    icon: Landmark,     permission: 'hr.agencies.manage' },
       { href: '/admin/attendance',  label: 'Attendance',  icon: CalendarDays, permission: 'hr.attendance.view' },
       { href: '/admin/leaves',      label: 'Leaves',      icon: Clock,        permission: 'hr.leaves.view' },
+      { href: '/admin/salary-increments', label: 'Salary increments', icon: TrendingUp, permission: ['hr.salary.revise', 'hr.salary.approve'] },
       { href: '/admin/roles',       label: 'Roles',       icon: ShieldCheck,  permission: 'hr.roles.manage' },
     ],
   },

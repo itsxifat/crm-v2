@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import {
   CheckCircle2, Circle, Clock, File, Download,
-  AlertCircle, ChevronDown, ChevronUp, Layers, ChevronRight,
+  AlertCircle, ChevronDown, ChevronUp, Layers, ChevronRight, FolderOpen, ExternalLink,
 } from 'lucide-react'
 import ProjectStatusBadge from '@/components/portals/ProjectStatusBadge'
 import { formatMoney } from '@/lib/currencies'
@@ -122,6 +122,23 @@ export default function ClientProjectDetailPage() {
         title={project.name}
         meta={<ProjectStatusBadge status={project.status} />}
       />
+
+      {/* Project files (encloud shared link, or the link the team gave) */}
+      {project.driveLink && (
+        <a href={project.driveLink} target="_blank" rel="noopener noreferrer"
+          className="flex items-center justify-between gap-3 rounded-xl border border-gray-200/80 bg-white px-4 py-3 shadow-xs transition-colors hover:border-gray-300">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-gray-200/80 bg-white shadow-xs">
+              <FolderOpen className="size-4 text-gray-600" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-gray-900">Project files</p>
+              <p className="text-[13px] text-muted-foreground">Photos, video and documents delivered for this project</p>
+            </div>
+          </div>
+          <ExternalLink className="size-4 shrink-0 text-gray-400" />
+        </a>
+      )}
 
       {/* Overview */}
       <Card className="p-5">

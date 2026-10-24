@@ -10,6 +10,9 @@ import { User, Employee, Task, Leave, Attendance } from '@/models'
 import { generateEmployeeId } from '@/models/Employee'
 import { logActivity } from '@/lib/logActivity'
 import { TIN_REGEX } from '@/lib/tax/catalog'
+import {
+  RevisionError, applyDueRevisions, assertSalaryEditable, recordSalaryEdit, salaryForPeriod, currentPeriod,
+} from '@/lib/hr/salaryRevisions'
 import { z } from 'zod'
 
 // Employee e-TIN (12 digits) — needed for salary TDS (s.86) certificates.
@@ -71,6 +74,8 @@ export async function GET(request, { params }) {
     if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
 
     await connectDB()
+    // An approved raise whose month has started is shown as the salary now.
+    await applyDueRevisions({ employeeId: params.id })
 
     const employee = await Employee.findById(params.id)
       .populate({ path: 'userId', select: 'id name email avatar phone isActive role createdAt lastLogin' })
@@ -221,10 +226,29 @@ export async function PUT(request, { params }) {
       }
     }
 
+    // A salary typed here is a salary change too: kept in the salary history, and
+    // refused while an approved change is still to come (Salary increments).
+    const salaryChanged = empData.salary !== undefined
+      && Math.abs((Number(empData.salary) || 0) - (Number(current.salary) || 0)) >= 0.01
+    let salaryBefore = null
+    if (salaryChanged) {
+      try {
+        await assertSalaryEditable(current)
+      } catch (err) {
+        if (err instanceof RevisionError) return NextResponse.json({ error: err.message }, { status: err.status })
+        throw err
+      }
+      salaryBefore = await salaryForPeriod(current, currentPeriod())
+    }
+
     await Promise.all([
       Object.keys(userUpdate).length > 0 ? User.findByIdAndUpdate(current.userId, userUpdate) : Promise.resolve(),
       Employee.findByIdAndUpdate(params.id, { ...empData, ...(hireDate ? { hireDate: new Date(hireDate) } : {}) }),
     ])
+    if (salaryChanged) {
+      await recordSalaryEdit({ employee: current, previousSalary: salaryBefore, newSalary: empData.salary, session })
+        .catch(err => console.error('[PUT /api/employees/[id]] salary history not recorded', err))
+    }
 
     const updated = await Employee.findById(params.id)
       .populate({ path: 'userId', select: 'id name email avatar isActive' })

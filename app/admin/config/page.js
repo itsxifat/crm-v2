@@ -8,7 +8,7 @@ import {
   Mail, Plus, Trash2, Pencil, Save, X, Check,
   Eye, EyeOff, Send, ChevronDown, ChevronUp, ShieldCheck,
   MessageCircle, ExternalLink, Building2, Users,
-  CreditCard, ChevronRight, AlertTriangle, Layers, Target,
+  CreditCard, ChevronRight, AlertTriangle, Layers, Target, PlugZap,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/utils'
@@ -21,6 +21,7 @@ import Tabs from '@/components/ui/Tabs'
 import Badge from '@/components/ui/Badge'
 import EmptyState from '@/components/ui/EmptyState'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
+import IntegrationsSettings from '@/components/admin/integrations/IntegrationsSettings'
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -673,6 +674,7 @@ const TABS = [
   { id: 'payment',      label: 'Finance',             icon: CreditCard },
   { id: 'email',        label: 'Email',               icon: Mail },
   { id: 'whatsapp',     label: 'WhatsApp',            icon: MessageCircle },
+  { id: 'integrations', label: 'Integrations',        icon: PlugZap },
 ]
 
 const DEFAULT_PM = [
@@ -807,7 +809,7 @@ function ConfigContent() {
   const router       = useRouter()
   const activeTab    = searchParams.get('tab') ?? 'ventures'
   const { data: session } = useSession()
-  // Email/WhatsApp hold credentials — their APIs are SUPER_ADMIN-only.
+  // Email/WhatsApp/Integrations hold credentials — their APIs are SUPER_ADMIN-only.
   const isSuperAdmin = session?.user?.role === 'SUPER_ADMIN'
 
   // Per-section load failures. A failed load must not look like an empty list
@@ -1076,7 +1078,7 @@ function ConfigContent() {
   function setTab(id) { router.push(`/admin/config?tab=${id}`, { scroll: false }) }
 
   const configNeedsLoad = ['ventures', 'leads', 'verification', 'payment'].includes(activeTab) && !loadErrors.config && (configLoading || !configLoaded)
-  const visibleTabs     = TABS.filter(t => isSuperAdmin || (t.id !== 'email' && t.id !== 'whatsapp'))
+  const visibleTabs     = TABS.filter(t => isSuperAdmin || !['email', 'whatsapp', 'integrations'].includes(t.id))
 
   function renderLoadError(section, label) {
     return (
@@ -1501,6 +1503,9 @@ function ConfigContent() {
           )}
         </div>
       )}
+
+      {/* ── Integrations tab (Enfinito Pay & encloud) ───────────────────────── */}
+      {activeTab === 'integrations' && isSuperAdmin && <IntegrationsSettings />}
 
     </div>
   )

@@ -6,6 +6,7 @@ import connectDB from '@/lib/mongodb'
 import { Project } from '@/models'
 import { requirePerm } from '@/lib/rbac'
 import { isValidObjectId } from '@/lib/objectId'
+import { syncSoon } from '@/lib/encloud/sync'
 
 // POST /api/projects/:id/cancel
 export async function POST(request, { params }) {
@@ -23,6 +24,7 @@ export async function POST(request, { params }) {
       { new: true }
     )
     if (!project) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    syncSoon('project', project._id)
     return NextResponse.json({ data: project.toJSON() })
   } catch (err) {
     console.error('[POST cancel]', err)
