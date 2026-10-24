@@ -7,6 +7,7 @@ import { Asset, AssetAudit, AssetCategory, User } from '@/models'
 import { SCOPE_INDEX } from '@/models/AssetAudit'
 import { isValidObjectId } from '@/lib/objectId'
 import { logActivity } from '@/lib/logActivity'
+import { codeContains } from '@/lib/codes'
 import { ensureCategoriesSeeded } from '@/lib/inventory/assets'
 import { NON_TERMINAL_STATUSES, AUDIT_STATUSES } from '@/lib/inventory/constants'
 import { auditGuard, oid, locationMap, descendantIds, locationPath, MAX_AUDIT_LINES } from './_lib/audit'
@@ -128,7 +129,9 @@ export async function GET(request) {
     }
     if (search) {
       const rx = { $regex: search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' }
-      filter.$or = [{ auditNo: rx }, { name: rx }]
+      // Audit numbers match with separators ignored (AUD-2610-001 = AUD2610001).
+      const no = codeContains(search)
+      filter.$or = [...(no ? [{ auditNo: no }] : []), { name: rx }]
     }
 
     const [rows, total, counts, locs] = await Promise.all([

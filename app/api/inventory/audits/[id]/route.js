@@ -10,7 +10,7 @@ import { createNotification } from '@/lib/createNotification'
 import { CONDITIONS, AUDIT_RESULTS, AUDIT_RESULT_META, STATUS_META } from '@/lib/inventory/constants'
 import { inventoryManagerUserIds } from '@/app/api/my-assets/_lib/shared'
 import {
-  auditGuard, oid, parseScan, serialQuery, SUMMARY_STAGE, lineMergeStage,
+  auditGuard, oid, parseScan, tagMatch, tagsIn, noUnexpectedTag, serialQuery, SUMMARY_STAGE, lineMergeStage,
   locationMap, isWithin, locationPath, buildAuditDetail, summaryOf,
 } from '../_lib/audit'
 import { z } from 'zod'
@@ -61,16 +61,18 @@ function scanLineResult(line, { condition, locationId }, locs) {
 async function handleScan(audit, data, session) {
   const { tag, assetId: idFromUrl, raw } = parseScan(data.tag)
   if (!tag && !idFromUrl) return httpError(422, 'Scan or type a tag')
+  // Old labels (EN-LAP-00042) and new tags (ENLAP00042) are the same asset.
+  const byTag = tag ? tagMatch(tag) : null
 
   const lineByTag = async (t) => (await AssetAudit.findOne({ _id: audit._id }, { lines: { $elemMatch: { assetTag: t } } }).lean())?.lines?.[0] ?? null
   const lineByAsset = async (aid) => (await AssetAudit.findOne({ _id: audit._id }, { lines: { $elemMatch: { assetId: oid(aid) } } }).lean())?.lines?.[0] ?? null
   const ASSET_FIELDS = 'assetTag name status locationId serialNumber'
 
-  let line = tag ? await lineByTag(tag) : null
+  let line = byTag ? await lineByTag(byTag) : null
   let asset = null
   if (!line) {
     if (idFromUrl) asset = await Asset.findById(idFromUrl).select(ASSET_FIELDS).lean()
-    if (!asset && tag) asset = await Asset.findOne({ assetTag: tag }).select(ASSET_FIELDS).lean()
+    if (!asset && byTag) asset = await Asset.findOne({ assetTag: byTag }).select(ASSET_FIELDS).lean()
     if (!asset && raw && raw.length <= 100) {
       const bySerial = await Asset.find(serialQuery(raw)).select(ASSET_FIELDS).limit(2).lean()
       if (bySerial.length === 1) asset = bySerial[0]
@@ -92,7 +94,7 @@ async function handleScan(audit, data, session) {
       note: data.note ?? null,
     }
     const updated = await AssetAudit.findOneAndUpdate(
-      { _id: audit._id, status: 'IN_PROGRESS', 'unexpected.tag': { $ne: asset.assetTag } },
+      { _id: audit._id, status: 'IN_PROGRESS', ...noUnexpectedTag(asset.assetTag) },
       { $push: { unexpected: entry } },
       { new: true, projection: { unexpected: 1, summary: 1, status: 1 } },
     ).lean()
@@ -248,21 +250,24 @@ async function handleMark(audit, data, session, request) {
 
 // ── unexpected items ─────────────────────────────────────────────────────────
 async function handleUnexpected(audit, data, session, request) {
-  const tag = data.tag ? parseScan(data.tag).tag : null
-  if (!tag && !data.description) return httpError(422, 'Enter the tag or a short description of the item')
+  const typed = data.tag ? parseScan(data.tag).tag : null
+  if (!typed && !data.description) return httpError(422, 'Enter the tag or a short description of the item')
+  const byTag = typed ? tagMatch(typed) : null
 
-  if (tag) {
-    const expected = (await AssetAudit.findOne({ _id: audit._id }, { lines: { $elemMatch: { assetTag: tag } } }).lean())?.lines?.[0]
-    if (expected) return httpError(422, `${tag} is on the expected list — scan it instead`)
+  if (byTag) {
+    const expected = (await AssetAudit.findOne({ _id: audit._id }, { lines: { $elemMatch: { assetTag: byTag } } }).lean())?.lines?.[0]
+    if (expected) return httpError(422, `${expected.assetTag ?? typed} is on the expected list — scan it instead`)
   }
+  // A registered asset is recorded under its own tag, however the label spells it.
+  const asset = byTag ? await Asset.findOne({ assetTag: byTag }).select('assetTag name status').lean() : null
+  const tag = asset?.assetTag ?? typed
   let description = data.description
   if (tag && !description) {
-    const asset = await Asset.findOne({ assetTag: tag }).select('name status').lean()
     description = asset ? `${asset.name} — registered asset (${STATUS_META[asset.status]?.label ?? asset.status}), not expected in this audit` : 'Item with an unregistered tag'
   }
 
   const updated = await AssetAudit.findOneAndUpdate(
-    { _id: audit._id, status: 'IN_PROGRESS', ...(tag ? { 'unexpected.tag': { $ne: tag } } : {}) },
+    { _id: audit._id, status: 'IN_PROGRESS', ...(tag ? noUnexpectedTag(tag) : {}) },
     { $push: { unexpected: { tag, description, note: data.note ?? null } } },
     { new: true, projection: { unexpected: 1 } },
   ).lean()
@@ -380,11 +385,12 @@ async function handleComplete(audit, data, session, request) {
   const assets = await Asset.find({ _id: { $in: assetIds } }).select('status locationId assignedEmployeeId assignedDepartmentId condition').lean()
   const assetById = new Map(assets.map(a => [str(a._id), a]))
 
-  // Registered assets recorded as unexpected were also physically seen.
-  const unexpectedTags = [...new Set((done.unexpected ?? []).map(u => u.tag).filter(Boolean))]
+  // Registered assets recorded as unexpected were also physically seen (tags
+  // recorded in the old hyphenated form still match).
+  const unexpectedTags = tagsIn((done.unexpected ?? []).map(u => u.tag))
   const lineIdSet = new Set(assetIds.map(str))
-  const outsiders = unexpectedTags.length
-    ? (await Asset.find({ assetTag: { $in: unexpectedTags } }).select('assetTag status locationId assignedEmployeeId assignedDepartmentId condition').lean())
+  const outsiders = unexpectedTags
+    ? (await Asset.find({ assetTag: unexpectedTags }).select('assetTag status locationId assignedEmployeeId assignedDepartmentId condition').lean())
       .filter(a => !lineIdSet.has(str(a._id)))
     : []
 

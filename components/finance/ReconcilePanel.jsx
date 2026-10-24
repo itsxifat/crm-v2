@@ -15,6 +15,7 @@ import { Card, CardTitle } from '@/components/ui/Card'
 import { Input, Label } from '@/components/ui/Input'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table'
 import { cn } from '@/lib/utils'
+import { codeIncludes } from '@/lib/searchMatch'
 import { dayKeyLabel, taxPeriodOf, addPeriods, periodLastDay } from '@/lib/finance/fiscal'
 import { PAYMENT_CHANNEL_LABELS } from '@/lib/finance/constants'
 import { invalidateMoneyAccounts } from './MoneyAccountSelect'
@@ -284,7 +285,9 @@ export default function ReconcilePanel({ account, canReconcile, onChanged, onRec
       if (filter === 'ticked' && !r.cleared) return false
       if (!needle) return true
       return [r.description, r.category, r.reference, r.txnId, r.party, r.counterAccount, r.cheque?.no, plainAmount(r.amount)]
-        .some(v => v && String(v).toLowerCase().includes(needle))
+        .some(v => v && String(v).toLowerCase().includes(needle)) ||
+        // Record numbers match with separators ignored (TXN-20261024-0001 = TXN202610240001).
+        [r.txnId, r.reference, r.description].some(v => codeIncludes(v, needle))
     })
   }, [rows, filter, q])
   const visibleOpen = visible.filter(r => !r.cleared)

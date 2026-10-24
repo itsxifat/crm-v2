@@ -1,5 +1,5 @@
 import mongoose from 'mongoose'
-import { nextSequence } from '../lib/sequence'
+import { nextSequence, counterValue } from '../lib/sequence'
 import { dhakaParts } from '../lib/dhakaTime'
 import { STOCK_MOVEMENT_TYPES, stockDirectionFor } from '../lib/inventory/constants'
 
@@ -11,7 +11,7 @@ const { ObjectId } = mongoose.Schema.Types
  */
 const StockMovementSchema = new mongoose.Schema(
   {
-    movementNo:  { type: String, unique: true, sparse: true },          // 'SM-YYMM-#####'
+    movementNo:  { type: String, unique: true, sparse: true },          // 'SMYYMM#####'
     stockItemId: { type: ObjectId, ref: 'StockItem', required: true, index: true },
     type:        { type: String, enum: STOCK_MOVEMENT_TYPES, required: true },
     direction:   { type: String, enum: ['IN', 'OUT'], required: true },
@@ -53,13 +53,17 @@ StockMovementSchema.pre('validate', async function () {
   // Month boundaries follow the business timezone (Asia/Dhaka).
   const { year, month } = dhakaParts(new Date())
   const yymm   = `${String(year).slice(-2)}${String(month + 1).padStart(2, '0')}`
-  const prefix = `SM-${yymm}-`
-  // Highest number already issued for this prefix (NOT a count — see lib/sequence.js).
+  const prefix = `SM${yymm}`
+  const re     = new RegExp(`^SM-?${yymm}-?(\\d{5,})$`)
+  // Highest number already issued this month (NOT a count — see lib/sequence.js),
+  // in either shape: movements numbered before 2026-10 read SM-2610-00001, and the
+  // old counter key (stockmove:SM-2610-) is a floor too.
   const existing = await mongoose.model('StockMovement')
-    .find({ movementNo: { $regex: `^${prefix}[0-9]+$` } })
+    .find({ movementNo: { $regex: re.source } })
     .select('movementNo').lean()
-  const maxUsed = existing.reduce((m, d) => Math.max(m, parseInt(d.movementNo.slice(prefix.length), 10) || 0), 0)
-  const seq = await nextSequence(`stockmove:${prefix}`, maxUsed)
+  const maxUsed = existing.reduce((m, d) => Math.max(m, parseInt(re.exec(d.movementNo)?.[1], 10) || 0), 0)
+  const floor = Math.max(maxUsed, await counterValue(`stockmove:SM-${yymm}-`))
+  const seq = await nextSequence(`stockmove:${prefix}`, floor)
   this.movementNo = `${prefix}${String(seq).padStart(5, '0')}`
 })
 

@@ -68,13 +68,15 @@ QuotationSchema.pre('save', async function (next) {
   try {
     // Highest number already issued is only a floor for the atomic counter, so
     // concurrent creates never get the same number and a deleted quotation's
-    // number is never reissued.
+    // number is never reissued. QT00001; numbers issued before 2026-10 read
+    // QT-00001 and count too (the counter key has no prefix, so it carries on).
+    const re = /^QT-?(\d+)$/
     const existing = await mongoose.model('Quotation')
-      .find({ quotationNumber: { $regex: '^QT-[0-9]+$' } }, { quotationNumber: 1 })
+      .find({ quotationNumber: { $regex: re.source } }, { quotationNumber: 1 })
       .lean()
-    const maxUsed = existing.reduce((m, d) => Math.max(m, parseInt(d.quotationNumber.slice(3), 10) || 0), 0)
+    const maxUsed = existing.reduce((m, d) => Math.max(m, parseInt(re.exec(d.quotationNumber)?.[1], 10) || 0), 0)
     const nextNum = await nextSequence('quotation', maxUsed)
-    this.quotationNumber = `QT-${String(nextNum).padStart(5, '0')}`
+    this.quotationNumber = `QT${String(nextNum).padStart(5, '0')}`
     next()
   } catch (err) {
     next(err)

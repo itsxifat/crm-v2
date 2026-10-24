@@ -22,13 +22,16 @@ if (!MONGODB_URI) {
   process.exit(1)
 }
 
-// Numbering must match models/CombinedInvoice.js: ENV-YYMMC###
-function combinedNumberFor(seq, date = new Date()) {
-  // Month follows the business timezone (Asia/Dhaka), matching models/CombinedInvoice.js
+// Numbering must match models/CombinedInvoice.js: ENVYYMMC### (e.g. ENV2610C001).
+// Month follows the business timezone (Asia/Dhaka), matching models/CombinedInvoice.js
+function yymmOf(date = new Date()) {
   const parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Dhaka', year: '2-digit', month: '2-digit' })
     .formatToParts(date).map(p => [p.type, p.value]))
-  const yymm = `${parts.year}${parts.month}`
-  return `ENV-${yymm}C${String(seq).padStart(3, '0')}`
+  return `${parts.year}${parts.month}`
+}
+
+function combinedNumberFor(seq, date = new Date()) {
+  return `ENV${yymmOf(date)}C${String(seq).padStart(3, '0')}`
 }
 
 async function dropLegacyIndex(db) {
@@ -83,16 +86,26 @@ async function backfillCombined(db) {
     return
   }
 
-  // Continue the ENV-YYMMC### sequence from whatever is already stored.
-  const now    = new Date()
-  const prefix = combinedNumberFor(1, now).slice(0, -3)
+  // Continue the ENVYYMMC### sequence from whatever is already stored.
+  const now  = new Date()
+  const yymm = yymmOf(now)
   // Highest suffix already issued (NOT a count — a count reissues an existing
-  // number after any delete and collides on the unique index).
+  // number after any delete and collides on the unique index), in either shape:
+  // numbers issued before 2026-10 read ENV-2610C001. The model's counters (new
+  // key and the old hyphenated one) are floors too, so a deleted number is never
+  // reissued.
+  const re = new RegExp(`^ENV-?${yymm}C(\\d+)$`)
   const usedDocs = await combineds
-    .find({ combinedNumber: { $regex: `^${prefix}[0-9]+$` } })
+    .find({ combinedNumber: { $regex: re.source } })
     .project({ combinedNumber: 1 })
     .toArray()
-  const used = usedDocs.reduce((m, d) => Math.max(m, parseInt(d.combinedNumber.slice(prefix.length), 10) || 0), 0)
+  const counters = await db.collection('counters')
+    .find({ _id: { $in: [`combinedInvoice:ENV${yymm}C`, `combinedInvoice:ENV-${yymm}C`] } })
+    .toArray()
+  const used = Math.max(
+    usedDocs.reduce((m, d) => Math.max(m, parseInt(re.exec(d.combinedNumber)?.[1], 10) || 0), 0),
+    ...counters.map(c => Number(c.seq) || 0),
+  )
 
   const docs = []
   for (let i = 0; i < missing.length; i++) {

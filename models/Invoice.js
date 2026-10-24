@@ -1,5 +1,5 @@
 import mongoose from 'mongoose'
-import { nextSequence } from '../lib/sequence'
+import { nextSequence, counterValue } from '../lib/sequence'
 
 // VAT treatment of a supply (Mushak-9.1 notes 1/3/4/7). 'NONE' = not a VAT
 // invoice — the default, so every legacy document keeps its old behaviour.
@@ -27,6 +27,10 @@ const InvoiceSchema = new mongoose.Schema(
     clientId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Client',  required: true },
     projectId:  { type: mongoose.Schema.Types.ObjectId, ref: 'Project', default: null },
     projectIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Project' }],
+    // Business unit (lib/units.js) its income belongs to: chosen on the form for a
+    // standalone invoice; VENTURE:<project.venture> for an invoice with a project.
+    // null ⇒ use the project's venture (old invoices), else Company.
+    unit:       { type: String, default: null, trim: true },
 
     status: {
       type:    String,
@@ -103,14 +107,18 @@ InvoiceSchema.pre('validate', async function () {
   const parts  = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Dhaka', year: '2-digit', month: '2-digit' })
     .formatToParts(new Date()).map(p => [p.type, p.value]))
   const yymm   = `${parts.year}${parts.month}`
-  const prefix = `ENV-${yymm}A`
+  // ENV2610A001. Numbers issued before 2026-10 read ENV-2610A001: the floor counts
+  // both shapes, and the old counter key (invoice:ENV-2610A) too.
+  const prefix = `ENV${yymm}A`
+  const re     = new RegExp(`^ENV-?${yymm}A(\\d+)$`)
   // Highest number already issued for this prefix (NOT a count — a count reissues
   // an existing number after any delete and collides on the unique index).
   const existing = await mongoose.model('Invoice')
-    .find({ invoiceNumber: { $regex: `^${prefix}[0-9]+$` } })
+    .find({ invoiceNumber: { $regex: re.source } })
     .select('invoiceNumber').lean()
-  const maxUsed = existing.reduce((m, d) => Math.max(m, parseInt(d.invoiceNumber.slice(prefix.length), 10) || 0), 0)
-  const seq = await nextSequence(`invoice:${prefix}`, maxUsed)
+  const maxUsed = existing.reduce((m, d) => Math.max(m, parseInt(re.exec(d.invoiceNumber)?.[1], 10) || 0), 0)
+  const floor = Math.max(maxUsed, await counterValue(`invoice:ENV-${yymm}A`))
+  const seq = await nextSequence(`invoice:${prefix}`, floor)
   this.invoiceNumber = `${prefix}${String(seq).padStart(3, '0')}`
 })
 

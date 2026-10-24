@@ -21,6 +21,7 @@ import {
 } from '@/models'
 import { getFinanceSettings, assertBooksOpen, assertTaxOpen } from '@/lib/finance/settings'
 import { postMoneyEntry } from '@/lib/finance/ledger'
+import { COMPANY_UNIT } from '@/lib/units'
 import { recordTaxEntry } from '@/lib/tax/engine'
 import { isValidBin, normalizeBin, treatmentForRate, BUYER_BIN_THRESHOLD } from '@/lib/tax/catalog'
 import { createNotification } from '@/lib/createNotification'
@@ -461,6 +462,8 @@ async function doRepairComplete(ctx) {
   if (mode === 'REQUEST') {
     expense = await new ProjectExpense({
       origin: vendorId ? 'VENDOR' : 'OTHER',
+      // Asset costs are shared (Company / shared), never a venture's.
+      unit: COMPANY_UNIT,
       title: `[${asset.assetTag}] repair${repairRef ? ` — ${repairRef}` : ''}`,
       amount: cost,
       currency: 'BDT',
@@ -705,6 +708,7 @@ async function doUpdateRecovery(ctx) {
         description: `${method === 'INSURANCE' ? 'Insurance claim' : 'Damage recovery'} — ${tagName(asset)}${method === 'CASH' && who ? ` (from ${who})` : ''}${newStatus === 'PENDING' || already > 0 ? ' (instalment)' : ''}`,
         reference: asset.assetTag,
         assetId: asset._id,
+        unit: COMPANY_UNIT,
         createdBy: session.user.id,
       }, { userId: session.user.id })
     }
@@ -947,7 +951,8 @@ async function doDispose(ctx) {
   let mainTx = null
   let taxEntry = null
   let event = null
-  const common = { currency: 'BDT', date: ctx.dateKey, reference: asset.assetTag, assetId: asset._id, createdBy: userId }
+  // Every disposal row is a shared (Company / shared) figure, like the asset itself.
+  const common = { currency: 'BDT', date: ctx.dateKey, reference: asset.assetTag, assetId: asset._id, unit: COMPANY_UNIT, createdBy: userId }
   try {
     const dep = preview.depreciation
     if (capitalized && dep.amount > 0.005 && postDepreciation) {
@@ -1168,7 +1173,7 @@ async function doAdjustValue(ctx) {
       tx = await postMoneyEntry({
         type: 'EXPENSE', kind: 'NON_CASH', category: CAT.IMPAIRMENT, expenseCategory: CAT.IMPAIRMENT,
         amount, currency: 'BDT', amountBDT: amount, plAmountBDT: amount, accountId: null,
-        date: ctx.dateKey, reference: asset.assetTag, assetId: asset._id, createdBy: session.user.id,
+        date: ctx.dateKey, reference: asset.assetTag, assetId: asset._id, unit: COMPANY_UNIT, createdBy: session.user.id,
         description: `Impairment — ${tagName(asset)}: ${p.reason}`,
       }, { userId: session.user.id })
       event = await logAssetEvent({

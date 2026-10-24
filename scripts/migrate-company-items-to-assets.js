@@ -23,7 +23,8 @@
  *
  * Options:
  *     --skip-inactive        leave out resigned / deactivated employees
- *     --employee=<id|code>   only this employee (Mongo id or employee ID such as EN-DEV2601001)
+ *     --employee=<id|code>   only this employee (Mongo id or employee ID such as ENDEV2601001;
+ *                            separators are ignored, so the old EN-DEV2601001 works too)
  *
  * Safe to re-run: entries whose marker already exists are skipped.
  */
@@ -32,6 +33,7 @@ import 'dotenv/config'
 import mongoose from 'mongoose'
 import { DEFAULT_CATEGORIES } from '../lib/inventory/constants.js'
 import { TAX_DEPRECIATION_CLASSES } from '../lib/tax/catalog.js'
+import { compactCode } from '../lib/codes.js'
 
 const APPLY         = process.argv.includes('--apply')
 const SKIP_INACTIVE = process.argv.includes('--skip-inactive')
@@ -135,32 +137,42 @@ function openingAsOf(goLiveDate) {
 }
 
 // ── tags ─────────────────────────────────────────────────────────────────────
+// Same series as lib/inventory/assets.js: `${prefix}${CODE}${seq5}` (ENLAP00042),
+// counter `asset:${prefix}${CODE}`. Tags issued before 2026-10 read EN-LAP-00042
+// and kept their counter under asset:EN-LAP — both are floors.
 
-async function maxTagNumber(db, series) {
-  const stem = `${series}-`
+const tagSeriesOf = (prefix, code) => ({ series: `${prefix}${code}`, prefix, code })
+
+/**
+ * Highest number used in a series: tags of either shape (exactly 5 digits — category
+ * codes may end in digits, so LAP must not read LAP1's tags) and the old counter key.
+ */
+async function maxTagNumber(db, { prefix, code }) {
+  const re = new RegExp(`^${prefix ? `${escapeRegex(prefix)}-?` : ''}${escapeRegex(code)}-?(\\d{5})$`)
   const rows = await db.collection('assets')
-    .find({ assetTag: { $regex: `^${escapeRegex(stem)}[0-9]+$` } }, { projection: { assetTag: 1 } })
+    .find({ assetTag: { $regex: re.source } }, { projection: { assetTag: 1 } })
     .toArray()
-  return rows.reduce((m, r) => Math.max(m, parseInt(r.assetTag.slice(stem.length), 10) || 0), 0)
+  const legacy = prefix ? await db.collection('counters').findOne({ _id: `asset:${prefix}-${code}` }) : null
+  return Math.max(rows.reduce((m, r) => Math.max(m, parseInt(re.exec(r.assetTag)?.[1], 10) || 0), 0), num(legacy?.seq))
 }
 
 /** Same counter as lib/sequence.nextSequence (`asset:${series}`), floored at the highest tag in use. */
-async function allocateTag(db, series) {
-  const floor = await maxTagNumber(db, series)
+async function allocateTag(db, tagSet) {
+  const floor = await maxTagNumber(db, tagSet)
   const res = await db.collection('counters').findOneAndUpdate(
-    { _id: `asset:${series}` },
+    { _id: `asset:${tagSet.series}` },
     [{ $set: { seq: { $add: [{ $max: [{ $ifNull: ['$seq', 0] }, floor] }, 1] } } }],
     { upsert: true, returnDocument: 'after' },
   )
   const doc = res?.seq !== undefined ? res : res?.value
-  return `${series}-${String(doc.seq).padStart(5, '0')}`
+  return `${tagSet.series}${String(doc.seq).padStart(5, '0')}`
 }
 
 /** Dry-run preview of the next tag without consuming the counter. */
-async function previewTag(db, series, offset) {
-  const floor = await maxTagNumber(db, series)
-  const counter = await db.collection('counters').findOne({ _id: `asset:${series}` })
-  return `${series}-${String(Math.max(num(counter?.seq), floor) + offset).padStart(5, '0')}`
+async function previewTag(db, tagSet, offset) {
+  const floor = await maxTagNumber(db, tagSet)
+  const counter = await db.collection('counters').findOne({ _id: `asset:${tagSet.series}` })
+  return `${tagSet.series}${String(Math.max(num(counter?.seq), floor) + offset).padStart(5, '0')}`
 }
 
 // ── categories ───────────────────────────────────────────────────────────────
@@ -235,7 +247,7 @@ async function main() {
   if (ONLY_EMPLOYEE) {
     empFilter.$or = mongoose.Types.ObjectId.isValid(ONLY_EMPLOYEE) && /^[a-f0-9]{24}$/i.test(ONLY_EMPLOYEE)
       ? [{ _id: new mongoose.Types.ObjectId(ONLY_EMPLOYEE) }]
-      : [{ employeeId: ONLY_EMPLOYEE }]
+      : [{ employeeId: { $regex: `^${compactCode(ONLY_EMPLOYEE).split('').map(escapeRegex).join('-?')}$`, $options: 'i' } }]
   }
   const employees = await db.collection('employees')
     .find(empFilter, { projection: { userId: 1, employeeId: 1, companyItems: 1, hireDate: 1, createdAt: 1, isActive: 1, resigned: 1 } })
@@ -303,13 +315,14 @@ async function main() {
       }
 
       const { category, how } = matchCategory(name, categories)
-      const series = prefix ? `${prefix}-${category.code}` : category.code
-      const descr = `${name} → ${category.code} ${category.name} (${how})${cost ? ` · cost ${money(cost)}` : ''}${serial ? ` · S/N ${serial}` : ''}${details ? ` · "${details}"` : ''}`
+      const tagSet = tagSeriesOf(prefix, category.code)
+      const series = tagSet.series
+      const descr =`${name} → ${category.code} ${category.name} (${how})${cost ? ` · cost ${money(cost)}` : ''}${serial ? ` · S/N ${serial}` : ''}${details ? ` · "${details}"` : ''}`
 
       if (!APPLY) {
         const offset = (previewOffsets.get(series) ?? 0) + 1
         previewOffsets.set(series, offset)
-        console.log(`  #${index} ${descr} → ≈${await previewTag(db, series, offset)}`)
+        console.log(`  #${index} ${descr} → ≈${await previewTag(db, tagSet, offset)}`)
         counts.create++
         continue
       }
@@ -319,7 +332,7 @@ async function main() {
       const cls = TAX_DEPRECIATION_CLASSES?.[category.taxClass] ?? null
       const marker = `${MARKER_PREFIX}${emp._id}:${index}`
       try {
-        const assetTag = await allocateTag(db, series)
+        const assetTag = await allocateTag(db, tagSet)
         const asset = {
           _id: assetId,
           assetTag,

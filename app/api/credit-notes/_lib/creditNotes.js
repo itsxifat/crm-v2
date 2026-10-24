@@ -18,10 +18,12 @@
 
 import mongoose from 'mongoose'
 import { CreditNote, Invoice, TaxEntry, Transaction } from '@/models'
+import { noteNumberCounter } from '@/models/CreditNote'
+import { entryNumberCounter } from '@/models/TaxEntry'
 import { recordTaxEntry, voidTaxEntry } from '@/lib/tax/engine'
 import { invoiceTaxTotals, snapshotInvoiceParties } from '@/lib/tax/invoiceVat'
 import { round2, CREDIT_NOTE_REASONS, VAT_TREATMENTS } from '@/lib/tax/catalog'
-import { applyInvoicePayment, revertInvoicePayment, pendingPaymentTotal } from '@/lib/paymentLedger'
+import { applyInvoicePayment, revertInvoicePayment, pendingPaymentTotal, invoiceUnit } from '@/lib/paymentLedger'
 import { postMoneyEntry, preflightMoneyEntry, reverseMoneyEntry } from '@/lib/finance/ledger'
 import { assertBooksOpen, assertTaxOpen } from '@/lib/finance/settings'
 import { releaseSequence } from '@/lib/sequence'
@@ -187,11 +189,15 @@ async function claimInvoiceNoteLock(invoiceId) {
   }
 }
 
-/** Give back the number of a record that was rolled back (e.g. 'CN-2610-075' under 'creditnote'). */
+// Counter key + serial of a number, parsed from its known format (the models own
+// the formats): 'CN2610075' → creditnote:CN2610 / 75, 'TAX261000012' → taxentry:TAX2610 / 12.
+const NUMBER_COUNTERS = { creditnote: noteNumberCounter, taxentry: entryNumberCounter }
+
+/** Give back the number of a record that was rolled back (e.g. 'CN2610075' under 'creditnote'). */
 async function giveBackNumber(counter, number) {
-  const m = /^(.*-)(\d+)$/.exec(String(number ?? ''))
-  if (!m) return
-  await releaseSequence(`${counter}:${m[1]}`, Number(m[2]))
+  const c = NUMBER_COUNTERS[counter]?.(number)
+  if (!c) return
+  await releaseSequence(c.key, c.value)
     .catch(e => console.error('[creditNotes] give back number failed', number, e))
 }
 
@@ -492,7 +498,7 @@ async function issueNoteLocked(invoice, input, { kind, settlement, reasonText, u
   if (isVat && !seller.bin) warnings.push('The company BIN is not set (Tax & VAT → Tax Settings), so the note prints without the seller BIN.')
 
   // 0) Refuse now whatever the later steps would refuse only after the note took
-  //    its CN-/DN- number (a gap in the Mushak-6.7/6.8 serial): the books / VAT
+  //    its CN/DN number (a gap in the Mushak-6.7/6.8 serial): the books / VAT
   //    lock on the issue date, and every money-account rule of the refund.
   const booksLocked = await assertBooksOpen(issuedAt)
   if (booksLocked) throw httpError(409, booksLocked)
@@ -515,6 +521,8 @@ async function issueNoteLocked(invoice, input, { kind, settlement, reasonText, u
       date:        refundDate,
       invoiceId:   invoice._id,
       projectId:   invoice.projectId ?? invoice.projectIds?.[0] ?? null,
+      // The refund reduces the revenue of the business unit the invoice belongs to.
+      unit:        await invoiceUnit(invoice),
       clientId:    idStr(invoice.clientId),
       tax: {
         grossBDT: totalBDT,
@@ -532,7 +540,7 @@ async function issueNoteLocked(invoice, input, { kind, settlement, reasonText, u
     }
   }
 
-  // 1) The note (gets its CN-/DN- number)
+  // 1) The note (gets its CN/DN number)
   const noteDoc = new CreditNote({
     kind,
     invoiceId: invoice._id,
@@ -569,8 +577,8 @@ async function issueNoteLocked(invoice, input, { kind, settlement, reasonText, u
   let transaction = null
   let adjustedInvoice = false
   // A failed note never existed: its tax entry is removed (not voided — a VOID
-  // "CN-… not issued" row would point at a note that is gone) and the CN-/DN-
-  // and TAX- numbers are given back while no later number has been issued.
+  // "CN… not issued" row would point at a note that is gone) and the CN/DN
+  // and TAX numbers are given back while no later number has been issued.
   const undo = async () => {
     if (adjustedInvoice) {
       // Take the credit back off the invoice (applyInvoicePayment already ran).
@@ -581,7 +589,7 @@ async function issueNoteLocked(invoice, input, { kind, settlement, reasonText, u
       await Transaction.deleteOne({ _id: transaction._id }).catch(e => console.error('[issueNote] undo transaction failed', e))
     }
     // A kept (voided) tax entry still names this note's number — then the number
-    // stays used, or a reissued CN-… would sit next to a "CN-… not issued" row.
+    // stays used, or a reissued CN… would sit next to a "CN… not issued" row.
     let entryKept = false
     if (taxEntry) {
       const removed = await TaxEntry.deleteOne({ _id: taxEntry._id, status: 'ACTIVE', filingId: null })

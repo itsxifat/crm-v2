@@ -54,7 +54,7 @@ export default function VoidEntryModal({ open, onOpenChange, entry, onSaved }) {
           </span>
         </div>
         <Field label="Reason" required error={error || undefined}>
-          <Textarea rows={3} value={reason} onChange={e => setReason(e.target.value)} maxLength={500} placeholder="e.g. Duplicate of TAX-2610-00012" invalid={!!error} />
+          <Textarea rows={3} value={reason} onChange={e => setReason(e.target.value)} maxLength={500} placeholder="e.g. Duplicate of TAX261000012" invalid={!!error} />
         </Field>
       </div>
       <ModalFooter>

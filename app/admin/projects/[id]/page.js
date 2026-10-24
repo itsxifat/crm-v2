@@ -37,6 +37,7 @@ import { currencyOptions, BASE_CURRENCY } from '@/lib/currencies'
 import { dhakaDayKey } from '@/lib/dhakaTime'
 import { allowedStatusTransitions, canRenewProject } from '@/lib/projectStatus'
 import { canDo } from '@/lib/rbac'
+import ProjectFilesCard from '@/components/admin/projects/ProjectFilesCard'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -1365,8 +1366,11 @@ export default function ProjectDetailPage() {
             )}
           </Card>
 
-          {/* Team + Quick Actions */}
+          {/* Files + Team + Quick Actions */}
           <div className="space-y-4">
+            {/* Files: encloud folder, shared links, the client's link */}
+            <ProjectFilesCard projectId={id} canUpdate={canUpdateProject} />
+
             {/* Team */}
             {(project.teamMembers?.length > 0 || project.projectManagerId) && (
               <Card>

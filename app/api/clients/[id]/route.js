@@ -10,6 +10,7 @@ import { logActivity } from '@/lib/logActivity'
 import { isValidObjectId } from '@/lib/objectId'
 import { ACTIVE_PROJECT_STATUSES, sumInvoiceMoneyBDT } from '@/lib/clientStats'
 import { BIN_REGEX, TIN_REGEX, normalizeBin } from '@/lib/tax/catalog'
+import { syncSoon } from '@/lib/encloud/sync'
 import { z } from 'zod'
 
 // Client fields editable through PUT. Everything else (userId, clientCode,
@@ -179,6 +180,9 @@ export async function PUT(request, { params }) {
       }),
       request,
     })
+
+    // Name / email / phone follow to encloud (when connected).
+    syncSoon('client', params.id)
 
     return NextResponse.json({ data: maskDoc(session, updated.toJSON(), CLIENT_PII) })
   } catch (err) {

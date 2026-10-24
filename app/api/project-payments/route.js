@@ -41,7 +41,7 @@ export async function GET(request) {
       ProjectPayment.find(filter)
         .skip(skip).limit(limit).sort({ createdAt: -1 })
         .populate({ path: 'projectId', select: 'name projectCode venture currency' })
-        .populate({ path: 'invoiceId', select: 'invoiceNumber total paidAmount status currency vatTreatment vatAmount sdAmount taxableValue withheldVds withheldTds creditedAmount issuedAt' })
+        .populate({ path: 'invoiceId', select: 'invoiceNumber total paidAmount status currency vatTreatment vatAmount sdAmount taxableValue withheldVds withheldTds creditedAmount issuedAt unit' })
         .populate({ path: 'clientId', select: 'clientCode company userId', populate: { path: 'userId', select: 'name email avatar' } })
         .populate('submittedBy', 'name avatar')
         .populate('confirmedBy', 'name')

@@ -1,6 +1,7 @@
 /**
  * app/api/accounts/_lib/pl.js — server-side P&L helpers shared by the finance
- * report routes (accounts summary, P&L report, dashboard stats, revenue report).
+ * report routes (accounts summary, P&L report, units report, dashboard stats,
+ * revenue report).
  *
  * `_lib` is a private folder (underscore prefix), so Next.js never routes it.
  *
@@ -25,8 +26,8 @@ import { isPl, plAmountBDT, plFilter, KIND_LABELS, NON_PL_KINDS } from '@/lib/fi
 
 export { plFilter, isPl, plAmountBDT, KIND_LABELS, NON_PL_KINDS }
 
-/** Fields every P&L computation needs from a Transaction (for `.select()`). */
-export const PL_SELECT = 'type kind amount amountBDT plAmountBDT currency category expenseCategory reversalOf date'
+/** Fields every P&L computation needs from a Transaction (for `.select()`), incl. its business unit. */
+export const PL_SELECT = 'type kind amount amountBDT plAmountBDT currency category expenseCategory reversalOf date unit'
 
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100
 

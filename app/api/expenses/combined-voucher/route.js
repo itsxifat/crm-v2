@@ -14,6 +14,7 @@ import { getCompanyProfile } from '@/lib/finance/settings'
 import { tdsSectionResolver } from '@/lib/tax/engine'
 import { escapeHtml } from '@/lib/html'
 import { BENGALI_FONT_CSS } from '@/lib/printFonts'
+import { AUTH_PAGES_CSS, authorizedPages } from '@/lib/printAuthorization'
 import { isValidObjectId } from '@/lib/objectId'
 
 const fmtDate = (d) =>
@@ -51,7 +52,9 @@ const ROW = 'display:flex;justify-content:space-between;gap:12px;padding:5px 0;b
 // Printable, multi-page A4 combined expense invoice — visually identical to the
 // client invoice (components/shared/InvoicePrintView.jsx): Inter font, logo
 // header, #0f172a accents, the same table + totals styling. The header table
-// repeats on every page and rows never split across a page break. Each row and
+// repeats on every page, rows never split across a page break, and the
+// signatures + company seal print at the foot of every page that has content
+// (lib/printAuthorization.js) — each page must be signed and sealed. Each row and
 // the totals show the tax breakdown (gross, VAT in the bill, VDS / TDS deducted,
 // net paid) and the summary names the money account(s) paid from.
 export async function GET(request) {
@@ -178,11 +181,12 @@ export async function GET(request) {
   tr { page-break-inside: avoid; break-inside: avoid; }
   @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
   @page { size: A4; margin: 14mm 12mm; }
+  ${AUTH_PAGES_CSS}
 </style>
 </head>
 <body>
-<div style="max-width:780px;margin:0 auto;padding:8px 0;">
-
+<div style="max-width:780px;margin:0 auto;padding:8px 0 0;">
+${authorizedPages(`
   <!-- HEADER -->
   <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;gap:16px;">
     <div>
@@ -261,7 +265,7 @@ export async function GET(request) {
   </table>
 
   <!-- TOTALS -->
-  <div style="display:flex;justify-content:flex-end;margin-bottom:20px;">
+  <div class="auth-keep" style="display:flex;justify-content:flex-end;margin-bottom:20px;">
     <div style="width:100%;max-width:340px;">
       <div style="height:2px;background:#0f172a;"></div>
       <div style="${ROW}">
@@ -296,32 +300,12 @@ export async function GET(request) {
     </div>
   </div>
 
-  ${mixed ? `<div style="margin-bottom:16px;"><p style="margin:0 0 6px;font-size:10px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:#94a3b8;">Note</p><p style="margin:0;font-size:11px;color:#475569;line-height:1.7;">This combined invoice includes expenses in multiple currencies. The totals shown are the BDT-equivalent of the actual amounts spent.</p></div>` : ''}
-  ${totals.vds > 0 || totals.tds > 0 ? `<div style="margin-bottom:16px;"><p style="margin:0;font-size:11px;color:#475569;line-height:1.7;">VAT and income tax deducted at source (${money(round2(totals.vds + totals.tds), 'BDT')}) are payable to the government: VDS via the VAT return with Mushak-6.6 certificates to suppliers; TDS by treasury challan with certificates to payees.</p></div>` : ''}
-
-  <!-- SIGNATURES -->
-  <div style="display:flex;justify-content:space-between;gap:28px;margin-top:56px;page-break-inside:avoid;">
-    <div style="flex:1;text-align:center;">
-      <div style="border-top:1px solid #334155;margin:0 8px 6px;padding-top:6px;"></div>
-      <div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.06em;">Prepared By</div>
-    </div>
-    <div style="flex:1;text-align:center;">
-      <div style="border-top:1px solid #334155;margin:0 8px 6px;padding-top:6px;"></div>
-      <div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.06em;">Approved By / Account Manager</div>
-    </div>
-    <div style="flex:1;text-align:center;">
-      <div style="border-top:1px solid #334155;margin:0 8px 6px;padding-top:6px;"></div>
-      <div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.06em;">Authorised Signatory</div>
-    </div>
-  </div>
-  <div style="margin-top:32px;border:1px dashed #cbd5e1;border-radius:8px;height:92px;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:11px;text-transform:uppercase;letter-spacing:0.08em;page-break-inside:avoid;">Company Seal</div>
-
-  <!-- FOOTER -->
-  <div style="border-top:1px solid #e2e8f0;padding-top:12px;margin-top:20px;text-align:center;">
-    <p style="margin:0 0 3px;font-size:11px;color:#94a3b8;">Official combined expense record · Ref ${batchRef} · Generated ${fmtDate(new Date())}</p>
-    ${co.name ? `<p style="margin:0;font-size:10px;color:#cbd5e1;letter-spacing:0.04em;">${escapeHtml(co.name)}</p>` : ''}
-  </div>
-
+  ${mixed ? `<div class="auth-keep" style="margin-bottom:16px;"><p style="margin:0 0 6px;font-size:10px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:#94a3b8;">Note</p><p style="margin:0;font-size:11px;color:#475569;line-height:1.7;">This combined invoice includes expenses in multiple currencies. The totals shown are the BDT-equivalent of the actual amounts spent.</p></div>` : ''}
+  ${totals.vds > 0 || totals.tds > 0 ? `<div class="auth-keep" style="margin-bottom:16px;"><p style="margin:0;font-size:11px;color:#475569;line-height:1.7;">VAT and income tax deducted at source (${money(round2(totals.vds + totals.tds), 'BDT')}) are payable to the government: VDS via the VAT return with Mushak-6.6 certificates to suppliers; TDS by treasury challan with certificates to payees.</p></div>` : ''}
+`, {
+  // Signatures, seal and this line repeat at the foot of every printed page.
+  reference: `Official combined expense record · Ref ${batchRef} · Generated ${fmtDate(new Date())}${co.name ? ` · ${escapeHtml(co.name)}` : ''}`,
+})}
 </div>
 <script nonce="${cspNonce}">window.onload = () => window.print()</script>
 </body>

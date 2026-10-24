@@ -24,6 +24,7 @@ import {
   toCsv, csvResponse, money2, httpError,
 } from './_lib/common'
 import { findActiveChallan } from './_lib/deposits'
+import { codeContains } from '@/lib/codes'
 import { z } from 'zod'
 
 const CERT_VALUES = CERTIFICATE_STATUSES.map(s => s.value)
@@ -106,8 +107,12 @@ function buildFilter(sp) {
   if (partyName?.trim()) filter.partyName = { $regex: escapeRegex(partyName.trim()), $options: 'i' }
   const search = sp.get('search')
   if (search?.trim()) {
-    const rx = { $regex: escapeRegex(search.trim()), $options: 'i' }
-    and.push({ $or: [{ entryNo: rx }, { documentNo: rx }, { partyName: rx }, { partyBin: rx }, { 'certificate.number': rx }, { 'deposit.challanNo': rx }] })
+    const rx   = { $regex: escapeRegex(search.trim()), $options: 'i' }
+    // Entry, document and certificate numbers match with separators ignored
+    // (TAX-2610-00001 = TAX261000001; a typed document number still matches as typed).
+    const code = codeContains(search)
+    const codes = code ? [{ entryNo: code }, { documentNo: code }, { 'certificate.number': code }] : []
+    and.push({ $or: [...codes, { partyName: rx }, { partyBin: rx }, { 'deposit.challanNo': rx }] })
   }
   if (and.length) filter.$and = and
   return filter

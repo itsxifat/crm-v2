@@ -9,6 +9,7 @@ import { isValidObjectId } from '@/lib/objectId'
 import { logActivity } from '@/lib/logActivity'
 import { assertBooksOpen } from '@/lib/finance/settings'
 import { moveStock } from '@/lib/inventory/stock'
+import { codeContains, codeEquals } from '@/lib/codes'
 import {
   itemSchema, serializeItem, ITEM_POPULATE, validationError, httpError, escapeRegex, csvResponse, todayKey, checkItemRefs,
 } from './_lib/stock'
@@ -59,7 +60,9 @@ export async function GET(request) {
     const search = (searchParams.get('search') ?? '').trim()
     if (search) {
       const re = { $regex: escapeRegex(search.slice(0, 100)), $options: 'i' }
-      filter.$or = [{ sku: re }, { name: re }, { notes: re }]
+      // SKUs match with separators ignored (LAP-0001 = LAP0001).
+      const sku = codeContains(search.slice(0, 100))
+      filter.$or = [...(sku ? [{ sku }] : []), { name: re }, { notes: re }]
     }
     if (searchParams.get('lowStock') === '1') Object.assign(filter, LOW_STOCK_EXPR)
     const sort = SORTS[searchParams.get('sort')] ?? SORTS.name
@@ -129,7 +132,9 @@ export async function POST(request) {
     const d = parsed.data
 
     await checkItemRefs(d)
-    if (d.sku && await StockItem.exists({ sku: d.sku })) throw httpError(409, `SKU ${d.sku} is already used`)
+    // Separators ignored: LAP0001 clashes with an older LAP-0001 too.
+    const taken = d.sku ? await StockItem.findOne({ sku: codeEquals(d.sku) }).select('sku').lean() : null
+    if (taken) throw httpError(409, `SKU ${d.sku} is already used${taken.sku !== d.sku ? ` (${taken.sku})` : ''}`)
     const dup = await StockItem.findOne({
       name: { $regex: `^${escapeRegex(d.name)}$`, $options: 'i' },
       categoryId: d.categoryId ?? null,

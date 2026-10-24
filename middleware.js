@@ -152,9 +152,12 @@ export default async function middleware(req) {
     // route handler verifies the secret itself (constant-time), so skip the
     // bot-UA block and the session requirement for them.
     const isCronCall = pathname.startsWith('/api/cron/') && !!req.headers.get('x-cron-secret')
+    // Enfinito Pay / encloud webhooks are server-to-server calls with any (or no)
+    // user agent; the route verifies their HMAC signature itself.
+    const isWebhook = pathname.startsWith('/api/webhooks/')
 
     // ── 1. Block bots and headless browsers on ALL routes ──────────────────
-    if (!isCronCall && isBotUserAgent(ua)) {
+    if (!isCronCall && !isWebhook && isBotUserAgent(ua)) {
       return blockedResponse('Automated access is not permitted.', 403)
     }
 
@@ -199,7 +202,8 @@ export default async function middleware(req) {
     }
 
     // ── 3a. Public API routes (no auth, no redirect) ─────────────────────────
-    const publicApiRoutes = ['/api/gain', '/api/auth/', '/api/account-recovery', '/api/freelancers/invite/']
+    // /api/pay/<token> — a customer's payment link (token-validated by the route).
+    const publicApiRoutes = ['/api/gain', '/api/auth/', '/api/account-recovery', '/api/freelancers/invite/', '/api/pay/', '/api/webhooks/']
     // New-hire onboarding: GET/PATCH /api/onboarding/<token> and the upload
     // endpoint validate the onboarding token themselves. The HR-only list/create
     // (/api/onboarding) and /api/onboarding/<token>/approve are NOT public.
@@ -212,6 +216,12 @@ export default async function middleware(req) {
     // ── 3a'. Public onboarding page — opened by a new hire with no account.
     // Token-validated by its API; never redirect, even for signed-in users.
     if (pathname.startsWith('/onboarding/')) {
+      return addSecurityHeaders(NextResponse.next())
+    }
+
+    // ── 3a''. Public payment page — a customer paying an invoice from a link.
+    // Token-validated by its API; never redirect, even for signed-in users.
+    if (pathname.startsWith('/pay/')) {
       return addSecurityHeaders(NextResponse.next())
     }
 

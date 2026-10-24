@@ -1,5 +1,5 @@
 import mongoose from 'mongoose'
-import { nextSequence } from '../lib/sequence'
+import { nextSequence, counterValue } from '../lib/sequence'
 import { dhakaParts } from '../lib/dhakaTime'
 
 /**
@@ -76,17 +76,40 @@ const CreditNoteSchema = new mongoose.Schema(
 
 const pad2 = (n) => String(n).padStart(2, '0')
 
+// Note numbers: CN2610001 / DN2610001 (series + Dhaka YYMM of issue + 3-digit
+// serial). Numbers issued before 2026-10 read CN-2610-001.
+const NOTE_NO_RE = /^(CN|DN)-?(\d{4})-?(\d{3,})$/
+
+/**
+ * The counter a note number was allocated from, so a rolled-back number can be
+ * given back (lib/sequence releaseSequence): 'CN2610075' →
+ * { key: 'creditnote:CN2610', value: 75 }; an old 'CN-2610-075' → its old key
+ * 'creditnote:CN-2610-'. null for anything else.
+ */
+export function noteNumberCounter(noteNo) {
+  const s = String(noteNo ?? '')
+  const m = NOTE_NO_RE.exec(s)
+  if (!m) return null
+  return { key: s.includes('-') ? `creditnote:${m[1]}-${m[2]}-` : `creditnote:${m[1]}${m[2]}`, value: Number(m[3]) }
+}
+
 CreditNoteSchema.pre('validate', async function () {
   if (this.noteNo || !this.kind) return
   // Month of issue in the business timezone (Asia/Dhaka); separate CN / DN series.
   const { year, month } = dhakaParts(this.issuedAt ?? new Date())
-  const prefix = `${this.kind === 'DEBIT' ? 'DN' : 'CN'}-${pad2(year % 100)}${pad2(month + 1)}-`
-  // Highest number already issued for this prefix (NOT a count — see lib/sequence.js).
+  const series = this.kind === 'DEBIT' ? 'DN' : 'CN'
+  const yymm   = `${pad2(year % 100)}${pad2(month + 1)}`
+  const prefix = `${series}${yymm}`
+  const re     = new RegExp(`^${series}-?${yymm}-?(\\d{3,})$`)
+  // Highest number already issued for this month in either shape (NOT a count —
+  // see lib/sequence.js), floored at the old counter key (creditnote:CN-2610-) too.
   const existing = await mongoose.model('CreditNote')
-    .find({ noteNo: { $regex: `^${prefix}[0-9]+$` } })
+    .find({ noteNo: { $regex: re.source } })
     .select('noteNo').lean()
-  const maxUsed = existing.reduce((m, d) => Math.max(m, parseInt(d.noteNo.slice(prefix.length), 10) || 0), 0)
-  const seq = await nextSequence(`creditnote:${prefix}`, maxUsed)
+  const maxUsed = existing.reduce((m, d) => Math.max(m, parseInt(re.exec(d.noteNo)?.[1], 10) || 0), 0)
+  const floor = Math.max(maxUsed, await counterValue(`creditnote:${series}-${yymm}-`))
+  // Key = noteNumberCounter(noteNo).key, which gives a rolled-back number back.
+  const seq = await nextSequence(`creditnote:${prefix}`, floor)
   this.noteNo = `${prefix}${String(seq).padStart(3, '0')}`
 })
 

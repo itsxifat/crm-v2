@@ -9,6 +9,7 @@ import { requirePerm, canDo } from '@/lib/rbac'
 import { maskDoc, maskEmail, INVOICE_PII } from '@/lib/pii'
 import { isValidObjectId } from '@/lib/objectId'
 import { ensureCombinedInvoice } from '@/lib/combinedInvoice'
+import { syncSoon } from '@/lib/encloud/sync'
 import { issueDraftInvoice, ensureIssuedOutputVat } from './issue'
 
 // POST /api/invoices/[id]/send
@@ -83,6 +84,9 @@ export async function POST(request, { params }) {
       }),
       request,
     })
+
+    // Issued with a balance: the client's files in encloud lock until it is paid.
+    syncSoon('invoice', params.id)
 
     // The recipient's login email and the buyer snapshot (e-TIN) are client PII:
     // masked for staff without pii.* permissions, exactly like GET /api/invoices/:id.

@@ -127,7 +127,7 @@ function CategoryModal({ open, onOpenChange, category, onSaved }) {
             <Input value={form.name} maxLength={80} onChange={e => set('name', e.target.value)} placeholder="e.g. Laptop" />
           </Field>
           <Field label="Code" required
-            hint={editing && usedAssets > 0 ? 'Locked — used in asset tags' : 'Used in tags, e.g. EN-LAP-00042'}>
+            hint={editing && usedAssets > 0 ? 'Locked — used in asset tags' : 'Used in tags, e.g. ENLAP00042'}>
             <Input className="font-mono uppercase" value={form.code} maxLength={6}
               disabled={editing && usedAssets > 0}
               onChange={e => set('code', e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))} placeholder="LAP" />

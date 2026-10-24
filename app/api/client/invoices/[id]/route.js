@@ -7,6 +7,8 @@ import { Invoice, CombinedInvoice } from '@/models'
 import { getMyCompanyIds } from '@/lib/clientAccess'
 import { isValidObjectId } from '@/lib/objectId'
 import { toObjectId } from '@/lib/combinedInvoice'
+import { getPaySettings, payReady } from '@/lib/integrations/settings'
+import { amountPayableOnline, notPayableReason } from '@/lib/onlinePayments'
 
 export async function GET(_, { params }) {
   try {
@@ -55,7 +57,16 @@ export async function GET(_, { params }) {
       if (cmb && siblingCount > 1) combined = { id: cmb._id.toString(), combinedNumber: cmb.combinedNumber }
     }
 
-    return NextResponse.json({ data: invoice.toJSON(), combined })
+    // Can it be paid online (Enfinito Pay) right now, and how much?
+    let online = { enabled: false, payable: false, amount: 0 }
+    if (payReady(await getPaySettings())) {
+      const plain = invoice.toObject()
+      const blocked = notPayableReason(plain)
+      const amount = blocked ? 0 : await amountPayableOnline(plain)
+      online = { enabled: true, payable: !blocked && amount > 0, amount, reason: blocked }
+    }
+
+    return NextResponse.json({ data: invoice.toJSON(), combined, online })
   } catch (err) {
     console.error('[GET /api/client/invoices/:id]', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

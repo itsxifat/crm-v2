@@ -77,7 +77,7 @@ export default function PolicyTab() {
   async function save() {
     if (!Number.isFinite(threshold) || threshold < 0) { toast.error('Enter a threshold of 0 or more'); return }
     if (!prefixOk) { toast.error('Tag prefix: 1–6 letters or digits'); return }
-    if (form.tagPrefix !== (inv.tagPrefix ?? 'EN') && !window.confirm(`New tags will start with ${form.tagPrefix}-. Existing tags never change. Continue?`)) return
+    if (form.tagPrefix !== (inv.tagPrefix ?? 'EN') && !window.confirm(`New tags will start with ${form.tagPrefix} (e.g. ${form.tagPrefix}LAP00042). Existing tags never change. Continue?`)) return
     setSaving(true)
     try {
       const json = await fetchJson('/api/finance/settings', {
@@ -130,7 +130,7 @@ export default function PolicyTab() {
         </div>
 
         <Field label="Asset tag prefix"
-          hint={<>Tags look like <span className="font-mono text-gray-700">{prefixOk ? form.tagPrefix : 'EN'}-LAP-00042</span></>}>
+          hint={<>Tags look like <span className="font-mono text-gray-700">{prefixOk ? form.tagPrefix : 'EN'}LAP00042</span></>}>
           <Input className="max-w-[160px] font-mono uppercase" invalid={!prefixOk} value={form.tagPrefix} maxLength={6}
             onChange={e => set('tagPrefix', e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))} />
         </Field>

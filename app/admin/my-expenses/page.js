@@ -10,11 +10,14 @@ import { Card } from '@/components/ui/Card'
 import EmptyState from '@/components/ui/EmptyState'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
 import PageHeader from '@/components/ui/PageHeader'
-import { Field, Input, NativeSelect, Textarea } from '@/components/ui/Input'
+import { Field, Input, NativeSelect, Textarea, inputClass } from '@/components/ui/Input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/Table'
+import UnitSelect from '@/components/finance/UnitSelect'
 import { CURRENCIES } from '@/lib/currencies'
 import { useConfig, subcategoriesFor } from '@/lib/useConfig'
+import { ventureUnit, isValidUnit, unitLabel } from '@/lib/units'
 import { dhakaDayKey } from '@/lib/dhakaTime'
+import { cn } from '@/lib/utils'
 
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 const fmt     = (n, c = 'BDT') => `${(n ?? 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })} ${c}`
@@ -42,10 +45,19 @@ function ExpenseModal({ onClose, onSaved }) {
   })
   const [projects, setProjects] = useState([])
   const [saving,   setSaving]   = useState(false)
-  const { expenseCategories } = useConfig()
+  // Venture / product: picked by hand, else the submitter's own venture; a
+  // project decides it (its venture, shown read-only).
+  const [unitChoice, setUnitChoice] = useState('')
+  const [myVenture,  setMyVenture]  = useState(null)
+  const { expenseCategories, config } = useConfig()
 
   useEffect(() => {
     fetch('/api/projects?limit=100').then(r => r.json()).then(j => setProjects(j.data ?? [])).catch(() => {})
+    // Own employee record (404 for staff without one — then nothing is pre-filled).
+    fetch('/api/employee/profile')
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => setMyVenture(j?.data?.venture ?? null))
+      .catch(() => {})
   }, [])
 
   function set(k, v) { setForm(f => ({ ...f, [k]: v })) }
@@ -55,11 +67,17 @@ function ExpenseModal({ onClose, onSaved }) {
   const hasProof = !!form.invoiceUrl
   const detailOk = hasProof || form.notes.trim().length >= 30
 
+  const project     = form.projectId ? (projects.find(p => (p.id ?? p._id) === form.projectId) ?? null) : null
+  const projectUnit = ventureUnit(project?.venture)
+  const ownUnit     = config && isValidUnit(ventureUnit(myVenture), config) ? ventureUnit(myVenture) : ''
+  const unit        = projectUnit ?? (unitChoice || ownUnit)
+
   async function save() {
     if (!form.title.trim())        { toast.error('Enter a reason / title'); return }
     if (!(Number(form.amount) > 0)) { toast.error('Enter a valid amount'); return }
     if (!form.category)            { toast.error('Select a category'); return }
     if (subcats.length > 0 && !form.subcategory) { toast.error('Select a subcategory'); return }
+    if (!unit)                     { toast.error('Choose the venture / product'); return }
     if (!detailOk)                 { toast.error('Attach a proof, or describe the expense in detail (30+ characters)'); return }
     setSaving(true)
     try {
@@ -71,6 +89,7 @@ function ExpenseModal({ onClose, onSaved }) {
           currency:   form.currency,
           date:       form.date,
           projectId:  form.projectId || undefined,
+          unit,
           category:   form.category,
           subcategory: form.subcategory || undefined,
           invoiceUrl: form.invoiceUrl || undefined,
@@ -115,6 +134,20 @@ function ExpenseModal({ onClose, onSaved }) {
               <option value="">None</option>
               {projects.map(p => <option key={p.id ?? p._id} value={p.id ?? p._id}>{p.name}</option>)}
             </NativeSelect>
+          </Field>
+          <Field
+            label="Venture / product"
+            required
+            className="sm:col-span-2"
+            hint={projectUnit ? 'Follows the project’s venture.' : 'Company / shared if no venture or product owns it.'}
+          >
+            {projectUnit ? (
+              <div className={cn(inputClass, 'cursor-not-allowed items-center bg-gray-50')}>
+                <span className="truncate text-gray-700">{unitLabel(projectUnit, config ?? {})}</span>
+              </div>
+            ) : (
+              <UnitSelect value={unitChoice || ownUnit} onChange={v => setUnitChoice(v ?? '')} required />
+            )}
           </Field>
           <Field
             label="Category"

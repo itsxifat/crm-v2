@@ -22,10 +22,15 @@ import {
   MOVEMENT_FILTER, kindFilter, isMovementKind, movementKindOf, linkedRowIds, reverseProblem,
 } from './_lib/movements'
 import { UPLOAD_URL_RE } from '@/lib/inventory/constants'
+import { getConfig } from '@/lib/getConfig'
+import { COMPANY_UNIT, isValidUnit } from '@/lib/units'
 
 // Reconcilers see the accounts, statements and reconciliations — and these read-only lists on the same pages.
 const VIEW_PERMS = ['finance.accounts.view', 'finance.accounts.manage', 'finance.accounts.reconcile']
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/
+// Movements that belong to a business unit (lib/units.js) chosen on the form;
+// every other movement (capital, drawings, loans, loan interest, adjustments) is Company / shared.
+const UNIT_KINDS = ['OTHER_INCOME', 'INTEREST_INCOME', 'BANK_CHARGE']
 
 const emptyToNull = (v) => (typeof v === 'string' && v.trim() === '' ? null : v)
 const optStr = (max) => z.preprocess(emptyToNull, z.string().trim().max(max, `Max ${max} characters`).nullable().optional())
@@ -46,6 +51,7 @@ const movementSchema = z.object({
   aitDeducted: optMoney(n => n >= 0, 'Cannot be negative'),
   aitCertificateNo: optStr(60),
   interestAmount:   optMoney(n => n >= 0, 'Cannot be negative'),
+  unit:        optStr(60),
   receiptUrl:  z.preprocess(emptyToNull, z.string().trim().max(500, 'Max 500 characters')
     .regex(UPLOAD_URL_RE, 'Attach the receipt with the upload button').nullable().optional()),
   cheque: z.object({
@@ -163,7 +169,8 @@ export async function GET(request) {
 // POST /api/finance/movements — record a non-trading money movement on one account.
 // Body: { kind, accountId, amount (account currency), amountBDT? (non-BDT accounts), date, description,
 //         reference, channel?, chargeType? (BANK_CHARGE), category?/subcategory? (OTHER_INCOME), party?,
-//         aitDeducted? + aitCertificateNo? (INTEREST_INCOME), interestAmount? (LOAN_REPAYMENT), cheque?, receiptUrl? }
+//         aitDeducted? + aitCertificateNo? (INTEREST_INCOME), interestAmount? (LOAN_REPAYMENT), cheque?, receiptUrl?,
+//         unit (OTHER_INCOME / INTEREST_INCOME / BANK_CHARGE: venture, product or COMPANY — required) }
 // → 201 { data: { transactions: [...], taxEntry } }
 export async function POST(request) {
   try {
@@ -186,6 +193,14 @@ export async function POST(request) {
     }
 
     await connectDB()
+    // Business unit: chosen for other income, interest received and bank charges; else Company / shared.
+    let unit = COMPANY_UNIT
+    if (UNIT_KINDS.includes(d.kind)) {
+      if (!d.unit) return fail('unit', 'Choose the venture or product (or Company / shared)')
+      if (!isValidUnit(d.unit, await getConfig())) return fail('unit', 'Unknown venture or product — choose one from the list')
+      unit = d.unit
+    }
+
     const account = await MoneyAccount.findById(d.accountId).lean()
     if (!account) return fail('accountId', 'Money account not found')
     if (account.status !== 'ACTIVE') return fail('accountId', `${account.name} is archived — choose an active account`, 409)
@@ -204,6 +219,7 @@ export async function POST(request) {
     const base = {
       movementKind: d.kind,
       movementId,
+      unit,
       currency,
       date:        d.date,
       accountId:   account._id,
@@ -327,7 +343,7 @@ export async function POST(request) {
         entity:   'TRANSACTION',
         entityId: tx._id.toString(),
         changes:  JSON.stringify({
-          movement: d.kind, movementId, txnId: tx.txnId, account: account.name, type: tx.type, kind: tx.kind,
+          movement: d.kind, movementId, txnId: tx.txnId, account: account.name, type: tx.type, kind: tx.kind, unit,
           category: tx.category, amount: tx.amount, currency: tx.currency, amountBDT: tx.amountBDT,
           date: d.date, aitDeducted: d.kind === 'INTEREST_INCOME' ? (d.aitDeducted ?? 0) : undefined,
           taxEntryNo: taxEntry?.entryNo,

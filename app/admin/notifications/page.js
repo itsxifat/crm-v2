@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import {
-  Bell, CheckCheck, Trash2, ListTodo, FileText, CreditCard, FileSpreadsheet, CalendarDays, Package, Landmark,
+  Bell, CheckCheck, Trash2, ListTodo, FileText, CreditCard, FileSpreadsheet, CalendarDays, Package, Landmark, TrendingUp, FolderOpen,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/utils'
@@ -24,6 +24,8 @@ const TYPE_ICONS = {
   LEAVE:     CalendarDays,
   ASSET:     Package,
   TAX:       Landmark,
+  SALARY:    TrendingUp,
+  PROJECT:   FolderOpen,
   GENERAL:   Bell,
 }
 

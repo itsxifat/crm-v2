@@ -101,8 +101,21 @@ export function normalizeDeptCode(dept) {
   return null
 }
 
+const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+/**
+ * Next employee ID: venture prefix + department code + hire YYMM + serial, e.g.
+ * ENDEV2610001. The serial runs per venture, department and hire year.
+ *
+ * IDs issued before 2026-10 carry a hyphen (EN-DEV2610001). Without it the
+ * venture / department boundary is gone (ENT + DEV and EN + TDEV both read
+ * ENTDEV…), so the floor matches those letters with a hyphen allowed between
+ * any two of them: every ID that reads the same once the hyphen is dropped
+ * shares one series, and the next serial is unique in both shapes.
+ */
 export async function generateEmployeeId({ venture, department, hireDate }) {
-  const code = normalizeDeptCode(department) ?? (department ? department.trim().toUpperCase().slice(0, 6) : null)
+  // Letters only: the department code runs straight into the YYMM digits.
+  const code = normalizeDeptCode(department) ?? (department ? String(department).toUpperCase().replace(/[^A-Z]/g, '').slice(0, 6) : null)
   if (!code) throw new Error('Department is required to generate an employee ID')
 
   let venturePrefix = (venture && VENTURE_PREFIXES[venture]) ? VENTURE_PREFIXES[venture] : null
@@ -116,31 +129,44 @@ export async function generateEmployeeId({ venture, department, hireDate }) {
       }
     } catch { /* ignore */ }
   }
-  if (!venturePrefix) venturePrefix = (venture ?? 'EN').slice(0, 2).toUpperCase()
+  if (!venturePrefix) venturePrefix = String(venture ?? 'EN').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 2) || 'EN'
   const date    = hireDate ? new Date(hireDate) : new Date()
   const yy      = String(date.getFullYear()).slice(-2)
   const mm      = String(date.getMonth() + 1).padStart(2, '0')
-  const yearPrefix = `${venturePrefix}-${code}${yy}`
-  const fullPrefix = `${yearPrefix}${mm}`
+  const stem    = `${venturePrefix}${code}`
+  const re      = new RegExp(`^${stem.split('').map(escapeRegex).join('-?')}${yy}\\d{2}(\\d{3,})$`, 'i')
 
   const existing = await mongoose.model('Employee')
-    .find({ employeeId: { $regex: `^${yearPrefix}`, $options: 'i' } }, { employeeId: 1 })
+    .find({ employeeId: { $regex: re.source, $options: 'i' } }, { employeeId: 1 })
     .lean()
 
-  const serialOffset = venturePrefix.length + 1 + code.length + 4
   let maxSerial = 0
   for (const emp of existing) {
-    const serial = parseInt((emp.employeeId ?? '').slice(serialOffset), 10)
+    const serial = parseInt(re.exec(emp.employeeId ?? '')?.[1], 10)
     if (!isNaN(serial) && serial > maxSerial) maxSerial = serial
   }
-  return `${fullPrefix}${String(maxSerial + 1).padStart(3, '0')}`
+  return `${stem}${yy}${mm}${String(maxSerial + 1).padStart(3, '0')}`
 }
 
+/**
+ * { prefix, dept, year, month, serial } of a generated employee ID of the built-in
+ * ventures (VENTURE_PREFIXES): ENDEV2610001, or the hyphenated EN-DEV2610001.
+ * Without the hyphen the venture / department boundary is a best guess: a known
+ * department code (DEPT_CODES) wins, else the longest venture prefix. null when
+ * the ID does not have that shape.
+ */
 export function parseEmployeeId(id) {
-  if (!id) return null
-  const match = id.match(/^(EN[TM]?)-([A-Z]{2,4})(\d{2})(\d{2})(\d{3,})$/)
-  if (!match) return null
-  return { prefix: match[1], dept: match[2], year: `20${match[3]}`, month: match[4], serial: parseInt(match[5], 10) }
+  const s = String(id ?? '').trim().toUpperCase()
+  const m = /^([A-Z]+)(?:-([A-Z]+))?(\d{2})(\d{2})(\d{3,})$/.exec(s)
+  if (!m) return null
+  const ventures = Object.values(VENTURE_PREFIXES).sort((a, b) => b.length - a.length)
+  const splits = m[2] !== undefined
+    ? (ventures.includes(m[1]) ? [{ prefix: m[1], dept: m[2] }] : [])
+    : ventures.filter(v => m[1].startsWith(v)).map(v => ({ prefix: v, dept: m[1].slice(v.length) }))
+  const valid = splits.filter(x => /^[A-Z]{2,6}$/.test(x.dept))
+  const pick = valid.find(x => DEPT_CODES[x.dept]) ?? valid[0]
+  if (!pick) return null
+  return { prefix: pick.prefix, dept: pick.dept, year: `20${m[3]}`, month: m[4], serial: parseInt(m[5], 10) }
 }
 
 EmployeeSchema.index(

@@ -34,6 +34,20 @@ export function validationError(zodError) {
 
 // ── schemas ──────────────────────────────────────────────────────────────────
 
+/**
+ * SKUs are letters and digits, optionally with "." and "_" (LAP0001). No "-":
+ * record numbers lost their hyphens in 2026-10, and SKUs are looked up with
+ * separators ignored (lib/codes.js), so LAP-0001 on an old sheet finds LAP0001.
+ */
+export const SKU_RE = /^[A-Z0-9][A-Z0-9._]{0,39}$/
+export const SKU_RULE = 'SKU may use letters, digits, dot and underscore, without "-" (max 40)'
+
+/** SKU_RULE, plus the dash-free form when that is all a typed SKU needs. */
+export function skuRuleFor(sku) {
+  const fixed = String(sku ?? '').replace(/-/g, '')
+  return fixed !== sku && SKU_RE.test(fixed) ? `${SKU_RULE} — use ${fixed}` : SKU_RULE
+}
+
 const optText = (max, label) => z.preprocess(
   v => (blank(v) ? null : String(v).trim()),
   z.string().max(max, `${label} is too long (max ${max} characters)`).nullable(),
@@ -65,7 +79,9 @@ const optDay = (label) => z.preprocess(
 export const itemSchema = z.object({
   sku: z.preprocess(
     v => (blank(v) ? null : String(v).trim().toUpperCase()),
-    z.string().regex(/^[A-Z0-9][A-Z0-9._-]{0,39}$/, 'SKU may use letters, digits, dot, dash and underscore (max 40)').nullable(),
+    z.string().nullable().superRefine((s, ctx) => {
+      if (s !== null && !SKU_RE.test(s)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: skuRuleFor(s) })
+    }),
   ).optional(),
   name:              z.preprocess(v => (blank(v) ? '' : String(v).trim()), z.string().min(1, 'Item name is required').max(200, 'Item name is too long')),
   categoryId:        optId('category'),

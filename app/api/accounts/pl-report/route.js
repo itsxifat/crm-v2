@@ -6,17 +6,22 @@ import connectDB from '@/lib/mongodb'
 import { Transaction } from '@/models'
 import { requirePerm } from '@/lib/rbac'
 import { parseDhakaDay, dhakaParts } from '@/lib/dhakaTime'
+import { financeScope } from '@/lib/finance/scope'
 import {
   plEffect, nonPlBreakdown, depreciationTotal, ebitdaOf, PL_SELECT, round2,
 } from '@/app/api/accounts/_lib/pl'
+import { readUnitParam, unitFilter, unitKey } from '@/app/api/accounts/_lib/unitScope'
 
-// GET /api/accounts/pl-report?startDate=&endDate=
+// GET /api/accounts/pl-report?startDate=&endDate=&unit=
 // Profit & loss by Asia/Dhaka month. Only P&L rows count (kind OPERATING /
 // NON_CASH, or legacy rows without a kind) at their P&L value (plAmountBDT ⇒
 // amountBDT ⇒ amount for BDT rows). INCOME rows are income, EXPENSE rows are
 // expense; reversal rows reduce the side they reverse. Non-P&L cash movements
 // (transfers, capital, loans, tax payments, asset purchases…) are returned
 // separately in `nonPl` for reference.
+// unit: one business unit ('VENTURE:X' | 'PRODUCT:X' | 'COMPANY', or UNASSIGNED
+// for untagged rows); without it, every unit the viewer may see. Users without
+// finance.units.all only ever see their own venture.
 export async function GET(request) {
   try {
     const session = await getServerSession(authOptions)
@@ -28,6 +33,9 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url)
     const startDate = searchParams.get('startDate')
     const endDate   = searchParams.get('endDate')
+    const unitParam = readUnitParam(searchParams)
+    if (unitParam.error) return NextResponse.json({ error: unitParam.error }, { status: 400 })
+    const { unit } = unitParam
 
     // Date-only filters are Asia/Dhaka calendar days; the end day is inclusive.
     const filter = {}
@@ -43,7 +51,8 @@ export async function GET(request) {
         return NextResponse.json({ error: 'Invalid date' }, { status: 400 })
     }
 
-    const transactions = await Transaction.find(filter).select(PL_SELECT).sort({ date: 1 }).lean()
+    const scope = await financeScope(session)
+    const transactions = await Transaction.find(unitFilter(filter, scope, unit)).select(PL_SELECT).sort({ date: 1 }).lean()
 
     const months = {}
     let unconvertedCount = 0
@@ -105,6 +114,8 @@ export async function GET(request) {
         },
         nonPl:  nonPlBreakdown(transactions),
         period: { startDate, endDate },
+        unit:   unit === undefined ? null : unitKey(unit),
+        scope:  { all: !!scope.all },
       },
     })
   } catch (err) {

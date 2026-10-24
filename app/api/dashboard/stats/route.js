@@ -12,7 +12,9 @@ import { requireStaff, canDo } from '@/lib/rbac'
 import { maskList, maskMoney, LEAD_PII } from '@/lib/pii'
 import { dhakaParts, dhakaDate, dhakaMonthStart, dhakaDayStart } from '@/lib/dhakaTime'
 import { plFilter } from '@/lib/finance/ledger'
+import { financeScope } from '@/lib/finance/scope'
 import { plEffect, PL_SELECT } from '@/app/api/accounts/_lib/pl'
+import { readUnitParam, unitFilter, unitVisible, invoiceUnits } from '@/app/api/accounts/_lib/unitScope'
 
 const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
@@ -58,6 +60,15 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url)
     const drillMonth = searchParams.get('drillMonth')
 
+    // Money figures (finance block, invoice amounts, drill-down) follow the
+    // viewer's finance scope — only their own venture unless they hold
+    // finance.units.all — and the optional `unit` parameter (an exact unit, or
+    // UNASSIGNED for untagged rows). Counts of leads, projects, tasks… do not.
+    const unitParam = readUnitParam(searchParams)
+    if (unitParam.error) return NextResponse.json({ error: unitParam.error }, { status: 400 })
+    const { unit } = unitParam
+    const scope = can.finance ? await financeScope(session) : null
+
     // ── Drill-down: daily breakdown of one Dhaka calendar month ──────────────
     // Answered on its own so switching months doesn't recompute the whole dashboard.
     if (drillMonth) {
@@ -68,7 +79,7 @@ export async function GET(request) {
       const monthStart  = dhakaDate(yr, mo - 1, 1)
       const monthEnd    = dhakaDate(yr, mo, 1)
       // All ledger rows of the month (txCount = activity), P&L amounts only.
-      const txInMonth   = await Transaction.find({ date: { $gte: monthStart, $lt: monthEnd } }).select(PL_SELECT).lean()
+      const txInMonth   = await Transaction.find(unitFilter({ date: { $gte: monthStart, $lt: monthEnd } }, scope, unit)).select(PL_SELECT).lean()
       const daysInMonth = new Date(Date.UTC(yr, mo, 0)).getUTCDate()
       const dailyData   = []
       for (let d = 1; d <= daysInMonth; d++) {
@@ -158,7 +169,12 @@ export async function GET(request) {
       skip(dash && can.tasks, () => Task.countDocuments({ ...taskFilter, status: 'COMPLETED', completedAt: { $gte: thisMonthStart } })),
 
       // find().lean() triggers post-find decryption hooks; aggregate() does not
-      skip(dash && can.finance, () => Invoice.find().select('status total paidAmount totalBDT currency dueDate').lean()),
+      skip(dash && can.finance, () => Invoice.find().select('status total paidAmount totalBDT currency dueDate unit projectId projectIds').lean()
+        .then(async (list) => {
+          if (scope.all && unit === undefined) return list
+          const units = await invoiceUnits(list)
+          return list.filter(inv => unitVisible(scope, units.get(String(inv._id)), unit))
+        })),
 
       // Freelancer payouts awaiting account-manager approval (delivered work +
       // pending salary payouts) — replaces the old wallet "withdrawals" metric.
@@ -233,9 +249,9 @@ export async function GET(request) {
       // Fetch 6 months of P&L rows once (amount is a Mixed legacy field, so sums
       // are done in JS). The transaction counts below still cover every ledger row.
       const [allTx6m, txCountThisMonth, txCountLastMonth] = await Promise.all([
-        Transaction.find({ date: { $gte: sixMonthsAgo }, ...plFilter() }).select(PL_SELECT).lean(),
-        Transaction.countDocuments({ date: { $gte: thisMonthStart, $lt: nextMonthStart } }),
-        Transaction.countDocuments({ date: { $gte: lastMonthStart, $lt: thisMonthStart } }),
+        Transaction.find(unitFilter({ date: { $gte: sixMonthsAgo }, ...plFilter() }, scope, unit)).select(PL_SELECT).lean(),
+        Transaction.countDocuments(unitFilter({ date: { $gte: thisMonthStart, $lt: nextMonthStart } }, scope, unit)),
+        Transaction.countDocuments(unitFilter({ date: { $gte: lastMonthStart, $lt: thisMonthStart } }, scope, unit)),
       ])
 
       const inRange     = (start, end) => allTx6m.filter(t => t.date >= start && t.date < end)
@@ -325,6 +341,7 @@ export async function GET(request) {
           ? recentInvoices.map(inv => ({ ...inv, due: Math.max(0, (Number(inv.total) || 0) - (Number(inv.paidAmount) || 0)) }))
           : null,
         upcomingTasks,
+        financeScope: scope ? { all: !!scope.all } : null,
       },
     })
   } catch (err) {

@@ -14,6 +14,9 @@ import { dhakaDayStart } from '@/lib/dhakaTime'
 import { getFinanceSettings } from '@/lib/finance/settings'
 import { VAT_TREATMENTS } from '@/lib/tax/catalog'
 import { BASE_CURRENCY, isValidCurrency } from '@/lib/currencies'
+import { syncSoon } from '@/lib/encloud/sync'
+import { getConfig } from '@/lib/getConfig'
+import { isValidUnit, ventureUnit } from '@/lib/units'
 
 const isBlank = (v) => v === undefined || v === null || v === ''
 
@@ -109,11 +112,11 @@ export async function PUT(request, { params }) {
     // are never writable here (payments go through Payment Confirmations).
     const {
       clientId, projectId, items, issueDate, dueDate, taxRate, discount, notes, terms, currency,
-      vatTreatment, vatRate, serviceCode, deliveryDestination, totalBDT: bodyTotalBDT, fxRate,
+      vatTreatment, vatRate, serviceCode, deliveryDestination, totalBDT: bodyTotalBDT, fxRate, unit: bodyUnit,
     } = body ?? {}
 
     const existing = await Invoice.findById(params.id)
-      .select('status vatTreatment items currency total totalBDT clientId projectId projectIds').lean()
+      .select('status vatTreatment items currency total totalBDT clientId projectId projectIds unit').lean()
     if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     // Only drafts are editable: an issued invoice's totals are what the client
     // was billed and what payments were recorded against.
@@ -134,12 +137,24 @@ export async function PUT(request, { params }) {
       : (existing.projectId ?? existing.projectIds?.[0] ?? null)
     if (String(finalClient) !== String(existing.clientId) && !(await Client.exists({ _id: finalClient })))
       return NextResponse.json({ error: 'Client not found', field: 'clientId' }, { status: 422 })
+    let project = null
     if (finalProject) {
-      const project = await Project.findById(finalProject).select('clientId').lean()
+      project = await Project.findById(finalProject).select('clientId venture').lean()
       if (!project) return NextResponse.json({ error: 'Project not found', field: 'projectId' }, { status: 422 })
       if (String(project.clientId) !== String(finalClient))
         return NextResponse.json({ error: 'This project belongs to another client', field: 'projectId' }, { status: 422 })
     }
+
+    // Business unit (same rule as POST): the project's venture, else the
+    // venture / product / Company sent, else the one the draft already has.
+    const fromProject = ventureUnit(project?.venture || null)
+    const sentUnit = typeof bodyUnit === 'string' ? bodyUnit.trim() : ''
+    const unit = fromProject || sentUnit || existing.unit || ''
+    if (!unit)
+      return NextResponse.json({ error: 'Choose the venture or product this invoice is for (or Company / shared)', field: 'unit' }, { status: 422 })
+    if (!fromProject && sentUnit && !isValidUnit(sentUnit, await getConfig()))
+      return NextResponse.json({ error: 'Unknown venture or product — choose one from the list', field: 'unit' }, { status: 422 })
+
     // Legacy drafts stay linked through projectIds too (never edited here).
     const legacyIds = (existing.projectIds ?? []).filter(pid => String(pid) !== String(finalProject))
     if (legacyIds.length && await Project.exists({ _id: { $in: legacyIds }, clientId: { $ne: finalClient } }))
@@ -194,6 +209,7 @@ export async function PUT(request, { params }) {
     }
 
     const update = {
+      unit,
       items:     calc.items,
       subtotal:  calc.subtotal,
       taxRate:   calc.taxRate,
@@ -252,10 +268,13 @@ export async function PUT(request, { params }) {
       entityId: params.id,
       changes:  JSON.stringify({
         total: invoice.total, status: invoice.status,
-        vatTreatment: invoice.vatTreatment, vatAmount: invoice.vatAmount,
+        vatTreatment: invoice.vatTreatment, vatAmount: invoice.vatAmount, unit,
       }),
       request,
     })
+
+    // A new total changes what the client's files in encloud wait for.
+    syncSoon('invoice', params.id)
 
     return NextResponse.json({ data: maskDoc(session, invoice.toJSON(), INVOICE_PII) })
   } catch (err) {

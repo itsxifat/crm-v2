@@ -17,6 +17,10 @@ import {
   loadPostingAccount, parseBusinessDate, sameBusinessDay, httpErrorPayload, round2, reverseClientSettlement,
 } from '@/lib/paymentLedger'
 import { createNotification } from '@/lib/createNotification'
+import { getConfig } from '@/lib/getConfig'
+import { isValidUnit } from '@/lib/units'
+import { financeScope } from '@/lib/finance/scope'
+import { inScope } from '@/app/api/accounts/_lib/unitScope'
 import { z } from 'zod'
 
 const optStr = (max) => z.string().max(max).optional().nullable()
@@ -53,6 +57,9 @@ const updateSchema = z.object({
   kind:             z.enum(['OPERATING']).optional().nullable(),
   channel:          optStr(40),
   cheque:           z.object({ no: optStr(60), date: optStr(40), bank: optStr(120) }).optional().nullable(),
+  // Business unit (venture / product / Company): re-tagged under the rules of
+  // planRetag below, never cleared (an empty value leaves it as it is).
+  unit:             optStr(80),
 })
 
 // Fields that drive side effects on linked records (invoice paidAmount/status,
@@ -84,6 +91,34 @@ const idStr = v => (v == null || v === '' ? null : String(v?._id ?? v))
 
 const fail = (error, status, extra = {}) => NextResponse.json({ error, ...extra }, { status })
 
+/**
+ * Re-tag an entry to another business unit (lib/units.js). Allowed in open
+ * periods; in a locked period only while the entry is Unassigned (null). The
+ * other half of a reversal pair moves with it, so the unit's P&L still nets to
+ * zero, under the same rules. Users who see only their own venture can move
+ * entries only between units they see.
+ * @returns {Promise<{ rows: object[] } | { error: NextResponse }>} rows = entries whose unit changes
+ */
+async function planRetag(existing, unit, scope) {
+  if (!isValidUnit(unit, await getConfig())) return { error: fail('Unknown venture or product', 422, { field: 'unit' }) }
+  if (!inScope(scope, unit)) return { error: fail('You can only assign entries to your own venture.', 403, { field: 'unit' }) }
+
+  const paired = await Transaction.find({
+    $or: [{ reversalOf: existing._id }, ...(existing.reversalOf ? [{ _id: existing.reversalOf }] : [])],
+  }).select('txnId date unit').lean()
+  const rows = [existing, ...paired].filter(r => (r.unit ?? null) !== unit)
+  for (const r of rows) {
+    const which = r === existing ? 'This entry' : `Its paired ${existing.reversalOf ? 'original' : 'reversal'} entry ${r.txnId ?? ''}`.trim()
+    if (!inScope(scope, r.unit ?? null)) return { error: fail(`${which} belongs to a venture you cannot see; ask a finance administrator to change it.`, 403) }
+    if (r.unit == null) continue
+    const locked = await assertBooksOpen(r.date)
+    if (locked) {
+      return { error: fail(`${locked} — ${which.charAt(0).toLowerCase()}${which.slice(1)} already has a venture / product, which cannot be changed in a locked period.`, 409, { code: 'BOOKS_LOCKED', field: 'unit' }) }
+    }
+  }
+  return { rows }
+}
+
 function normalizeChequeInput(cheque) {
   if (!cheque) return null
   const no = cheque.no?.trim() || null
@@ -107,6 +142,8 @@ export async function GET(request, { params }) {
 
     const transaction = await Transaction.findById(params.id).populate(POPULATE)
     if (!transaction) return fail('Not found', 404)
+    // Outside the viewer's finance scope (another venture) ⇒ as if it did not exist.
+    if (!inScope(await financeScope(session), transaction.unit ?? null)) return fail('Not found', 404)
 
     return NextResponse.json({ data: transaction })
   } catch (err) {
@@ -125,6 +162,7 @@ export async function GET(request, { params }) {
 //    account or amount changes.
 // Books lock: rows dated inside a locked period (and moves into one) only allow
 // description / reference / receipt / account-manager / paid-by edits.
+// unit: re-tags the entry (and its reversal pair) as PATCH { unit } does.
 export async function PUT(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
@@ -144,9 +182,19 @@ export async function PUT(request, { params }) {
 
     const existing = await Transaction.findById(params.id).lean()
     if (!existing) return fail('Not found', 404)
+    const scope = await financeScope(session)
+    if (!inScope(scope, existing.unit ?? null)) return fail('Not found', 404)
 
-    const { date, txnId, accountId: bodyAccountId, kind: bodyKind, channel: bodyChannel, cheque: bodyCheque, ...rest } = parsed.data
+    const { date, txnId, accountId: bodyAccountId, kind: bodyKind, channel: bodyChannel, cheque: bodyCheque, unit: bodyUnit, ...rest } = parsed.data
     const existingKind = existing.kind || 'OPERATING'
+
+    // Business unit: its own rules (planRetag), not the field locks below.
+    const unitTarget = bodyUnit?.trim() || null
+    let retag = null
+    if (unitTarget && unitTarget !== (existing.unit ?? null)) {
+      retag = await planRetag(existing, unitTarget, scope)
+      if (retag.error) return retag.error
+    }
 
     // txnId is the system ledger id: never cleared (a null would also collide on
     // the unique sparse index) and never renamed. External references belong in
@@ -371,11 +419,18 @@ export async function PUT(request, { params }) {
       }
     }
 
+    // The unit goes in after the field locks above (it has its own rules).
+    if (retag) update.unit = unitTarget
+
     const transaction = await Transaction.findByIdAndUpdate(
       params.id,
       { $set: update },
       { new: true }
     ).populate(POPULATE)
+    const pairedRetagged = retag ? retag.rows.filter(r => String(r._id) !== String(existing._id)) : []
+    if (pairedRetagged.length) {
+      await Transaction.updateMany({ _id: { $in: pairedRetagged.map(r => r._id) } }, { $set: { unit: unitTarget } })
+    }
 
     // Audit a before/after diff of the fields that actually changed.
     const diff = {}
@@ -391,6 +446,10 @@ export async function PUT(request, { params }) {
     }
     if (update.clearStatus && update.clearStatus !== existing.clearStatus) {
       diff.clearStatus = { from: existing.clearStatus ?? null, to: update.clearStatus }
+    }
+    if (retag) {
+      diff.unit = { from: existing.unit ?? null, to: unitTarget }
+      if (pairedRetagged.length) diff.unitAlsoOn = pairedRetagged.map(r => r.txnId ?? String(r._id))
     }
 
     logActivity({
@@ -417,22 +476,66 @@ const reverseSchema = z.object({
   reason: z.string().trim().min(5, 'Give a reason (at least 5 characters)').max(500),
 })
 
-// PATCH /api/transactions/[id]  { action:'reverse', reason }
+// PATCH /api/transactions/[id]  { unit }  (finance.transactions.update)
+// Re-tags the entry to another venture / product / Company — any entry, linked
+// or not, reconciled or not: allowed in open periods; in a locked period only
+// while the entry is Unassigned. Its reversal pair moves with it (planRetag).
+// Returns { data: the entry }.
+async function retagUnit(request, session, id, rawUnit) {
+  const unit = typeof rawUnit === 'string' ? rawUnit.trim() : ''
+  if (!unit) return fail('Choose the venture or product', 422, { field: 'unit' })
+
+  await connectDB()
+  const existing = await Transaction.findById(id).lean()
+  if (!existing) return fail('Not found', 404)
+  const scope = await financeScope(session)
+  if (!inScope(scope, existing.unit ?? null)) return fail('Not found', 404)
+
+  const plan = await planRetag(existing, unit, scope)
+  if (plan.error) return plan.error
+
+  if (plan.rows.length) {
+    await Transaction.updateMany({ _id: { $in: plan.rows.map(r => r._id) } }, { $set: { unit } })
+    const paired = plan.rows.filter(r => String(r._id) !== String(existing._id))
+    logActivity({
+      userId:   session.user.id,
+      userRole: session.user.role,
+      action:   'UPDATE',
+      entity:   'TRANSACTION',
+      entityId: String(existing._id),
+      changes:  JSON.stringify({
+        unit: { from: existing.unit ?? null, to: unit },
+        ...(paired.length ? { unitAlsoOn: paired.map(r => r.txnId ?? String(r._id)) } : {}),
+      }),
+      request,
+    })
+  }
+
+  const transaction = await Transaction.findById(id).populate(POPULATE)
+  return NextResponse.json({ data: transaction })
+}
+
+// PATCH /api/transactions/[id]  { action:'reverse', reason }  (finance.payments.confirm)
 // Reverses a client receipt booked against an invoice (wrong amount, account,
 // date…): a reversing entry dated today, the settled amount taken back off the
 // invoice (status recomputed) and the P&L amount off the project. A row that
 // belongs to a confirmed payment confirmation is reversed as that payment (its
 // VDS / TDS entries are voided and it is marked REVERSED). The original row stays
 // in the ledger — the ledger is immutable; corrections are reversals.
+// A body with `unit` (and no action 'reverse') is a re-tag, see retagUnit above.
 export async function PATCH(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
-    const denied  = requirePerm(session, 'finance.payments.confirm')
-    if (denied) return denied
+    if (!session) return fail('Unauthorised', 401)
     if (!isValidObjectId(params.id)) return fail('Not found', 404)
 
     let raw
     try { raw = await request.json() } catch { return fail('Invalid JSON body', 400) }
+    const isRetag = !!raw && typeof raw === 'object' && raw.action !== 'reverse' && Object.hasOwn(raw, 'unit')
+    const denied  = requirePerm(session, isRetag ? 'finance.transactions.update' : 'finance.payments.confirm')
+    if (denied) return denied
+    if (isRetag) return await retagUnit(request, session, params.id, raw.unit)
+
     const parsed = reverseSchema.safeParse(raw ?? {})
     if (!parsed.success) {
       return NextResponse.json({ error: 'Validation failed', details: parsed.error.flatten() }, { status: 422 })

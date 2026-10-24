@@ -10,6 +10,7 @@ import { isValidObjectId } from '@/lib/objectId'
 import { logActivity } from '@/lib/logActivity'
 import { parseDhakaDay, dhakaDayKey } from '@/lib/dhakaTime'
 import { CREDIT_NOTE_REASONS } from '@/lib/tax/catalog'
+import { codeContains } from '@/lib/codes'
 import { z } from 'zod'
 import { issueNote, limitsForInvoice, NOTE_REASON_VALUES, NOTE_VIEW_PERMS } from './_lib/creditNotes'
 
@@ -107,8 +108,13 @@ export async function GET(request) {
       filter.issuedAt = range
     }
     if (search) {
-      const rx = { $regex: escapeRegex(search.slice(0, 100)), $options: 'i' }
-      filter.$or = [{ noteNo: rx }, { invoiceNumber: rx }, { 'buyer.name': rx }, { 'buyer.bin': rx }, { reasonText: rx }]
+      const rx   = { $regex: escapeRegex(search.slice(0, 100)), $options: 'i' }
+      // Note and invoice numbers match with separators ignored (CN-2610-001 = CN2610001).
+      const code = codeContains(search.slice(0, 100))
+      filter.$or = [
+        ...(code ? [{ noteNo: code }, { invoiceNumber: code }] : []),
+        { 'buyer.name': rx }, { 'buyer.bin': rx }, { reasonText: rx },
+      ]
     }
 
     if (format === 'csv') {

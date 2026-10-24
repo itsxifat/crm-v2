@@ -8,6 +8,7 @@ import { sendClientActivationEmail } from '@/lib/mailer'
 import { requirePerm, canDo } from '@/lib/rbac'
 import { maskList, maskDoc, CLIENT_PII, isMaskedValue } from '@/lib/pii'
 import { ciContains } from '@/lib/searchMatch'
+import { codeContains } from '@/lib/codes'
 import { getConfig } from '@/lib/getConfig'
 import { logActivity } from '@/lib/logActivity'
 import { findOrCreateClientUser, ensureMembership } from '@/lib/clientAccess'
@@ -15,6 +16,7 @@ import { createNotification } from '@/lib/createNotification'
 import { isValidObjectId } from '@/lib/objectId'
 import { ACTIVE_PROJECT_STATUSES, OUTSTANDING_INVOICE_STATUSES, INVOICE_MONEY_FIELDS, sumInvoiceMoneyBDT } from '@/lib/clientStats'
 import { BIN_REGEX, TIN_REGEX, normalizeBin } from '@/lib/tax/catalog'
+import { syncSoon } from '@/lib/encloud/sync'
 import { z } from 'zod'
 
 // ── Tax identity (BIN / e-TIN / VAT status / withholding behaviour) ──────────
@@ -72,9 +74,11 @@ export async function GET(request) {
           : [{ name: ciContains(search) }],
       }).select('_id').lean()
       const userIds = matchingUsers.map(u => u._id)
+      // Client codes match with separators ignored (ENCL-2610A001 = ENCL2610A001, '#' too).
+      const code = codeContains(search)
       filter.$or = [
         { userId:     { $in: userIds } },
-        { clientCode: ciContains(search) },
+        ...(code ? [{ clientCode: code }] : []),
         { company:    ciContains(search) },
         // BIN is a public business identifier (printed on Mushak-6.3); the
         // e-TIN is identity PII and only searchable by those who may see it.
@@ -277,6 +281,9 @@ export async function POST(request) {
       }),
       request,
     })
+
+    // The client's folder in encloud (when connected).
+    syncSoon('client', client._id)
 
     return NextResponse.json({
       data:        maskDoc(session, client.toJSON(), CLIENT_PII),

@@ -25,6 +25,7 @@ import { Label, inputClass } from '@/components/ui/Input'
 import InvoicePrintView, { openInvoicePrint, buyerBinOf } from '@/components/shared/InvoicePrintView'
 import WithholdingFields, { emptyWithholding, invoiceAllowsVds } from '@/components/tax/WithholdingFields'
 import ReverseClientPaymentModal from '@/components/finance/ReverseClientPaymentModal'
+import InvoiceOnlinePanel from '@/components/admin/invoices/InvoiceOnlinePanel'
 import { usePermission } from '@/components/auth/Can'
 import CreditNoteModal, { CancelNoteModal } from '@/app/admin/tax/notes/_components/CreditNoteModal'
 import { useConfig } from '@/lib/useConfig'
@@ -969,6 +970,9 @@ export default function InvoiceDetailPage() {
           </div>
         )}
       </Card>
+
+      {/* Online payment (Enfinito Pay link) + client files lock (encloud) */}
+      {invoice.status !== 'DRAFT' && <InvoiceOnlinePanel invoice={invoice} />}
 
       {/* VAT summary + settlement breakdown */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">

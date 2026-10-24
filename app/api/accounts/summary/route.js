@@ -9,9 +9,11 @@ import { parseDhakaDay, dhakaParts, dhakaMonthStart, dhakaDayKey } from '@/lib/d
 import { BASE_CURRENCY } from '@/lib/currencies'
 import { getAccountBalances, accountTypeGroup } from '@/lib/finance/ledger'
 import { taxPeriodOf, tdsDepositDueDate, addDays } from '@/lib/finance/fiscal'
+import { financeScope } from '@/lib/finance/scope'
 import {
   plEffect, nonPlBreakdown, depreciationTotal, ebitdaOf, PL_SELECT, round2,
 } from '@/app/api/accounts/_lib/pl'
+import { readUnitParam, unitFilter, unitVisible, unitKey, invoiceUnits } from '@/app/api/accounts/_lib/unitScope'
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/
 
@@ -153,11 +155,15 @@ async function computeTaxPosition() {
   }
 }
 
-// GET /api/accounts/summary?startDate=&endDate=
+// GET /api/accounts/summary?startDate=&endDate=&unit=
 // P&L figures count only OPERATING / NON_CASH rows (legacy rows without a kind
 // count as OPERATING) using each row's P&L amount (plAmountBDT ⇒ amountBDT ⇒
 // amount for BDT). Transfers, capital, loans, tax payments and asset
 // purchases/sales are reported separately in `nonPlMovements`.
+// unit: one business unit (or UNASSIGNED for untagged rows); the ledger figures
+// and receivables follow it, and always the viewer's finance scope. Funds and
+// the tax position are company-wide: they ignore `unit`, and are left out (null)
+// for users who see only their own venture.
 export async function GET(request) {
   try {
     const session = await getServerSession(authOptions)
@@ -169,6 +175,9 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url)
     const startDate = searchParams.get('startDate')
     const endDate   = searchParams.get('endDate')
+    const unitParam = readUnitParam(searchParams)
+    if (unitParam.error) return NextResponse.json({ error: unitParam.error }, { status: 400 })
+    const { unit } = unitParam
 
     // Date-only filters are Asia/Dhaka calendar days; the end day is inclusive.
     const dateFilter = {}
@@ -188,17 +197,29 @@ export async function GET(request) {
     const todayKey  = dhakaDayKey()
     const fundsAsOf = endDate && DAY_RE.test(endDate) && endDate < todayKey ? endDate : null
 
+    const scope   = await financeScope(session)
     const yearAgo = dhakaMonthStart(new Date(), -12)
-    const [allTx, receivableInvoices, monthlyTx, funds, taxPosition] = await Promise.all([
-      Transaction.find(dateFilter).select(PL_SELECT).lean(),
+    const [allTx, openInvoices, monthlyTx, funds, taxPosition] = await Promise.all([
+      Transaction.find(unitFilter(dateFilter, scope, unit)).select(PL_SELECT).lean(),
       Invoice.find({ status: { $in: ['SENT', 'PARTIALLY_PAID', 'OVERDUE'] } })
-        .select('total totalBDT paidAmount currency')
+        .select('total totalBDT paidAmount currency unit projectId projectIds')
         .lean(),
       // Monthly breakdown for the last 12 months (Asia/Dhaka month buckets).
-      Transaction.find({ date: { $gte: yearAgo } }).select(PL_SELECT).sort({ date: 1 }).lean(),
-      computeFunds(fundsAsOf).catch(err => { console.error('[GET /api/accounts/summary] funds', err); return null }),
-      computeTaxPosition().catch(err => { console.error('[GET /api/accounts/summary] taxPosition', err); return null }),
+      Transaction.find(unitFilter({ date: { $gte: yearAgo } }, scope, unit)).select(PL_SELECT).sort({ date: 1 }).lean(),
+      scope.all
+        ? computeFunds(fundsAsOf).catch(err => { console.error('[GET /api/accounts/summary] funds', err); return null })
+        : null,
+      scope.all
+        ? computeTaxPosition().catch(err => { console.error('[GET /api/accounts/summary] taxPosition', err); return null })
+        : null,
     ])
+
+    // Receivables of the units shown (an invoice's unit: its own, else its project's venture).
+    let receivableInvoices = openInvoices
+    if (!scope.all || unit !== undefined) {
+      const units = await invoiceUnits(openInvoices)
+      receivableInvoices = openInvoices.filter(inv => unitVisible(scope, units.get(String(inv._id)), unit))
+    }
 
     let totalRevenue = 0, totalExpenses = 0, incomeCount = 0, expenseCount = 0
     const expenseCategoryMap = {}, incomeCategoryMap = {}
@@ -332,6 +353,8 @@ export async function GET(request) {
         nonPlMovements:     nonPlBreakdown(allTx),
         funds,
         taxPosition,
+        unit:  unit === undefined ? null : unitKey(unit),
+        scope: { all: !!scope.all },
       },
     })
   } catch (err) {

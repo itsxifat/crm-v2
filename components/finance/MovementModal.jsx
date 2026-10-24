@@ -14,9 +14,11 @@ import { useConfig } from '@/lib/useConfig'
 import { cn } from '@/lib/utils'
 import { dayKeyLabel } from '@/lib/finance/fiscal'
 import { PAYMENT_CHANNELS } from '@/lib/finance/constants'
+import { COMPANY_UNIT } from '@/lib/units'
 import { useMoneyAccounts, moneyAccountLabel, invalidateMoneyAccounts } from './MoneyAccountSelect'
 import AccountIcon from './AccountIcon'
 import AmountInput from './AmountInput'
+import UnitSelect from './UnitSelect'
 import { FieldError } from './FinanceDialogs'
 import { MOVEMENT_KINDS, MOVEMENT_KIND_MAP, BANK_CHARGE_TYPES } from './movementKinds'
 import {
@@ -36,6 +38,10 @@ const KIND_ICONS = {
 }
 
 const MOVEMENT_CHANNELS = PAYMENT_CHANNELS.filter(c => !['INTERNAL', 'CHALLAN'].includes(c.value))
+
+// Income / expense movements are booked to a venture or product (required,
+// Company / shared by default); capital, drawings, loans and adjustments are Company.
+const UNIT_KINDS = ['OTHER_INCOME', 'INTEREST_INCOME', 'BANK_CHARGE']
 
 /**
  * Record a non-trading money movement on one account (capital, drawings, loans,
@@ -61,6 +67,7 @@ export default function MovementModal({ open, onOpenChange, defaultAccountId = n
   const [aitCertificateNo, setAitCertificateNo] = useState('')
   const [interest, setInterest] = useState('')
   const [receiptUrl, setReceiptUrl] = useState('')
+  const [unit, setUnit] = useState(COMPANY_UNIT)
   const [errors, setErrors] = useState({})
   const [saving, setSaving] = useState(false)
 
@@ -71,7 +78,7 @@ export default function MovementModal({ open, onOpenChange, defaultAccountId = n
     setAccountId(defaultAccountId ?? '')
     setAmount(''); setAmountBDT(''); setDate(todayKey()); setDescription(''); setReference(''); setChannel('')
     setChargeType('MAINTENANCE'); setCategory(''); setSubcategory(''); setParty('')
-    setAit(''); setAitCertificateNo(''); setInterest(''); setReceiptUrl('')
+    setAit(''); setAitCertificateNo(''); setInterest(''); setReceiptUrl(''); setUnit(COMPANY_UNIT)
     setErrors({}); setSaving(false)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, defaultAccountId, defaultKind])
@@ -87,6 +94,7 @@ export default function MovementModal({ open, onOpenChange, defaultAccountId = n
   const dateLocked = !!(lockedUntil && date && date <= lockedUntil)
   const isIn = def.direction === 'IN'
   const isAdjustment = def.txKind === 'ADJUSTMENT'
+  const needsUnit = UNIT_KINDS.includes(kind)
 
   const subcategories = useMemo(
     () => (incomeCategories ?? []).find(c => c.label === category)?.subcategories ?? [],
@@ -135,6 +143,7 @@ export default function MovementModal({ open, onOpenChange, defaultAccountId = n
     if (kind === 'LOAN_REPAYMENT' && interest !== '' && !(interestAmt >= 0)) e.interestAmount = 'Enter a valid amount'
     if (kind === 'LOAN_REPAYMENT' && interestAmt > amt + 0.005) e.interestAmount = 'Interest cannot exceed the amount paid'
     if (isAdjustment && description.trim().length < 5) e.description = 'Explain why the balance is adjusted (at least 5 characters)'
+    if (needsUnit && !unit) e.unit = 'Choose the venture / product'
     return e
   }
 
@@ -159,6 +168,7 @@ export default function MovementModal({ open, onOpenChange, defaultAccountId = n
       aitCertificateNo: kind === 'INTEREST_INCOME' ? (aitCertificateNo.trim() || null) : null,
       interestAmount: kind === 'LOAN_REPAYMENT' && interestAmt > 0 ? interestAmt : null,
       receiptUrl: receiptUrl || null,
+      ...(needsUnit ? { unit } : {}),
     }
     setSaving(true)
     try {
@@ -305,6 +315,15 @@ export default function MovementModal({ open, onOpenChange, defaultAccountId = n
                 </NativeSelect>
               </div>
             )}
+          </div>
+        )}
+
+        {needsUnit && (
+          <div className="sm:w-1/2">
+            <Label required>Venture / product</Label>
+            <UnitSelect value={unit} onChange={v => setUnit(v ?? '')} required invalid={!!errors.unit} />
+            <FieldError message={errors.unit} />
+            {!errors.unit && <p className="mt-1.5 text-xs text-muted-foreground">Company / shared unless one venture or product owns it.</p>}
           </div>
         )}
 

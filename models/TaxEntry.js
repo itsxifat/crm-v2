@@ -1,5 +1,5 @@
 import mongoose from 'mongoose'
-import { nextSequence } from '../lib/sequence'
+import { nextSequence, counterValue } from '../lib/sequence'
 import { dhakaParts } from '../lib/dhakaTime'
 import { challanKeyOf } from '../lib/tax/challanKey'
 
@@ -161,6 +161,23 @@ const TaxEntrySchema = new mongoose.Schema(
 const pad2 = (n) => String(n).padStart(2, '0')
 const CHALLAN_KEYED_TYPES = ['TDS_DEPOSIT', 'VAT_PAYMENT', 'ADVANCE_TAX']
 
+// Entry numbers: TAX261000001 (TAX + Dhaka YYMM of creation + 5-digit serial).
+// Numbers issued before 2026-10 read TAX-2610-00001.
+const ENTRY_NO_RE = /^TAX-?(\d{4})-?(\d{5,})$/
+
+/**
+ * The counter an entry number was allocated from, so a rolled-back number can be
+ * given back (lib/sequence releaseSequence): 'TAX261000075' →
+ * { key: 'taxentry:TAX2610', value: 75 }; an old 'TAX-2610-00075' → its old key
+ * 'taxentry:TAX-2610-'. null for anything else.
+ */
+export function entryNumberCounter(entryNo) {
+  const s = String(entryNo ?? '')
+  const m = ENTRY_NO_RE.exec(s)
+  if (!m) return null
+  return { key: s.includes('-') ? `taxentry:TAX-${m[1]}-` : `taxentry:TAX${m[1]}`, value: Number(m[2]) }
+}
+
 TaxEntrySchema.pre('validate', async function () {
   // period / fiscalYear fallback (recordTaxEntry normally fills these using the
   // configured fiscal-year start month; this keeps direct creates valid).
@@ -182,14 +199,19 @@ TaxEntrySchema.pre('validate', async function () {
   if (this.entryNo) return
   // Number prefix follows the business timezone (Asia/Dhaka) month of creation.
   const { year, month } = dhakaParts(this.createdAt ?? new Date())
-  const prefix = `TAX-${pad2(year % 100)}${pad2(month + 1)}-`
-  // Highest number already issued for this prefix (NOT a count — a count reissues
-  // an existing number after any delete and collides on the unique index).
+  const yymm   = `${pad2(year % 100)}${pad2(month + 1)}`
+  const prefix = `TAX${yymm}`
+  const re     = new RegExp(`^TAX-?${yymm}-?(\\d{5,})$`)
+  // Highest number already issued for this month in either shape (NOT a count — a
+  // count reissues an existing number after any delete and collides on the unique
+  // index), floored at the old counter key (taxentry:TAX-2610-) as well.
   const existing = await mongoose.model('TaxEntry')
-    .find({ entryNo: { $regex: `^${prefix}[0-9]+$` } })
+    .find({ entryNo: { $regex: re.source } })
     .select('entryNo').lean()
-  const maxUsed = existing.reduce((m, d) => Math.max(m, parseInt(d.entryNo.slice(prefix.length), 10) || 0), 0)
-  const seq = await nextSequence(`taxentry:${prefix}`, maxUsed)
+  const maxUsed = existing.reduce((m, d) => Math.max(m, parseInt(re.exec(d.entryNo)?.[1], 10) || 0), 0)
+  const floor = Math.max(maxUsed, await counterValue(`taxentry:TAX-${yymm}-`))
+  // Key = entryNumberCounter(entryNo).key, which gives a rolled-back number back.
+  const seq = await nextSequence(`taxentry:${prefix}`, floor)
   this.entryNo = `${prefix}${String(seq).padStart(5, '0')}`
 })
 

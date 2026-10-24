@@ -8,6 +8,7 @@ import { Asset, Setting } from '@/models'
 import { isValidObjectId } from '@/lib/objectId'
 import { escapeHtml } from '@/lib/html'
 import { qrSvg } from '@/lib/qr'
+import { compactCode, codeEquals } from '@/lib/codes'
 import { guardRead, errorResponse, companyFromSettings, appOrigin, printHeaders, todayKey } from '../_lib/service'
 
 const MAX_LABELS = 300
@@ -86,7 +87,8 @@ export async function GET(request) {
     const skip = Math.min(perSheet - 1, Math.max(0, parseInt(sp.get('skip') ?? '0', 10) || 0))
 
     const ids = [...new Set(String(sp.get('ids') ?? '').split(',').map(s => s.trim()).filter(Boolean))]
-    const tags = [...new Set(String(sp.get('tags') ?? '').split(',').map(s => s.trim().toUpperCase()).filter(Boolean))]
+    // Tags compare with separators ignored: EN-LAP-00042 (old label) = ENLAP00042.
+    const tags = [...new Set(String(sp.get('tags') ?? '').split(',').map(compactCode).filter(Boolean))]
     if (!ids.length && !tags.length) return NextResponse.json({ error: 'Choose at least one asset' }, { status: 400 })
     if (ids.some(id => !isValidObjectId(id))) return NextResponse.json({ error: 'Invalid asset id' }, { status: 400 })
     if (ids.length + tags.length > MAX_LABELS) {
@@ -96,7 +98,7 @@ export async function GET(request) {
     await connectDB()
     const or = []
     if (ids.length) or.push({ _id: { $in: ids } })
-    if (tags.length) or.push({ assetTag: { $in: tags } })
+    for (const t of tags) or.push({ assetTag: codeEquals(t) })
     const [found, settingRows] = await Promise.all([
       Asset.find({ $or: or }).select('assetTag name brand model serialNumber categoryId').populate('categoryId', 'name code').lean(),
       Setting.find({ group: 'company' }).lean(),
@@ -105,7 +107,7 @@ export async function GET(request) {
 
     // Keep the order the user selected.
     const order = new Map([...ids.map((id, i) => [id, i]), ...tags.map((t, i) => [t, ids.length + i])])
-    const rank = (a) => order.get(String(a._id)) ?? order.get(a.assetTag) ?? 0
+    const rank = (a) => order.get(String(a._id)) ?? order.get(compactCode(a.assetTag)) ?? 0
     const assets = found.sort((x, y) => rank(x) - rank(y))
 
     const company = companyFromSettings(settingRows)

@@ -15,7 +15,9 @@
     "db:drop-collections": "node scripts/drop-collections.js",
     "db:migrate-combined-invoices": "node scripts/migrate-combined-invoices.js",
     "db:migrate-drop-project-discount": "node scripts/migrate-drop-project-discount.js",
-    "db:migrate-company-items": "node scripts/migrate-company-items-to-assets.js"
+    "db:migrate-company-items": "node scripts/migrate-company-items-to-assets.js",
+    "db:migrate-remove-id-hyphens": "node scripts/migrate-remove-id-hyphens.js",
+    "db:backfill-finance-units": "node scripts/backfill-finance-units.js"
   },
   "dependencies": {
     "@hello-pangea/dnd": "^16.6.0",

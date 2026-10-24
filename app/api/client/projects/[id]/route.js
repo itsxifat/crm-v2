@@ -23,7 +23,7 @@ export async function GET(request, { params }) {
     // Explicit projection of client-safe fields only (same as the list route) —
     // never expose approvedExpenses, team, tags, cancelReason, etc.
     const project = await Project.findOne({ _id: params.id, clientId: client._id })
-      .select('projectCode name description category subcategory projectType status priority startDate deadline currentPeriodStart currentPeriodEnd nextBillingDate budget paidAmount currency updatedAt')
+      .select('projectCode name description category subcategory projectType status priority startDate deadline currentPeriodStart currentPeriodEnd nextBillingDate budget paidAmount currency driveLink updatedAt')
       .lean()
     if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
 

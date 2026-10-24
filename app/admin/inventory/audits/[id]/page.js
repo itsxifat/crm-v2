@@ -21,6 +21,7 @@ import { InventoryBadge, AssetConditionBadge } from '@/components/inventory/Asse
 import { usePermission } from '@/components/auth/Can'
 import { AUDIT_RESULT_META, AUDIT_STATUS_META, CONDITION_OPTIONS } from '@/lib/inventory/constants'
 import { cn } from '@/lib/utils'
+import { codeIncludes } from '@/lib/searchMatch'
 
 const fmtDateTime = (d) => d ? new Date(d).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Dhaka' }) : '—'
 const fmtTime = (d) => d ? new Date(d).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Dhaka' }) : ''
@@ -695,8 +696,10 @@ export default function AuditSessionPage() {
     return lines.filter(l => {
       if (filter !== 'ALL' && l.result !== filter) return false
       if (!q) return true
-      return [l.assetTag, l.assetName, l.asset?.serialNumber, l.expectedEmployee?.name, l.expectedLocation?.name, l.asset?.category?.name]
-        .some(v => v && String(v).toLowerCase().includes(q))
+      // Asset tags match with separators ignored (EN-LAP-00042 = ENLAP00042).
+      return codeIncludes(l.assetTag, q) ||
+        [l.assetTag, l.assetName, l.asset?.serialNumber, l.expectedEmployee?.name, l.expectedLocation?.name, l.asset?.category?.name]
+          .some(v => v && String(v).toLowerCase().includes(q))
     })
   }, [lines, filter, search])
 

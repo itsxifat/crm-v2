@@ -7,6 +7,7 @@ import { StockItem, StockMovement, PurchaseBill } from '@/models'
 import { requirePerm, canDoAny } from '@/lib/rbac'
 import { isValidObjectId } from '@/lib/objectId'
 import { logActivity } from '@/lib/logActivity'
+import { codeEquals } from '@/lib/codes'
 import {
   itemSchema, serializeItem, serializeMovement, ITEM_POPULATE, MOVEMENT_POPULATE, validationError, httpError,
   escapeRegex, checkItemRefs,
@@ -77,12 +78,16 @@ export async function PUT(request, { params }) {
 
     const body = await readJson(request)
     if (!body || typeof body !== 'object') return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
-    const parsed = itemSchema.partial().omit({ opening: true }).safeParse(body)
+    // An item still on a SKU issued before "-" was dropped (LAP-0001) stays
+    // editable: its unchanged SKU is not re-checked against the current rule.
+    const input = { ...body }
+    if (typeof input.sku === 'string' && existing.sku && input.sku.trim().toUpperCase() === String(existing.sku).toUpperCase()) delete input.sku
+    const parsed = itemSchema.partial().omit({ opening: true }).safeParse(input)
     if (!parsed.success) throw validationError(parsed.error)
 
     const set = {}
     for (const key of EDITABLE) {
-      if (!Object.prototype.hasOwnProperty.call(body, key)) continue
+      if (!Object.prototype.hasOwnProperty.call(input, key)) continue
       set[key] = parsed.data[key] ?? null
     }
     if ('name' in set && !set.name) throw httpError(422, 'Item name is required')
@@ -92,8 +97,10 @@ export async function PUT(request, { params }) {
     if ('isActive' in set) set.isActive = set.isActive !== false
     if ('sku' in set) {
       if (!set.sku) delete set.sku // SKU stays when cleared
-      else if (set.sku !== existing.sku && await StockItem.exists({ sku: set.sku, _id: { $ne: existing._id } })) {
-        throw httpError(409, `SKU ${set.sku} is already used`)
+      else if (set.sku !== existing.sku) {
+        // Separators ignored: LAP0001 clashes with another item's LAP-0001 too.
+        const taken = await StockItem.findOne({ sku: codeEquals(set.sku), _id: { $ne: existing._id } }).select('sku').lean()
+        if (taken) throw httpError(409, `SKU ${set.sku} is already used${taken.sku !== set.sku ? ` (${taken.sku})` : ''}`)
       }
     }
 

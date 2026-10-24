@@ -141,10 +141,12 @@ export default function ClientInvoiceDetailPage() {
 
   const [invoice,       setInvoice]       = useState(null)
   const [combined,      setCombined]      = useState(null)
+  const [online,        setOnline]        = useState(null)   // { enabled, payable, amount } — Enfinito Pay
   const [paymentReqs,   setPaymentReqs]   = useState([])
   const [company,       setCompany]       = useState({})
   const [loading,       setLoading]       = useState(true)
   const [showPayModal,  setShowPayModal]  = useState(false)
+  const [startingPay,   setStartingPay]   = useState(false)
 
   async function load() {
     try {
@@ -156,6 +158,7 @@ export default function ClientInvoiceDetailPage() {
       if (!invRes.ok) throw new Error(invJson.error ?? 'Not found')
       setInvoice(invJson.data)
       setCombined(invJson.combined ?? null)
+      setOnline(invJson.online ?? null)
       if (reqRes.ok) {
         const reqJson = await reqRes.json()
         setPaymentReqs(reqJson.data ?? [])
@@ -169,6 +172,21 @@ export default function ClientInvoiceDetailPage() {
   }
 
   useEffect(() => { load() }, [id])
+
+  // Pay online: Enfinito Pay's checkout, then back to the invoice's payment page.
+  async function payOnline() {
+    setStartingPay(true)
+    try {
+      const res = await fetch(`/api/client/invoices/${id}/checkout`, { method: 'POST' })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || !json.url) throw new Error(json.error ?? 'Online payment is not available right now')
+      window.location.assign(json.url)
+    } catch (err) {
+      toast.error(err.message)
+      setStartingPay(false)
+      load()
+    }
+  }
 
   // Company details for the invoice header — same source as the admin view
   useEffect(() => {
@@ -224,7 +242,16 @@ export default function ClientInvoiceDetailPage() {
             <Button variant="outline" onClick={() => openInvoicePrint(invoice.invoiceNumber)}>
               <Printer /> Print / PDF
             </Button>
-            {canPay && (
+            {canPay && online?.payable ? (
+              <>
+                <Button variant="outline" onClick={() => setShowPayModal(true)}>
+                  I paid another way
+                </Button>
+                <Button onClick={payOnline} loading={startingPay}>
+                  {!startingPay && <CreditCard />} Pay {fmtAmt(online.amount, invoice.currency)} online
+                </Button>
+              </>
+            ) : canPay && (
               <Button onClick={() => setShowPayModal(true)}>
                 <CreditCard /> Pay now
               </Button>

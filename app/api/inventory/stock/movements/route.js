@@ -9,6 +9,7 @@ import { canDoAny } from '@/lib/rbac'
 import { isValidObjectId } from '@/lib/objectId'
 import { parseDhakaDay, dhakaDayKey } from '@/lib/dhakaTime'
 import { STOCK_MOVEMENT_TYPES, STOCK_MOVEMENT_META } from '@/lib/inventory/constants'
+import { codeContains } from '@/lib/codes'
 import { serializeMovement, MOVEMENT_POPULATE, csvResponse, escapeRegex, todayKey } from '../_lib/stock'
 import { errorResponse } from '../../purchases/_lib/http'
 
@@ -43,7 +44,10 @@ export async function GET(request) {
     const search = (searchParams.get('search') ?? '').trim()
     if (search) {
       const re = { $regex: escapeRegex(search.slice(0, 100)), $options: 'i' }
-      filter.$or = [{ movementNo: re }, { reason: re }, { reference: re }]
+      // Movement numbers and references (bill / project / asset numbers) match with
+      // separators ignored: SM-2610-00001 = SM261000001.
+      const code = codeContains(search.slice(0, 100))
+      filter.$or = [...(code ? [{ movementNo: code }, { reference: code }] : [{ reference: re }]), { reason: re }]
     }
     const start = parseDhakaDay(searchParams.get('start') ?? searchParams.get('startDate') ?? '')
     const end = parseDhakaDay(searchParams.get('end') ?? searchParams.get('endDate') ?? '')

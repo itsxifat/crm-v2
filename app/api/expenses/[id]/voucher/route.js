@@ -12,6 +12,7 @@ import { expenseSettlement, moneyAccountText, channelText, tdsSectionText, input
 import { tdsSectionResolver } from '@/lib/tax/engine'
 import { escapeHtml } from '@/lib/html'
 import { BENGALI_FONT_CSS } from '@/lib/printFonts'
+import { AUTH_PAGES_CSS, authorizedPages } from '@/lib/printAuthorization'
 import { isValidObjectId } from '@/lib/objectId'
 
 const fmtDate = (d) =>
@@ -55,7 +56,9 @@ const ROW = 'display:flex;justify-content:space-between;gap:12px;padding:5px 0;b
 // Inter font, logo header, #0f172a accents, same table + totals + transaction
 // details styling. Shows the tax breakdown (gross, VAT in the bill, VDS & TDS
 // deducted, net paid) and the money account it was paid from. Available once
-// the expense is paid (or rejected).
+// the expense is paid (or rejected). The signatures + company seal print at the
+// foot of every page that has content (lib/printAuthorization.js): staff sign
+// and seal each page before uploading the scan to authorize the expense.
 export async function GET(request, { params }) {
   try {
     const session = await getServerSession(authOptions)
@@ -124,8 +127,8 @@ export async function GET(request, { params }) {
     const accent       = STATUS_ACCENT[e.status] ?? '#2563eb'
     const payee        = escapeHtml(payeeOf(e))
     const payeeBin     = tax.supplierBin || e.vendorId?.bin || e.agencyId?.bin || null
-    // Printed voucher number = the paid-voucher number (EXV-…) shown in Accounts;
-    // the expense id (EXP-…) is shown separately as the expense reference.
+    // Printed voucher number = the paid-voucher number (EXV…) shown in Accounts;
+    // the expense id (EXP…) is shown separately as the expense reference.
     const voucherNo    = e.expenseInvoiceNo ?? e.expenseId ?? null
     const paidOn       = e.paidAt ?? e.reviewedAt
     const tdsText      = fig.tds > 0
@@ -201,11 +204,12 @@ export async function GET(request, { params }) {
   tr { page-break-inside: avoid; break-inside: avoid; }
   @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
   @page { size: A4; margin: 14mm 12mm; }
+  ${AUTH_PAGES_CSS}
 </style>
 </head>
 <body>
-<div style="max-width:780px;margin:0 auto;padding:8px 0;">
-
+<div style="max-width:780px;margin:0 auto;padding:8px 0 0;">
+${authorizedPages(`
   <!-- HEADER -->
   <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;gap:16px;">
     <div>
@@ -278,7 +282,7 @@ export async function GET(request, { params }) {
   </table>
 
   <!-- TOTALS -->
-  <div style="display:flex;justify-content:flex-end;margin-bottom:20px;">
+  <div class="auth-keep" style="display:flex;justify-content:flex-end;margin-bottom:20px;">
     <div style="width:100%;max-width:400px;">
       <div style="height:2px;background:#0f172a;"></div>
       ${totalsHtml}
@@ -301,7 +305,7 @@ export async function GET(request, { params }) {
 
   ${hasTxn ? `
   <!-- TRANSACTION DETAILS -->
-  <div style="margin-bottom:16px;">
+  <div class="auth-keep" style="margin-bottom:16px;">
     <p style="margin:0 0 8px;font-size:10px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:#94a3b8;">Transaction Details</p>
     <table>
       <thead>
@@ -327,21 +331,14 @@ export async function GET(request, { params }) {
 
   ${notes.length ? `
   <!-- TAX NOTES -->
-  <div style="margin-bottom:16px;border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px;background:#f8fafc;">
+  <div class="auth-keep" style="margin-bottom:16px;border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px;background:#f8fafc;">
     <p style="margin:0 0 6px;font-size:10px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:#94a3b8;">Tax notes</p>
     ${notes.map(n => `<p style="margin:0 0 3px;font-size:11px;color:#475569;line-height:1.6;">${n}</p>`).join('')}
   </div>` : ''}
-
-  <!-- SYSTEM NOTE -->
-  <div style="border-top:1px solid #f1f5f9;padding-top:16px;margin-bottom:20px;text-align:center;">
-    <p style="margin:0;font-size:11px;color:#64748b;line-height:1.8;">This is a system generated payment voucher.</p>
-  </div>
-
-  <!-- FOOTER -->
-  <div style="border-top:1px solid #e2e8f0;padding-top:12px;text-align:center;">
-    <p style="margin:0 0 3px;font-size:11px;color:#94a3b8;">Generated on ${fmtDate(new Date())}${co.name ? ` – ${escapeHtml(co.name)}` : ''}</p>
-  </div>
-
+`, {
+  // Signatures, seal and this line repeat at the foot of every printed page.
+  reference: `System generated payment voucher ${escapeHtml(voucherNo ?? '')} · Generated ${fmtDate(new Date())}${co.name ? ` · ${escapeHtml(co.name)}` : ''}`,
+})}
 </div>
 <script nonce="${cspNonce}">window.onload = () => window.print()</script>
 </body>
