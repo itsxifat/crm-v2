@@ -84,19 +84,21 @@ ClientSchema.pre('save', async function () {
   const now    = new Date()
   const yy     = String(now.getFullYear()).slice(-2)
   const mm     = String(now.getMonth() + 1).padStart(2, '0')
-  const prefix = `ENCL-${yy}${mm}`
+  // ENCL2610A001. Codes issued before 2026-10 read ENCL-2610A001 (clients still
+  // log in with them), so the floor and the "taken" check cover both shapes.
+  const prefix = `ENCL${yy}${mm}`
   // Global running serial — counts ALL clients ever coded, NOT just this month's,
   // so the number never resets to 001 when the month changes. Skip any serial
   // whose code is already taken (e.g. legacy gaps).
   // nextSequence is atomic, so concurrent creates never get the same serial;
   // the legacy count is only a floor for counters created after existing data.
-  const floor = await mongoose.model('Client').countDocuments({ clientCode: { $regex: '^ENCL-' } })
+  const floor = await mongoose.model('Client').countDocuments({ clientCode: { $regex: '^ENCL' } })
   for (let attempt = 0; attempt < 20; attempt++) {
     const seq    = await nextSequence('clientCode', floor)
     const letter = String.fromCharCode(65 + Math.floor((seq - 1) / 999))
-    const num    = ((seq - 1) % 999) + 1
-    const code   = `${prefix}${letter}${String(num).padStart(3, '0')}`
-    const taken  = await mongoose.model('Client').exists({ clientCode: code })
+    const serial = `${letter}${String(((seq - 1) % 999) + 1).padStart(3, '0')}`
+    const code   = `${prefix}${serial}`
+    const taken  = await mongoose.model('Client').exists({ clientCode: { $in: [code, `ENCL-${yy}${mm}${serial}`] } })
     if (!taken) { this.clientCode = code; return }
   }
   throw new Error('Could not allocate a unique client code')

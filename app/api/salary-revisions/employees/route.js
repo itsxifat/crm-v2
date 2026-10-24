@@ -6,6 +6,7 @@ import connectDB from '@/lib/mongodb'
 import { Employee, SalaryRevision, User } from '@/models'
 import { canDoAny } from '@/lib/rbac'
 import { ciContains, ciEquals } from '@/lib/searchMatch'
+import { codeContains } from '@/lib/codes'
 import { normalizeDeptCode } from '@/models/Employee'
 import { applyDueRevisions, currentPeriod, periodLabel, round2, TYPE_LABELS } from '@/lib/hr/salaryRevisions'
 
@@ -40,7 +41,9 @@ export async function GET(request) {
     const search = sp.get('search')
     if (search) {
       const users = await User.find({ name: ciContains(search) }).select('_id').lean()
-      filter.$or = [{ userId: { $in: users.map(u => u._id) } }, { employeeId: ciContains(search) }]
+      // Employee IDs match with separators ignored (EN-DEV2610001 = ENDEV2610001).
+      const code = codeContains(search)
+      filter.$or = [{ userId: { $in: users.map(u => u._id) } }, ...(code ? [{ employeeId: code }] : [])]
     }
     const employees = await Employee.find(filter)
       .select('employeeId department designation position salary hireDate userId')

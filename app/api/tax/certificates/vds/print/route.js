@@ -271,7 +271,7 @@ export async function GET(request) {
 }
 
 // POST /api/tax/certificates/vds/print  { ids: string[] }
-// Issue the Mushak-6.6: assigns VDS-YYMM-### (status ISSUED, dated today) to a
+// Issue the Mushak-6.6: assigns VDSYYMM### (status ISSUED, dated today) to a
 // ready, unnumbered selection. Idempotent: an already numbered selection
 // returns its number. GET ?ids=... then prints it.
 export async function POST(request) {

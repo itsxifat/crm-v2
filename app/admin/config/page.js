@@ -8,7 +8,7 @@ import {
   Mail, Plus, Trash2, Pencil, Save, X, Check,
   Eye, EyeOff, Send, ChevronDown, ChevronUp, ShieldCheck,
   MessageCircle, ExternalLink, Building2, Users,
-  CreditCard, ChevronRight, AlertTriangle, Layers, Target, PlugZap,
+  CreditCard, ChevronRight, AlertTriangle, Layers, Target, PlugZap, Package,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/utils'
@@ -667,6 +667,7 @@ function DepartmentsSection() {
 
 const TABS = [
   { id: 'ventures',     label: 'Ventures & services', icon: Layers },
+  { id: 'products',     label: 'Products',            icon: Package },
   { id: 'leads',        label: 'Lead options',        icon: Target },
   { id: 'departments',  label: 'Departments',         icon: Users },
   { id: 'company',      label: 'Company info',        icon: Building2 },
@@ -676,6 +677,9 @@ const TABS = [
   { id: 'whatsapp',     label: 'WhatsApp',            icon: MessageCircle },
   { id: 'integrations', label: 'Integrations',        icon: PlugZap },
 ]
+
+// Tabs that read /api/config.
+const CONFIG_TABS = ['ventures', 'products', 'leads', 'verification', 'payment']
 
 const DEFAULT_PM = [
   { value: 'CASH',          label: 'Cash' },
@@ -689,6 +693,34 @@ const DEFAULT_PM = [
   { value: 'OTHER',         label: 'Other' },
 ]
 
+// ── Ventures & products: shared id rules ───────────────────────────────────────
+// Mirrors the config API: an id is A-Z0-9 (up to 12), set at creation, and is
+// unique across ventures and products (both become a finance "unit").
+
+const RESERVED_UNIT_IDS = ['COMPANY', 'UNASSIGNED']
+
+function autoUnitId(label) {
+  return label.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12)
+}
+
+function unitIdError(id, existingIds = []) {
+  if (!/^[A-Z0-9]{1,12}$/.test(id)) return 'ID must be 1–12 capital letters or digits'
+  if (RESERVED_UNIT_IDS.includes(id)) return `"${id}" is reserved`
+  if (existingIds.some(x => String(x).toUpperCase() === id)) return 'This ID is already used by a venture or product'
+  return null
+}
+
+// On/off switch for a venture's or product's Active flag.
+function ActiveToggle({ on, label, onToggle, disabled }) {
+  return (
+    <button type="button" role="switch" aria-checked={on} aria-label={`${label}: active`} disabled={disabled}
+      onClick={onToggle} title={on ? 'Shown in pickers' : 'Hidden from pickers; history still reports'}
+      className="flex shrink-0 items-center gap-2 text-[13px] text-gray-700 disabled:opacity-50">
+      <Switch on={on} /> Active
+    </button>
+  )
+}
+
 // ── Modal: Add / Edit Venture ──────────────────────────────────────────────────
 
 function VentureModal({ mode, initial, existingIds, onSubmit, onClose }) {
@@ -701,10 +733,6 @@ function VentureModal({ mode, initial, existingIds, onSubmit, onClose }) {
     for (let i = 1; i < words.length && p.length < 3; i++) p += words[i][0]
     return p.toUpperCase().slice(0, 3)
   }
-  function _autoId(label) {
-    return label.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12)
-  }
-
   const [form,       setForm]       = useState(initial ?? { id: '', label: '', prefix: '', description: '' })
   const [pfxManual,  setPfxManual]  = useState(!isAdd)
   const [idManual,   setIdManual]   = useState(!isAdd)
@@ -713,7 +741,7 @@ function VentureModal({ mode, initial, existingIds, onSubmit, onClose }) {
     setForm(f => ({
       ...f,
       label:  val,
-      id:     idManual  ? f.id     : _autoId(val),
+      id:     idManual  ? f.id     : autoUnitId(val),
       prefix: pfxManual ? f.prefix : _autoPrefix(val),
     }))
   }
@@ -724,7 +752,8 @@ function VentureModal({ mode, initial, existingIds, onSubmit, onClose }) {
     if (!prefix.trim()) { toast.error('Prefix is required'); return }
     if (isAdd) {
       if (!id.trim()) { toast.error('Venture ID is required'); return }
-      if (existingIds?.includes(id)) { toast.error('Venture ID already exists'); return }
+      const idError = unitIdError(id, existingIds)
+      if (idError) { toast.error(idError); return }
     }
     onSubmit({ ...form, prefix: form.prefix.toUpperCase() })
   }
@@ -776,7 +805,7 @@ function VentureModal({ mode, initial, existingIds, onSubmit, onClose }) {
           {form.prefix && (
             <div className="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-2.5">
               <span className="text-xs text-muted-foreground">Project IDs look like</span>
-              <span className="font-mono text-sm font-semibold text-gray-900">{form.prefix}P-2604A01</span>
+              <span className="font-mono text-sm font-semibold text-gray-900">{form.prefix}P2604A01</span>
             </div>
           )}
 
@@ -799,6 +828,192 @@ function VentureModal({ mode, initial, existingIds, onSubmit, onClose }) {
         </div>
       </div>
     </div>
+  )
+}
+
+// ── Modal: Add / Edit Product ──────────────────────────────────────────────────
+
+function ProductModal({ mode, initial, existingIds, saving, onSubmit, onClose }) {
+  const isAdd = mode === 'add'
+  const [form,     setForm]     = useState(initial ?? { id: '', label: '', description: '' })
+  const [idManual, setIdManual] = useState(!isAdd)
+
+  function onLabelChange(val) {
+    setForm(f => ({ ...f, label: val, id: idManual ? f.id : autoUnitId(val) }))
+  }
+
+  function handleSubmit() {
+    if (!form.label.trim()) { toast.error('Label is required'); return }
+    if (isAdd) {
+      if (!form.id.trim()) { toast.error('Product ID is required'); return }
+      const idError = unitIdError(form.id, existingIds)
+      if (idError) { toast.error(idError); return }
+    }
+    onSubmit({ id: form.id, label: form.label.trim(), description: form.description.trim() })
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-[2px]">
+      <div className="w-full max-w-md rounded-2xl border border-gray-200/80 bg-white shadow-2xl">
+        <div className="flex items-start justify-between gap-4 px-6 pb-3 pt-5">
+          <h3 className="text-base font-semibold text-gray-900">{isAdd ? 'New product' : `Edit ${initial?.label}`}</h3>
+          <Button variant="ghost" size="icon-sm" onClick={onClose} className="-mr-1.5 -mt-0.5 text-gray-400" aria-label="Close"><X /></Button>
+        </div>
+
+        <div className="space-y-4 px-6 pb-5">
+          <div>
+            <label className={lc}>Display label<Req /></label>
+            <input autoFocus value={form.label} onChange={e => onLabelChange(e.target.value)}
+              placeholder="e.g. Envo" maxLength={80} className={ic} />
+          </div>
+
+          {isAdd && (
+            <div>
+              <label className={lc}>
+                Product ID<Req />
+                {!idManual && <span className="ml-1 font-normal text-gray-400">· auto</span>}
+              </label>
+              <input value={form.id}
+                onChange={e => { setIdManual(true); setForm(f => ({ ...f, id: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12) })) }}
+                placeholder="ENVO"
+                className={`${ic} font-mono uppercase`} />
+              <p className="mt-1.5 text-xs text-muted-foreground">Up to 12 letters or digits. It can&apos;t be changed later.</p>
+            </div>
+          )}
+
+          <div>
+            <label className={lc}>Description</label>
+            <input value={form.description}
+              onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+              placeholder="Short description…" maxLength={300} className={ic} />
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 rounded-b-2xl border-t border-gray-100 bg-gray-50/60 px-6 py-3.5">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleSubmit} loading={saving}>
+            {!saving && (isAdd ? <Plus /> : <Check />)}
+            {isAdd ? 'Add product' : 'Save'}
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Products tab ───────────────────────────────────────────────────────────────
+// Each change is saved at once (PATCH { products }). The server refuses to
+// remove a product that records still use; such a product is deactivated.
+
+function ProductsPanel({ products, ventureIds, onSave }) {
+  const [modal,      setModal]      = useState(null)  // { mode: 'add' | 'edit', initial }
+  const [confirmDel, setConfirmDel] = useState(null)  // product
+  const [busy,       setBusy]       = useState(null)  // product id being saved, or 'modal'
+
+  const existingIds = [...ventureIds, ...products.map(p => p.id)]
+
+  async function submitModal(data) {
+    setBusy('modal')
+    const next = modal.mode === 'add'
+      ? [...products, { ...data, active: true }]
+      : products.map(p => p.id === data.id ? { ...p, label: data.label, description: data.description } : p)
+    const ok = await onSave(next, modal.mode === 'add' ? 'Product added' : 'Product saved')
+    setBusy(null)
+    if (ok) setModal(null)
+  }
+
+  async function toggleActive(product) {
+    setBusy(product.id)
+    const on = product.active === false
+    await onSave(products.map(p => p.id === product.id ? { ...p, active: on } : p), on ? 'Product activated' : 'Product deactivated')
+    setBusy(null)
+  }
+
+  async function removeProduct() {
+    const product = confirmDel
+    setConfirmDel(null)
+    setBusy(product.id)
+    await onSave(products.filter(p => p.id !== product.id), 'Product removed')
+    setBusy(null)
+  }
+
+  return (
+    <>
+      {modal && (
+        <ProductModal
+          mode={modal.mode}
+          initial={modal.initial}
+          existingIds={existingIds}
+          saving={busy === 'modal'}
+          onSubmit={submitModal}
+          onClose={() => setModal(null)}
+        />
+      )}
+      {confirmDel && (
+        <ConfirmModal
+          title="Remove product?"
+          message={`"${confirmDel.label}" can only be removed while nothing is recorded against it. Otherwise, turn off Active instead.`}
+          confirmLabel="Remove"
+          onConfirm={removeProduct}
+          onCancel={() => setConfirmDel(null)}
+        />
+      )}
+
+      <Card className="overflow-hidden">
+        <CardHeader className="pb-3">
+          <div>
+            <CardTitle>Products</CardTitle>
+            <CardDescription>Business units of their own in finance reports, beside the ventures</CardDescription>
+          </div>
+          {products.length > 0 && (
+            <CardAction>
+              <Button variant="outline" size="sm" onClick={() => setModal({ mode: 'add', initial: null })}><Plus /> Add product</Button>
+            </CardAction>
+          )}
+        </CardHeader>
+        {products.length === 0 ? (
+          <EmptyState
+            icon={Package}
+            title="No products yet"
+            description="Add one, such as Envo, to record income and expenses against it"
+            action={<Button variant="outline" onClick={() => setModal({ mode: 'add', initial: null })}><Plus /> Add product</Button>}
+            className="py-10"
+          />
+        ) : (
+          <div className="divide-y divide-gray-100 border-t border-gray-100">
+            {products.map(p => {
+              const active = p.active !== false
+              return (
+                <div key={p.id} className="flex flex-col gap-3 px-5 py-3.5 sm:flex-row sm:items-center">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className={cn('text-sm font-medium', active ? 'text-gray-900' : 'text-gray-500')}>{p.label}</p>
+                      <Badge variant="outline" className="font-mono">{p.id}</Badge>
+                      {!active && <Badge variant="warning">Inactive</Badge>}
+                    </div>
+                    <p className="mt-0.5 truncate text-[13px] text-muted-foreground">{p.description || 'No description'}</p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-3">
+                    <ActiveToggle on={active} label={p.label} onToggle={() => toggleActive(p)} disabled={busy !== null} />
+                    <div className="flex items-center gap-0.5">
+                      <Button variant="ghost" size="icon-sm" onClick={() => setModal({ mode: 'edit', initial: { id: p.id, label: p.label, description: p.description ?? '' } })}
+                        disabled={busy !== null} title="Edit" aria-label="Edit" className="text-gray-400"><Pencil className="size-3.5" /></Button>
+                      <Button variant="ghost" size="icon-sm" onClick={() => setConfirmDel(p)} loading={busy === p.id}
+                        disabled={busy !== null} title="Remove" aria-label="Remove" className="text-gray-400 hover:bg-red-50 hover:text-red-600">
+                        {busy !== p.id && <Trash2 className="size-3.5" />}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+        <div className="border-t border-gray-100 bg-gray-50/60 px-5 py-3 text-xs text-muted-foreground">
+          Inactive products are hidden from pickers; their history still reports.
+        </div>
+      </Card>
+    </>
   )
 }
 
@@ -878,7 +1093,7 @@ function ConfigContent() {
   // ── Lazy loaders ──────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    const needsConfig = ['ventures', 'leads', 'verification', 'payment'].includes(activeTab)
+    const needsConfig = CONFIG_TABS.includes(activeTab)
     if (!needsConfig || configLoaded || configLoading || loadErrors.config) return
     setConfigLoading(true)
     fetchJson('/api/config')
@@ -951,6 +1166,28 @@ function ConfigContent() {
     }
     setDirty(true)
     setVentureModalMode(null)
+  }
+  // Ventures are never removed here: projects, employees and money records
+  // keep their id. An inactive venture is hidden from pickers but still reports.
+  function toggleVentureActive(id) {
+    setConfig(c => ({ ...c, ventures: c.ventures.map(x => x.id === id ? { ...x, active: x.active === false } : x) }))
+    setDirty(true)
+  }
+
+  // Products save at once, on their own key, like payment methods.
+  async function saveProducts(products, successMessage) {
+    try {
+      const res = await fetch('/api/config', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ products }) })
+      const j   = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(j.error || 'Failed to save products')
+      setConfig(c => (c ? { ...c, products: j.data?.products ?? products } : c))
+      invalidateConfigCache()
+      toast.success(successMessage)
+      return true
+    } catch (err) {
+      toast.error(err.message || 'Failed to save products')
+      return false
+    }
   }
 
   async function saveConfig() {
@@ -1077,7 +1314,7 @@ function ConfigContent() {
 
   function setTab(id) { router.push(`/admin/config?tab=${id}`, { scroll: false }) }
 
-  const configNeedsLoad = ['ventures', 'leads', 'verification', 'payment'].includes(activeTab) && !loadErrors.config && (configLoading || !configLoaded)
+  const configNeedsLoad = CONFIG_TABS.includes(activeTab) && !loadErrors.config && (configLoading || !configLoaded)
   const visibleTabs     = TABS.filter(t => isSuperAdmin || !['email', 'whatsapp', 'integrations'].includes(t.id))
 
   function renderLoadError(section, label) {
@@ -1116,7 +1353,7 @@ function ConfigContent() {
         <VentureModal
           mode={ventureModalMode}
           initial={ventureModalInitial}
-          existingIds={config?.ventures?.map(v => v.id) ?? []}
+          existingIds={[...(config?.ventures ?? []), ...(config?.products ?? [])].map(x => x.id)}
           onSubmit={handleVentureSubmit}
           onClose={() => setVentureModalMode(null)}
         />
@@ -1143,7 +1380,7 @@ function ConfigContent() {
         tabs={visibleTabs.map(t => ({ value: t.id, label: t.label, icon: t.icon }))}
       />
 
-      {['ventures', 'leads', 'verification', 'payment'].includes(activeTab) && loadErrors.config &&
+      {CONFIG_TABS.includes(activeTab) && loadErrors.config &&
         renderLoadError('config', 'configuration')}
 
       {/* Loading */}
@@ -1163,7 +1400,7 @@ function ConfigContent() {
                   value: v.id,
                   label: (
                     <>
-                      {v.label}
+                      <span className={v.active === false ? 'text-gray-400' : undefined} title={v.active === false ? 'Inactive' : undefined}>{v.label}</span>
                       {v.prefix && <span className="font-mono text-[11px] text-muted-foreground">{v.prefix}P</span>}
                     </>
                   ),
@@ -1189,22 +1426,29 @@ function ConfigContent() {
               return (
                 <div key={v.id}>
                   {/* Venture info */}
-                  <div className="mb-6 flex items-start gap-4 rounded-lg bg-gray-50 p-4">
+                  <div className="mb-6 flex flex-col gap-3 rounded-lg bg-gray-50 p-4 sm:flex-row sm:items-start sm:gap-4">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="text-sm font-semibold text-gray-900">{v.label}</p>
                         <Badge variant="outline" className="font-mono">{v.id}</Badge>
                         {v.prefix ? (
-                          <Badge variant="outline" className="font-mono">{v.prefix}P-YYMM</Badge>
+                          <Badge variant="outline" className="font-mono">{v.prefix}PYYMM</Badge>
                         ) : (
                           <Badge variant="warning">No prefix — using fallback</Badge>
                         )}
+                        {v.active === false && <Badge variant="warning">Inactive</Badge>}
                       </div>
                       <p className="mt-1 text-[13px] text-muted-foreground">{v.description || 'No description'}</p>
+                      {v.active === false && (
+                        <p className="mt-1 text-xs text-muted-foreground">Hidden from pickers. Its projects, people and history still report under it.</p>
+                      )}
                     </div>
-                    <Button variant="outline" size="sm" onClick={() => openEditVenture(v)}>
-                      <Pencil /> Edit
-                    </Button>
+                    <div className="flex shrink-0 items-center gap-3">
+                      <ActiveToggle on={v.active !== false} label={v.label} onToggle={() => toggleVentureActive(v.id)} />
+                      <Button variant="outline" size="sm" onClick={() => openEditVenture(v)}>
+                        <Pencil /> Edit
+                      </Button>
+                    </div>
                   </div>
                   <VenturePanel ventureId={v.id} services={(config.services ?? {})[v.id] ?? []} config={config} onChange={svc => updateServices(v.id, svc)} />
                 </div>
@@ -1212,6 +1456,15 @@ function ConfigContent() {
             })}
           </div>
         </Card>
+      )}
+
+      {/* ── Products tab ────────────────────────────────────────────────────── */}
+      {activeTab === 'products' && config && (
+        <ProductsPanel
+          products={Array.isArray(config.products) ? config.products : []}
+          ventureIds={(config.ventures ?? []).map(v => v.id)}
+          onSave={saveProducts}
+        />
       )}
 
       {/* ── Leads tab ───────────────────────────────────────────────────────── */}

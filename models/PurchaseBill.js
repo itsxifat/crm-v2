@@ -1,5 +1,5 @@
 import mongoose from 'mongoose'
-import { nextSequence } from '../lib/sequence'
+import { nextSequence, counterValue } from '../lib/sequence'
 import { dhakaParts } from '../lib/dhakaTime'
 import {
   PURCHASE_LINE_TYPES, PURCHASE_BILL_STATUSES, PURCHASE_PAYMENT_MODES, PURCHASE_PAYMENT_STATUSES,
@@ -67,7 +67,7 @@ const PaymentSchema = new Schema({
 
 const PurchaseBillSchema = new Schema(
   {
-    billNo: { type: String, unique: true, sparse: true },            // 'PB-YYMM-####'
+    billNo: { type: String, unique: true, sparse: true },            // 'PBYYMM####'
 
     vendorId:        { type: ObjectId, ref: 'Vendor', default: null },
     vendorName:      { type: String, default: null, trim: true },
@@ -136,13 +136,17 @@ PurchaseBillSchema.pre('validate', async function () {
   // Month boundaries follow the business timezone (Asia/Dhaka).
   const { year, month } = dhakaParts(new Date())
   const yymm   = `${String(year).slice(-2)}${String(month + 1).padStart(2, '0')}`
-  const prefix = `PB-${yymm}-`
-  // Highest number already issued for this prefix (NOT a count — see lib/sequence.js).
+  const prefix = `PB${yymm}`
+  const re     = new RegExp(`^PB-?${yymm}-?(\\d{4,})$`)
+  // Highest number already issued this month (NOT a count — see lib/sequence.js),
+  // in either shape: bills numbered before 2026-10 read PB-2610-0001, and the old
+  // counter key (purchasebill:PB-2610-) is a floor too.
   const existing = await mongoose.model('PurchaseBill')
-    .find({ billNo: { $regex: `^${prefix}[0-9]+$` } })
+    .find({ billNo: { $regex: re.source } })
     .select('billNo').lean()
-  const maxUsed = existing.reduce((m, d) => Math.max(m, parseInt(d.billNo.slice(prefix.length), 10) || 0), 0)
-  const seq = await nextSequence(`purchasebill:${prefix}`, maxUsed)
+  const maxUsed = existing.reduce((m, d) => Math.max(m, parseInt(re.exec(d.billNo)?.[1], 10) || 0), 0)
+  const floor = Math.max(maxUsed, await counterValue(`purchasebill:PB-${yymm}-`))
+  const seq = await nextSequence(`purchasebill:${prefix}`, floor)
   this.billNo = `${prefix}${String(seq).padStart(4, '0')}`
 })
 

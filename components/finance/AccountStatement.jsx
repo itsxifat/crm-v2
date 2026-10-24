@@ -14,6 +14,7 @@ import { Card } from '@/components/ui/Card'
 import { Input, NativeSelect } from '@/components/ui/Input'
 import { Table, TableHeader, TableBody, TableFooter, TableRow, TableHead, TableCell } from '@/components/ui/Table'
 import { cn } from '@/lib/utils'
+import { codeIncludes } from '@/lib/searchMatch'
 import {
   dayKeyLabel, addDays, taxPeriodOf, addPeriods, periodFirstDay, periodLastDay, fiscalYearOf, fiscalYearRange, addFiscalYears,
 } from '@/lib/finance/fiscal'
@@ -121,7 +122,9 @@ export default function AccountStatement({ account, refreshKey = 0, fyStartMonth
       if (status !== 'all' && r.clearStatus !== status) return false
       if (!needle) return true
       return [r.description, r.category, r.expenseCategory, r.reference, r.txnId, r.paidToName, r.vendor, r.counterAccount?.name, r.cheque?.no, plainAmount(r.inAmount || r.outAmount)]
-        .some(v => v && String(v).toLowerCase().includes(needle))
+        .some(v => v && String(v).toLowerCase().includes(needle)) ||
+        // Record numbers match with separators ignored (TXN-20261024-0001 = TXN202610240001).
+        [r.txnId, r.reference, r.description].some(v => codeIncludes(v, needle))
     })
   }, [rows, direction, status, q])
 

@@ -3,10 +3,11 @@ import { timingSafeEqual } from 'crypto'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
-import { Freelancer, SalaryPayout, ProjectExpense } from '@/models'
+import { Freelancer, SalaryPayout, ProjectExpense, Employee } from '@/models'
 import { BASE_CURRENCY } from '@/lib/currencies'
 import { requirePerm } from '@/lib/rbac'
 import { dhakaParts, dhakaDayStart } from '@/lib/dhakaTime'
+import { COMPANY_UNIT, ventureUnit } from '@/lib/units'
 
 // Constant-time comparison of the scheduler secret.
 function secretMatches(given, expected) {
@@ -17,10 +18,12 @@ function secretMatches(given, expected) {
 }
 
 // Route the salary through the unified expense pipeline: approve → voucher → paid (with scan).
-function createExpenseForPayout(f, payout, period) {
+// `unit`: the venture of the freelancer's Employee record (same user), else Company / shared.
+function createExpenseForPayout(f, payout, period, unit = COMPANY_UNIT) {
   return ProjectExpense.create({
     origin:         'SALARY',
     projectId:      null,
+    unit,
     title:          `Salary ${period} — ${f.userId?.name ?? 'Freelancer'}`,
     amount:         payout.amount,
     currency:       payout.currency,
@@ -60,6 +63,15 @@ async function run() {
     disabledAt:     null,
   }).populate('userId', 'name isActive').lean()
 
+  // Freelancers have no venture: a salary-based one who is also on staff takes
+  // their Employee record's venture, as employee salaries do.
+  const userIds = due.map(f => f.userId?._id).filter(Boolean)
+  const staff = userIds.length
+    ? await Employee.find({ userId: { $in: userIds }, venture: { $nin: [null, ''] } }).select('userId venture').lean()
+    : []
+  const unitByUser = new Map(staff.map(e => [String(e.userId), ventureUnit(e.venture)]))
+  const unitOf = (f) => unitByUser.get(String(f.userId?._id)) || COMPANY_UNIT
+
   let created = 0
   const results = []
   for (const f of due) {
@@ -92,7 +104,7 @@ async function run() {
         const existing   = await SalaryPayout.findOne({ freelancerId: f._id, period }).lean()
         const hasExpense = existing ? await ProjectExpense.exists({ salaryPayoutId: existing._id }) : true
         if (existing?.status === 'PENDING' && !hasExpense) {
-          await createExpenseForPayout(f, existing, period)
+          await createExpenseForPayout(f, existing, period, unitOf(f))
           results.push({ freelancerId: String(f._id), period, status: 'repaired' })
         } else {
           results.push({ freelancerId: String(f._id), period, status: 'exists' })
@@ -104,7 +116,7 @@ async function run() {
     }
 
     try {
-      await createExpenseForPayout(f, payout, period)
+      await createExpenseForPayout(f, payout, period, unitOf(f))
       created++
       results.push({ freelancerId: String(f._id), period, status: 'created' })
     } catch (err) {

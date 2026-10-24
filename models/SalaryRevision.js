@@ -4,7 +4,7 @@ import mongoose from 'mongoose'
  * SalaryRevision — a change to an employee's monthly salary (increment,
  * promotion, adjustment or decrease) taking effect from a payroll month.
  *
- *   PENDING → APPROVED (letter numbered INC-YYMM-####) | REJECTED | CANCELLED
+ *   PENDING → APPROVED (letter numbered INCYYMM####) | REJECTED | CANCELLED
  *
  * An approved revision reaches Employee.salary (and the designation, for a
  * promotion) once its month has started — `appliedAt` (lib/hr/salaryRevisions.js
@@ -42,7 +42,7 @@ const SalaryRevisionSchema = new mongoose.Schema(
     cancelledAt:  { type: Date, default: null },
 
     appliedAt: { type: Date, default: null },
-    letterNo:  { type: String, default: undefined },   // INC-YYMM-####, on approval
+    letterNo:  { type: String, default: undefined },   // INCYYMM#### (e.g. INC26100001), on approval
   },
   {
     timestamps: true,

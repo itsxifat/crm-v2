@@ -13,6 +13,7 @@ import EmptyState from '@/components/ui/EmptyState'
 import { Card } from '@/components/ui/Card'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table'
 import { cn } from '@/lib/utils'
+import { codeIncludes } from '@/lib/searchMatch'
 
 // Each project's amounts are shown in that project's own currency.
 const fmtTk = (n, cur = 'BDT') => `${CURRENCIES.find(c => c.code === cur)?.symbol ?? cur} ${(Number(n) || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}`
@@ -56,9 +57,10 @@ export default function ClientProjectsPage() {
 
   const filtered = projects.filter((p) => {
     const matchStatus = statusFilter === 'ALL' || p.status === statusFilter
-    const matchSearch =
+    // Project codes match with separators ignored (ENTP-2610A01 = ENTP2610A01).
+    const matchSearch = !search.trim() ||
       p.name?.toLowerCase().includes(search.toLowerCase()) ||
-      p.projectCode?.toLowerCase().includes(search.toLowerCase())
+      codeIncludes(p.projectCode, search)
     return matchStatus && matchSearch
   })
 

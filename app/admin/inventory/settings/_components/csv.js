@@ -131,7 +131,7 @@ export function downloadText(filename, text, type = 'text/csv;charset=utf-8') {
 export function assetTemplate({ taxFy = '2026-27' } = {}) {
   return toCsv([
     ASSET_FIELDS.map(f => f.label),
-    ['Dell Latitude 5440', 'LAP', 'Dell', 'Latitude 5440', 'CN0X1234', '2025-03-10', '150000', '45000', '112500', taxFy, 'HQ-2F', 'EMP-001', 'GOOD', '2027-03-09', '', 'Opening register'],
+    ['Dell Latitude 5440', 'LAP', 'Dell', 'Latitude 5440', 'CN0X1234', '2025-03-10', '150000', '45000', '112500', taxFy, 'HQ-2F', 'ENDEV2503001', 'GOOD', '2027-03-09', '', 'Opening register'],
     ['Office chair (ergonomic)', 'FUR', '', '', '', '15/08/2024', '18000', '3000', '', '', 'HQ-2F', '', 'GOOD', '', '', ''],
   ])
 }

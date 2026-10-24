@@ -21,6 +21,7 @@ import {
   Asset, AssetEvent, ProjectExpense, MoneyAccount, User,
 } from '@/models'
 import { isValidObjectId } from '@/lib/objectId'
+import { codeContains } from '@/lib/codes'
 import { canDo } from '@/lib/rbac'
 import { dhakaDayKey, dhakaDate, parseDhakaDay } from '@/lib/dhakaTime'
 import { getFinanceSettings, assertBooksOpen } from '@/lib/finance/settings'
@@ -32,6 +33,7 @@ import {
 } from '@/lib/inventory/assets'
 import { moveStock } from '@/lib/inventory/stock'
 import { payExpenseNow, billWithholdingSet } from '@/lib/expensePayment'
+import { COMPANY_UNIT } from '@/lib/units'
 import { createNotification } from '@/lib/createNotification'
 
 // ── basics ───────────────────────────────────────────────────────────────────
@@ -899,6 +901,8 @@ async function createBillExpense(bill, { session, capitalizedAmountBDT, vendor }
   const expense = await new ProjectExpense({
     origin: bill.vendorId ? 'VENDOR' : 'OTHER',
     projectId: null,
+    // Purchases are a shared cost (Company / shared), never a venture's.
+    unit: COMPANY_UNIT,
     title: `Purchase ${bill.billNo} — ${bill.vendorName ?? 'Supplier'}`,
     amount: total,
     currency: 'BDT',
@@ -1590,7 +1594,12 @@ export function listFilter(searchParams) {
   const search = (searchParams.get('search') ?? '').trim()
   if (search) {
     const re = { $regex: escapeRegex(search.slice(0, 100)), $options: 'i' }
-    filter.$or = [{ billNo: re }, { vendorName: re }, { supplierInvoiceNo: re }, { mushakNo: re }, { 'lines.description': re }]
+    // Our bill numbers match with separators ignored (PB-2610-0001 = PB26100001).
+    const code = codeContains(search.slice(0, 100))
+    filter.$or = [
+      ...(code ? [{ billNo: code }] : []),
+      { vendorName: re }, { supplierInvoiceNo: re }, { mushakNo: re }, { 'lines.description': re },
+    ]
   }
   const start = parseDhakaDay(searchParams.get('startDate') ?? '')
   const end = parseDhakaDay(searchParams.get('endDate') ?? '')

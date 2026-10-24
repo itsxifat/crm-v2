@@ -7,7 +7,8 @@
  * rows are APPROVED yet already fully paid (they carry accountsTransactionId).
  * This flips them to PAID so the Accounts queue and every surface show them
  * consistently, backfills `origin` for legacy project expenses, and assigns an
- * `expenseId` (EXP-YYMM-####) to any expense created before that field existed.
+ * `expenseId` (EXPYYMM####, e.g. EXP26100001) to any expense created before that
+ * field existed.
  *
  * SAFETY
  *   • Only flips APPROVED docs that were already synced to a Transaction.
@@ -43,7 +44,7 @@ async function main() {
   const originCount  = await expenses.countDocuments(originFilter)
   console.log(`Found ${originCount} legacy project expense(s) missing origin.`)
 
-  // 3) Expenses missing `expenseId` → assign EXP-YYMM-#### in creation order.
+  // 3) Expenses missing `expenseId` → assign EXPYYMM#### in creation order.
   const idFilter  = { expenseId: { $in: [null, undefined] } }
   const idMissing = await expenses.find(idFilter).sort({ createdAt: 1 }).project({ _id: 1, createdAt: 1 }).toArray()
   console.log(`Found ${idMissing.length} expense(s) missing an expense id.`)
@@ -60,16 +61,32 @@ async function main() {
       console.log(`Backfilled origin=PROJECT on ${res.modifiedCount} row(s).`)
     }
     if (idMissing.length > 0) {
-      // Continue each month's numbering after any ids already present.
-      const perMonth = {}
+      // Continue each month's numbering after any ids already present, through the
+      // same counter as ProjectExpense.nextNumber (projectExpense:expenseId:EXPYYMM),
+      // floored at the highest id in either shape (EXP26100001 / EXP-2610-0001, NOT
+      // a count — a count reissues an id after a delete) and at the old hyphenated
+      // counter key.
+      const counters = mongoose.connection.collection('counters')
+      const floors = {}
       for (const doc of idMissing) {
         const d = new Date(doc.createdAt ?? Date.now())
         const yymm = `${String(d.getFullYear()).slice(-2)}${String(d.getMonth() + 1).padStart(2, '0')}`
-        if (perMonth[yymm] == null) {
-          perMonth[yymm] = await expenses.countDocuments({ expenseId: { $regex: `^EXP-${yymm}-` } })
+        if (floors[yymm] == null) {
+          const re = new RegExp(`^EXP-?${yymm}-?(\\d{4,})$`)
+          const used = await expenses.find({ expenseId: { $regex: re.source } }).project({ expenseId: 1 }).toArray()
+          const legacy = await counters.findOne({ _id: `projectExpense:expenseId:EXP-${yymm}-` })
+          floors[yymm] = Math.max(
+            used.reduce((m, r) => Math.max(m, parseInt(re.exec(r.expenseId)?.[1], 10) || 0), 0),
+            Number(legacy?.seq) || 0,
+          )
         }
-        perMonth[yymm] += 1
-        const expenseId = `EXP-${yymm}-${String(perMonth[yymm]).padStart(4, '0')}`
+        const res = await counters.findOneAndUpdate(
+          { _id: `projectExpense:expenseId:EXP${yymm}` },
+          [{ $set: { seq: { $add: [{ $max: [{ $ifNull: ['$seq', 0] }, floors[yymm]] }, 1] } } }],
+          { upsert: true, returnDocument: 'after' },
+        )
+        const seq = (res?.seq !== undefined ? res : res?.value).seq
+        const expenseId = `EXP${yymm}${String(seq).padStart(4, '0')}`
         await expenses.updateOne({ _id: doc._id }, { $set: { expenseId } })
       }
       console.log(`Assigned expense ids to ${idMissing.length} row(s).`)

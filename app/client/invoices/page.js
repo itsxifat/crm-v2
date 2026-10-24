@@ -18,6 +18,7 @@ import { Card } from '@/components/ui/Card'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table'
 import { buttonVariants } from '@/components/ui/Button'
 import { cn } from '@/lib/utils'
+import { codeIncludes } from '@/lib/searchMatch'
 
 const STATUS_OPTIONS = [
   { value: 'ALL',            label: 'All' },
@@ -117,11 +118,12 @@ export default function ClientInvoicesPage() {
 
   const q = search.trim().toLowerCase()
   const filtered = invoices
+  // Codes match with separators ignored, so ENV-2610A001 finds ENV2610A001.
   const filteredGroups = q
     ? groups.filter(g =>
         (g.project?.name ?? '').toLowerCase().includes(q) ||
-        (g.project?.projectCode ?? '').toLowerCase().includes(q) ||
-        g.invoices.some(i => i.invoiceNumber?.toLowerCase().includes(q)))
+        codeIncludes(g.project?.projectCode, q) ||
+        g.invoices.some(i => codeIncludes(i.invoiceNumber, q)))
     : groups
 
   const count = summary?.invoiceCount ?? total

@@ -8,7 +8,8 @@ import { resolveActiveClient } from '@/lib/clientAccess'
 import { logActivity } from '@/lib/logActivity'
 import { requirePerm, canDo, canDoAny } from '@/lib/rbac'
 import { maskDoc, INVOICE_PII } from '@/lib/pii'
-import { ciContains } from '@/lib/searchMatch'
+import { ciContains, wordMatches, amountQuery, amountEquals } from '@/lib/searchMatch'
+import { codeContains } from '@/lib/codes'
 import { ensureCombinedInvoice, toObjectId, NON_BILLABLE_STATUSES } from '@/lib/combinedInvoice'
 import { computeInvoiceTotals, INVOICE_VAT_TREATMENTS } from '@/lib/invoiceTotals'
 import { isValidObjectId } from '@/lib/objectId'
@@ -16,6 +17,8 @@ import { getFinanceSettings } from '@/lib/finance/settings'
 import { VAT_TREATMENTS, BIN_REGEX } from '@/lib/tax/catalog'
 import { BASE_CURRENCY, isValidCurrency } from '@/lib/currencies'
 import { parseDhakaDay } from '@/lib/dhakaTime'
+import { getConfig } from '@/lib/getConfig'
+import { isValidUnit, ventureUnit } from '@/lib/units'
 
 // Mixed-typed money fields can hold legacy non-numeric values; coerce defensively
 // so $sort / $group never blow up on one bad document.
@@ -134,18 +137,32 @@ const SORT_FIELDS = {
   due:           '_due',
 }
 
+// Words the list shows for stored codes, so typing what is on screen finds it
+// (each value's own words count too: 'partially paid', 'zero rated').
+const STATUS_WORDS = {
+  DRAFT: 'Draft', SENT: 'Sent', PARTIALLY_PAID: 'Partial', PAID: 'Paid', OVERDUE: 'Overdue', CANCELLED: ['Cancelled', 'Canceled'],
+}
+const VAT_WORDS = {
+  STANDARD: 'Standard rate', REDUCED: 'Reduced rate', ZERO_RATED: ['Zero-rated', 'Export'], EXEMPT: 'Exempt', NONE: ['No VAT', 'Non-VAT'],
+}
+
 /**
- * Resolve free-text search into an extra $match clause.
- * Searches the invoice number directly plus project (name/code) and client
- * (company/code/contact name) by resolving those to id sets first.
+ * Resolve free-text search into an extra $match clause over every column the
+ * list shows: invoice number and combined invoice number (separators ignored;
+ * a combined number finds the invoices it groups), project code / name, client
+ * code / company / contact person / owner name — refs resolved to id sets
+ * first —, status and VAT treatment words, service code, and amounts equal to
+ * the total, paid or due figure.
  */
 async function buildSearchClause(search) {
-  const rx = ciContains(search)
+  const rx   = ciContains(search)
+  const code = codeContains(search)
 
-  const [projects, clients, users] = await Promise.all([
-    Project.find({ $or: [{ name: rx }, { projectCode: rx }] }).select('_id').lean(),
-    Client.find({ $or: [{ company: rx }, { clientCode: rx }, { contactPerson: rx }] }).select('_id').lean(),
+  const [projects, clients, users, combined] = await Promise.all([
+    Project.find({ $or: [{ name: rx }, ...(code ? [{ projectCode: code }] : [])] }).select('_id').lean(),
+    Client.find({ $or: [{ company: rx }, { contactPerson: rx }, ...(code ? [{ clientCode: code }] : [])] }).select('_id').lean(),
     User.find({ name: rx }).select('_id').lean(),
+    code ? CombinedInvoice.find({ combinedNumber: code }).select('projectId clientId').lean() : [],
   ])
 
   const clientIds = new Set(clients.map(c => c._id.toString()))
@@ -157,9 +174,46 @@ async function buildSearchClause(search) {
   const projectIds = projects.map(p => p._id)
   const clientOids = [...clientIds].map(toObjectId)
 
-  const or = [{ invoiceNumber: rx }]
+  const or = [{ serviceCode: rx }]
+  if (code) or.push({ invoiceNumber: code })
   if (projectIds.length) or.push({ projectId: { $in: projectIds } }, { projectIds: { $in: projectIds } })
   if (clientOids.length) or.push({ clientId: { $in: clientOids } })
+
+  // A combined invoice groups its project's billable invoices billed to its
+  // client (lib/combinedInvoice buildCombined) — one clause per client.
+  const combinedByClient = new Map()
+  for (const c of combined) {
+    const key = c.clientId?.toString()
+    if (!key || !c.projectId) continue
+    if (!combinedByClient.has(key)) combinedByClient.set(key, [])
+    combinedByClient.get(key).push(c.projectId)
+  }
+  for (const [cid, pids] of combinedByClient) {
+    or.push({
+      clientId: toObjectId(cid),
+      status:   { $nin: NON_BILLABLE_STATUSES },
+      $or:      [{ projectId: { $in: pids } }, { projectIds: { $in: pids } }],
+    })
+  }
+
+  const statuses = wordMatches(search, STATUS_WORDS)
+  if (statuses.length) or.push({ status: { $in: statuses } })
+  const treatments = wordMatches(search, VAT_WORDS)
+  if (treatments.length) or.push({ vatTreatment: { $in: treatments } })
+  // Invoices saved before VAT support carry no treatment: they are "No VAT".
+  if (treatments.includes('NONE')) or.push({ vatTreatment: null })
+
+  // Money is Mixed (numbers or legacy strings), so compare numerically — the
+  // same total / paid / due figures the list shows.
+  const amount = amountQuery(search)
+  if (amount != null) {
+    const total = num('total')
+    or.push(amountEquals(amount, [
+      total,
+      num('paidAmount'),
+      { $max: [0, { $subtract: [total, { $min: [num('paidAmount'), total] }] }] },
+    ]))
+  }
   return { $or: or }
 }
 
@@ -187,7 +241,7 @@ export async function GET(request) {
     const clientId  = searchParams.get('clientId')
     const projectId = searchParams.get('projectId')
     const venture   = searchParams.get('venture')
-    const search    = searchParams.get('search')?.trim()
+    const search    = searchParams.get('search')?.trim().slice(0, 100)
     const startDate = searchParams.get('startDate')
     const endDate   = searchParams.get('endDate')
     const dateField = searchParams.get('dateField') === 'dueDate' ? 'dueDate' : 'issueDate'
@@ -466,7 +520,7 @@ export async function POST(request) {
     const body = (await request.json()) ?? {}
     const {
       clientId, projectId, items, issueDate, dueDate, taxRate, discount, notes, terms, currency,
-      vatTreatment, vatRate, serviceCode, deliveryDestination, totalBDT: bodyTotalBDT, fxRate,
+      vatTreatment, vatRate, serviceCode, deliveryDestination, totalBDT: bodyTotalBDT, fxRate, unit: bodyUnit,
     } = body
 
     const invCurrency = isBlank(currency) ? BASE_CURRENCY : String(currency).trim().toUpperCase()
@@ -482,12 +536,22 @@ export async function POST(request) {
     // A project invoice must bill the project's own client — otherwise that
     // client's portal would show another company's project, and the project's
     // rollup / payments would mix two clients' money.
+    let project = null
     if (projectId) {
-      const project = await Project.findById(projectId).select('clientId').lean()
+      project = await Project.findById(projectId).select('clientId venture').lean()
       if (!project) return NextResponse.json({ error: 'Project not found', field: 'projectId' }, { status: 422 })
       if (String(project.clientId) !== String(clientId))
         return NextResponse.json({ error: 'This project belongs to another client', field: 'projectId' }, { status: 422 })
     }
+
+    // Business unit (lib/units.js): a project invoice belongs to the project's
+    // venture; a standalone invoice needs the venture / product / Company chosen.
+    const fromProject = ventureUnit(project?.venture || null)
+    const unit = fromProject || (typeof bodyUnit === 'string' ? bodyUnit.trim() : '')
+    if (!unit)
+      return NextResponse.json({ error: 'Choose the venture or product this invoice is for (or Company / shared)', field: 'unit' }, { status: 422 })
+    if (!fromProject && !isValidUnit(unit, await getConfig()))
+      return NextResponse.json({ error: 'Unknown venture or product — choose one from the list', field: 'unit' }, { status: 422 })
 
     // VAT setup: the body wins; otherwise the company default from finance
     // settings (foreign clients → zero-rated export of services).
@@ -519,6 +583,7 @@ export async function POST(request) {
     const invoice = await new Invoice({
       clientId,
       projectId:   projectId || null,
+      unit,
       items:       processedItems,
       issueDate:   issueDate ? new Date(issueDate) : new Date(),
       dueDate:     dueDate   ? new Date(dueDate)   : null,
@@ -569,7 +634,7 @@ export async function POST(request) {
       entityId: invoice._id.toString(),
       changes:  JSON.stringify({
         invoiceNumber: invoice.invoiceNumber, total: invoice.total, currency: invoice.currency,
-        vatTreatment: invoice.vatTreatment, vatAmount: invoice.vatAmount,
+        vatTreatment: invoice.vatTreatment, vatAmount: invoice.vatAmount, unit,
       }),
       request,
     })

@@ -9,6 +9,7 @@ import { canDo, canDoAny } from '@/lib/rbac'
 import { isValidObjectId } from '@/lib/objectId'
 import { logActivity } from '@/lib/logActivity'
 import { ciContains, ciEquals } from '@/lib/searchMatch'
+import { codeContains } from '@/lib/codes'
 import { normalizeDeptCode } from '@/models/Employee'
 import {
   REVISION_TYPES, RevisionError, applyDueRevisions, proposeRevision, revisionJson, usersOf,
@@ -50,7 +51,9 @@ export async function GET(request) {
       }
       if (search) {
         const users = await User.find({ name: ciContains(search) }).select('_id').lean()
-        empFilter.$or = [{ userId: { $in: users.map(u => u._id) } }, { employeeId: ciContains(search) }]
+        // Employee IDs match with separators ignored (EN-DEV2610001 = ENDEV2610001).
+        const code = codeContains(search)
+        empFilter.$or = [{ userId: { $in: users.map(u => u._id) } }, ...(code ? [{ employeeId: code }] : [])]
       }
       filter.employeeId = { $in: await Employee.find(empFilter).distinct('_id') }
     }

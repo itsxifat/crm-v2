@@ -10,6 +10,7 @@ import { isValidObjectId } from '@/lib/objectId'
 import { logActivity } from '@/lib/logActivity'
 import { createNotification } from '@/lib/createNotification'
 import { ciContains } from '@/lib/searchMatch'
+import { codeContains } from '@/lib/codes'
 import { dhakaDayStart } from '@/lib/dhakaTime'
 import { toInstant } from '@/lib/finance/fiscal'
 import { getFinanceSettings } from '@/lib/finance/settings'
@@ -54,12 +55,13 @@ async function buildFilter(sp) {
   const search = (sp.get('search') ?? '').trim()
   if (search) {
     const rx = ciContains(search)
-    const or = [{ assetTag: rx }, { name: rx }, { serialNumber: rx }, { brand: rx }, { model: rx }]
+    // Asset tags and employee IDs match with separators ignored (EN-LAP-00042 = ENLAP00042).
+    const code = codeContains(search)
+    const or = [...(code ? [{ assetTag: code }] : []), { name: rx }, { serialNumber: rx }, { brand: rx }, { model: rx }]
     // Also match the holder by name (Employee → User) or employee ID.
     const users = await User.find({ name: rx }).select('_id').limit(200).lean()
-    const emps = await Employee.find({
-      $or: [{ employeeId: rx }, ...(users.length ? [{ userId: { $in: users.map(u => u._id) } }] : [])],
-    }).select('_id').limit(200).lean()
+    const empOr = [...(code ? [{ employeeId: code }] : []), ...(users.length ? [{ userId: { $in: users.map(u => u._id) } }] : [])]
+    const emps = empOr.length ? await Employee.find({ $or: empOr }).select('_id').limit(200).lean() : []
     if (emps.length) or.push({ assignedEmployeeId: { $in: emps.map(e => e._id) } })
     and.push({ $or: or })
   }

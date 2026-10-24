@@ -6,6 +6,7 @@ import connectDB from '@/lib/mongodb'
 import Lead from '@/models/Lead'
 import { Client, Employee, User } from '@/models'
 import { ciContains } from '@/lib/searchMatch'
+import { codeContains } from '@/lib/codes'
 import { requireStaff, canDo } from '@/lib/rbac'
 import { maskEmail, maskPhone } from '@/lib/pii'
 
@@ -31,6 +32,8 @@ export async function GET(request) {
     const email = v => (canContact ? v : maskEmail(v))
     const phone = v => (canContact ? v : maskPhone(v))
     const rx    = ciContains(q)
+    // Client codes / employee IDs match with separators ignored (ENCL-2610A001 = ENCL2610A001).
+    const code  = codeContains(q)
 
     // ── Users matching by name (and email / phone when allowed) ────────────
     const userOr = [{ name: rx }]
@@ -65,7 +68,7 @@ export async function GET(request) {
       const clients = await Client.find({
         $or: [
           { userId: { $in: matchedUserIds } },
-          { company: rx }, { contactPerson: rx }, { clientCode: rx },
+          { company: rx }, { contactPerson: rx }, ...(code ? [{ clientCode: code }] : []),
         ],
       })
         .select('company contactPerson clientCode clientType userId')
@@ -94,7 +97,7 @@ export async function GET(request) {
       resigned: { $ne: true },
       $or: [
         { userId: { $in: matchedUserIds } },
-        { employeeId: rx }, { designation: rx },
+        ...(code ? [{ employeeId: code }] : []), { designation: rx },
       ],
     })
       .select('employeeId designation userId')

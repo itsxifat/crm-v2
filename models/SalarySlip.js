@@ -1,5 +1,5 @@
 import mongoose from 'mongoose'
-import { nextSequence } from '../lib/sequence'
+import { nextSequence, counterValue } from '../lib/sequence'
 import { dhakaParts } from '../lib/dhakaTime'
 
 // A generated payslip for one employee for one period ('YYYY-MM'). Snapshots the
@@ -11,7 +11,7 @@ const SalarySlipSchema = new mongoose.Schema(
   {
     employeeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Employee', required: true },
     period:     { type: String, required: true }, // 'YYYY-MM'
-    slipNo:     { type: String, default: null },  // SLP-YYMM-####
+    slipNo:     { type: String, default: null },  // SLPYYMM####
 
     baseSalary: { type: Number, required: true }, // snapshot of Employee.salary at generation
 
@@ -51,20 +51,24 @@ SalarySlipSchema.index({ employeeId: 1, period: 1 }, { unique: true })
 // Slip numbers are official document numbers — never shared by two slips.
 SalarySlipSchema.index({ slipNo: 1 }, { unique: true, partialFilterExpression: { slipNo: { $type: 'string' } } })
 
-// Human-readable slip number (SLP-YYMM-####), assigned on creation. YYMM is
-// the Asia/Dhaka month. Allocated from an atomic counter (floored at the highest
-// number already used) so a cancelled/deleted slip never frees its number for
-// reuse and concurrent generations can't receive the same number.
+// Human-readable slip number (SLPYYMM####, e.g. SLP26100001), assigned on
+// creation. YYMM is the Asia/Dhaka month. Allocated from an atomic counter
+// (floored at the highest number already used) so a cancelled/deleted slip never
+// frees its number for reuse and concurrent generations can't receive the same
+// number. Slips numbered before 2026-10 read SLP-2610-0001: the floor counts both
+// shapes, and the old counter key (salarySlip:SLP-2610-) too.
 SalarySlipSchema.pre('validate', async function () {
   if (this.slipNo) return
   const { year, month } = dhakaParts()
   const yymm   = `${String(year).slice(-2)}${String(month + 1).padStart(2, '0')}`
-  const prefix = `SLP-${yymm}-`
+  const prefix = `SLP${yymm}`
+  const re     = new RegExp(`^SLP-?${yymm}-?(\\d{4,})$`)
   const existing = await mongoose.model('SalarySlip')
-    .find({ slipNo: { $regex: `^${prefix}[0-9]+$` } })
+    .find({ slipNo: { $regex: re.source } })
     .select('slipNo').lean()
-  const maxUsed = existing.reduce((m, d) => Math.max(m, parseInt(d.slipNo.slice(prefix.length), 10) || 0), 0)
-  const seq = await nextSequence(`salarySlip:${prefix}`, maxUsed)
+  const maxUsed = existing.reduce((m, d) => Math.max(m, parseInt(re.exec(d.slipNo)?.[1], 10) || 0), 0)
+  const floor = Math.max(maxUsed, await counterValue(`salarySlip:SLP-${yymm}-`))
+  const seq = await nextSequence(`salarySlip:${prefix}`, floor)
   this.slipNo = `${prefix}${String(seq).padStart(4, '0')}`
 })
 

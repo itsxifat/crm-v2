@@ -284,7 +284,7 @@ export async function GET(request) {
 }
 
 // POST /api/tax/certificates/tds/print  { ids: string[] }
-// Issue the TDS certificate: assigns TDS-YYMM-### (status ISSUED, dated today)
+// Issue the TDS certificate: assigns TDSYYMM### (status ISSUED, dated today)
 // to a ready (deposited), unnumbered selection. Idempotent: an already numbered
 // selection returns its number. GET ?ids=... then prints it.
 export async function POST(request) {

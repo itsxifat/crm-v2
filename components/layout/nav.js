@@ -50,6 +50,7 @@ export const NAV = [
       { href: '/admin/my-expenses',                label: 'My expenses',      icon: Receipt,        permission: 'finance.expenses.submit' },
       { href: '/admin/salary',                     label: 'Salary',           icon: Banknote,       permission: 'finance.salary.view' },
       { href: '/admin/accounts?tab=pl',            label: 'Profit & loss',    icon: LineChart,      permission: 'finance.reports.view',      basePath: '/admin/accounts', tab: 'pl' },
+      { href: '/admin/accounts?tab=units',         label: 'Ventures & products', icon: PieChart,  permission: 'finance.reports.view',      basePath: '/admin/accounts', tab: 'units' },
       { href: '/admin/finance/opening-balances',   label: 'Opening balances', icon: Scale,          permission: ['finance.opening.manage', 'finance.periods.lock'] },
     ],
   },

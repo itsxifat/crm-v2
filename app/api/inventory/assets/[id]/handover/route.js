@@ -10,6 +10,7 @@ import { isValidObjectId } from '@/lib/objectId'
 import { escapeHtml } from '@/lib/html'
 import { qrSvg } from '@/lib/qr'
 import { CONDITION_META } from '@/lib/inventory/constants'
+import { compactCode } from '@/lib/codes'
 import {
   READ_PERMS, errorResponse, employeeOfSession, companyFromSettings, appOrigin, printHeaders, fmtDay, fmtTk, dayKeyOf,
 } from '../../_lib/service'
@@ -96,7 +97,9 @@ export async function GET(request, { params }) {
     const deptName = event.departmentId?.name ?? emp?.department ?? null
     const condition = event.condition ?? asset.condition
     const conditionLabel = CONDITION_META[condition]?.label ?? condition ?? '—'
-    const formNo = `HO-${asset.assetTag}-${String(dayKeyOf(event.date) ?? '').slice(2).replace(/-/g, '')}`
+    // HO + tag + YYMMDD of the hand-over, letters and digits only: HOENLAP00042261024
+    // (a tag not yet migrated, EN-LAP-00042, gives the same form number).
+    const formNo = compactCode(`HO${asset.assetTag}${String(dayKeyOf(event.date) ?? '').slice(2)}`)
     const expected = event.details?.expectedReturnDate ?? null
     const origin = appOrigin(request)
     const qr = await qrSvg(`${origin}/admin/inventory/assets/tag/${encodeURIComponent(asset.assetTag)}`, { size: 88, margin: 0 })

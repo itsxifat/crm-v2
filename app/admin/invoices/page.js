@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   Plus, FileText, Eye, Pencil, Trash2, Search, X,
   ArrowUp, ArrowDown, ArrowUpDown, Layers, List, FolderTree, ChevronRight,
@@ -215,16 +215,25 @@ export default function InvoicesPage() {
     return () => clearTimeout(t)
   }, [search])
 
-  const params = useCallback(() => {
-    const p = new URLSearchParams({ page: String(page), limit: String(limit) })
+  // The filter set as a query string — shared by the list, the project groups
+  // and a group's expanded invoice rows, so all three show the same invoices.
+  const filterQs = useMemo(() => {
+    const p = new URLSearchParams()
     if (status)    p.set('status',    status)
     if (debounced) p.set('search',    debounced)
     if (venture)   p.set('venture',   venture)
     if (startDate) p.set('startDate', startDate)
     if (endDate)   p.set('endDate',   endDate)
     if (startDate || endDate) p.set('dateField', dateField)
+    return p.toString()
+  }, [status, debounced, venture, startDate, endDate, dateField])
+
+  const params = useCallback(() => {
+    const p = new URLSearchParams(filterQs)
+    p.set('page',  String(page))
+    p.set('limit', String(limit))
     return p
-  }, [page, limit, status, debounced, venture, startDate, endDate, dateField])
+  }, [filterQs, page, limit])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -327,7 +336,7 @@ export default function InvoicesPage() {
             <input
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Search…"
+              placeholder="Search invoice no., client, project, amount…"
               className={cn(inputClass, 'pl-9 pr-8')}
             />
             {search && (
@@ -414,7 +423,7 @@ export default function InvoicesPage() {
                     </button>
 
                     {isOpen && (
-                      <ProjectInvoiceRows group={g} onOpen={id => router.push(`/admin/invoices/${id}`)} />
+                      <ProjectInvoiceRows group={g} filters={filterQs} onOpen={id => router.push(`/admin/invoices/${id}`)} />
                     )}
                   </div>
                 )
@@ -520,7 +529,7 @@ export default function InvoicesPage() {
 
 // ─── Expanded project row: its invoices ───────────────────────────────────────
 
-function ProjectInvoiceRows({ group, onOpen }) {
+function ProjectInvoiceRows({ group, filters, onOpen }) {
   const [rows,    setRows]    = useState(null)
   const [loading, setLoading] = useState(true)
 
@@ -528,15 +537,24 @@ function ProjectInvoiceRows({ group, onOpen }) {
     // Standalone group (no project) → that client's invoices without a project
     const clientKey = group.client?.id
     if (!group.projectId && !clientKey) { setRows([]); setLoading(false); return }
-    const qs = group.projectId
-      ? `projectId=${group.projectId}`
-      : `projectId=none&clientId=${clientKey}`
-    fetch(`/api/invoices?${qs}&limit=100&sort=issueDate&dir=asc`)
+    // The page's search / status / date filters apply here too, so a group
+    // found through one matching invoice lists only the matching invoices.
+    const p = new URLSearchParams(filters)
+    if (group.projectId) p.set('projectId', group.projectId)
+    else { p.set('projectId', 'none'); p.set('clientId', clientKey) }
+    p.set('limit', '100')
+    p.set('sort',  'issueDate')
+    p.set('dir',   'asc')
+    // Only the latest request may fill the rows (filters change while open).
+    let current = true
+    setLoading(true)
+    fetch(`/api/invoices?${p}`)
       .then(r => r.json())
-      .then(j => setRows(j.data ?? []))
-      .catch(() => setRows([]))
-      .finally(() => setLoading(false))
-  }, [group.projectId, group.client?.id])
+      .then(j => { if (current) setRows(j.data ?? []) })
+      .catch(() => { if (current) setRows([]) })
+      .finally(() => { if (current) setLoading(false) })
+    return () => { current = false }
+  }, [group.projectId, group.client?.id, filters])
 
   if (loading) return <LoadingSpinner size="sm" className="py-6" />
 

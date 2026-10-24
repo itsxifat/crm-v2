@@ -2,11 +2,11 @@
 
 import { useState, useEffect, useRef, useCallback, Suspense, Fragment } from 'react'
 import { useSession } from 'next-auth/react'
-import { useSearchParams } from 'next/navigation'
+import { useSearchParams, useRouter } from 'next/navigation'
 import {
   AlertCircle, Plus, Pencil, X, Loader2, CheckCircle2, XCircle,
   Paperclip, ExternalLink, ArrowUpRight, ArrowDownRight, FileText as FileTextIcon, ChevronLeft, Printer,
-  Landmark, Receipt, ChevronDown, ChevronRight, AlertTriangle, Info, RotateCcw, ArrowLeftRight,
+  Landmark, Receipt, ChevronDown, ChevronRight, AlertTriangle, Info, RotateCcw, ArrowLeftRight, Tag,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useForm, Controller } from 'react-hook-form'
@@ -29,9 +29,13 @@ import { Table, TableHeader, TableBody, TableFooter, TableRow, TableHead, TableC
 import Badge from '@/components/ui/Badge'
 import EmptyState from '@/components/ui/EmptyState'
 import LoadingSpinner, { PageLoader } from '@/components/ui/LoadingSpinner'
+import ActionMenu from '@/components/ui/ActionMenu'
 import { cn } from '@/lib/utils'
 import MoneyAccountSelect, { useMoneyAccounts, invalidateMoneyAccounts, moneyAccountLabel, accountRequiredOn } from '@/components/finance/MoneyAccountSelect'
 import ReverseClientPaymentModal from '@/components/finance/ReverseClientPaymentModal'
+import UnitSelect from '@/components/finance/UnitSelect'
+import { COMPANY_UNIT, UNASSIGNED, ventureUnit, unitOptions, unitLabel } from '@/lib/units'
+import { fiscalYearOf, fiscalYearRange, addFiscalYears, isDayKey } from '@/lib/finance/fiscal'
 import WithholdingFields, { emptyWithholding, invoiceAllowsVds } from '@/components/tax/WithholdingFields'
 import { useConfig } from '@/lib/useConfig'
 import { currencyOptions, BASE_CURRENCY, formatMoney } from '@/lib/currencies'
@@ -154,6 +158,64 @@ function apiErrorMessage(json, fallback = 'Something went wrong') {
   return json?.error || fallback
 }
 const CHANNEL_OPTIONS = PAYMENT_CHANNELS.filter(c => c.value !== 'INTERNAL' && c.value !== 'CHALLAN')
+
+// ─── Ventures & products (business units, lib/units.js) ───────────────────────
+
+const UNIT_GROUP_LABELS = { VENTURE: 'Ventures', PRODUCT: 'Products', COMPANY: 'Company' }
+
+/** The unit an expense's payment is booked to — the same order lib/expensePayment.payExpense uses. */
+function unitOfExpense(expense) {
+  return expense?.unit
+    ?? ventureUnit(expense?.projectId?.venture)
+    ?? ventureUnit(expense?.venture)
+    ?? COMPANY_UNIT
+}
+
+/** The unit a client receipt on this invoice is booked to (invoice → its project's venture → Company). */
+function unitOfInvoice(invoice, project = null) {
+  const p = invoice?.projectId && typeof invoice.projectId === 'object' ? invoice.projectId : null
+  const first = Array.isArray(invoice?.projectIds) && typeof invoice.projectIds[0] === 'object' ? invoice.projectIds[0] : null
+  return invoice?.unit
+    ?? ventureUnit(p?.venture ?? first?.venture ?? project?.venture)
+    ?? COMPANY_UNIT
+}
+
+/**
+ * Report / list filter: '' = every unit the viewer may see, UNASSIGNED = rows
+ * with no unit. Inactive ventures and products stay listed (their history reports).
+ */
+function UnitFilter({ value, onChange, config, allLabel = 'All ventures & products', className }) {
+  const options = unitOptions(config ?? {}, { includeInactive: true })
+  const kinds = [...new Set(options.map(o => o.kind))]
+  return (
+    <NativeSelect value={value ?? ''} onChange={e => onChange(e.target.value)}
+      aria-label="Venture / product" className={cn('text-[13px]', className)}>
+      <option value="">{allLabel}</option>
+      {kinds.map(kind => (
+        <optgroup key={kind} label={UNIT_GROUP_LABELS[kind] ?? kind}>
+          {options.filter(o => o.kind === kind).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </optgroup>
+      ))}
+      <option value={UNASSIGNED}>Unassigned (older entries)</option>
+    </NativeSelect>
+  )
+}
+
+/** A unit fixed by something else (project, invoice, stored row), shown like a disabled field. */
+function UnitReadOnly({ unit, config }) {
+  return (
+    <div className={cn(inputClass, 'cursor-not-allowed items-center bg-gray-50')}>
+      <span className={cn('truncate', unit ? 'text-gray-700' : 'text-amber-700')}>{unitLabel(unit, config ?? {})}</span>
+    </div>
+  )
+}
+
+/** Current Dhaka fiscal year (July–June) as { from, to } day keys; `offset` −1 = last year. */
+function fiscalYearDays(offset = 0) {
+  const fy = offset ? addFiscalYears(fiscalYearOf(), offset) : fiscalYearOf()
+  const r = fiscalYearRange(fy)
+  return { from: r?.startDay ?? '', to: r?.endDay ?? '' }
+}
 
 // Salary / rent paid outside a bank is not an allowable expense (ITA 2023 s.55) —
 // the same rule lib/expensePayment.js applies when the payment is recorded.
@@ -741,12 +803,14 @@ function DialogShell({ title, description, onClose, className, footer, children 
 // ─── Transaction Modal ────────────────────────────────────────────────────────
 
 function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
-  const { paymentMethods, expenseCategories, incomeCategories } = useConfig()
+  const { paymentMethods, expenseCategories, incomeCategories, config } = useConfig()
   const isEdit = !!tx
   const [receiptUrl,  setReceiptUrl]  = useState('')
   const [projects,    setProjects]    = useState([])
   const [invoices,    setInvoices]    = useState([])
   const [txnIdVal,    setTxnIdVal]    = useState('')
+  // Venture / product picked by hand (a project or linked invoice overrides it).
+  const [unitChoice,  setUnitChoice]  = useState(null)
   // Money account the cash moved through (income: received into). Legacy rows
   // without an account may get one on edit; an existing account is fixed.
   const [accountId,   setAccountId]   = useState(null)
@@ -771,11 +835,22 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
   const amountVal  = watch('amount')
   const paymentMethodVal = watch('paymentMethod')
   const dateVal    = watch('date')
+  const projectIdVal = watch('projectId')
+  const invoiceIdVal = watch('invoiceId')
   const isExpense  = type === 'EXPENSE'
   const isForeign  = currency && currency !== BASE_CURRENCY
   // A NEW expense is not a direct ledger entry — it's submitted as a request that
   // must be Reviewed → Paid → Authorized. Editing an existing transaction is unchanged.
   const isExpenseRequest = isExpense && !isEdit
+
+  // Venture / product (required on a new entry). A linked invoice settles to the
+  // invoice's unit and a project to its venture — both shown read-only; otherwise
+  // the person picks one (Company / shared included). Edits keep the stored unit:
+  // it is changed from the list's row menu.
+  const linkedInvoice = !isEdit && type === 'INCOME' && invoiceIdVal ? (invoices.find(i => i.id === invoiceIdVal) ?? null) : null
+  const linkedProject = !isEdit && projectIdVal ? (projects.find(p => p.id === projectIdVal) ?? null) : null
+  const derivedUnit   = linkedInvoice ? unitOfInvoice(linkedInvoice) : ventureUnit(linkedProject?.venture)
+  const unit          = derivedUnit ?? unitChoice
 
   // Nested taxonomy from config — subcategories belong to the selected category
   const baseCategories = isExpense ? expenseCategories : incomeCategories
@@ -792,6 +867,7 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
       setReceiptUrl(url)
       setTxnIdVal(isEdit ? tx.txnId ?? '' : '')
       setAccountId(isEdit ? (idOf(tx.accountId) ? String(idOf(tx.accountId)) : null) : null)
+      setUnitChoice(null)
       setVendorId('')
       setExpTax(expenseTaxState(null))
       reset(isEdit ? {
@@ -864,6 +940,7 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
 
   async function onSubmit(data) {
     try {
+      if (!isEdit && !unit) { toast.error('Choose the venture / product'); return }
       // A brand-new expense is not written to the ledger directly — it becomes a
       // PENDING expense request that must be Reviewed → Paid → Authorized.
       if (isExpenseRequest) {
@@ -894,6 +971,7 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
           amountBDT:   data.amountBDT || undefined,
           date:        data.date,
           projectId:   data.projectId || undefined,
+          unit,
           invoiceUrl:  receiptUrl || undefined,
           notes:       data.reference ? `Ref: ${data.reference}` : undefined,
         }
@@ -915,6 +993,8 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
       const body = { ...data, receiptUrl: receiptUrl || null, txnId: txnIdVal.trim() || null }
       // The ledger id is fixed once created — never send it on edit.
       if (isEdit) delete body.txnId
+      // The unit is set on creation; later changes go through PATCH (the row menu).
+      if (!isEdit) body.unit = unit
       Object.keys(body).forEach(k => { if (body[k] === '') body[k] = null })
       // Money account: always on a new entry; on edit only when it changes (a
       // legacy row getting one, or a correction). It is never cleared from here —
@@ -1139,22 +1219,42 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
             )} />
           </div>
           <div>
-            <Label>Reference</Label>
-            <Input {...register('reference')} placeholder="INV-001, PO-123…" />
+            <Label required={!isEdit}>Venture / product</Label>
+            {isEdit || derivedUnit ? (
+              <UnitReadOnly unit={isEdit ? (tx?.unit ?? null) : derivedUnit} config={config} />
+            ) : (
+              // '' = nothing chosen yet (null would read as a stored "Unassigned").
+              <UnitSelect value={unitChoice ?? ''} onChange={v => setUnitChoice(v || null)} required placeholder="Select…" />
+            )}
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              {isEdit
+                ? 'Change it from the row menu in Transactions.'
+                : linkedInvoice
+                  ? 'Follows the linked invoice.'
+                  : derivedUnit
+                    ? "Follows the project's venture."
+                    : 'Company / shared for costs no venture or product owns.'}
+            </p>
           </div>
         </div>
 
-        {type === 'INCOME' && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <Label title="Syncs the invoice's paid amount">Linked invoice</Label>
-            <Controller name="invoiceId" control={control} render={({ field }) => (
-              <Select value={field.value} onChange={v => field.onChange(v ?? '')}
-                options={invoices.map(inv => ({ value: inv.id, label: `${inv.invoiceNumber} — ${inv.clientId?.userId?.name ?? inv.clientId?.company ?? 'Client'} (due ${formatCurrency(Math.max(0, toNum(inv.total) - toNum(inv.paidAmount)), inv.currency)})` }))}
-                placeholder="None"
-              />
-            )} />
+            <Label>Reference</Label>
+            <Input {...register('reference')} placeholder="INV-001, PO-123…" />
           </div>
-        )}
+          {type === 'INCOME' && (
+            <div>
+              <Label title="Syncs the invoice's paid amount">Linked invoice</Label>
+              <Controller name="invoiceId" control={control} render={({ field }) => (
+                <Select value={field.value} onChange={v => field.onChange(v ?? '')}
+                  options={invoices.map(inv => ({ value: inv.id, label: `${inv.invoiceNumber} — ${inv.clientId?.userId?.name ?? inv.clientId?.company ?? 'Client'} (due ${formatCurrency(Math.max(0, toNum(inv.total) - toNum(inv.paidAmount)), inv.currency)})` }))}
+                  placeholder="None"
+                />
+              )} />
+            </div>
+          )}
+        </div>
 
         {/* Expense request: payee vendor + supplier-bill tax (VAT / VDS / TDS). */}
         {isExpenseRequest && Array.isArray(vendors) && vendors.length > 0 && (
@@ -1202,7 +1302,7 @@ function TransactionModal({ open, onOpenChange, tx, onSaved, currentUser }) {
 // ─── Approve Modal ────────────────────────────────────────────────────────────
 
 function PaymentModal({ expense, onClose, onDone }) {
-  const { paymentMethods } = useConfig()
+  const { paymentMethods, config } = useConfig()
   const { accounts: moneyAccounts, goLiveDate } = useMoneyAccounts()
   const [note,          setNote]          = useState('')
   const [amtBDT,        setAmtBDT]        = useState(expense.amountBDT ?? '')
@@ -1342,6 +1442,9 @@ function PaymentModal({ expense, onClose, onDone }) {
               {expense.submittedBy?.name && (
                 <p className="text-xs text-muted-foreground">Submitted by <span className="font-medium text-gray-700">{expense.submittedBy.name}</span></p>
               )}
+              <p className="text-xs text-muted-foreground" title="Set when the expense was requested">
+                Venture / product <span className="font-medium text-gray-700">{unitLabel(unitOfExpense(expense), config ?? {})}</span>
+              </p>
               <PurchaseBillLink expense={expense} />
               {expense.notes && (
                 <p className="mt-2 whitespace-pre-wrap border-t border-gray-200/80 pt-2 text-xs text-muted-foreground">{expense.notes}</p>
@@ -1659,7 +1762,7 @@ function BatchAuthorizeModal({ ids, expenses, onClose, onDone }) {
 // proof, payment proof and — once authorized — the authorized invoice scan).
 
 function ExpenseDetailModal({ expense, onClose }) {
-  const { paymentMethods } = useConfig()
+  const { paymentMethods, config } = useConfig()
   const methodLabel = paymentMethods.find(m => m.value === expense.paymentMethod)?.label ?? expense.paymentMethod ?? null
   const isForeign = (expense.currency ?? 'BDT') !== 'BDT'
   const settled   = expense.status === 'PAID' || expense.status === 'AUTHORIZED'
@@ -1701,6 +1804,9 @@ function ExpenseDetailModal({ expense, onClose }) {
             {expense.submittedBy?.name && (
               <p className="text-xs text-muted-foreground">Submitted by <span className="font-medium text-gray-700">{expense.submittedBy.name}</span></p>
             )}
+            <p className="text-xs text-muted-foreground">
+              Venture / product <span className="font-medium text-gray-700">{unitLabel(unitOfExpense(expense), config ?? {})}</span>
+            </p>
             <PurchaseBillLink expense={expense} />
             {settled && (
               <p className="text-xs text-muted-foreground">
@@ -1757,7 +1863,7 @@ function ExpenseDetailModal({ expense, onClose }) {
 // ─── Confirm Payment Modal ────────────────────────────────────────────────────
 
 function ConfirmPaymentModal({ payment, currentUser, onClose, onDone }) {
-  const { paymentMethods } = useConfig()
+  const { paymentMethods, config } = useConfig()
   const { data: session } = useSession()
   const fmtMethod = v => v ? (paymentMethods.find(m => m.value === v)?.label ?? v.replace(/_/g, ' ')) : '—'
   const { accounts: moneyAccounts, goLiveDate } = useMoneyAccounts()
@@ -1923,6 +2029,9 @@ function ConfirmPaymentModal({ payment, currentUser, onClose, onDone }) {
             {payment.description && (
               <p className="text-xs text-gray-600">{payment.description}</p>
             )}
+            <p className="text-xs text-muted-foreground" title="A client receipt follows its invoice">
+              Venture / product <span className="font-medium text-gray-700">{unitLabel(unitOfInvoice(invoice, project), config ?? {})}</span>
+            </p>
             <p className="pt-1 text-xl font-semibold tracking-tight text-gray-900 tabular-nums">
               {payment.currency} {Number(payment.amount).toLocaleString()}
             </p>
@@ -2294,6 +2403,259 @@ function OwnerOtpModal({ otp, requesterName, onClose }) {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
+// ─── Change venture / product (Transactions row menu) ─────────────────────────
+// PATCH /api/transactions/[id] { unit } re-tags one ledger row (logged). The
+// server allows it in open periods, and in a locked period only for a row that
+// has no unit yet (Unassigned).
+
+function ChangeUnitModal({ tx, onClose, onDone }) {
+  const { config } = useConfig()
+  const current = tx.unit ?? null
+  const [unit,   setUnit]   = useState(current)
+  const [saving, setSaving] = useState(false)
+  const changed = !!unit && unit !== current
+
+  async function submit() {
+    if (!unit) { toast.error('Choose the venture / product'); return }
+    setSaving(true)
+    try {
+      const res  = await fetch(`/api/transactions/${tx.id ?? tx._id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ unit }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(apiErrorMessage(json, 'The venture / product could not be changed'))
+      toast.success(`Moved to ${unitLabel(unit, config ?? {})}`)
+      onDone()
+      onClose()
+    } catch (err) {
+      toast.error(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <DialogShell
+      title="Change venture / product"
+      description="Moves this entry in the venture & product reports."
+      onClose={onClose}
+      className="max-w-md"
+      footer={<>
+        <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
+        <Button onClick={submit} disabled={saving || !changed}>
+          {saving ? <Loader2 className="animate-spin" /> : <Tag />} Save
+        </Button>
+      </>}
+    >
+        <div className="space-y-4">
+          <div className="space-y-1 rounded-lg bg-gray-50 p-4">
+            <p className="text-sm font-semibold text-gray-900">{tx.description || tx.category}</p>
+            <p className="text-xs text-muted-foreground">{tx.category}{tx.expenseCategory ? ` / ${tx.expenseCategory}` : ''} · {fmtDate(tx.date)}</p>
+            <p className="text-sm font-semibold text-gray-900 tabular-nums">
+              {tx.type === 'INCOME' ? '+' : '-'}{formatCurrency(tx.amount, tx.currency)}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Now <span className={cn('font-medium', current ? 'text-gray-700' : 'text-amber-700')}>{unitLabel(current, config ?? {})}</span>
+            </p>
+          </div>
+          <div>
+            <Label required>Venture / product</Label>
+            <UnitSelect value={unit} onChange={v => setUnit(v || null)} required />
+            <p className="mt-1.5 text-xs text-muted-foreground">Locked periods: only Unassigned entries can be placed.</p>
+          </div>
+          {(tx.reversedBy || tx.reversalOf) && (
+            <p className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-[13px] text-amber-800">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+              <span>{tx.reversedBy ? 'This entry was reversed' : 'This is a reversal'} — move its pair too, so the two still cancel out.</span>
+            </p>
+          )}
+        </div>
+    </DialogShell>
+  )
+}
+
+// ─── Ventures & products tab ──────────────────────────────────────────────────
+// GET /api/accounts/units-report?from&to: one row per venture, product, Company /
+// shared and Unassigned with the P&L figures (accounts/_lib/pl.js rules), the
+// receivable and month-by-month figures. Scoped users get only their own units.
+
+function unitKindBadge(row) {
+  if (!row.unit) return <Badge variant="warning">Unassigned</Badge>
+  if (row.kind === 'PRODUCT') return <Badge variant="indigo">Product</Badge>
+  if (row.kind === 'COMPANY') return <Badge>Shared</Badge>
+  return null
+}
+
+const fmtMargin = (income, margin) => (toNum(income) > 0 && margin !== null && margin !== undefined ? `${toNum(margin).toFixed(1)}%` : '—')
+
+function UnitsReport({ from, to, setFrom, setTo, onViewTransactions }) {
+  const { config } = useConfig()
+  const [report,   setReport]   = useState(null)
+  const [loading,  setLoading]  = useState(true)
+  const [error,    setError]    = useState(null)
+  const [expanded, setExpanded] = useState(null)   // unit key showing its months
+
+  useEffect(() => {
+    // Ignore a reply for a period that is no longer selected.
+    const ctrl = new AbortController()
+    setLoading(true)
+    setError(null)
+    const qs = new URLSearchParams()
+    if (from) qs.set('from', from)
+    if (to)   qs.set('to', to)
+    fetch(`/api/accounts/units-report?${qs}`, { signal: ctrl.signal })
+      .then(async r => {
+        const j = await r.json().catch(() => ({}))
+        if (!r.ok) throw new Error(j.error || 'Failed to load the report')
+        return j.data
+      })
+      .then(d => { setReport(d ?? null); setExpanded(null) })
+      .catch(err => { if (err?.name !== 'AbortError') setError(err.message ?? 'Failed to load the report') })
+      .finally(() => { if (!ctrl.signal.aborted) setLoading(false) })
+    return () => ctrl.abort()
+  }, [from, to])
+
+  const thisFy = fiscalYearDays(0)
+  const lastFy = fiscalYearDays(-1)
+  const preset = from === thisFy.from && to === thisFy.to ? 'fy'
+    : from === lastFy.from && to === lastFy.to ? 'lastfy'
+    : '__custom__'
+  const pickPreset = (p) => {
+    const r = p === 'lastfy' ? lastFy : thisFy
+    setFrom(r.from)
+    setTo(r.to)
+  }
+
+  const units  = Array.isArray(report?.units) ? report.units : []
+  const totals = report?.totals ?? {}
+  const scoped = report?.scope?.all === false
+  const keyOf  = (row) => row.unit ?? UNASSIGNED
+  const money  = (n) => (toNum(n) !== 0 ? fmt(toNum(n)) : '—')
+
+  return (
+    <div className="space-y-4">
+      {/* Period */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Tabs size="sm" value={preset} onChange={pickPreset}
+          tabs={[{ value: 'fy', label: 'This fiscal year' }, { value: 'lastfy', label: 'Last fiscal year' }]} />
+        <DatePicker value={from || null} onChange={v => setFrom(v ?? '')} />
+        <span className="text-sm text-muted-foreground">to</span>
+        <DatePicker value={to || null} onChange={v => setTo(v ?? '')} />
+      </div>
+
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-muted-foreground">
+        <span
+          className="inline-flex cursor-help items-center gap-1.5"
+          title="Salaries follow each employee's venture. Rent, utilities, bank charges, depreciation, tax penalties and purchases are in Company / shared, so a venture's profit is before overheads."
+        >
+          <Info className="size-3.5 shrink-0" />
+          Profit before shared costs
+        </span>
+        {scoped && (
+          <span className="inline-flex items-center gap-1.5 text-amber-700">
+            <AlertCircle className="size-3.5 shrink-0" />
+            Only your venture is shown.
+          </span>
+        )}
+      </div>
+
+      <Card className="overflow-hidden">
+        {loading ? <LoadingSpinner className="h-40" /> : error ? (
+          <EmptyState icon={AlertCircle} title="Report not available" description={error} />
+        ) : units.length === 0 ? (
+          <EmptyState title="No income or expense in this period"
+            description={scoped ? 'Only your venture is shown: nothing was booked to it, or no venture is set on your employee record.' : 'Try another period.'} />
+        ) : (
+          <Table className="min-w-[760px]">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Venture / product</TableHead>
+                <TableHead className="text-right">Income</TableHead>
+                <TableHead className="text-right">Expense</TableHead>
+                <TableHead className="text-right">Profit</TableHead>
+                <TableHead className="text-right">Margin</TableHead>
+                <TableHead className="text-right" title="Outstanding invoices">Receivable</TableHead>
+                <TableHead><span className="sr-only">Actions</span></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {units.map(row => {
+                const key    = keyOf(row)
+                const open   = expanded === key
+                const months = Array.isArray(row.months) ? row.months : []
+                return (
+                  <Fragment key={key}>
+                    <TableRow className={cn(open && 'border-b-0')}>
+                      <TableCell>
+                        <button type="button" onClick={() => setExpanded(open ? null : key)} aria-expanded={open}
+                          disabled={months.length === 0}
+                          className="flex items-center gap-2 text-left disabled:cursor-default">
+                          <ChevronRight className={cn('size-4 shrink-0 text-gray-400 transition-transform', open && 'rotate-90', months.length === 0 && 'invisible')} />
+                          <span className="font-medium text-gray-900">{row.label ?? unitLabel(row.unit, config ?? {})}</span>
+                          {unitKindBadge(row)}
+                        </button>
+                      </TableCell>
+                      <TableCell className="text-right text-emerald-600 tabular-nums">{money(row.income)}</TableCell>
+                      <TableCell className="text-right text-red-600 tabular-nums">{money(row.expense)}</TableCell>
+                      <TableCell className={cn('text-right font-medium tabular-nums', toNum(row.profit) < 0 ? 'text-red-600' : 'text-gray-900')}>{fmt(toNum(row.profit))}</TableCell>
+                      <TableCell className="text-right text-xs text-muted-foreground tabular-nums">{fmtMargin(row.income, row.margin)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{money(row.receivable)}</TableCell>
+                      <TableCell className="py-2 text-right">
+                        <Button variant="ghost" size="xs" onClick={() => onViewTransactions(key)}>
+                          View transactions <ChevronRight className="text-gray-400" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                    {open && (
+                      <TableRow className="bg-gray-50/60 hover:bg-gray-50/60">
+                        <TableCell colSpan={7} className="px-4 py-3">
+                          <table className="w-full max-w-xl text-[13px]">
+                            <thead>
+                              <tr className="text-xs text-muted-foreground">
+                                <th className="py-1 pr-4 text-left font-medium">Month</th>
+                                <th className="py-1 pr-4 text-right font-medium">Income</th>
+                                <th className="py-1 pr-4 text-right font-medium">Expense</th>
+                                <th className="py-1 text-right font-medium">Profit</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {months.map(m => (
+                                <tr key={m.month} className="border-t border-gray-200/70">
+                                  <td className="py-1.5 pr-4 text-gray-900">{fmtMonth(m.month)}</td>
+                                  <td className="py-1.5 pr-4 text-right text-emerald-600 tabular-nums">{money(m.income)}</td>
+                                  <td className="py-1.5 pr-4 text-right text-red-600 tabular-nums">{money(m.expense)}</td>
+                                  <td className={cn('py-1.5 text-right font-medium tabular-nums', toNum(m.profit) < 0 ? 'text-red-600' : 'text-gray-900')}>{fmt(toNum(m.profit))}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </Fragment>
+                )
+              })}
+            </TableBody>
+            <TableFooter>
+              <TableRow className="hover:bg-transparent">
+                <TableCell className="font-semibold text-gray-900">{scoped ? 'Total (your units)' : 'Total'}</TableCell>
+                <TableCell className="text-right font-semibold text-emerald-600 tabular-nums">{fmt(toNum(totals.income))}</TableCell>
+                <TableCell className="text-right font-semibold text-red-600 tabular-nums">{fmt(toNum(totals.expense))}</TableCell>
+                <TableCell className={cn('text-right font-semibold tabular-nums', toNum(totals.profit) < 0 ? 'text-red-600' : 'text-gray-900')}>{fmt(toNum(totals.profit))}</TableCell>
+                <TableCell className="text-right text-xs text-muted-foreground tabular-nums">{fmtMargin(totals.income, totals.margin)}</TableCell>
+                <TableCell className="text-right font-semibold tabular-nums">{fmt(toNum(totals.receivable))}</TableCell>
+                <TableCell />
+              </TableRow>
+            </TableFooter>
+          </Table>
+        )}
+      </Card>
+    </div>
+  )
+}
+
 // ─── Ledger row breakdown (Transactions tab expander) ─────────────────────────
 
 const CLEAR_LABELS = { UNCLEARED: 'Not yet cleared', CLEARED: 'Cleared', RECONCILED: 'Reconciled' }
@@ -2525,11 +2887,17 @@ function TrendPill({ change, invert = false }) {
 
 
 function AccountsContent() {
-  const { paymentMethods, expenseCategories, incomeCategories } = useConfig()
+  const { paymentMethods, expenseCategories, incomeCategories, config } = useConfig()
   const fmtMethod = v => v ? (paymentMethods.find(m => m.value === v)?.label ?? v.replace(/_/g, ' ')) : '—'
   const { data: session }  = useSession()
+  const router             = useRouter()
   const searchParams       = useSearchParams()
   const activeTab          = searchParams.get('tab') || 'overview'
+  // Deep link into Transactions (Ventures & products → "View transactions"):
+  // ?tab=transactions&unit=VENTURE:ENTECH&from=YYYY-MM-DD&to=YYYY-MM-DD
+  const unitParam          = searchParams.get('unit')
+  const fromParam          = searchParams.get('from')
+  const toParam            = searchParams.get('to')
   // Money accounts (names for ledger rows whose account is not populated, and the filter).
   const { accounts: moneyAccountOptions } = useMoneyAccounts()
   const [summary,    setSummary]    = useState(null)
@@ -2598,16 +2966,45 @@ function AccountsContent() {
   const [txSubcategory, setTxSubcategory] = useState('')
   const [txAccount, setTxAccount] = useState('')
   const [txKind,    setTxKind]    = useState('')
+  const [txUnit,    setTxUnit]    = useState(() => unitParam ?? '')   // '' all · UNASSIGNED · a unit value
   const [txExpanded, setTxExpanded] = useState(null)   // id of the row showing its tax / P&L breakdown
+  const [changingUnitTx, setChangingUnitTx] = useState(null)   // row → ChangeUnitModal
   const [txPage,    setTxPage]    = useState(1)
   const [period,    setPeriod]    = useState('month')
   const [startDate, setStartDate] = useState(() => {
+    if (isDayKey(fromParam)) return fromParam
     const now = new Date()
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
   })
-  const [endDate,   setEndDate]   = useState(() => ymdLocal(new Date()))
+  const [endDate,   setEndDate]   = useState(() => (isDayKey(toParam) ? toParam : ymdLocal(new Date())))
   const [plStart,   setPlStart]   = useState(() => `${new Date().getFullYear()}-01-01`)
   const [plEnd,     setPlEnd]     = useState(() => ymdLocal(new Date()))
+  const [plUnit,    setPlUnit]    = useState('')
+  const [ovUnit,    setOvUnit]    = useState('')       // overview: '' = all units (dashboard KPI cards)
+  // Ventures & products tab period (default: the current fiscal year, July–June).
+  const [unFrom,    setUnFrom]    = useState(() => fiscalYearDays(0).from)
+  const [unTo,      setUnTo]      = useState(() => fiscalYearDays(0).to)
+
+  // Follow a later deep link (the page stays mounted when only the query changes).
+  useEffect(() => {
+    if (unitParam === null) return
+    setTxUnit(unitParam)
+    if (isDayKey(fromParam)) setStartDate(fromParam)
+    if (isDayKey(toParam))   setEndDate(toParam)
+    setTxPage(1)
+  }, [unitParam, fromParam, toParam])
+
+  function viewUnitTransactions(unit) {
+    setTxUnit(unit)
+    setTxType(''); setTxCategory(''); setTxSubcategory(''); setTxAccount(''); setTxKind('')
+    if (unFrom) setStartDate(unFrom)
+    if (unTo)   setEndDate(unTo)
+    setTxPage(1)
+    const qs = new URLSearchParams({ tab: 'transactions', unit })
+    if (unFrom) qs.set('from', unFrom)
+    if (unTo)   qs.set('to', unTo)
+    router.push(`/admin/accounts?${qs}`)
+  }
 
 // ── Loaders ──────────────────────────────────────────────────────────────
 
@@ -2620,6 +3017,7 @@ function AccountsContent() {
       const params = new URLSearchParams()
       if (startDate) params.set('startDate', startDate)
       if (endDate)   params.set('endDate',   endDate)
+      if (ovUnit)    params.set('unit',      ovUnit)
       const res  = await fetch(`/api/accounts/summary?${params}`)
       const json = await res.json()
       if (!res.ok) throw new Error(json.error)
@@ -2629,7 +3027,7 @@ function AccountsContent() {
     } finally {
       setLoading(false)
     }
-  }, [startDate, endDate, session])
+  }, [startDate, endDate, ovUnit, session])
 
   const loadTransactions = useCallback(async () => {
     setTxLoading(true)
@@ -2640,6 +3038,7 @@ function AccountsContent() {
       if (txSubcategory) params.set('subcategory', txSubcategory)
       if (txAccount) params.set('accountId', txAccount)
       if (txKind)    params.set('kind', txKind)
+      if (txUnit)    params.set('unit', txUnit)
       if (startDate) params.set('startDate', startDate)
       if (endDate)   params.set('endDate',   endDate)
       const res  = await fetch(`/api/transactions?${params}`)
@@ -2653,7 +3052,7 @@ function AccountsContent() {
     } finally {
       setTxLoading(false)
     }
-  }, [txPage, txType, txCategory, txSubcategory, txAccount, txKind, startDate, endDate])
+  }, [txPage, txType, txCategory, txSubcategory, txAccount, txKind, txUnit, startDate, endDate])
 
   const loadPL = useCallback(async () => {
     setPlLoading(true)
@@ -2661,6 +3060,7 @@ function AccountsContent() {
       const params = new URLSearchParams()
       if (plStart) params.set('startDate', plStart)
       if (plEnd)   params.set('endDate',   plEnd)
+      if (plUnit)  params.set('unit',      plUnit)
       const res  = await fetch(`/api/accounts/pl-report?${params}`)
       const json = await res.json()
       if (!res.ok) throw new Error(json.error)
@@ -2670,7 +3070,7 @@ function AccountsContent() {
     } finally {
       setPlLoading(false)
     }
-  }, [plStart, plEnd])
+  }, [plStart, plEnd, plUnit])
 
   const loadPaymentRequests = useCallback(async () => {
     setPrLoading(true)
@@ -2850,6 +3250,7 @@ function AccountsContent() {
     requests:      'Payment requests',
     withdrawals:   'Withdrawals',
     pl:            'Profit & loss',
+    units:         'Ventures & products',
   }
 
   // Nested taxonomy — subcategory options follow the chosen parent category
@@ -2887,6 +3288,11 @@ function AccountsContent() {
                 Clear
               </Button>
             )}
+            {canDo(session, 'finance.overview.view') && (
+              <div className="w-full sm:ml-auto sm:w-60">
+                <UnitFilter value={ovUnit} onChange={setOvUnit} config={config} />
+              </div>
+            )}
           </div>
 
           {loading ? <Spinner /> : (summary || dashStats) ? (
@@ -2894,7 +3300,17 @@ function AccountsContent() {
               {(() => {
                 const f = dashStats?.financials ?? {}
                 const fmtVal = (n) => n == null ? '—' : `BDT ${Number(n).toLocaleString('en-BD', { minimumFractionDigits: 0 })}`
-                const CARDS = [
+                // One venture / product: the period's figures from the summary. "All"
+                // keeps the dashboard cards (this month vs last month).
+                const unitPeriod = `${unitLabel(ovUnit, config ?? {})} · ${startDate ? fmtDate(startDate) : 'start'} – ${endDate ? fmtDate(endDate) : 'today'}`
+                const CARDS = ovUnit && summary ? [
+                  { label: 'Income',      value: fmtVal(summary.totalRevenue),  prev: unitPeriod },
+                  { label: 'Expense',     value: fmtVal(summary.totalExpenses), prev: unitPeriod },
+                  { label: 'Net profit',  value: fmtVal(summary.netProfit),     prev: unitPeriod },
+                  { label: 'Margin',      value: `${toNum(summary.grossMargin).toFixed(1)}%`, prev: unitPeriod },
+                  { label: 'Receivable',  value: fmtVal(summary.outstandingReceivables), prev: 'Outstanding invoices' },
+                  { label: 'Transactions', value: toNum(summary.incomeCount) + toNum(summary.expenseCount), prev: unitPeriod },
+                ] : [
                   { label: 'Monthly income',  value: fmtVal(f.income?.value),  prev: `vs ${fmtVal(f.income?.prevValue)} last month`,  change: f.income?.change },
                   { label: 'Monthly expense', value: fmtVal(f.expense?.value), prev: `vs ${fmtVal(f.expense?.prevValue)} last month`, change: f.expense?.change, invert: true },
                   { label: 'Net profit',      value: fmtVal(f.profit?.value),  prev: `vs ${fmtVal(f.profit?.prevValue)} last month`,  change: f.profit?.change },
@@ -2998,16 +3414,19 @@ function AccountsContent() {
                       </Card>
                     )}
 
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-[13px] text-muted-foreground">Daily breakdown</span>
-                      <Tabs
-                        size="sm"
-                        value={drillKey}
-                        onChange={v => setDrillKey(prev => prev === v ? null : v)}
-                        tabs={monthOptions.map(m => ({ value: m.key, label: m.label }))}
-                      />
-                    </div>
-                    {drillKey && <CalendarDrillDown drillKey={drillKey} onClose={() => setDrillKey(null)} />}
+                    {/* The daily breakdown covers every unit, so it is shown for "All" only. */}
+                    {!ovUnit && (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-[13px] text-muted-foreground">Daily breakdown</span>
+                        <Tabs
+                          size="sm"
+                          value={drillKey}
+                          onChange={v => setDrillKey(prev => prev === v ? null : v)}
+                          tabs={monthOptions.map(m => ({ value: m.key, label: m.label }))}
+                        />
+                      </div>
+                    )}
+                    {!ovUnit && drillKey && <CalendarDrillDown drillKey={drillKey} onClose={() => setDrillKey(null)} />}
                   </>
                 )
               })()}
@@ -3070,9 +3489,12 @@ function AccountsContent() {
                 {KIND_OPTIONS.map(k => <option key={k.value} value={k.value}>{k.label}{PL_KINDS.includes(k.value) ? '' : ' (not P&L)'}</option>)}
               </NativeSelect>
             </div>
-            {(txAccount || txKind) && (
-              <Button variant="ghost" size="sm" onClick={() => { setTxAccount(''); setTxKind(''); setTxPage(1) }}>
-                <X /> Clear account / kind
+            <div className="w-full sm:w-56">
+              <UnitFilter value={txUnit} onChange={v => { setTxUnit(v); setTxPage(1) }} config={config} />
+            </div>
+            {(txAccount || txKind || txUnit) && (
+              <Button variant="ghost" size="sm" onClick={() => { setTxAccount(''); setTxKind(''); setTxUnit(''); setTxPage(1) }}>
+                <X /> Clear account / kind / unit
               </Button>
             )}
           </div>
@@ -3081,12 +3503,13 @@ function AccountsContent() {
             {txLoading ? <Spinner /> : txList.length === 0 ? (
               <EmptyState title="No transactions" description="Try another period or filter." />
             ) : (
-                <Table className="min-w-[860px]">
+                <Table className="min-w-[980px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Date</TableHead>
                       <TableHead>Type</TableHead>
                       <TableHead>Category</TableHead>
+                      <TableHead>Venture / product</TableHead>
                       <TableHead>Source / paid to</TableHead>
                       <TableHead>Description</TableHead>
                       <TableHead className="text-right">Amount</TableHead>
@@ -3117,6 +3540,13 @@ function AccountsContent() {
                       // A client receipt booked against an invoice is corrected by reversing it.
                       const reversible = tx.type === 'INCOME' && !!tx.invoiceId && !!tx.tax && !tx.reversalOf && !tx.reversedBy &&
                         canDo(session, 'finance.payments.confirm')
+                      // Only P&L rows count in the venture / product reports (the rest are Company).
+                      const retaggable = !nonPl && canDo(session, 'finance.transactions.update')
+                      const rowActions = [
+                        editable && { label: 'Edit transaction', icon: Pencil, onClick: () => { setEditingTx(tx); setModalOpen(true) } },
+                        retaggable && { label: 'Change venture / product', icon: Tag, onClick: () => setChangingUnitTx(tx) },
+                        reversible && { label: 'Reverse receipt', icon: RotateCcw, danger: true, onClick: () => setReversingTx(tx) },
+                      ].filter(Boolean)
                       return (
                         <Fragment key={rowId}>
                           <TableRow className={cn(nonPl && 'bg-gray-50/40', expanded && 'border-b-0')}>
@@ -3128,6 +3558,10 @@ function AccountsContent() {
                             <TableCell className="text-[13px]">
                               <span>{tx.category}</span>
                               {tx.expenseCategory && <span className="block text-xs text-muted-foreground">{tx.expenseCategory}</span>}
+                            </TableCell>
+                            <TableCell className={cn('max-w-[150px] truncate text-[13px]', !tx.unit && 'text-amber-700', nonPl && 'text-muted-foreground')}
+                              title={!tx.unit ? 'Older entry not yet placed in a venture or product' : undefined}>
+                              {unitLabel(tx.unit, config ?? {})}
                             </TableCell>
                             <TableCell className="max-w-[160px] truncate text-[13px]">
                               {tx.paidToName ?? tx.vendor ?? tx.projectId?.name ?? tx.paidBy?.name ?? (tx.counterAccountId?.name ? `↔ ${tx.counterAccountId.name}` : '—')}
@@ -3182,18 +3616,9 @@ function AccountsContent() {
                                     <ChevronDown className={cn('size-4 transition-transform', expanded && 'rotate-180')} />
                                   </Button>
                                 )}
-                                {reversible && (
-                                  <Button variant="ghost" size="icon-sm" onClick={() => setReversingTx(tx)} title="Reverse this client receipt (wrong amount, account or date)"
-                                    aria-label="Reverse receipt"
-                                    className="text-gray-400 hover:bg-red-50 hover:text-red-600">
-                                    <RotateCcw />
-                                  </Button>
-                                )}
-                                {editable ? (
-                                  <Button variant="ghost" size="icon-sm" onClick={() => { setEditingTx(tx); setModalOpen(true) }}
-                                    aria-label="Edit transaction" className="text-gray-400">
-                                    <Pencil />
-                                  </Button>
+                                {/* Edit, change venture / product, reverse a client receipt (wrong amount, account or date). */}
+                                {rowActions.length > 0 ? (
+                                  <ActionMenu items={rowActions} />
                                 ) : (
                                   <span className="size-8" aria-hidden="true" />
                                 )}
@@ -3202,7 +3627,7 @@ function AccountsContent() {
                           </TableRow>
                           {expanded && (
                             <TableRow className="bg-gray-50/60 hover:bg-gray-50/60">
-                              <TableCell colSpan={10} className="px-4 py-3">
+                              <TableCell colSpan={11} className="px-4 py-3">
                                 <TxBreakdown tx={tx} nonPl={nonPl} plVal={plVal} cashBDT={cashBDT} />
                               </TableCell>
                             </TableRow>
@@ -3555,7 +3980,14 @@ function AccountsContent() {
             <DatePicker value={plStart || null} onChange={v => setPlStart(v ?? '')} />
             <span className="text-sm text-muted-foreground">to</span>
             <DatePicker value={plEnd || null} onChange={v => setPlEnd(v ?? '')} />
+            <div className="w-full sm:w-60">
+              <UnitFilter value={plUnit} onChange={setPlUnit} config={config} />
+            </div>
             <Button onClick={loadPL}>Apply</Button>
+            <Link href="/admin/accounts?tab=units"
+              className="inline-flex items-center gap-0.5 text-[13px] font-medium text-gray-900 underline-offset-4 hover:underline sm:ml-auto">
+              By venture &amp; product <ChevronRight className="size-3.5 text-gray-400" />
+            </Link>
           </div>
 
           {plLoading ? <Spinner /> : plReport ? (
@@ -3683,6 +4115,17 @@ function AccountsContent() {
         </div>
       )}
 
+      {/* ── VENTURES & PRODUCTS tab ── */}
+      {activeTab === 'units' && (
+        <UnitsReport
+          from={unFrom}
+          to={unTo}
+          setFrom={setUnFrom}
+          setTo={setUnTo}
+          onViewTransactions={viewUnitTransactions}
+        />
+      )}
+
       {/* ── Modals ── */}
       <TransactionModal
         open={modalOpen}
@@ -3752,6 +4195,14 @@ function AccountsContent() {
           transaction={reversingTx}
           onClose={() => setReversingTx(null)}
           onDone={() => { loadTransactions(); loadSummary() }}
+        />
+      )}
+
+      {changingUnitTx && (
+        <ChangeUnitModal
+          tx={changingUnitTx}
+          onClose={() => setChangingUnitTx(null)}
+          onDone={() => loadTransactions()}
         />
       )}
 

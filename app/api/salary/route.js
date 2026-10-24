@@ -7,6 +7,7 @@ import { User, Employee, SalarySlip, ProjectExpense } from '@/models'
 import { normalizeDeptCode } from '@/models/Employee'
 import { requirePerm, canDo } from '@/lib/rbac'
 import { ciEquals, ciContains } from '@/lib/searchMatch'
+import { codeContains } from '@/lib/codes'
 import { maskMoney } from '@/lib/pii'
 import { isValidCurrency } from '@/lib/currencies'
 import { isValidObjectId } from '@/lib/objectId'
@@ -14,6 +15,7 @@ import { dhakaParts, dhakaDate } from '@/lib/dhakaTime'
 import { logActivity } from '@/lib/logActivity'
 import { buildExpenseTax, expenseSettlement } from '@/lib/expensePayment'
 import { applyDueRevisions, salaryForPeriod, salariesForPeriod } from '@/lib/hr/salaryRevisions'
+import { COMPANY_UNIT, ventureUnit } from '@/lib/units'
 
 // Income tax deducted from salary is TDS under ITA 2023 s.86.
 const SALARY_TDS_SECTION = '86-SALARY'
@@ -92,9 +94,11 @@ export async function GET(request) {
       const matchingUsers = await User.find({
         $or: [{ name: ciContains(search) }, { email: ciContains(search) }],
       }).select('_id').lean()
+      // Employee IDs match with separators ignored (EN-DEV2610001 = ENDEV2610001).
+      const code = codeContains(search)
       filter.$or = [
         { userId:     { $in: matchingUsers.map(u => u._id) } },
-        { employeeId: ciContains(search) },
+        ...(code ? [{ employeeId: code }] : []),
       ]
     }
 
@@ -297,6 +301,8 @@ export async function POST(request) {
       expense = await new ProjectExpense({
         origin:      'SALARY',
         projectId:   null,
+        // Salaries follow the employee's venture; staff with none are a shared cost.
+        unit:        ventureUnit(employee.venture || null) || COMPANY_UNIT,
         title:       `Salary — ${period} — ${employee.userId?.name ?? 'Employee'}`,
         amount:      expenseAmount,
         currency,

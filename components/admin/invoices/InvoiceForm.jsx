@@ -13,6 +13,9 @@ import PageHeader from '@/components/ui/PageHeader'
 import { Card, CardHeader, CardTitle, CardAction, CardContent } from '@/components/ui/Card'
 import { Field, Label, inputClass, textareaClass, selectClass } from '@/components/ui/Input'
 import TaxCodeSelect from '@/components/tax/TaxCodeSelect'
+import UnitSelect from '@/components/finance/UnitSelect'
+import { useConfig } from '@/lib/useConfig'
+import { ventureUnit, unitLabel } from '@/lib/units'
 import { dhakaDayKey } from '@/lib/dhakaTime'
 import { VAT_TREATMENTS, VAT_RATE_OPTIONS } from '@/lib/tax/catalog'
 import { computeInvoiceTotals, previewInvoiceTotals, uniformVatRate } from '@/lib/invoiceTotals'
@@ -80,6 +83,7 @@ function toFormItem(i) {
 export default function InvoiceForm({ invoice, defaultProjectId, defaultClientId }) {
   const router = useRouter()
   const isEdit = !!invoice
+  const { config } = useConfig()
 
   const storedItems     = Array.isArray(invoice?.items) ? invoice.items : null
   const storedTreatment = isEdit ? (invoice.vatTreatment || 'NONE') : null
@@ -90,6 +94,9 @@ export default function InvoiceForm({ invoice, defaultProjectId, defaultClientId
     invoice?.projectId?.id ?? invoice?.projectId ?? defaultProjectId ?? ''
   )
   const [projects,  setProjects]  = useState([])
+  // Venture / product of a standalone invoice (required); a project invoice
+  // follows its project's venture. A stored null reads as "Unassigned".
+  const [unit,      setUnit]      = useState(isEdit ? (invoice.unit ?? null) : '')
   const [items,     setItems]     = useState(storedItems?.length ? storedItems.map(toFormItem) : [emptyItem()])
   const [issueDate, setIssueDate] = useState(invoice?.issueDate?.slice(0,10) ?? dhakaDayKey())
   const [dueDate,   setDueDate]   = useState(invoice?.dueDate?.slice(0,10) ?? '')
@@ -189,6 +196,10 @@ export default function InvoiceForm({ invoice, defaultProjectId, defaultClientId
 
   const selectedProject = projects.find(x => (x.id ?? x._id) === projectId) ?? null
   const projectNet      = selectedProject ? Math.max(0, Number(selectedProject.budget) || 0) : 0
+  // Shown read-only for a project invoice (the server books it to the project's venture).
+  const projectUnit     = projectId
+    ? (ventureUnit(selectedProject?.venture ?? invoice?.projectId?.venture) ?? invoice?.unit ?? null)
+    : null
   const remainingToBill = Math.max(0, projectNet - alreadyBilled)
 
   // Auto-fill the first line when a project is picked (new invoices only), using
@@ -327,6 +338,7 @@ export default function InvoiceForm({ invoice, defaultProjectId, defaultClientId
     if (items.some(i => !(Number(i.quantity) > 0))) {
       toast.error('Each item needs a quantity greater than 0'); return
     }
+    if (!projectId && !unit) { toast.error('Choose the venture / product for this invoice'); return }
     // Same rules the server applies (lib/invoiceTotals) — fail fast with its message.
     const check = computeInvoiceTotals(calcParams)
     if (check.error) { toast.error(check.error); return }
@@ -341,6 +353,8 @@ export default function InvoiceForm({ invoice, defaultProjectId, defaultClientId
         notes: notes || null, terms: terms || null, currency: invoice?.currency ?? 'BDT',
         deliveryDestination: deliveryDestination.trim() || null,
       }
+      // Standalone invoices carry their own unit; a project invoice's comes from the project.
+      if (!projectId) body.unit = unit
       if (vatTreatment) {
         body.vatTreatment = vatTreatment
         body.vatRate      = ratesOn ? Number(defaultVatRate) || 0 : 0
@@ -466,6 +480,24 @@ export default function InvoiceForm({ invoice, defaultProjectId, defaultClientId
                     )}
                   </div>
                 )}
+              </div>
+            )}
+
+            {clientId && (
+              <div className="sm:max-w-sm">
+                <Label required={!projectId}>Venture / product</Label>
+                {projectId ? (
+                  <div className={cn(ic, 'cursor-not-allowed items-center bg-gray-50')}>
+                    <span className="truncate text-gray-700">
+                      {projectUnit || projects.length > 0 ? unitLabel(projectUnit, config ?? {}) : 'Loading…'}
+                    </span>
+                  </div>
+                ) : (
+                  <UnitSelect value={unit} onChange={v => setUnit(v ?? '')} required />
+                )}
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  {projectId ? 'Follows the project’s venture.' : 'Where this invoice’s income is reported.'}
+                </p>
               </div>
             )}
           </CardContent>

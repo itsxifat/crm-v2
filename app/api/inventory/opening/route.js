@@ -11,6 +11,8 @@ import { isDayKey, addDays, dayKeyLabel, fiscalYearOf } from '@/lib/finance/fisc
 import { createAssets, ensureCategoriesSeeded, openingCostStages, CONDITIONS } from '@/lib/inventory/assets'
 import { parseDhakaDay } from '@/lib/dhakaTime'
 import { moveStock } from '@/lib/inventory/stock'
+import { compactCode, codeEquals } from '@/lib/codes'
+import { SKU_RE, skuRuleFor } from '../stock/_lib/stock'
 import { errorResponse, round2, num, escapeRegex, isTruthy } from '../reports/_lib/common'
 
 const MAX_ASSET_ROWS = 2000
@@ -64,6 +66,38 @@ function parseYesNo(v) {
   if (['yes', 'y', 'true', '1'].includes(s)) return true
   if (['no', 'n', 'false', '0'].includes(s)) return false
   return undefined
+}
+
+/**
+ * `$in` condition matching each of `codes` with separators and case ignored, so a
+ * spreadsheet holding the old hyphenated numbers (EN-DEV2610001, LAP-0001) finds
+ * the records whatever form they are stored in. null when none has letters or digits.
+ */
+function codesIn(codes) {
+  const res = [...new Set(codes.map(compactCode).filter(Boolean))].map(c => {
+    const f = codeEquals(c)
+    return new RegExp(f.$regex, f.$options)
+  })
+  return res.length ? { $in: res } : null
+}
+
+/**
+ * Finder over `records` by a typed code: the code exactly as stored (case ignored)
+ * wins, otherwise separators are ignored. It returns the record, null when two
+ * records match (ambiguous) or undefined when none does.
+ */
+function codeFinder(records, field) {
+  const exact = new Map()
+  const compact = new Map()
+  const add = (map, k, r) => map.set(k, map.has(k) ? null : r)
+  for (const r of records) {
+    add(exact, String(r[field] ?? '').toUpperCase(), r)
+    add(compact, compactCode(r[field]), r)
+  }
+  return (typed) => {
+    const hit = exact.get(String(typed ?? '').toUpperCase())
+    return hit !== undefined ? hit : compact.get(compactCode(typed))
+  }
 }
 
 // ── context ─────────────────────────────────────────────────────────────────
@@ -180,17 +214,12 @@ async function validateAssetRows(rows, ctx, ref, issues) {
   const err = (row, field, message) => issues.errors.push({ section: 'assets', row, field, message })
   const warn = (row, message) => issues.warnings.push({ section: 'assets', row, message })
 
-  // Employees referenced by staff ID.
-  const empKeys = [...new Set(rows.map(r => text(r?.employeeEmployeeId ?? r?.employeeId, 60)).filter(Boolean))]
-  const employees = empKeys.length
-    ? await Employee.find({ employeeId: { $in: empKeys.map(k => new RegExp(`^${escapeRegex(k)}$`, 'i')) } })
-      .select('employeeId userId').populate('userId', 'name').lean()
+  // Employees referenced by staff ID (separators and case ignored).
+  const empIn = codesIn(rows.map(r => text(r?.employeeEmployeeId ?? r?.employeeId, 60)).filter(Boolean))
+  const employees = empIn
+    ? await Employee.find({ employeeId: empIn }).select('employeeId userId').populate('userId', 'name').lean()
     : []
-  const empByKey = new Map()
-  for (const e of employees) {
-    const k = String(e.employeeId).toLowerCase()
-    empByKey.set(k, empByKey.has(k) ? null : e)
-  }
+  const findEmployee = codeFinder(employees, 'employeeId')
 
   // Serial numbers: unique within the file and on the register.
   const serials = rows.map(r => text(r?.serialNumber, 120)).filter(Boolean)
@@ -256,7 +285,7 @@ async function validateAssetRows(rows, ctx, ref, issues) {
     const empKey = text(raw.employeeEmployeeId ?? raw.employeeId, 60)
     let employee = null
     if (empKey) {
-      employee = empByKey.get(empKey.toLowerCase())
+      employee = findEmployee(empKey)
       if (employee === undefined) err(n, 'employeeEmployeeId', `No employee with ID "${empKey}"`)
       else if (employee === null) err(n, 'employeeEmployeeId', `More than one employee has ID "${empKey}"`)
     }
@@ -317,9 +346,11 @@ async function validateAssetRows(rows, ctx, ref, issues) {
 
 async function validateStockRows(rows, ctx, ref, issues) {
   const err = (row, field, message) => issues.errors.push({ section: 'stock', row, field, message })
-  const skus = [...new Set(rows.map(r => text(r?.sku, 40)?.toUpperCase()).filter(Boolean))]
-  const existing = skus.length ? await StockItem.find({ sku: { $in: skus } }).lean() : []
-  const bySku = new Map(existing.map(i => [i.sku, i]))
+  // Existing items match with separators ignored: re-importing an export taken
+  // before the numbers lost their hyphens (LAP-0001) updates LAP0001.
+  const skuIn = codesIn(rows.map(r => text(r?.sku, 40)).filter(Boolean))
+  const existing = skuIn ? await StockItem.find({ sku: skuIn }).lean() : []
+  const findItem = codeFinder(existing, 'sku')
   const moved = existing.length
     ? new Set((await StockMovement.distinct('stockItemId', { stockItemId: { $in: existing.map(i => i._id) } })).map(String))
     : new Set()
@@ -329,14 +360,19 @@ async function validateStockRows(rows, ctx, ref, issues) {
     const n = i + 1
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) { err(n, 'row', 'Row is not an object'); return }
     const before = issues.errors.length
-    const sku = text(raw.sku, 40)?.toUpperCase() || null
-    const item = sku ? bySku.get(sku) : null
+    const typedSku = text(raw.sku, 40)?.toUpperCase() || null
+    const found = typedSku ? findItem(typedSku) : undefined
+    const item = found ?? null
+    // An existing item keeps its stored SKU; a new one may not use "-".
+    const sku = item?.sku ?? typedSku
     const name = text(raw.name, 200)
     if (!item && !name) err(n, 'name', 'Item name is required for a new item')
-    if (sku && !/^[A-Z0-9][A-Z0-9_.-]{0,39}$/.test(sku)) err(n, 'sku', 'SKU may use letters, digits, ".", "-" and "_"')
+    if (found === null) err(n, 'sku', `SKU ${typedSku} matches more than one item once separators are ignored — type it exactly as the stock list shows it`)
+    else if (sku && !item && !SKU_RE.test(sku)) err(n, 'sku', skuRuleFor(sku))
     if (sku) {
-      if (seen.has(sku)) err(n, 'sku', `SKU ${sku} is repeated (also row ${seen.get(sku)})`)
-      else seen.set(sku, n)
+      const k = compactCode(sku)
+      if (seen.has(k)) err(n, 'sku', `SKU ${sku} is repeated (also row ${seen.get(k)})`)
+      else seen.set(k, n)
     }
     if (item && (moved.has(String(item._id)) || num(item.qtyOnHand) !== 0)) {
       err(n, 'sku', `${sku} already has stock movements — correct it with a stock adjustment instead`)

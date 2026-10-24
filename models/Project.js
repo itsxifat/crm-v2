@@ -1,5 +1,5 @@
 import mongoose from 'mongoose'
-import { nextSequence } from '../lib/sequence'
+import { nextSequence, counterValue } from '../lib/sequence'
 const ProjectSchema = new mongoose.Schema(
   {
     projectCode: { type: String, unique: true, sparse: true },
@@ -75,9 +75,9 @@ function _seqIndex(code) {
 }
 
 // Derive a 3-char prefix from a venture ID as a last-resort fallback
-// e.g. "ENSTUDIO" → "ENS", "ENTECH" → "ENT", "CRDESIGN" → "CRD"
+// e.g. "ENSTUDIO" → "ENS", "ENTECH" → "ENT", "CRDESIGN" → "CRD" (letters and digits only)
 function _fallbackPrefix(ventureId) {
-  return (ventureId ?? 'PRJ').slice(0, 3).toUpperCase()
+  return String(ventureId ?? 'PRJ').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 3) || 'PRJ'
 }
 
 ProjectSchema.pre('save', async function () {
@@ -98,14 +98,18 @@ ProjectSchema.pre('save', async function () {
 
   const d    = new Date(this.orderDate ?? Date.now())
   const yymm = `${String(d.getFullYear()).slice(-2)}${String(d.getMonth() + 1).padStart(2, '0')}`
-  const pfx  = `${venturePrefix}P-${yymm}`
+  // ENTP2610A01. Codes issued before 2026-10 read ENTP-2610A01: the floor counts
+  // both shapes, and the old counter key (project:ENTP-2610) too.
+  const pfx  = `${venturePrefix}P${yymm}`
+  const re   = new RegExp(`^${venturePrefix}P-?${yymm}([A-Z]+\\d{2})$`)
   // Allocate from the highest code already used (NOT a count — a count reissues an
   // existing code after any delete and collides on the unique index).
   const existing = await mongoose.model('Project')
-    .find({ projectCode: { $regex: `^${pfx}[A-Z]+[0-9]{2}$` } })
+    .find({ projectCode: { $regex: re.source } })
     .select('projectCode').lean()
-  const maxUsed = existing.reduce((m, d) => Math.max(m, _seqIndex(d.projectCode.slice(pfx.length)) + 1), 0)
-  const seq = await nextSequence(`project:${pfx}`, maxUsed)
+  const maxUsed = existing.reduce((m, d) => Math.max(m, _seqIndex(re.exec(d.projectCode)?.[1]) + 1), 0)
+  const floor = Math.max(maxUsed, await counterValue(`project:${venturePrefix}P-${yymm}`))
+  const seq = await nextSequence(`project:${pfx}`, floor)
   this.projectCode = `${pfx}${_seqCode(seq - 1)}`
 })
 

@@ -9,6 +9,7 @@ import { requirePerm, canDo } from '@/lib/rbac'
 import { isValidObjectId } from '@/lib/objectId'
 import { dhakaDayStart } from '@/lib/dhakaTime'
 import { ciEquals, ciContains } from '@/lib/searchMatch'
+import { codeContains, codeEquals, compactCode } from '@/lib/codes'
 import { z } from 'zod'
 import bcrypt from 'bcryptjs'
 import { sendEmployeeLoginEmail } from '@/lib/mailer'
@@ -73,12 +74,14 @@ export async function GET(request) {
     // Awaiting HR review — surfaces employees who submitted their profile.
     if (status === 'pending')  filter.profileStatus = 'PENDING_APPROVAL'
 
-    // Year filter — match employeeId pattern [VENTURE_PREFIX]-[DEPT][YY][MM][SERIAL]
-    // (employeeId is NOT encrypted, so regex works here)
-    // Venture prefix comes from config (2-4 chars) and dept codes are 2-6 letters.
+    // Year filter — match employeeId pattern [VENTURE_PREFIX][DEPT][YY][MM][SERIAL]
+    // (employeeId is NOT encrypted, so regex works here). IDs issued before
+    // 2026-10 carry a hyphen after the venture prefix (EN-DEV2610001), so it
+    // is optional. Venture prefix comes from config (2-4 chars) and dept codes
+    // are 2-6 letters.
     if (year && /^\d{2,4}$/.test(String(year))) {
       const yy = String(year).slice(-2)
-      filter.employeeId = { $regex: `^[A-Z0-9]{2,4}-[A-Z]{2,6}${yy}\\d{2}\\d{3,}$`, $options: 'i' }
+      filter.employeeId = { $regex: `^[A-Z0-9]{2,4}-?[A-Z]{2,6}${yy}\\d{2}\\d{3,}$`, $options: 'i' }
     }
 
     if (search) {
@@ -86,9 +89,11 @@ export async function GET(request) {
         $or: [{ name: ciContains(search) }, { email: ciContains(search) }, { phone: ciContains(search) }],
       }).select('_id').lean()
       const userIds = matchingUsers.map(u => u._id)
+      // Employee IDs match with separators ignored (EN-DEV2610001 = ENDEV2610001).
+      const code = codeContains(search)
       filter.$or = [
         { userId:     { $in: userIds } },
-        { employeeId: ciContains(search) },
+        ...(code ? [{ employeeId: code }] : []),
       ]
     }
 
@@ -166,9 +171,15 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Only a Super Admin can assign Manager or Super Admin roles' }, { status: 403 })
     }
 
-    const { name, email, password, phone, venture, department, position, designation, salary, hireDate, employeeId, role,
+    const { name, email, password, phone, venture, department, position, designation, salary, hireDate, role,
             bloodGroup, emergencyContacts, address, nidNumber, appointmentLetterUrl, agreementUrl, panelAccessGranted,
             customRoleId } = parsed.data
+    // A typed employee ID is stored without separators and must not already be
+    // someone's in any spelling (EN-DEV2610001 is ENDEV2610001).
+    const employeeId = compactCode(parsed.data.employeeId) || undefined
+    if (employeeId && await Employee.exists({ employeeId: codeEquals(employeeId) })) {
+      return NextResponse.json({ error: 'This employee ID is already in use' }, { status: 409 })
+    }
 
     // A custom role replaces the whole permission set — assigning one is role
     // management, not employee creation.

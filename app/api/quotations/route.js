@@ -61,7 +61,7 @@ export async function GET(request) {
     ]
 
     // Searching on a masked field would confirm whether a given email exists
-    const searchFields = ['quotationNumber', 'recipientName', 'recipientCompany']
+    const searchFields = ['recipientName', 'recipientCompany']
     if (canDo(session, 'pii.contact.view')) searchFields.push('recipientEmail')
 
     let quotations, total
@@ -69,6 +69,7 @@ export async function GET(request) {
       ;({ docs: quotations, total } = await searchEncrypted(Quotation, {
         baseFilter: filter, search,
         fields: searchFields,
+        codeFields: ['quotationNumber'],   // QT-00001 = QT00001
         page, limit, sort: { createdAt: -1 }, populate,
       }))
     } else {

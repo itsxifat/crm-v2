@@ -11,6 +11,7 @@ import { isValidObjectId } from '@/lib/objectId'
 import { isValidCurrency } from '@/lib/currencies'
 import { logActivity } from '@/lib/logActivity'
 import { buildExpenseTax, supplierVatTypeOf } from '@/lib/expensePayment'
+import { COMPANY_UNIT, ventureUnit } from '@/lib/units'
 
 // GET /api/projects/:id/expenses — internal cost data: staff who can view the
 // project AND project financials (same gate as GET /api/projects/:id).
@@ -126,6 +127,8 @@ export async function POST(request, { params }) {
       projectId:        params.id,
       origin:           'PROJECT',
       venture:          project.venture ?? null,
+      // A project's costs belong to its venture (snapshot, like `venture`).
+      unit:             ventureUnit(project.venture || null) || COMPANY_UNIT,
       title,
       amount,
       currency,

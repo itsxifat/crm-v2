@@ -10,6 +10,8 @@ import { isValidCurrency } from '@/lib/currencies'
 import { logActivity } from '@/lib/logActivity'
 import { buildExpenseTax, payeeProfilesFor, supplierVatTypeOf, inputVatOutcomesFor } from '@/lib/expensePayment'
 import { parseDhakaDay } from '@/lib/dhakaTime'
+import { getConfig } from '@/lib/getConfig'
+import { isValidUnit, ventureUnit } from '@/lib/units'
 
 const ORIGINS = ['PROJECT', 'FREELANCER', 'AGENCY', 'VENDOR', 'SALARY', 'REIMBURSEMENT', 'OTHER']
 const STATUSES = ['PENDING', 'PAID', 'AUTHORIZED', 'REJECTED']
@@ -122,6 +124,9 @@ export async function GET(request) {
 //     These may also carry the payee (`vendorId` for VENDOR, or free-text
 //     `paidToName`) and the bill's `tax` breakdown (VAT in the bill, VDS / TDS to
 //     withhold — same shape as ProjectExpense.tax; netPayable is computed).
+// Both need `unit` (lib/units.js: a venture, a product or COMPANY) — the business
+// unit the cost belongs to. With a project the unit is always that project's
+// venture, whatever was sent.
 export async function POST(request) {
   try {
     const session = await getServerSession(authOptions)
@@ -179,6 +184,7 @@ export async function POST(request) {
     let origin           = 'REIMBURSEMENT'   // the "this is a reimbursement" marker
     let paidToEmployeeId = null
     let projectId        = null
+    let project          = null
     let vendorId         = null
     let paidToName       = null
     let vendor           = null
@@ -188,14 +194,14 @@ export async function POST(request) {
       const employee = await Employee.findOne({ userId: session.user.id }).select('_id').lean()
       paidToEmployeeId = employee?._id ?? null
       if (body.projectId) {
-        if (!isValidObjectId(body.projectId) || !(await Project.exists({ _id: body.projectId })))
-          return NextResponse.json({ error: 'Project not found' }, { status: 422 })
+        project = isValidObjectId(body.projectId) ? await Project.findById(body.projectId).select('venture').lean() : null
+        if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 422 })
         projectId = body.projectId
       }
     } else {
       if (body.projectId) {
-        if (!isValidObjectId(body.projectId) || !(await Project.exists({ _id: body.projectId })))
-          return NextResponse.json({ error: 'Project not found' }, { status: 422 })
+        project = isValidObjectId(body.projectId) ? await Project.findById(body.projectId).select('venture').lean() : null
+        if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 422 })
         projectId = body.projectId
       }
       if (body.vendorId) {
@@ -220,9 +226,19 @@ export async function POST(request) {
       if (tax && !tax.supplierVatType) tax.supplierVatType = supplierVatTypeOf(vendor)
     }
 
+    // Business unit: the project's venture, else the venture / product / Company chosen.
+    const fromProject = ventureUnit(project?.venture || null)
+    const unit = fromProject || (typeof body.unit === 'string' ? body.unit.trim() : '')
+    if (!unit)
+      return NextResponse.json({ error: 'Choose the venture or product this expense is for (or Company / shared)', field: 'unit' }, { status: 422 })
+    if (!fromProject && !isValidUnit(unit, await getConfig()))
+      return NextResponse.json({ error: 'Unknown venture or product — choose one from the list', field: 'unit' }, { status: 422 })
+
     const expense = await new ProjectExpense({
       origin,
       projectId,
+      unit,
+      venture:          project?.venture ?? null,
       title,
       amount,
       currency,
@@ -247,7 +263,7 @@ export async function POST(request) {
       entity:   'EXPENSE',
       entityId: expense._id.toString(),
       changes:  JSON.stringify({
-        expenseId: expense.expenseId ?? null, origin, title, category, subcategory, amount, currency,
+        expenseId: expense.expenseId ?? null, origin, unit, title, category, subcategory, amount, currency,
         ...(tax && { vat: tax.vatAmount, vds: tax.vdsAmount, tds: tax.tdsAmount, netPayable: tax.netPayable }),
       }),
       request,

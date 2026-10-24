@@ -10,6 +10,10 @@ import { isValidCurrency, BASE_CURRENCY } from '@/lib/currencies'
 import { isValidObjectId } from '@/lib/objectId'
 import { parseDhakaDay, dhakaDayKey } from '@/lib/dhakaTime'
 import { postMoneyEntry, TX_KINDS, CLEAR_STATUSES } from '@/lib/finance/ledger'
+import { getConfig } from '@/lib/getConfig'
+import { isValidUnit } from '@/lib/units'
+import { financeScope } from '@/lib/finance/scope'
+import { readUnitParam, unitFilter, invoiceUnits } from '@/app/api/accounts/_lib/unitScope'
 import {
   PAYABLE_INVOICE_STATUSES, invoiceLabel, loadPostingAccount, preflightPosting, parseBusinessDate,
   settleInvoicePayment, httpErrorPayload, invoiceOutstanding, pendingPaymentTotal, round2,
@@ -52,6 +56,8 @@ const transactionSchema = z.object({
   kind:           z.enum(['OPERATING']).optional().nullable(),
   channel:        optStr(40),
   cheque:         z.object({ no: optStr(60), date: optStr(40), bank: optStr(120) }).optional().nullable(),
+  // Business unit: 'VENTURE:<id>' | 'PRODUCT:<id>' | 'COMPANY' (required; checked against the config below).
+  unit:           optStr(80),
 }).superRefine((d, ctx) => {
   if (d.currency !== BASE_CURRENCY && !d.amountBDT) {
     ctx.addIssue({ path: ['amountBDT'], code: 'custom', message: 'Enter the BDT-equivalent for a non-BDT transaction' })
@@ -79,7 +85,8 @@ const errorJson = (err, txnId) => {
 // Filters: type, category, subcategory, startDate, endDate (Dhaka days, inclusive),
 // accountId (id | 'none' for rows without a money account), kind (one or a comma
 // list of TX_KINDS; OPERATING also matches legacy rows without a kind),
-// clearStatus, invoiceId, page, limit.
+// clearStatus, invoiceId, unit (an exact unit, or UNASSIGNED for untagged rows),
+// page, limit. Users without finance.units.all see only their own venture's rows.
 export async function GET(request) {
   try {
     const session = await getServerSession(authOptions)
@@ -99,6 +106,8 @@ export async function GET(request) {
     const kindParam = searchParams.get('kind')
     const clearStatus = searchParams.get('clearStatus')
     const invoiceId = searchParams.get('invoiceId')
+    const unitParam = readUnitParam(searchParams)
+    if (unitParam.error) return NextResponse.json({ error: unitParam.error }, { status: 400 })
     const skip      = (page - 1) * limit
 
     // category & subcategory are plain fields — match by direct equality.
@@ -150,11 +159,13 @@ export async function GET(request) {
     }
     if (and.length) filter.$and = and
 
-    const sort = { date: -1, createdAt: -1 }
+    const scope = await financeScope(session)
+    const query = unitFilter(filter, scope, unitParam.unit)
+    const sort  = { date: -1, createdAt: -1 }
 
     const [transactions, total] = await Promise.all([
-      Transaction.find(filter).skip(skip).limit(limit).sort(sort).populate(POPULATE),
-      Transaction.countDocuments(filter),
+      Transaction.find(query).skip(skip).limit(limit).sort(sort).populate(POPULATE),
+      Transaction.countDocuments(query),
     ])
 
     // Rows on this page that a later entry reversed (reversedBy = that entry's txnId),
@@ -166,7 +177,7 @@ export async function GET(request) {
 
     return NextResponse.json({
       data: transactions.map(t => ({ ...t.toJSON(), reversedBy: reversedBy.get(String(t._id)) ?? null })),
-      meta: { page, limit, total, pages: Math.ceil(total / limit) },
+      meta: { page, limit, total, pages: Math.ceil(total / limit), scope: { all: !!scope.all } },
     })
   } catch (err) {
     console.error('[GET /api/transactions]', err)
@@ -182,6 +193,9 @@ export async function GET(request) {
 // outstanding balance (less pending payment requests) — an over-receipt is a
 // client advance, recorded as a separate unlinked entry, never invoice revenue.
 // Draft invoices cannot take payments; PAID / CANCELLED invoices are linked only.
+// `unit` (the venture / product / Company the income belongs to) is required. A
+// payment credited to an invoice is booked under the invoice's unit (its own,
+// else its project's venture, else Company), like every other settlement.
 export async function POST(request) {
   let txnIdForError = null
   try {
@@ -197,13 +211,20 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Validation failed', details: parsed.error.flatten() }, { status: 422 })
 
     // `kind` can only be OPERATING (the default), so it is not read further.
-    const { date, accountId: rawAccountId, channel, cheque, ...rest } = parsed.data
+    const { date, accountId: rawAccountId, channel, cheque, unit: rawUnit, ...rest } = parsed.data
 
     // Expenses are never written to the ledger directly — they must go through
     // the expense-request pipeline (/api/expenses → Paid → Authorized), which
     // creates the EXPENSE transaction when the expense is paid.
     if (rest.type === 'EXPENSE')
       return NextResponse.json({ error: 'Expenses cannot be added directly. Submit an expense request instead.' }, { status: 422 })
+
+    // Business unit: required, and must be Company or a configured venture / product.
+    let unit = rawUnit?.trim() || null
+    if (!unit)
+      return NextResponse.json({ error: 'Choose the venture or product this income belongs to', field: 'unit' }, { status: 422 })
+    if (!isValidUnit(unit, await getConfig()))
+      return NextResponse.json({ error: 'Unknown venture or product', field: 'unit' }, { status: 422 })
 
     const txDate = parseBusinessDate(date)
     if (!txDate)
@@ -280,7 +301,10 @@ export async function POST(request) {
     for (const k of ['amount', 'currency', 'amountBDT', 'type', 'kind']) delete entry[k]
 
     let transaction
+    const chosenUnit = unit
     if (invoice && invoiceCredit != null) {
+      // Revenue on an invoice belongs to the invoice's unit, whatever was picked.
+      unit = (await invoiceUnits([invoice])).get(String(invoice._id)) ?? unit
       // Credit the invoice (atomic — refused if a concurrent payment took the
       // balance meanwhile) and the project, as the other payment paths do.
       const projectId = invoice.projectId ?? (clean.projectId && isValidObjectId(clean.projectId) ? clean.projectId : null)
@@ -297,7 +321,7 @@ export async function POST(request) {
           accountId,
           channel:       channel || null,
           cheque:        cheque || null,
-          entry:         { ...entry, createdBy: session.user.id },
+          entry:         { ...entry, unit, createdBy: session.user.id },
           userId:        session.user.id,
         })
         transaction = result.transaction
@@ -310,6 +334,7 @@ export async function POST(request) {
       try {
         transaction = await postMoneyEntry({
           ...entry,
+          unit,
           type:      'INCOME',
           kind:      'OPERATING',
           amount:    clean.amount,
@@ -339,6 +364,7 @@ export async function POST(request) {
       changes:  JSON.stringify({
         type: 'INCOME', amount: clean.amount, currency: clean.currency, category: clean.category,
         accountId, invoiceId: clean.invoiceId ?? null, invoiceCredited: invoiceCredit != null,
+        unit, ...(unit !== chosenUnit ? { unitChosen: chosenUnit } : {}),
       }),
       request,
     })

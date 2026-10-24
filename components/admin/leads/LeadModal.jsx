@@ -450,7 +450,7 @@ export default function LeadModal({ open, onClose, lead, onSuccess }) {
                     if ((v ?? '') !== (field.value ?? '')) { setValue('category', ''); setValue('subcategory', '') }
                     field.onChange(v)
                   }}
-                  options={ventures.map(v => ({ value: v.id, label: v.label }))}
+                  options={ventures.filter(v => v.active !== false || v.id === field.value).map(v => ({ value: v.id, label: v.label }))}
                   placeholder={ventures.length === 0 ? 'No ventures — add in Config' : 'Select…'}
                   disabled={ventures.length === 0}
                 />

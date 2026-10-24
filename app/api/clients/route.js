@@ -8,6 +8,7 @@ import { sendClientActivationEmail } from '@/lib/mailer'
 import { requirePerm, canDo } from '@/lib/rbac'
 import { maskList, maskDoc, CLIENT_PII, isMaskedValue } from '@/lib/pii'
 import { ciContains } from '@/lib/searchMatch'
+import { codeContains } from '@/lib/codes'
 import { getConfig } from '@/lib/getConfig'
 import { logActivity } from '@/lib/logActivity'
 import { findOrCreateClientUser, ensureMembership } from '@/lib/clientAccess'
@@ -73,9 +74,11 @@ export async function GET(request) {
           : [{ name: ciContains(search) }],
       }).select('_id').lean()
       const userIds = matchingUsers.map(u => u._id)
+      // Client codes match with separators ignored (ENCL-2610A001 = ENCL2610A001, '#' too).
+      const code = codeContains(search)
       filter.$or = [
         { userId:     { $in: userIds } },
-        { clientCode: ciContains(search) },
+        ...(code ? [{ clientCode: code }] : []),
         { company:    ciContains(search) },
         // BIN is a public business identifier (printed on Mushak-6.3); the
         // e-TIN is identity PII and only searchable by those who may see it.

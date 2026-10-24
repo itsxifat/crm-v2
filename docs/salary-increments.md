@@ -14,8 +14,9 @@ letter for the employee.
 3. **In effect from its month.** The employee's salary (and, for a promotion, their designation)
    switches over when that month starts. Payroll always uses the salary of the slip's own month, so a
    raise from November never changes an October slip generated late.
-4. **Letter.** Each approved change gets a numbered letter (`INC-YYMM-####`) to print, signed with the
-   signatory set in the company profile. Employees see their letters on *My profile* and are notified.
+4. **Letter.** Each approved change gets a numbered letter (`INCYYMM####`, e.g. `INC26100001`; letters
+   numbered before October 2026 read `INC-2610-0001`) to print, signed with the signatory set in the
+   company profile. Employees see their letters on *My profile* and are notified.
 
 ## Rules
 

@@ -1,5 +1,5 @@
 import mongoose from 'mongoose'
-import { nextSequence } from '../lib/sequence'
+import { nextSequence, counterValue } from '../lib/sequence'
 import { TX_KINDS, CLEAR_STATUSES } from '../lib/finance/constants'
 
 // Cheque instrument details (cheque / account-payee cheque / pay order).
@@ -86,6 +86,11 @@ const TransactionSchema = new mongoose.Schema(
     // these fields existed — those are recognised by kind / category).
     movementKind:     { type: String, default: undefined },
     movementId:       { type: String, default: undefined },
+
+    // Business unit (lib/units.js): 'VENTURE:<id>' | 'PRODUCT:<id>' | 'COMPANY'.
+    // A snapshot set by postMoneyEntry (never null on new rows; a reversal copies its
+    // original's). null = Unassigned: old rows scripts/backfill-finance-units.js could not place.
+    unit:             { type: String, default: null, trim: true },
   },
   {
     timestamps: true,
@@ -102,6 +107,8 @@ TransactionSchema.index({ accountId: 1, date: 1 })
 TransactionSchema.index({ kind: 1, date: 1 })
 TransactionSchema.index({ transferId: 1 })
 TransactionSchema.index({ invoiceId: 1 })
+// Finance reports by venture / product (unit) over a date range.
+TransactionSchema.index({ unit: 1, date: 1 })
 // Sparse: only movement rows carry a movementId.
 TransactionSchema.index({ movementId: 1 }, { sparse: true })
 // A row can be reversed at most once: two concurrent reversals of the same row
@@ -117,15 +124,20 @@ TransactionSchema.pre('save', async function () {
   // Calendar day in the business timezone (Asia/Dhaka, UTC+6, no DST).
   const dhakaNow = new Date(Date.now() + 6 * 60 * 60 * 1000)
   const datePart = dhakaNow.toISOString().slice(0, 10).replace(/-/g, '')
-  const prefix   = `TXN-${datePart}-`
+  // TXN202610240001. Ids issued before 2026-10 read TXN-20261024-0001: the floor
+  // counts both shapes, and the old counter key (txn:TXN-20261024-) too. Only these
+  // generated ids are matched — typed bank / gateway references share the field.
+  const prefix   = `TXN${datePart}`
+  const re       = new RegExp(`^TXN-?${datePart}-?(\\d{4,})$`)
   // Highest sequence already issued today (NOT a count — a count reissues an
   // existing id once any of today's ids is renamed/removed and collides on the
   // unique index). The atomic counter keeps concurrent saves from colliding.
   const existing = await mongoose.model('Transaction')
-    .find({ txnId: { $regex: `^${prefix}[0-9]+$` } })
+    .find({ txnId: { $regex: re.source } })
     .select('txnId').lean()
-  const maxUsed = existing.reduce((m, d) => Math.max(m, parseInt(d.txnId.slice(prefix.length), 10) || 0), 0)
-  const seq = await nextSequence(`txn:${prefix}`, maxUsed)
+  const maxUsed = existing.reduce((m, d) => Math.max(m, parseInt(re.exec(d.txnId)?.[1], 10) || 0), 0)
+  const floor = Math.max(maxUsed, await counterValue(`txn:TXN-${datePart}-`))
+  const seq = await nextSequence(`txn:${prefix}`, floor)
   this.txnId = `${prefix}${String(seq).padStart(4, '0')}`
 })
 

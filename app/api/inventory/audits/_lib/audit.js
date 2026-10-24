@@ -7,6 +7,7 @@ import mongoose from 'mongoose'
 import { NextResponse } from 'next/server'
 import { Asset, Employee, InventoryLocation, User } from '@/models'
 import { canDoAny } from '@/lib/rbac'
+import { compactCode, codeEquals } from '@/lib/codes'
 
 /** Either permission opens audits (the page route accepts both too). */
 export const AUDIT_PERMS = ['inventory.audit', 'inventory.manage']
@@ -27,8 +28,10 @@ const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 /**
  * Turn raw scanner / keyboard input into a lookup key.
- * QR labels encode `${origin}/admin/inventory/assets/tag/EN-LAP-00042`; a link to
- * an asset page carries its id. Anything else is treated as a tag or serial number.
+ * QR labels encode `${origin}/admin/inventory/assets/tag/ENLAP00042` (labels printed
+ * before 2026-10: EN-LAP-00042); a link to an asset page carries its id. Anything
+ * else is treated as a tag or serial number. `tag` is as scanned: match it with
+ * tagMatch / tagsIn / noUnexpectedTag, which ignore separators.
  * @returns {{ tag: string|null, assetId: string|null, raw: string }}
  */
 export function parseScan(input) {
@@ -43,6 +46,30 @@ export function parseScan(input) {
   const idUrl = raw.match(/\/assets\/([a-f0-9]{24})(?:[/?#]|$)/i)
   if (idUrl) return { tag: null, assetId: idUrl[1].toLowerCase(), raw }
   return { tag: raw.replace(/\s+/g, '').toUpperCase(), assetId: null, raw }
+}
+
+/**
+ * Condition matching an asset tag with separators and case ignored, so an old
+ * label (EN-LAP-00042) finds the tag stored either way. null when `tag` holds no
+ * letters or digits — leave the clause out then.
+ */
+export const tagMatch = (tag) => codeEquals(tag)
+
+const tagRegExp = (tag) => {
+  const f = codeEquals(tag)
+  return f ? new RegExp(f.$regex, f.$options) : null
+}
+
+/** $in condition matching any of `tags` (separators ignored), or null when none has letters or digits. */
+export function tagsIn(tags) {
+  const res = [...new Set((tags ?? []).map(compactCode).filter(Boolean))].map(tagRegExp)
+  return res.length ? { $in: res } : null
+}
+
+/** AssetAudit filter: no unexpected entry carries `tag` yet (separators ignored). */
+export function noUnexpectedTag(tag) {
+  const re = tagRegExp(tag)
+  return { 'unexpected.tag': re ? { $not: re } : { $ne: tag } }
 }
 
 /** Exact, case-insensitive serial-number match (labels missing ⇒ scan the maker's barcode). */

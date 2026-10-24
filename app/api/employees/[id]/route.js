@@ -10,6 +10,7 @@ import { User, Employee, Task, Leave, Attendance } from '@/models'
 import { generateEmployeeId } from '@/models/Employee'
 import { logActivity } from '@/lib/logActivity'
 import { TIN_REGEX } from '@/lib/tax/catalog'
+import { codeEquals, compactCode } from '@/lib/codes'
 import {
   RevisionError, applyDueRevisions, assertSalaryEditable, recordSalaryEdit, salaryForPeriod, currentPeriod,
 } from '@/lib/hr/salaryRevisions'
@@ -223,6 +224,15 @@ export async function PUT(request, { params }) {
         } catch (e) {
           console.warn('[PUT /api/employees] employeeId generation skipped:', e.message)
         }
+      }
+    }
+
+    // A typed employee ID is stored without separators and must not already be
+    // someone else's in any spelling (EN-DEV2610001 is ENDEV2610001).
+    if (empData.employeeId) {
+      empData.employeeId = compactCode(empData.employeeId)
+      if (await Employee.exists({ employeeId: codeEquals(empData.employeeId), _id: { $ne: current._id } })) {
+        return NextResponse.json({ error: 'This employee ID is already in use' }, { status: 409 })
       }
     }
 

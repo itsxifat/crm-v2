@@ -1,5 +1,5 @@
 import mongoose from 'mongoose'
-import { nextSequence } from '../lib/sequence'
+import { nextSequence, counterValue } from '../lib/sequence'
 import { dhakaParts } from '../lib/dhakaTime'
 import { AUDIT_STATUSES, AUDIT_RESULTS } from '../lib/inventory/constants'
 
@@ -41,7 +41,7 @@ const SummarySchema = new Schema({
 /** Physical verification session (count the floor against the register and back). */
 const AssetAuditSchema = new Schema(
   {
-    auditNo:     { type: String, unique: true, sparse: true },        // 'AUD-YYMM-###'
+    auditNo:     { type: String, unique: true, sparse: true },        // 'AUDYYMM###'
     name:        { type: String, required: true, trim: true },
     locationId:  { type: ObjectId, ref: 'InventoryLocation', default: null },
     categoryId:  { type: ObjectId, ref: 'AssetCategory', default: null },
@@ -86,13 +86,17 @@ AssetAuditSchema.pre('validate', async function () {
   // Month boundaries follow the business timezone (Asia/Dhaka).
   const { year, month } = dhakaParts(new Date())
   const yymm   = `${String(year).slice(-2)}${String(month + 1).padStart(2, '0')}`
-  const prefix = `AUD-${yymm}-`
-  // Highest number already issued for this prefix (NOT a count — see lib/sequence.js).
+  const prefix = `AUD${yymm}`
+  const re     = new RegExp(`^AUD-?${yymm}-?(\\d{3,})$`)
+  // Highest number already issued this month (NOT a count — see lib/sequence.js),
+  // in either shape: audits numbered before 2026-10 read AUD-2610-001, and the old
+  // counter key (assetaudit:AUD-2610-) is a floor too.
   const existing = await mongoose.model('AssetAudit')
-    .find({ auditNo: { $regex: `^${prefix}[0-9]+$` } })
+    .find({ auditNo: { $regex: re.source } })
     .select('auditNo').lean()
-  const maxUsed = existing.reduce((m, d) => Math.max(m, parseInt(d.auditNo.slice(prefix.length), 10) || 0), 0)
-  const seq = await nextSequence(`assetaudit:${prefix}`, maxUsed)
+  const maxUsed = existing.reduce((m, d) => Math.max(m, parseInt(re.exec(d.auditNo)?.[1], 10) || 0), 0)
+  const floor = Math.max(maxUsed, await counterValue(`assetaudit:AUD-${yymm}-`))
+  const seq = await nextSequence(`assetaudit:${prefix}`, floor)
   this.auditNo = `${prefix}${String(seq).padStart(3, '0')}`
 })
 

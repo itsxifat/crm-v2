@@ -12,7 +12,7 @@ const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
  */
 const StockItemSchema = new mongoose.Schema(
   {
-    // Auto-generated as `${categoryCode || 'ITM'}-0001` when not supplied.
+    // Auto-generated as `${categoryCode || 'ITM'}0001` (e.g. LAP0001) when not supplied.
     sku:               { type: String, required: true, unique: true, uppercase: true, trim: true },
     name:              { type: String, required: true, trim: true },
     categoryId:        { type: ObjectId, ref: 'AssetCategory', default: null },
@@ -52,14 +52,17 @@ StockItemSchema.pre('validate', async function () {
     const c = String(cat?.code ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '')
     if (c) code = c
   }
-  const prefix = `${code}-`
-  // Highest number already used for this prefix (NOT a count — see lib/sequence.js).
+  // Highest number already used for this code (NOT a count — see lib/sequence.js).
+  // Exactly 4 digits: category codes may end in digits, so LAP must not read
+  // LAP10001 (LAP1's first SKU) as its own number 10001. SKUs made before 2026-10
+  // read LAP-0001 and count too (the counter key sku:LAP has no hyphen).
+  const re = new RegExp(`^${escapeRegex(code)}-?(\\d{4})$`)
   const existing = await mongoose.model('StockItem')
-    .find({ sku: { $regex: `^${escapeRegex(prefix)}[0-9]+$` } })
+    .find({ sku: { $regex: re.source } })
     .select('sku').lean()
-  const maxUsed = existing.reduce((m, d) => Math.max(m, parseInt(d.sku.slice(prefix.length), 10) || 0), 0)
+  const maxUsed = existing.reduce((m, d) => Math.max(m, parseInt(re.exec(d.sku)?.[1], 10) || 0), 0)
   const seq = await nextSequence(`sku:${code}`, maxUsed)
-  this.sku = `${prefix}${String(seq).padStart(4, '0')}`
+  this.sku = `${code}${String(seq).padStart(4, '0')}`
 })
 
 StockItemSchema.index({ categoryId: 1 })

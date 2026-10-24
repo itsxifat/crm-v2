@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { FreelancerAssignment, Freelancer, Project, ProjectExpense } from '@/models'
 import { isValidObjectId } from '@/lib/objectId'
+import { COMPANY_UNIT, ventureUnit } from '@/lib/units'
 
 // Display-only freelancer fields for populated responses — never bank, KYC,
 // salary or invite-token data.
@@ -155,6 +156,8 @@ export async function PATCH(req, { params }) {
           projectId:   claimed.projectId,
           origin:      isAgency ? 'AGENCY' : 'FREELANCER',
           venture:     project?.venture ?? null,
+          // The engagement is a cost of the project's venture.
+          unit:        ventureUnit(project?.venture || null) || COMPANY_UNIT,
           title:       `${expenseCategory} — ${displayName}`,
           amount:      claimed.paymentAmount,
           currency:    claimed.currency ?? 'BDT',

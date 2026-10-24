@@ -7,6 +7,7 @@ import { Invoice, CombinedInvoice, Project } from '@/models'
 import { resolveActiveClient } from '@/lib/clientAccess'
 import { invoiceMoney, rollUp, deriveStatus, NON_BILLABLE_STATUSES } from '@/lib/combinedInvoice'
 import { ciContains } from '@/lib/searchMatch'
+import { codeContains } from '@/lib/codes'
 import { isValidObjectId } from '@/lib/objectId'
 
 const round2 = (v) => Math.round((Number(v) || 0) * 100) / 100
@@ -46,16 +47,19 @@ export async function GET(request) {
     if (projectId) and.push({ $or: [{ projectId }, { projectIds: projectId }] })
     if (search) {
       // Server-side search (the list is paginated): invoice number, or the name
-      // / code of one of this company's projects.
+      // / code of one of this company's projects. Numbers match with separators
+      // ignored, so the old ENV-2610A001 on a printed invoice finds ENV2610A001.
+      const code = codeContains(search)
       const matchingProjects = await Project.find({
         clientId: client._id,
-        $or: [{ name: ciContains(search) }, { projectCode: ciContains(search) }],
+        $or: [{ name: ciContains(search) }, ...(code ? [{ projectCode: code }] : [])],
       }).select('_id').lean()
       const pids = matchingProjects.map(p => p._id)
-      and.push({ $or: [
-        { invoiceNumber: ciContains(search) },
+      const or = [
+        ...(code ? [{ invoiceNumber: code }] : []),
         ...(pids.length ? [{ projectId: { $in: pids } }, { projectIds: { $in: pids } }] : []),
-      ] })
+      ]
+      and.push(or.length ? { $or: or } : { _id: null })
     }
     const filter = { clientId: client._id, $and: and }
 

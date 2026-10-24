@@ -19,6 +19,7 @@ import {
   CERT_DIRECTION, CERT_ENTRY_TYPES, CERT_TYPE_OF, certificateDue, certificateReadiness,
   planCertificateUpdate, assertOneCertificateGroup,
 } from '../entries/_lib/certificates'
+import { codeContains, codeEquals } from '@/lib/codes'
 import { z } from 'zod'
 
 const TYPES_FOR = {
@@ -97,11 +98,18 @@ export async function GET(request) {
     }
     const search = sp.get('search')?.trim()
     if (search) {
-      const rx = { $regex: escapeRegex(search), $options: 'i' }
-      filter.$or = [{ partyName: rx }, { partyBin: rx }, { documentNo: rx }, { entryNo: rx }, { 'certificate.number': rx }]
+      const rx   = { $regex: escapeRegex(search), $options: 'i' }
+      // Document, entry and certificate numbers match with separators ignored
+      // (VDS-2610-001 = VDS2610001; a typed number still matches as typed).
+      const code = codeContains(search)
+      filter.$or = [
+        { partyName: rx }, { partyBin: rx },
+        ...(code ? [{ documentNo: code }, { entryNo: code }, { 'certificate.number': code }] : []),
+      ]
     }
+    // Exact certificate number, separators and case ignored (old printed numbers keep working).
     const certNo = sp.get('certificateNo')?.trim()
-    if (certNo) filter['certificate.number'] = certNo
+    if (certNo) filter['certificate.number'] = codeEquals(certNo) ?? certNo
 
     const pending = status === 'PENDING'
     const sort = pending ? { date: 1, entryNo: 1 } : { date: -1, entryNo: -1 }

@@ -325,7 +325,7 @@ export default function ProjectsPage() {
           <input
             value={search}
             onChange={e => { setSearch(e.target.value); setPage(1) }}
-            placeholder="Search…"
+            placeholder="Search ID, project, client…"
             className={cn(inputClass, 'pl-9')}
           />
         </div>

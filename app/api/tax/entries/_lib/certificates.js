@@ -8,7 +8,7 @@
 
 import mongoose from 'mongoose'
 import { TaxEntry, TaxFiling } from '@/models'
-import { nextSequence } from '@/lib/sequence'
+import { nextSequence, counterValue } from '@/lib/sequence'
 import { dhakaParts, dhakaDayKey } from '@/lib/dhakaTime'
 import { isValidBin } from '@/lib/tax/catalog'
 import { UPLOAD_URL_RE } from '@/lib/inventory/constants'
@@ -182,14 +182,19 @@ export function assertOneCertificateGroup(entries) {
 
 /**
  * Allocate the next certificate number for the Dhaka month of `date`:
- * 'VDS-YYMM-###' or 'TDS-YYMM-###'. Floors at the highest number already used.
+ * 'VDSYYMM###' or 'TDSYYMM###' (e.g. VDS2610001). Floors at the highest number
+ * already used in either shape — certificates issued before 2026-10 read
+ * VDS-2610-001 — and at the old counter key (taxcert:VDS-2610-).
  */
 export async function nextCertificateNumber(prefixBase, date = new Date()) {
   const { year, month } = dhakaParts(date)
-  const prefix = `${prefixBase}-${String(year % 100).padStart(2, '0')}${String(month + 1).padStart(2, '0')}-`
-  const used = await TaxEntry.find({ 'certificate.number': { $regex: `^${prefix}[0-9]+$` } }).select('certificate.number').lean()
-  const maxUsed = used.reduce((m, d) => Math.max(m, parseInt(String(d.certificate?.number ?? '').slice(prefix.length), 10) || 0), 0)
-  const seq = await nextSequence(`taxcert:${prefix}`, maxUsed)
+  const yymm = `${String(year % 100).padStart(2, '0')}${String(month + 1).padStart(2, '0')}`
+  const prefix = `${prefixBase}${yymm}`
+  const re = new RegExp(`^${prefixBase}-?${yymm}-?(\\d{3,})$`)
+  const used = await TaxEntry.find({ 'certificate.number': { $regex: re.source } }).select('certificate.number').lean()
+  const maxUsed = used.reduce((m, d) => Math.max(m, parseInt(re.exec(String(d.certificate?.number ?? ''))?.[1], 10) || 0), 0)
+  const floor = Math.max(maxUsed, await counterValue(`taxcert:${prefixBase}-${yymm}-`))
+  const seq = await nextSequence(`taxcert:${prefix}`, floor)
   return `${prefix}${String(seq).padStart(3, '0')}`
 }
 

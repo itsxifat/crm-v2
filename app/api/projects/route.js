@@ -3,14 +3,16 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
-import { Project, Vendor, ProjectVendor } from '@/models'
+import { Project, Vendor, ProjectVendor, Client, User } from '@/models'
 import { resolveActiveClient } from '@/lib/clientAccess'
 import { canDo, requirePerm } from '@/lib/rbac'
 import { isValidObjectId } from '@/lib/objectId'
 import { canViewProjectFinancials } from '@/lib/projectAccess'
-import { calcPeriodEnd } from '@/lib/ventures'
+import { calcPeriodEnd, STATUS_META } from '@/lib/ventures'
 import { dhakaDayKey, parseDhakaDay } from '@/lib/dhakaTime'
-import { searchEncrypted } from '@/lib/searchMatch'
+import { ciContains, wordMatches, amountQuery, amountEquals, moneyOf } from '@/lib/searchMatch'
+import { codeContains } from '@/lib/codes'
+import { getConfig } from '@/lib/getConfig'
 import { logActivity } from '@/lib/logActivity'
 import { syncSoon } from '@/lib/encloud/sync'
 import { z } from 'zod'
@@ -34,6 +36,66 @@ const schema = z.object({
   tags:             z.string().optional().nullable(),
 })
 
+// Words the list shows for stored codes, so typing what is on screen finds it.
+const STATUS_WORDS   = Object.fromEntries(Object.entries(STATUS_META).map(([k, m]) => [k, m.label]))
+const TYPE_WORDS     = { FIXED: 'Fixed', MONTHLY: 'Monthly' }
+const PRIORITY_WORDS = { LOW: 'Low', MEDIUM: 'Medium', HIGH: 'High', URGENT: 'Urgent' }
+
+/**
+ * Free-text search over what the projects list shows, as one $or clause:
+ * project code (separators ignored), name, description, category, venture id
+ * or name, status words — and, beyond what vendors are shown, subcategory,
+ * tags, type and priority words, the client (company, contact person, client
+ * code, owner name), the project manager and team members by name and, for
+ * callers who may see project financials, amounts equal to net value, paid or
+ * due. Resolved here rather than in the caller's filter so role scoping is
+ * never widened: the caller $and-s it with that filter.
+ */
+async function buildSearchClause(search, { vendor, financials }) {
+  const rx   = ciContains(search)
+  const code = codeContains(search)
+  const term = search.toLowerCase()
+
+  const cfg = await getConfig()
+  const ventureIds = (cfg.ventures ?? [])
+    .filter(v => v?.id && String(v.label ?? '').toLowerCase().includes(term))
+    .map(v => v.id)
+  const statuses = wordMatches(search, STATUS_WORDS)
+
+  const or = [{ name: rx }, { description: rx }, { category: rx }, { venture: rx }]
+  if (code)              or.push({ projectCode: code })
+  if (ventureIds.length) or.push({ venture: { $in: ventureIds } })
+  if (statuses.length)   or.push({ status: { $in: statuses } })
+  // Vendors see only code / name / venture / category / status (VENDOR_FIELDS).
+  if (vendor) return { $or: or }
+
+  or.push({ subcategory: rx }, { tags: rx })
+  const types      = wordMatches(search, TYPE_WORDS)
+  const priorities = wordMatches(search, PRIORITY_WORDS)
+  if (types.length)      or.push({ projectType: { $in: types } })
+  if (priorities.length) or.push({ priority: { $in: priorities } })
+
+  // Client, manager and team are refs — resolve them to id sets first.
+  const [clients, users] = await Promise.all([
+    Client.find({ $or: [{ company: rx }, { contactPerson: rx }, ...(code ? [{ clientCode: code }] : [])] }).select('_id').lean(),
+    User.find({ name: rx }).select('_id').lean(),
+  ])
+  const userIds  = users.map(u => u._id)
+  const viaOwner = userIds.length ? await Client.find({ userId: { $in: userIds } }).select('_id').lean() : []
+  const clientIds = [...clients, ...viaOwner].map(c => c._id)
+  if (clientIds.length) or.push({ clientId: { $in: clientIds } })
+  if (userIds.length)   or.push({ projectManagerId: { $in: userIds } }, { teamMembers: { $in: userIds } })
+
+  // Money is Mixed (numbers or legacy strings), so compare numerically.
+  const amount = financials ? amountQuery(search) : null
+  if (amount != null) {
+    const budget = moneyOf('budget')
+    const paid   = moneyOf('paidAmount')
+    or.push(amountEquals(amount, [budget, paid, { $max: [0, { $subtract: [budget, paid] }] }]))
+  }
+  return { $or: or }
+}
+
 // GET /api/projects?venture=&projectType=&status=&search=&page=&limit=
 export async function GET(request) {
   try {
@@ -47,7 +109,7 @@ export async function GET(request) {
     const venture        = searchParams.get('venture')
     const projectType    = searchParams.get('projectType')
     const status         = searchParams.get('status')
-    const search         = searchParams.get('search')
+    const search         = searchParams.get('search')?.trim().slice(0, 100)
     const clientIdFilter = searchParams.get('clientId')
     const startDateParam = searchParams.get('startDate')
     const endDateParam   = searchParams.get('endDate')
@@ -118,21 +180,17 @@ export async function GET(request) {
       return j
     }
 
-    let projects, total
-    if (search) {
-      // name/description are encrypted → DB regex can't match; filter in JS
-      ;({ docs: projects, total } = await searchEncrypted(Project, {
-        baseFilter: filter, search, fields: ['name', 'description'],
-        page, limit, sort: { createdAt: -1 }, populate,
-      }))
-    } else {
-      ;[projects, total] = await Promise.all([
-        Project.find(filter)
-          .skip(skip).limit(limit).sort({ createdAt: -1 })
-          .populate(populate[0]).populate(populate[1]),
-        Project.countDocuments(filter),
-      ])
-    }
+    // Search is $and-ed with the filter: the role scoping above may itself be an $or.
+    const where = search
+      ? { $and: [filter, await buildSearchClause(search, { vendor: role === 'VENDOR', financials: showFinancials })] }
+      : filter
+
+    const [projects, total] = await Promise.all([
+      Project.find(where)
+        .skip(skip).limit(limit).sort({ createdAt: -1 })
+        .populate(populate[0]).populate(populate[1]),
+      Project.countDocuments(where),
+    ])
 
     return NextResponse.json({
       data: projects.map(enrich),
