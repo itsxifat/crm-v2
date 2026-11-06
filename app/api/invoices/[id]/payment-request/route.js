@@ -8,6 +8,7 @@ import { canDo } from '@/lib/rbac'
 import { getMyCompanyIds } from '@/lib/clientAccess'
 import { isValidObjectId } from '@/lib/objectId'
 import { logActivity } from '@/lib/logActivity'
+import { ENVO_OWNED_MESSAGE } from '@/lib/envo/policy'
 import {
   pendingPaymentTotal, pendingVdsTotal, readWithholding, withheldTotal, invoiceOutstanding,
   assertWithholdingAllowed, parseBusinessDate, httpErrorPayload, round2,
@@ -59,6 +60,7 @@ export async function POST(request, { params }) {
 
     const invoice = await Invoice.findById(params.id).populate('projectIds')
     if (!invoice) return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
+    if (invoice.envoId != null) return NextResponse.json({ error: ENVO_OWNED_MESSAGE }, { status: 409 })
 
     const staff = STAFF_ROLES.includes(session.user?.role)
     if (!(await canAccessInvoice(session, invoice, 'finance.payments.request'))) {

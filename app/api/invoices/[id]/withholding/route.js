@@ -7,6 +7,7 @@ import { Invoice, ProjectPayment, TaxEntry } from '@/models'
 import { requirePerm, canDoAny, requireStaff } from '@/lib/rbac'
 import { isValidObjectId } from '@/lib/objectId'
 import { logActivity } from '@/lib/logActivity'
+import { ENVO_OWNED_MESSAGE } from '@/lib/envo/policy'
 import { formatMoney } from '@/lib/currencies'
 import { dhakaDayKey } from '@/lib/dhakaTime'
 import { maskList, TAX_ENTRY_PII } from '@/lib/pii'
@@ -127,6 +128,7 @@ export async function POST(request, { params }) {
     const body = parsed.data
 
     const invoice = await Invoice.findById(params.id).lean()
+    if (invoice?.envoId != null) return NextResponse.json({ error: ENVO_OWNED_MESSAGE }, { status: 409 })
     if (!invoice) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     if (!PAYABLE_INVOICE_STATUSES.includes(invoice.status))
       return NextResponse.json({ error: `${invoiceLabel(invoice)} is ${String(invoice.status).toLowerCase()} — tax withheld can only be recorded on an issued invoice with a balance` }, { status: 409 })

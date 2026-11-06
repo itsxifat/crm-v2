@@ -10,6 +10,7 @@ import { maskDoc, maskEmail, INVOICE_PII } from '@/lib/pii'
 import { isValidObjectId } from '@/lib/objectId'
 import { ensureCombinedInvoice } from '@/lib/combinedInvoice'
 import { syncSoon } from '@/lib/encloud/sync'
+import { ENVO_OWNED_MESSAGE } from '@/lib/envo/policy'
 import { issueDraftInvoice, ensureIssuedOutputVat } from './issue'
 
 // POST /api/invoices/[id]/send
@@ -29,6 +30,7 @@ export async function POST(request, { params }) {
       .populate({ path: 'clientId', populate: { path: 'userId', select: 'name email' } })
 
     if (!invoice) return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
+    if (invoice.envoId != null) return NextResponse.json({ error: ENVO_OWNED_MESSAGE }, { status: 409 })
 
     if (invoice.status === 'PAID' || invoice.status === 'CANCELLED') {
       return NextResponse.json({ error: `Cannot send an invoice with status ${invoice.status}` }, { status: 400 })

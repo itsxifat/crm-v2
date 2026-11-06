@@ -15,6 +15,7 @@ import { getFinanceSettings } from '@/lib/finance/settings'
 import { VAT_TREATMENTS } from '@/lib/tax/catalog'
 import { BASE_CURRENCY, isValidCurrency } from '@/lib/currencies'
 import { syncSoon } from '@/lib/encloud/sync'
+import { ENVO_OWNED_MESSAGE } from '@/lib/envo/policy'
 import { getConfig } from '@/lib/getConfig'
 import { isValidUnit, ventureUnit } from '@/lib/units'
 
@@ -116,8 +117,9 @@ export async function PUT(request, { params }) {
     } = body ?? {}
 
     const existing = await Invoice.findById(params.id)
-      .select('status vatTreatment items currency total totalBDT clientId projectId projectIds unit').lean()
+      .select('status vatTreatment items currency total totalBDT clientId projectId projectIds unit envoId').lean()
     if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    if (existing.envoId != null) return NextResponse.json({ error: ENVO_OWNED_MESSAGE }, { status: 409 })
     // Only drafts are editable: an issued invoice's totals are what the client
     // was billed and what payments were recorded against.
     if (existing.status !== 'DRAFT')
@@ -291,8 +293,9 @@ export async function DELETE(request, { params }) {
     if (!isValidObjectId(params.id)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     await connectDB()
 
-    const existing = await Invoice.findById(params.id).select('status').lean()
+    const existing = await Invoice.findById(params.id).select('status envoId').lean()
     if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    if (existing.envoId != null) return NextResponse.json({ error: ENVO_OWNED_MESSAGE }, { status: 409 })
     // Issued invoices are cancelled, never deleted: deleting would orphan their
     // payments / income records and drop billed amounts from the books.
     if (existing.status !== 'DRAFT')

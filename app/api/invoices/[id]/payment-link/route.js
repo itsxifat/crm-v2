@@ -17,7 +17,7 @@ const fail = (error, status) => NextResponse.json({ error }, { status })
 async function load(id) {
   if (!isValidObjectId(id)) return null
   await connectDB()
-  return Invoice.findById(id).select('invoiceNumber status currency total paidAmount dueDate clientId').lean()
+  return Invoice.findById(id).select('invoiceNumber status currency total paidAmount dueDate clientId envoId').lean()
 }
 
 // GET /api/invoices/:id/payment-link — the invoice's online payment state:

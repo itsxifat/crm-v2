@@ -8,9 +8,11 @@ import { isValidObjectId } from '@/lib/objectId'
 import { logActivity } from '@/lib/logActivity'
 import { appBaseUrl } from '@/lib/mailer'
 import {
-  getPaySettings, getEncloudSettings, savePaySettings, saveEncloudSettings,
-  maskPaySettings, maskEncloudSettings, enfinitoPayApiBase, keyMode, SECRET_MASK,
+  getPaySettings, getEncloudSettings, getEnvoSettings, savePaySettings, saveEncloudSettings, saveEnvoSettings,
+  maskPaySettings, maskEncloudSettings, maskEnvoSettings, enfinitoPayApiBase, keyMode, SECRET_MASK,
 } from '@/lib/integrations/settings'
+import { envoPolicy, ensureEnvoProduct, taxSetupProblem } from '@/lib/envo/policy'
+import { envoStatus } from '@/lib/envo/reconcile'
 import { z } from 'zod'
 
 const fail = (error, status, extra = {}) => NextResponse.json({ error, ...extra }, { status })
@@ -18,9 +20,11 @@ const superAdminOnly = (session) => (!session || session.user.role !== 'SUPER_AD
 
 async function payload() {
   await connectDB()
-  const [pay, enc, accounts, linkStats, errors, review] = await Promise.all([
+  const [pay, enc, envo, envoState, accounts, linkStats, errors, review] = await Promise.all([
     getPaySettings(),
     getEncloudSettings(),
+    getEnvoSettings(),
+    envoStatus(),
     MoneyAccount.find({ status: 'ACTIVE', currency: 'BDT' }).select('name type').sort({ type: 1, name: 1 }).lean(),
     EncloudLink.aggregate([{ $group: { _id: '$kind', count: { $sum: 1 }, last: { $max: '$syncedAt' } } }]),
     EncloudLink.find({ error: { $ne: null } }).sort({ errorAt: -1 }).limit(5).select('kind refId error errorAt').lean(),
@@ -31,11 +35,14 @@ async function payload() {
   return {
     pay:     maskPaySettings(pay),
     encloud: maskEncloudSettings(enc),
+    envo:    maskEnvoSettings(envo),
+    envoPolicy: await envoPolicy(envo),
     urls: {
       app,
       returnDomain:   (() => { try { return new URL(app).host } catch { return app } })(),
       payWebhook:     `${app}/api/webhooks/enfinito-pay`,
       encloudWebhook: `${app}/api/webhooks/encloud`,
+      envoWebhook:    `${app}/api/webhooks/envo`,
     },
     // Not the real Enfinito Pay (ENFINITO_PAY_API_URL points at a stand-in).
     payApiOverride: enfinitoPayApiBase() !== 'https://pay.enfinito.com/api/v1' ? enfinitoPayApiBase() : null,
@@ -51,6 +58,7 @@ async function payload() {
         fullSyncRunning: !!globalThis.__encloudFullSync,
       },
       payments: { review },
+      envo: envoState,
     },
   }
 }
@@ -85,7 +93,25 @@ const encloudSchema = z.object({
   lockWhen:      z.enum(['ISSUED', 'OVERDUE']).optional(),
   bookPayments:  z.boolean().optional(),
 }).strict()
-const bodySchema = z.object({ pay: paySchema.optional(), encloud: encloudSchema.optional() })
+const accountRef = z.string().trim().max(64).nullable().optional()
+const envoSchema = z.object({
+  enabled:          z.boolean().optional(),
+  webhookSecret:    secret.optional(),
+  onlineAccountId:  accountRef,
+  manualAccounts:   z.object({ bkash: accountRef, nagad: accountRef, rocket: accountRef, bank: accountRef, cash: accountRef, other: accountRef }).strict().optional(),
+  vatTreatment:     z.enum(['STANDARD', 'REDUCED', 'ZERO_RATED', 'EXEMPT', 'NONE']).nullable().optional(),
+  vatRate:          z.number().min(0).max(100).nullable().optional(),
+  sdRate:           z.number().min(0).max(500).optional(),
+  serviceCode:      z.string().trim().max(20).nullable().optional(),
+  pricesIncludeVat: z.boolean().optional(),
+  topupVat:         z.enum(['NONE', 'INCLUDED']).optional(),
+  bookTestPayments: z.boolean().optional(),
+  gatewayFeeMode:   z.enum(['ACTUAL', 'PERCENT', 'NONE']).optional(),
+  gatewayFeePercent: z.number().min(0).max(100).optional(),
+  gatewayFeeCategory: z.string().trim().min(1).max(80).optional(),
+  incomeCategory:   z.string().trim().min(1).max(80).optional(),
+}).strict()
+const bodySchema = z.object({ pay: paySchema.optional(), encloud: encloudSchema.optional(), envo: envoSchema.optional() })
 
 const given = (v) => v !== undefined && v !== SECRET_MASK
 
@@ -101,8 +127,8 @@ export async function PUT(request) {
     try { raw = await request.json() } catch { return fail('Invalid JSON body', 400) }
     const parsed = bodySchema.safeParse(raw ?? {})
     if (!parsed.success) return fail('Some settings are not valid', 422, { details: parsed.error.flatten() })
-    const { pay, encloud } = parsed.data
-    const touchesSecrets = [pay?.secretKey, pay?.webhookSecret, encloud?.apiKey, encloud?.webhookSecret].some(v => given(v) && v)
+    const { pay, encloud, envo } = parsed.data
+    const touchesSecrets = [pay?.secretKey, pay?.webhookSecret, encloud?.apiKey, encloud?.webhookSecret, envo?.webhookSecret].some(v => given(v) && v)
     if (touchesSecrets && (process.env.ENCRYPTION_MASTER_KEY ?? '').length < 64) {
       return fail('Keys are stored encrypted: set ENCRYPTION_MASTER_KEY on the server first', 409)
     }
@@ -150,13 +176,42 @@ export async function PUT(request) {
       }
     }
 
+    if (envo) {
+      if (given(envo.webhookSecret) && envo.webhookSecret && !/^whsec_[A-Za-z0-9_-]{24,}$/.test(envo.webhookSecret)) {
+        return fail('The secret starts with whsec_ and has at least 24 more characters: use Make secret', 422, { field: 'envo.webhookSecret' })
+      }
+      const current = await getEnvoSettings()
+      const nextSecret = given(envo.webhookSecret) ? envo.webhookSecret : current.webhookSecret
+      if ((envo.enabled ?? current.enabled) && !nextSecret) return fail('Make the secret before connecting Envo', 422, { field: 'envo.webhookSecret' })
+
+      const accountIds = [envo.onlineAccountId, ...Object.values(envo.manualAccounts ?? {})].filter(Boolean)
+      if (accountIds.length) {
+        if (accountIds.some(id => !isValidObjectId(id))) return fail('Choose a money account', 422, { field: 'envo.onlineAccountId' })
+        const active = await MoneyAccount.countDocuments({ _id: { $in: [...new Set(accountIds)] }, status: 'ACTIVE', currency: 'BDT' })
+        if (active !== new Set(accountIds).size) return fail('Envo bills in taka: choose active BDT money accounts', 422, { field: 'envo.onlineAccountId' })
+      }
+      if (envo.manualAccounts) envo.manualAccounts = { ...current.manualAccounts, ...envo.manualAccounts }
+
+      const setup = {
+        vatTreatment: envo.vatTreatment !== undefined ? envo.vatTreatment : current.vatTreatment,
+        vatRate:      envo.vatRate !== undefined ? envo.vatRate : current.vatRate,
+        sdRate:       envo.sdRate !== undefined ? envo.sdRate : current.sdRate,
+      }
+      const problem = taxSetupProblem(setup)
+      if (problem) return fail(problem, 422, { field: 'envo.vatRate' })
+    }
+
     if (pay) await savePaySettings(pay)
     if (encloud) await saveEncloudSettings(encloud)
+    if (envo) {
+      await saveEnvoSettings(envo)
+      await ensureEnvoProduct()
+    }
 
     const redact = (o) => o && Object.fromEntries(Object.entries(o).map(([k, v]) => [k, /secret|key/i.test(k) && k !== 'accountId' ? (given(v) ? (v ? 'changed' : 'cleared') : 'kept') : v]))
     logActivity({
       userId: session.user.id, userRole: session.user.role, action: 'UPDATE', entity: 'SETTINGS',
-      entityId: 'integrations', changes: JSON.stringify({ pay: redact(pay), encloud: redact(encloud) }), request,
+      entityId: 'integrations', changes: JSON.stringify({ pay: redact(pay), encloud: redact(encloud), envo: redact(envo) }), request,
     })
     return NextResponse.json({ data: await payload() })
   } catch (err) {

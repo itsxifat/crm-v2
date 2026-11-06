@@ -39,7 +39,7 @@ export async function POST(request, { params }) {
     // A masked prefill (staff without pii.contact.view) means "the client's own".
     if (to && isMaskedValue(to)) to = null
 
-    const invoice = await Invoice.findById(params.id).select('invoiceNumber status currency total paidAmount dueDate clientId').lean()
+    const invoice = await Invoice.findById(params.id).select('invoiceNumber status currency total paidAmount dueDate clientId envoId').lean()
     if (!invoice) return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
     if (!payReady(await getPaySettings())) return NextResponse.json({ error: 'Set up Enfinito Pay in Configuration → Integrations first' }, { status: 409 })
     const reason = notPayableReason(invoice)

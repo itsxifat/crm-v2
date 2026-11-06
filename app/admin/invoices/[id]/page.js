@@ -828,15 +828,17 @@ export default function InvoiceDetailPage() {
   )
 
   const s       = STATUS_STYLES[invoice.status] ?? STATUS_STYLES.DRAFT
-  const actions = TRANSITION_ACTIONS[invoice.status] ?? []
-  const canRecordPayment = !['DRAFT', 'PAID', 'CANCELLED'].includes(invoice.status)
+  // Envo owns its invoices: the customer pays there and this one follows.
+  const fromEnvo = invoice.envoId != null
+  const actions = fromEnvo ? [] : (TRANSITION_ACTIONS[invoice.status] ?? [])
+  const canRecordPayment = !fromEnvo && !['DRAFT', 'PAID', 'CANCELLED'].includes(invoice.status)
   const balance = invoice.total - (invoice.paidAmount ?? 0)
   const cur     = (invoice.currency || 'BDT').toUpperCase()
   const money   = (n) => (cur === 'BDT' ? <TkAmt value={num(n)} decimals={2} /> : formatMoney(num(n), cur))
   const isVat   = isVatInvoice(invoice)
   const canNotes = ready && can('tax.notes.manage')
   const canViewTax = ready && can('tax.view')
-  const canWithhold = ready && can('finance.payments.confirm') && WITHHOLDABLE_STATUSES.includes(invoice.status) && cur === 'BDT' && balance > 0.01
+  const canWithhold = !fromEnvo && ready && can('finance.payments.confirm') && WITHHOLDABLE_STATUSES.includes(invoice.status) && cur === 'BDT' && balance > 0.01
   const showNotes = invoice.status !== 'DRAFT' && (NOTEABLE_STATUSES.includes(invoice.status) || notes.length > 0)
   const refunded = num(notesCtx?.refunded)
 
@@ -876,13 +878,13 @@ export default function InvoiceDetailPage() {
         description={<>{invoice.clientId?.userId?.name} {invoice.clientId?.company ? `· ${invoice.clientId.company}` : ''}</>}
         actions={
           <>
-            {invoice.status === 'DRAFT' && (
+            {!fromEnvo && invoice.status === 'DRAFT' && (
               <Button variant="ghost" size="icon" onClick={handleDelete} title="Delete" aria-label="Delete invoice"
                 className="text-gray-500 hover:bg-red-50 hover:text-red-600">
                 <Trash2 />
               </Button>
             )}
-            {invoice.status === 'DRAFT' && (
+            {!fromEnvo && invoice.status === 'DRAFT' && (
               <Button variant="outline" href={`/admin/invoices/${id}/edit`}>
                 <Pencil /> Edit
               </Button>
@@ -910,6 +912,12 @@ export default function InvoiceDetailPage() {
           </>
         }
       />
+
+      {fromEnvo && (
+        <p className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-600">
+          From Envo. {invoice.status === 'DRAFT' ? 'Not billed yet: it is issued, with its VAT, when the customer pays in Envo.' : 'The customer paid in Envo, so its amounts and status follow Envo.'}
+        </p>
+      )}
 
       {/* Part of a combined invoice */}
       {combined && (
@@ -972,7 +980,7 @@ export default function InvoiceDetailPage() {
       </Card>
 
       {/* Online payment (Enfinito Pay link) + client files lock (encloud) */}
-      {invoice.status !== 'DRAFT' && <InvoiceOnlinePanel invoice={invoice} />}
+      {invoice.status !== 'DRAFT' && !fromEnvo && <InvoiceOnlinePanel invoice={invoice} />}
 
       {/* VAT summary + settlement breakdown */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">

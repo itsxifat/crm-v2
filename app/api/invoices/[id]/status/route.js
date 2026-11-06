@@ -11,6 +11,7 @@ import { ensureCombinedInvoice } from '@/lib/combinedInvoice'
 import { logActivity } from '@/lib/logActivity'
 import { voidInvoiceOutputVat } from '@/lib/tax/invoiceVat'
 import { syncSoon } from '@/lib/encloud/sync'
+import { ENVO_OWNED_MESSAGE } from '@/lib/envo/policy'
 import { issueDraftInvoice } from '../send/issue'
 
 // PAID is intentionally excluded from all manual transitions.
@@ -40,6 +41,7 @@ export async function PATCH(request, { params }) {
 
     const invoice = await Invoice.findById(params.id)
     if (!invoice) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    if (invoice.envoId != null) return NextResponse.json({ error: ENVO_OWNED_MESSAGE }, { status: 409 })
 
     if (status === 'PAID')
       return NextResponse.json({ error: 'Invoice cannot be manually marked as paid. Payment must be confirmed by an account manager via Payment Confirmations.' }, { status: 403 })
