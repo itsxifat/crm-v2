@@ -46,6 +46,7 @@ const PURPOSES = [
   { id: 'client',       label: 'Client welcome',     description: 'New client account credentials' },
   { id: 'freelancer',   label: 'Freelancer invites', description: 'Freelancer/agency panel invites' },
   { id: 'notification', label: 'Notifications',      description: 'System alerts and reminders' },
+  { id: 'security',     label: 'Security',           description: 'Password reset codes and alerts' },
 ]
 
 const WA_PURPOSES = [

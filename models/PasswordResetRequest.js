@@ -1,9 +1,9 @@
 import mongoose from 'mongoose'
 
 /**
- * A client-initiated password reset request. Clients cannot self-reset — they
- * submit a request that lands in a super-admin queue; an authorised staff member
- * approves it, which emails the client a one-time reset link.
+ * Legacy staff-approved reset queue. Everyone now resets themselves with an
+ * emailed code (app/api/account-recovery/*, lib/passwordReset.js); no new rows
+ * are created, and a self-service reset marks any open row COMPLETED.
  */
 const PasswordResetRequestSchema = new mongoose.Schema(
   {

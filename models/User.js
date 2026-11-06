@@ -22,8 +22,20 @@ const UserSchema = new mongoose.Schema(
     activationTokenExpiry: { type: Date,   default: null },
     loginOtp:              { type: String, default: null },  // bcrypt-hashed 6-digit OTP
     loginOtpExpiry:        { type: Date,   default: null },
-    passwordResetToken:    { type: String, default: null },  // set only after admin approval
+    passwordResetToken:    { type: String, default: null },  // legacy: set only after admin approval
     passwordResetExpiry:   { type: Date,   default: null },
+
+    // ── Self-service reset by emailed code (lib/passwordReset.js) ────────────────
+    resetOtp:            { type: String, default: null },  // HMAC of the 6-digit code
+    resetOtpExpiry:      { type: Date,   default: null },
+    resetOtpAttempts:    { type: Number, default: 0 },
+    resetOtpSentAt:      { type: Date,   default: null },  // resend cooldown
+    resetOtpWindowStart: { type: Date,   default: null },  // send-cap window
+    resetOtpSendCount:   { type: Number, default: 0 },
+    resetTokenHash:      { type: String, default: null },  // sha256 of the post-verify token
+    resetTokenExpiry:    { type: Date,   default: null },
+    // Sessions signed in before this instant are revoked (set on password reset).
+    passwordChangedAt:   { type: Date,   default: null },
   },
   {
     timestamps: true,
@@ -33,6 +45,7 @@ const UserSchema = new mongoose.Schema(
         ret.id = ret._id.toString()
         delete ret._id; delete ret.__v; delete ret.password
         delete ret.loginOtp; delete ret.activationToken; delete ret.passwordResetToken
+        delete ret.resetOtp; delete ret.resetTokenHash
         return ret
       },
     },
