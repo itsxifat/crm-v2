@@ -4,7 +4,7 @@ import {
   ShieldCheck, Activity, Bell, UserCircle, PieChart, Wallet, Landmark, Receipt, Percent, Banknote,
   KeyRound, LineChart, Scale, Calculator, FileSpreadsheet, BookOpen, FileCheck, FileMinus, ListChecks,
   Package, PackageCheck, Laptop, ShoppingCart, Boxes, ClipboardCheck, BarChart3, SlidersHorizontal,
-  Mail, MessageCircle, CreditCard, ShieldAlert, Plus, AtSign, PenSquare,
+  Mail, MessageCircle, CreditCard, ShieldAlert, Plus, AtSign, PenSquare, CalendarRange,
 } from 'lucide-react'
 import { canDo } from '@/lib/rbac'
 
@@ -19,6 +19,7 @@ export const NAV = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard, exact: true, permission: 'dashboard.view' },
   // No permission: every staff member opens the mailbox; the API limits them to assigned accounts.
   { href: '/admin/mail', label: 'Mail', icon: Mail, exclude: ['/admin/mail/accounts'] },
+  { href: '/admin/organizer', label: 'Organizer', icon: CalendarRange, permission: 'organizer.view' },
   {
     label: 'Sales',
     icon: TrendingUp,
@@ -122,6 +123,7 @@ export const COMMAND_EXTRAS = [
   { group: 'Create', href: '/admin/projects/new',            label: 'New project',       icon: Plus, permission: 'projects.create' },
   { group: 'Create', href: '/admin/inventory/purchases/new', label: 'New purchase bill', icon: Plus, permission: 'inventory.purchase' },
   { group: 'Create', href: '/admin/mail?compose=1',          label: 'New email',         icon: PenSquare },
+  { group: 'Create', href: '/admin/organizer?new=1',         label: 'New organizer',     icon: Plus, permission: 'organizer.manage' },
   { group: 'Configuration', href: '/admin/config?tab=ventures',     label: 'Ventures & services', icon: Settings2,     permission: 'system.config.view' },
   { group: 'Configuration', href: '/admin/config?tab=leads',        label: 'Lead options',        icon: ClipboardList, permission: 'system.config.view' },
   { group: 'Configuration', href: '/admin/config?tab=departments',  label: 'Departments',         icon: Building2,     permission: 'system.config.view' },

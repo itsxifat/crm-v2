@@ -78,3 +78,11 @@ export { default as OnlinePayment }         from './OnlinePayment.js'
 export { default as EncloudLink }           from './EncloudLink.js'
 export { default as IntegrationEvent }      from './IntegrationEvent.js'
 export { default as EnvoSync }              from './EnvoSync.js'
+
+// ── Organizer ──
+export { default as Organizer }             from './Organizer.js'
+export { default as OrganizerCalendar }     from './OrganizerCalendar.js'
+export { default as OrganizerEvent }        from './OrganizerEvent.js'
+export { default as OrganizerTodoList }     from './OrganizerTodoList.js'
+export { default as OrganizerTodo }         from './OrganizerTodo.js'
+export { default as OrganizerNote }         from './OrganizerNote.js'
