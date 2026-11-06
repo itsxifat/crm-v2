@@ -15,8 +15,13 @@ const invalid = () => NextResponse.json({ error: 'Incorrect or expired code' }, 
 // Checks the emailed code. A correct code is burned and exchanged for a
 // short-lived, single-use reset token. Every failure looks the same.
 export async function POST(request) {
-  const ip = clientIpFromHeaders(h => request.headers.get(h), 'unknown')
-  const rl = hit(`pwreset:verify:${ip}`, 30, 15 * 60 * 1000)
+  const body  = await request.json().catch(() => ({}))
+  const email = normalizeEmail(body?.email)
+  const code  = String(body?.code ?? '').trim()
+
+  // No forwarded client IP → key by email (see request/route.js).
+  const ip = clientIpFromHeaders(h => request.headers.get(h), null)
+  const rl = hit(`pwreset:verify:${ip ?? `email:${email}`}`, 30, 15 * 60 * 1000)
   if (!rl.ok) {
     return NextResponse.json(
       { error: `Too many attempts. Try again in ${Math.ceil(rl.retryAfter / 60)} min.` },
@@ -24,9 +29,6 @@ export async function POST(request) {
     )
   }
 
-  const body  = await request.json().catch(() => ({}))
-  const email = normalizeEmail(body?.email)
-  const code  = String(body?.code ?? '').trim()
   if (!isValidEmail(email) || !/^\d{6}$/.test(code)) return NextResponse.json({ error: 'Enter the 6-digit code' }, { status: 422 })
 
   try {

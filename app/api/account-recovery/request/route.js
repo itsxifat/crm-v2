@@ -16,8 +16,13 @@ import {
 // vendor). The response is identical whether or not the account exists, and the
 // email is sent in the background so timing doesn't reveal it either.
 export async function POST(request) {
-  const ip = clientIpFromHeaders(h => request.headers.get(h), 'unknown')
-  const rl = hit(`pwreset:request:${ip}`, 10, 15 * 60 * 1000)
+  const body  = await request.json().catch(() => ({}))
+  const email = normalizeEmail(body?.email)
+
+  // Without a proxy-forwarded client IP, key by email rather than letting every
+  // visitor share one site-wide bucket (one person could then block everyone).
+  const ip = clientIpFromHeaders(h => request.headers.get(h), null)
+  const rl = hit(`pwreset:request:${ip ?? `email:${email}`}`, 10, 15 * 60 * 1000)
   if (!rl.ok) {
     return NextResponse.json(
       { error: `Too many requests. Try again in ${Math.ceil(rl.retryAfter / 60)} min.` },
@@ -25,8 +30,6 @@ export async function POST(request) {
     )
   }
 
-  const body  = await request.json().catch(() => ({}))
-  const email = normalizeEmail(body?.email)
   if (!isValidEmail(email)) return NextResponse.json({ error: 'Enter a valid email address' }, { status: 422 })
 
   const generic = NextResponse.json({ success: true, cooldown: RESEND_COOLDOWN_MS / 1000 })

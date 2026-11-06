@@ -20,19 +20,20 @@ const expired = () => NextResponse.json(
 // Sets the new password with the token issued by /verify. Single use; signs the
 // account out everywhere else and sends a security notice.
 export async function POST(request) {
-  const ip = clientIpFromHeaders(h => request.headers.get(h), 'unknown')
-  const rl = hit(`pwreset:reset:${ip}`, 20, 15 * 60 * 1000)
+  const body     = await request.json().catch(() => ({}))
+  const token    = typeof body?.token === 'string' ? body.token.trim() : ''
+  const password = body?.password
+  if (!token || token.length > 200) return expired()
+
+  // No forwarded client IP → key by token (see request/route.js).
+  const ip = clientIpFromHeaders(h => request.headers.get(h), null)
+  const rl = hit(`pwreset:reset:${ip ?? `token:${hashToken(token).slice(0, 16)}`}`, 20, 15 * 60 * 1000)
   if (!rl.ok) {
     return NextResponse.json(
       { error: `Too many attempts. Try again in ${Math.ceil(rl.retryAfter / 60)} min.` },
       { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } },
     )
   }
-
-  const body     = await request.json().catch(() => ({}))
-  const token    = typeof body?.token === 'string' ? body.token.trim() : ''
-  const password = body?.password
-  if (!token || token.length > 200) return expired()
 
   const pwError = validateStrongPassword(password)
   if (pwError) return NextResponse.json({ error: pwError }, { status: 422 })
