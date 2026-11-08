@@ -30,6 +30,9 @@ what the customer saw. Credit notes still work, and that is how a refund is reco
 - **Recharges and top-ups.** They go on a balance as they stand, so they carry no VAT, or VAT inside the amount (never on
   top: the customer would pay 115 and get 115 of credit for a recharge of 100). Off by default: ask your accountant.
 - **Foreign customers.** Mark the client *Foreign* on their profile and Envo bills them at zero rate.
+- **The seller on Envo's invoices.** Envo's invoice page and PDF (also attached to its invoice and payment emails) carry
+  the Enfinito logo and the company profile from Settings → Company: name, address, phone, email, website, BIN, TIN and
+  trade licence, laid out like this CRM's invoice print.
 - **The online payment charge**: what the gateway reports, a fixed percentage, or none; and the categories.
 - **Money accounts.** Online payments go to the account chosen here, else the one chosen for Enfinito Pay. Cash an Envo
   admin marks as paid goes to the account chosen per way of paying. No account: the payment waits, and finance is told.
