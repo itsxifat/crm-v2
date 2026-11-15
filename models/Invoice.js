@@ -31,9 +31,10 @@ const InvoiceSchema = new mongoose.Schema(
     // standalone invoice; VENTURE:<project.venture> for an invoice with a project.
     // null ⇒ use the project's venture (old invoices), else Company.
     unit:       { type: String, default: null, trim: true },
-    // Envo invoice this one mirrors (lib/envo/sync.js). Envo owns it: the amounts,
-    // status and payments change only through the integration.
+    // Envo / NCOM invoice this one mirrors (lib/products/sync.js). The product owns it:
+    // the amounts, status and payments change only through the integration.
     envoId:     { type: Number, default: undefined },
+    ncomId:     { type: Number, default: undefined },
 
     status: {
       type:    String,
@@ -130,8 +131,9 @@ InvoiceSchema.pre('validate', async function () {
 // (The old unique index is dropped by scripts/migrate-combined-invoices.js.)
 InvoiceSchema.index({ projectId: 1 })
 InvoiceSchema.index({ clientId: 1, status: 1 })
-// One CRM invoice per Envo invoice, whatever is retried or runs at the same time.
+// One CRM invoice per Envo / NCOM invoice, whatever is retried or runs at the same time.
 InvoiceSchema.index({ envoId: 1 }, { unique: true, partialFilterExpression: { envoId: { $gt: 0 } } })
+InvoiceSchema.index({ ncomId: 1 }, { unique: true, partialFilterExpression: { ncomId: { $gt: 0 } } })
 
 if (mongoose.models.Invoice) delete mongoose.models.Invoice
 export default mongoose.model('Invoice', InvoiceSchema)

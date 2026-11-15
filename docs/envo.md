@@ -93,8 +93,9 @@ it in the new CRM first:** Envo bills nothing (checkouts answer "try again in a 
 
 ## Code
 
-`lib/envo/sync.js` (one invoice, the batch) · `lib/envo/policy.js` (tax settings) · `lib/envo/reconcile.js` (comparison, status) ·
-`app/api/webhooks/envo/route.js` (signed like Enfinito Pay's and encloud's webhooks: `Envo-Signature`) ·
+Shared with NCOM ([ncom.md](ncom.md)), each product described in `lib/products/catalog.js`:
+`lib/products/sync.js` (one invoice, the batch) · `lib/products/policy.js` (tax settings) · `lib/products/reconcile.js` (comparison, status) ·
+`lib/products/webhook.js`, mounted at `app/api/webhooks/envo/route.js` (signed like Enfinito Pay's and encloud's webhooks: `Envo-Signature`) ·
 settings in `lib/integrations/settings.js` · model `EnvoSync`.
 
 | Call (`type`) | |

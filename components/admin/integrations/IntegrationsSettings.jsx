@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
 import {
-  CreditCard, HardDrive, Copy, Check, Save, RefreshCw, PlugZap, AlertTriangle, ExternalLink, X, PhoneCall, KeyRound,
+  CreditCard, HardDrive, Copy, Check, Save, RefreshCw, PlugZap, AlertTriangle, ExternalLink, X, PhoneCall, KeyRound, Store,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import Button from '@/components/ui/Button'
@@ -13,6 +13,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardAction, CardContent, 
 import { inputClass, selectClass } from '@/components/ui/Input'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
 import EmptyState from '@/components/ui/EmptyState'
+import { PRODUCT_LIST } from '@/lib/products/catalog'
 
 const MASK = '••••••••'
 const lc = 'mb-2 block text-sm font-medium leading-none text-gray-900'
@@ -413,17 +414,34 @@ function makeSecret() {
   return `whsec_${btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')}`
 }
 
-function EnvoCard({ data, onSaved }) {
-  const envo = data.envo
-  const status = data.status?.envo ?? {}
+// Words that differ between the products' cards; everything else is the same card.
+const PRODUCT_CARD = {
+  envo: {
+    icon: PhoneCall,
+    pricesTitle: 'Package prices include VAT',
+    pricedThing: 'package price',
+  },
+  ncom: {
+    icon: Store,
+    pricesTitle: 'Plan and credit prices include VAT',
+    pricedThing: 'price',
+  },
+}
+
+function ProductCard({ product, data, onSaved }) {
+  const { key, label: L } = product
+  const words = PRODUCT_CARD[key]
+  const Icon = words.icon
+  const current = data[key]
+  const status = data.status?.[key] ?? {}
   const rec = status.reconcile
-  const [form, setForm] = useState(() => ({ ...envo, webhookSecret: '' }))
+  const [form, setForm] = useState(() => ({ ...current, webhookSecret: '' }))
   const [cleared, setCleared] = useState(false)
   const [saving, setSaving] = useState(false)
   const [shown, setShown] = useState(null)   // a secret just made: shown once
   const set = (patch) => setForm(f => ({ ...f, ...patch }))
 
-  useEffect(() => { setForm({ ...envo, webhookSecret: '' }); setCleared(false) }, [envo])
+  useEffect(() => { setForm({ ...current, webhookSecret: '' }); setCleared(false) }, [current])
 
   async function save() {
     setSaving(true)
@@ -431,7 +449,7 @@ function EnvoCard({ data, onSaved }) {
       const res = await fetch('/api/settings/integrations', {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          envo: {
+          [key]: {
             enabled:            !!form.enabled,
             webhookSecret:      secretOut(form.webhookSecret, cleared),
             onlineAccountId:    form.onlineAccountId || null,
@@ -441,7 +459,7 @@ function EnvoCard({ data, onSaved }) {
             sdRate:             Number(form.sdRate) || 0,
             serviceCode:        form.serviceCode || null,
             pricesIncludeVat:   !!form.pricesIncludeVat,
-            topupVat:           form.topupVat,
+            ...(product.hasTopups ? { topupVat: form.topupVat } : {}),
             bookTestPayments:   !!form.bookTestPayments,
             gatewayFeeMode:     form.gatewayFeeMode,
             gatewayFeePercent:  Number(form.gatewayFeePercent) || 0,
@@ -453,14 +471,14 @@ function EnvoCard({ data, onSaved }) {
       const j = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(j.error || 'Could not save')
       onSaved(j.data)
-      toast.success('Envo settings saved')
+      toast.success(`${L} settings saved`)
     } catch (err) { toast.error(err.message) } finally { setSaving(false) }
   }
 
-  const policy = data.envoPolicy
+  const policy = data[`${key}Policy`]
   const taxSummary = policy?.vatTreatment === 'NONE'
-    ? 'No VAT on Envo invoices.'
-    : `${policy?.vatTreatment} ${policy?.vatRate}% VAT${policy?.sdRate ? `, ${policy.sdRate}% SD` : ''}, ${policy?.pricesIncludeVat ? 'included in the package price' : 'added on top of the package price'}.`
+    ? `No VAT on ${L} invoices.`
+    : `${policy?.vatTreatment} ${policy?.vatRate}% VAT${policy?.sdRate ? `, ${policy.sdRate}% SD` : ''}, ${policy?.pricesIncludeVat ? `included in the ${words.pricedThing}` : `added on top of the ${words.pricedThing}`}.`
   const accounts = data.accounts ?? []
 
   return (
@@ -468,26 +486,26 @@ function EnvoCard({ data, onSaved }) {
       <CardHeader>
         <div className="flex items-start gap-3">
           <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-gray-50 text-gray-600">
-            <PhoneCall className="size-4" />
+            <Icon className="size-4" />
           </span>
           <div className="min-w-0">
-            <CardTitle>Envo</CardTitle>
-            <CardDescription>Every Envo invoice and payment comes here by itself and counts under the Envo product. Tax and costs are decided here; Envo follows.</CardDescription>
+            <CardTitle>{L}</CardTitle>
+            <CardDescription>Every {L} invoice and payment comes here by itself and counts under the {L} product. Tax and costs are decided here; {L} follows.</CardDescription>
           </div>
         </div>
-        <CardAction>{envo.enabled ? <Badge variant="success" dot>Connected</Badge> : <Badge variant="default">Off</Badge>}</CardAction>
+        <CardAction>{current.enabled ? <Badge variant="success" dot>Connected</Badge> : <Badge variant="default">Off</Badge>}</CardAction>
       </CardHeader>
       <CardContent className="space-y-5">
-        <ToggleRow title="Connect Envo" description="Off: Envo's calls are refused and pile up safely in Envo until it is on again." on={form.enabled} onChange={v => set({ enabled: v })} />
+        <ToggleRow title={`Connect ${L}`} description={`Off: ${L}'s calls are refused and pile up safely in ${L} until it is on again.`} on={form.enabled} onChange={v => set({ enabled: v })} />
 
         <div className="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
           <CopyRow label="CRM_BASE_URL" value={data.urls?.app ?? ''} />
           {shown && <CopyRow label="CRM_API_SECRET" value={shown} />}
-          <p className={hc}>Set both on the Envo server, then restart it.{shown ? ' Copy the secret now: it is not shown again. Press Save to keep it.' : ''}</p>
+          <p className={hc}>Set both on the {L} server, then restart it.{shown ? ' Copy the secret now: it is not shown again. Press Save to keep it.' : ''}</p>
         </div>
         <div className="flex items-end gap-2">
           <div className="min-w-0 flex-1">
-            <SecretInput id="envo-secret" label="Shared secret" saved={!!envo.webhookSecret} hint={envo.webhookSecretHint} placeholder="whsec_…"
+            <SecretInput id={`${key}-secret`} label="Shared secret" saved={!!current.webhookSecret} hint={current.webhookSecretHint} placeholder="whsec_…"
               value={form.webhookSecret} onChange={v => { set({ webhookSecret: v }); setCleared(false) }}
               cleared={cleared} onClear={() => setCleared(c => !c)} />
           </div>
@@ -498,34 +516,36 @@ function EnvoCard({ data, onSaved }) {
 
         <div className="border-t border-gray-100 pt-5">
           <p className="text-sm font-medium text-gray-900">VAT and supplementary duty</p>
-          <p className={hc}>Right now: {taxSummary} A change applies to invoices Envo raises from then on.</p>
+          <p className={hc}>Right now: {taxSummary} A change applies to invoices {L} raises from then on.</p>
           <div className="mt-3 grid gap-4 sm:grid-cols-2">
             <div>
-              <label htmlFor="envo-treatment" className={lc}>VAT on Envo invoices</label>
-              <select id="envo-treatment" className={selectClass} value={form.vatTreatment || ''}
+              <label htmlFor={`${key}-treatment`} className={lc}>VAT on {L} invoices</label>
+              <select id={`${key}-treatment`} className={selectClass} value={form.vatTreatment || ''}
                 onChange={e => { const t = e.target.value; set({ vatTreatment: t || null, vatRate: t === 'STANDARD' ? 15 : ['', 'REDUCED'].includes(t) ? form.vatRate : 0 }) }}>
                 {VAT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
             {form.vatTreatment === 'REDUCED' && (
               <div>
-                <label htmlFor="envo-rate" className={lc}>VAT rate (%)</label>
-                <input id="envo-rate" type="number" min="0" max="15" step="0.01" className={inputClass} value={form.vatRate ?? ''} onChange={e => set({ vatRate: e.target.value })} />
+                <label htmlFor={`${key}-rate`} className={lc}>VAT rate (%)</label>
+                <input id={`${key}-rate`} type="number" min="0" max="15" step="0.01" className={inputClass} value={form.vatRate ?? ''} onChange={e => set({ vatRate: e.target.value })} />
               </div>
             )}
             <div>
-              <label htmlFor="envo-sd" className={lc}>Supplementary duty (%)</label>
-              <input id="envo-sd" type="number" min="0" max="500" step="0.01" className={inputClass} value={form.sdRate ?? 0} onChange={e => set({ sdRate: e.target.value })} />
+              <label htmlFor={`${key}-sd`} className={lc}>Supplementary duty (%)</label>
+              <input id={`${key}-sd`} type="number" min="0" max="500" step="0.01" className={inputClass} value={form.sdRate ?? 0} onChange={e => set({ sdRate: e.target.value })} />
             </div>
             <div>
-              <label htmlFor="envo-code" className={lc}>VAT service code</label>
-              <input id="envo-code" className={inputClass} placeholder="Company default" value={form.serviceCode ?? ''} onChange={e => set({ serviceCode: e.target.value })} />
+              <label htmlFor={`${key}-code`} className={lc}>VAT service code</label>
+              <input id={`${key}-code`} className={inputClass} placeholder="Company default" value={form.serviceCode ?? ''} onChange={e => set({ serviceCode: e.target.value })} />
             </div>
           </div>
-          <ToggleRow title="Package prices include VAT" description="On: customers pay the price on the pricing page and the VAT is inside it. Off: VAT is added on top at checkout."
+          <ToggleRow title={words.pricesTitle} description="On: customers pay the price on the pricing page and the VAT is inside it. Off: VAT is added on top at checkout."
             on={form.pricesIncludeVat} onChange={v => set({ pricesIncludeVat: v })} />
-          <ToggleRow title="VAT inside recharges and top-ups" description="Envo Phone recharges and number top-ups go on a balance as they stand. On: their VAT is inside the amount. Off: they carry no VAT. Never added on top."
-            on={form.topupVat === 'INCLUDED'} onChange={v => set({ topupVat: v ? 'INCLUDED' : 'NONE' })} />
+          {product.hasTopups && (
+            <ToggleRow title="VAT inside recharges and top-ups" description="Envo Phone recharges and number top-ups go on a balance as they stand. On: their VAT is inside the amount. Off: they carry no VAT. Never added on top."
+              on={form.topupVat === 'INCLUDED'} onChange={v => set({ topupVat: v ? 'INCLUDED' : 'NONE' })} />
+          )}
           <p className={hc}>A customer marked Foreign on their client profile is billed at zero rate.</p>
         </div>
 
@@ -533,30 +553,30 @@ function EnvoCard({ data, onSaved }) {
           <p className="text-sm font-medium text-gray-900">Costs</p>
           <div className="mt-3 grid gap-4 sm:grid-cols-2">
             <div>
-              <label htmlFor="envo-fee" className={lc}>Online payment charge</label>
-              <select id="envo-fee" className={selectClass} value={form.gatewayFeeMode} onChange={e => set({ gatewayFeeMode: e.target.value })}>
+              <label htmlFor={`${key}-fee`} className={lc}>Online payment charge</label>
+              <select id={`${key}-fee`} className={selectClass} value={form.gatewayFeeMode} onChange={e => set({ gatewayFeeMode: e.target.value })}>
                 <option value="ACTUAL">What the gateway reports, else the percentage</option>
                 <option value="PERCENT">A fixed percentage</option>
                 <option value="NONE">Don't book it</option>
               </select>
-              <p className={hc}>Booked as an Envo expense on the money account the payment went to.</p>
+              <p className={hc}>Booked as an {L} expense on the money account the payment went to.</p>
               {form.gatewayFeeMode !== 'NONE' && !(Number(form.gatewayFeePercent) > 0) && (
                 <p className="mt-1.5 text-xs text-amber-700">Enfinito Pay does not report its charge, so at 0% nothing is booked for its payments. Enter the percentage it keeps.</p>
               )}
             </div>
             {form.gatewayFeeMode !== 'NONE' && (
               <div>
-                <label htmlFor="envo-pct" className={lc}>Percentage</label>
-                <input id="envo-pct" type="number" min="0" max="100" step="0.01" className={inputClass} value={form.gatewayFeePercent ?? 0} onChange={e => set({ gatewayFeePercent: e.target.value })} />
+                <label htmlFor={`${key}-pct`} className={lc}>Percentage</label>
+                <input id={`${key}-pct`} type="number" min="0" max="100" step="0.01" className={inputClass} value={form.gatewayFeePercent ?? 0} onChange={e => set({ gatewayFeePercent: e.target.value })} />
               </div>
             )}
             <div>
-              <label htmlFor="envo-feecat" className={lc}>Expense category</label>
-              <input id="envo-feecat" className={inputClass} value={form.gatewayFeeCategory ?? ''} onChange={e => set({ gatewayFeeCategory: e.target.value })} />
+              <label htmlFor={`${key}-feecat`} className={lc}>Expense category</label>
+              <input id={`${key}-feecat`} className={inputClass} value={form.gatewayFeeCategory ?? ''} onChange={e => set({ gatewayFeeCategory: e.target.value })} />
             </div>
             <div>
-              <label htmlFor="envo-inccat" className={lc}>Income category</label>
-              <input id="envo-inccat" className={inputClass} value={form.incomeCategory ?? ''} onChange={e => set({ incomeCategory: e.target.value })} />
+              <label htmlFor={`${key}-inccat`} className={lc}>Income category</label>
+              <input id={`${key}-inccat`} className={inputClass} value={form.incomeCategory ?? ''} onChange={e => set({ incomeCategory: e.target.value })} />
             </div>
           </div>
         </div>
@@ -568,13 +588,13 @@ function EnvoCard({ data, onSaved }) {
             on={form.bookTestPayments} onChange={v => set({ bookTestPayments: v })} />
           <div className="mt-3 grid gap-4 sm:grid-cols-2">
             <div>
-              <label htmlFor="envo-online" className={lc}>Online (Enfinito Pay)</label>
-              <AccountSelect id="envo-online" accounts={accounts} value={form.onlineAccountId} onChange={v => set({ onlineAccountId: v })} empty="Same as Enfinito Pay above" />
+              <label htmlFor={`${key}-online`} className={lc}>Online (Enfinito Pay)</label>
+              <AccountSelect id={`${key}-online`} accounts={accounts} value={form.onlineAccountId} onChange={v => set({ onlineAccountId: v })} empty="Same as Enfinito Pay above" />
             </div>
-            {MANUAL_CHANNELS.map(([key, label]) => (
-              <div key={key}>
-                <label htmlFor={`envo-${key}`} className={lc}>{label}</label>
-                <AccountSelect id={`envo-${key}`} accounts={accounts} value={form.manualAccounts?.[key]} onChange={v => set({ manualAccounts: { ...form.manualAccounts, [key]: v } })} />
+            {MANUAL_CHANNELS.map(([channel, label]) => (
+              <div key={channel}>
+                <label htmlFor={`${key}-${channel}`} className={lc}>{label}</label>
+                <AccountSelect id={`${key}-${channel}`} accounts={accounts} value={form.manualAccounts?.[channel]} onChange={v => set({ manualAccounts: { ...form.manualAccounts, [channel]: v } })} />
               </div>
             ))}
           </div>
@@ -588,13 +608,13 @@ function EnvoCard({ data, onSaved }) {
           </p>
           <div className="mt-2">
             <Link href="/admin/accounts?tab=units" className="inline-flex items-center gap-1 text-[13px] font-medium text-gray-900 underline-offset-2 hover:underline">
-              Envo's income, expenses and margin <ExternalLink className="size-3.5" />
+              {L}'s income, expenses and margin <ExternalLink className="size-3.5" />
             </Link>
           </div>
           {!!status.problems?.length && (
             <ul className="mt-3 divide-y divide-gray-100 rounded-lg border border-amber-200 bg-amber-50/50">
               {status.problems.map(p => (
-                <li key={p.envoId} className="px-3 py-2 text-[13px]">
+                <li key={p.id} className="px-3 py-2 text-[13px]">
                   <div className="flex flex-wrap items-center gap-2">
                     {p.invoiceId
                       ? <Link href={`/admin/invoices/${p.invoiceId}`} className="font-mono text-xs font-medium text-gray-900 underline-offset-2 hover:underline">{p.number}</Link>
@@ -651,7 +671,7 @@ export default function IntegrationsSettings() {
       )}
       <EnfinitoPayCard data={data} onSaved={setData} />
       <EncloudCard data={data} onSaved={setData} reload={load} />
-      <EnvoCard data={data} onSaved={setData} />
+      {PRODUCT_LIST.map(p => <ProductCard key={p.key} product={p} data={data} onSaved={setData} />)}
     </div>
   )
 }

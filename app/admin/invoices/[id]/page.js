@@ -34,6 +34,7 @@ import { isVatInvoice, taxableValueOf, invoiceVatLabel } from '@/lib/invoiceTota
 import { VAT_TREATMENTS, CREDIT_NOTE_REASONS, BUYER_BIN_THRESHOLD } from '@/lib/tax/catalog'
 import { formatMoney } from '@/lib/currencies'
 import { cn } from '@/lib/utils'
+import { productOwning } from '@/lib/products/catalog'
 
 const fmt     = (n) => `৳ ${(n ?? 0).toLocaleString('en-BD', { minimumFractionDigits: 2 })}`
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
@@ -828,17 +829,18 @@ export default function InvoiceDetailPage() {
   )
 
   const s       = STATUS_STYLES[invoice.status] ?? STATUS_STYLES.DRAFT
-  // Envo owns its invoices: the customer pays there and this one follows.
-  const fromEnvo = invoice.envoId != null
-  const actions = fromEnvo ? [] : (TRANSITION_ACTIONS[invoice.status] ?? [])
-  const canRecordPayment = !fromEnvo && !['DRAFT', 'PAID', 'CANCELLED'].includes(invoice.status)
+  // Envo and NCOM own their invoices: the customer pays there and this one follows.
+  const owner = productOwning(invoice)
+  const fromProduct = !!owner
+  const actions = fromProduct ? [] : (TRANSITION_ACTIONS[invoice.status] ?? [])
+  const canRecordPayment = !fromProduct && !['DRAFT', 'PAID', 'CANCELLED'].includes(invoice.status)
   const balance = invoice.total - (invoice.paidAmount ?? 0)
   const cur     = (invoice.currency || 'BDT').toUpperCase()
   const money   = (n) => (cur === 'BDT' ? <TkAmt value={num(n)} decimals={2} /> : formatMoney(num(n), cur))
   const isVat   = isVatInvoice(invoice)
   const canNotes = ready && can('tax.notes.manage')
   const canViewTax = ready && can('tax.view')
-  const canWithhold = !fromEnvo && ready && can('finance.payments.confirm') && WITHHOLDABLE_STATUSES.includes(invoice.status) && cur === 'BDT' && balance > 0.01
+  const canWithhold = !fromProduct && ready && can('finance.payments.confirm') && WITHHOLDABLE_STATUSES.includes(invoice.status) && cur === 'BDT' && balance > 0.01
   const showNotes = invoice.status !== 'DRAFT' && (NOTEABLE_STATUSES.includes(invoice.status) || notes.length > 0)
   const refunded = num(notesCtx?.refunded)
 
@@ -878,13 +880,13 @@ export default function InvoiceDetailPage() {
         description={<>{invoice.clientId?.userId?.name} {invoice.clientId?.company ? `· ${invoice.clientId.company}` : ''}</>}
         actions={
           <>
-            {!fromEnvo && invoice.status === 'DRAFT' && (
+            {!fromProduct && invoice.status === 'DRAFT' && (
               <Button variant="ghost" size="icon" onClick={handleDelete} title="Delete" aria-label="Delete invoice"
                 className="text-gray-500 hover:bg-red-50 hover:text-red-600">
                 <Trash2 />
               </Button>
             )}
-            {!fromEnvo && invoice.status === 'DRAFT' && (
+            {!fromProduct && invoice.status === 'DRAFT' && (
               <Button variant="outline" href={`/admin/invoices/${id}/edit`}>
                 <Pencil /> Edit
               </Button>
@@ -913,9 +915,9 @@ export default function InvoiceDetailPage() {
         }
       />
 
-      {fromEnvo && (
+      {fromProduct && (
         <p className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-600">
-          From Envo. {invoice.status === 'DRAFT' ? 'Not billed yet: it is issued, with its VAT, when the customer pays in Envo.' : 'The customer paid in Envo, so its amounts and status follow Envo.'}
+          From {owner.label}. {invoice.status === 'DRAFT' ? `Not billed yet: it is issued, with its VAT, when the customer pays in ${owner.label}.` : `The customer paid in ${owner.label}, so its amounts and status follow ${owner.label}.`}
         </p>
       )}
 
@@ -980,7 +982,7 @@ export default function InvoiceDetailPage() {
       </Card>
 
       {/* Online payment (Enfinito Pay link) + client files lock (encloud) */}
-      {invoice.status !== 'DRAFT' && !fromEnvo && <InvoiceOnlinePanel invoice={invoice} />}
+      {invoice.status !== 'DRAFT' && !fromProduct && <InvoiceOnlinePanel invoice={invoice} />}
 
       {/* VAT summary + settlement breakdown */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">

@@ -8,11 +8,12 @@ import { isValidObjectId } from '@/lib/objectId'
 import { logActivity } from '@/lib/logActivity'
 import { appBaseUrl } from '@/lib/mailer'
 import {
-  getPaySettings, getEncloudSettings, getEnvoSettings, savePaySettings, saveEncloudSettings, saveEnvoSettings,
-  maskPaySettings, maskEncloudSettings, maskEnvoSettings, enfinitoPayApiBase, keyMode, SECRET_MASK,
+  getPaySettings, getEncloudSettings, getProductSettings, savePaySettings, saveEncloudSettings, saveProductSettings,
+  maskPaySettings, maskEncloudSettings, maskProductSettings, enfinitoPayApiBase, keyMode, SECRET_MASK,
 } from '@/lib/integrations/settings'
-import { envoPolicy, ensureEnvoProduct, taxSetupProblem } from '@/lib/envo/policy'
-import { envoStatus } from '@/lib/envo/reconcile'
+import { PRODUCT_LIST } from '@/lib/products/catalog'
+import { productPolicy, ensureProduct, taxSetupProblem } from '@/lib/products/policy'
+import { productStatus } from '@/lib/products/reconcile'
 import { z } from 'zod'
 
 const fail = (error, status, extra = {}) => NextResponse.json({ error, ...extra }, { status })
@@ -20,11 +21,14 @@ const superAdminOnly = (session) => (!session || session.user.role !== 'SUPER_AD
 
 async function payload() {
   await connectDB()
-  const [pay, enc, envo, envoState, accounts, linkStats, errors, review] = await Promise.all([
+  const [pay, enc, products, accounts, linkStats, errors, review] = await Promise.all([
     getPaySettings(),
     getEncloudSettings(),
-    getEnvoSettings(),
-    envoStatus(),
+    // Envo, NCOM: settings, the tax settings they are given and how the connection stands.
+    Promise.all(PRODUCT_LIST.map(async (p) => {
+      const [settings, state] = await Promise.all([getProductSettings(p), productStatus(p)])
+      return { p, settings, state, policy: await productPolicy(p, settings) }
+    })),
     MoneyAccount.find({ status: 'ACTIVE', currency: 'BDT' }).select('name type').sort({ type: 1, name: 1 }).lean(),
     EncloudLink.aggregate([{ $group: { _id: '$kind', count: { $sum: 1 }, last: { $max: '$syncedAt' } } }]),
     EncloudLink.find({ error: { $ne: null } }).sort({ errorAt: -1 }).limit(5).select('kind refId error errorAt').lean(),
@@ -35,14 +39,15 @@ async function payload() {
   return {
     pay:     maskPaySettings(pay),
     encloud: maskEncloudSettings(enc),
-    envo:    maskEnvoSettings(envo),
-    envoPolicy: await envoPolicy(envo),
+    // envo, envoPolicy, ncom, ncomPolicy
+    ...Object.fromEntries(products.flatMap(({ p, settings, policy }) => [[p.key, maskProductSettings(p, settings)], [`${p.key}Policy`, policy]])),
     urls: {
       app,
       returnDomain:   (() => { try { return new URL(app).host } catch { return app } })(),
       payWebhook:     `${app}/api/webhooks/enfinito-pay`,
       encloudWebhook: `${app}/api/webhooks/encloud`,
       envoWebhook:    `${app}/api/webhooks/envo`,
+      ncomWebhook:    `${app}/api/webhooks/ncom`,
     },
     // Not the real Enfinito Pay (ENFINITO_PAY_API_URL points at a stand-in).
     payApiOverride: enfinitoPayApiBase() !== 'https://pay.enfinito.com/api/v1' ? enfinitoPayApiBase() : null,
@@ -58,7 +63,7 @@ async function payload() {
         fullSyncRunning: !!globalThis.__encloudFullSync,
       },
       payments: { review },
-      envo: envoState,
+      ...Object.fromEntries(products.map(({ p, state }) => [p.key, state])),
     },
   }
 }
@@ -111,11 +116,42 @@ const envoSchema = z.object({
   gatewayFeeCategory: z.string().trim().min(1).max(80).optional(),
   incomeCategory:   z.string().trim().min(1).max(80).optional(),
 }).strict()
-const bodySchema = z.object({ pay: paySchema.optional(), encloud: encloudSchema.optional(), envo: envoSchema.optional() })
+// NCOM sells no recharges or top-ups, so it has no VAT setting for them.
+const ncomSchema = envoSchema.omit({ topupVat: true }).strict()
+const bodySchema = z.object({ pay: paySchema.optional(), encloud: encloudSchema.optional(), envo: envoSchema.optional(), ncom: ncomSchema.optional() })
+
+/** A product's settings before they are saved: a reply when they cannot be, else null. Fills in manualAccounts. */
+async function checkProduct(product, patch) {
+  const L = product.label
+  const k = product.key
+  if (given(patch.webhookSecret) && patch.webhookSecret && !/^whsec_[A-Za-z0-9_-]{24,}$/.test(patch.webhookSecret)) {
+    return fail('The secret starts with whsec_ and has at least 24 more characters: use Make secret', 422, { field: `${k}.webhookSecret` })
+  }
+  const current = await getProductSettings(product)
+  const nextSecret = given(patch.webhookSecret) ? patch.webhookSecret : current.webhookSecret
+  if ((patch.enabled ?? current.enabled) && !nextSecret) return fail(`Make the secret before connecting ${L}`, 422, { field: `${k}.webhookSecret` })
+
+  const accountIds = [patch.onlineAccountId, ...Object.values(patch.manualAccounts ?? {})].filter(Boolean)
+  if (accountIds.length) {
+    if (accountIds.some(id => !isValidObjectId(id))) return fail('Choose a money account', 422, { field: `${k}.onlineAccountId` })
+    const active = await MoneyAccount.countDocuments({ _id: { $in: [...new Set(accountIds)] }, status: 'ACTIVE', currency: 'BDT' })
+    if (active !== new Set(accountIds).size) return fail(`${L} bills in taka: choose active BDT money accounts`, 422, { field: `${k}.onlineAccountId` })
+  }
+  if (patch.manualAccounts) patch.manualAccounts = { ...current.manualAccounts, ...patch.manualAccounts }
+
+  const setup = {
+    vatTreatment: patch.vatTreatment !== undefined ? patch.vatTreatment : current.vatTreatment,
+    vatRate:      patch.vatRate !== undefined ? patch.vatRate : current.vatRate,
+    sdRate:       patch.sdRate !== undefined ? patch.sdRate : current.sdRate,
+  }
+  const problem = taxSetupProblem(setup)
+  if (problem) return fail(problem, 422, { field: `${k}.vatRate` })
+  return null
+}
 
 const given = (v) => v !== undefined && v !== SECRET_MASK
 
-// PUT /api/settings/integrations — { pay?, encloud? }. A secret sent as the mask keeps the stored one; '' clears it.
+// PUT /api/settings/integrations — { pay?, encloud?, envo?, ncom? }. A secret sent as the mask keeps the stored one; '' clears it.
 export async function PUT(request) {
   try {
     const session = await getServerSession(authOptions)
@@ -127,8 +163,9 @@ export async function PUT(request) {
     try { raw = await request.json() } catch { return fail('Invalid JSON body', 400) }
     const parsed = bodySchema.safeParse(raw ?? {})
     if (!parsed.success) return fail('Some settings are not valid', 422, { details: parsed.error.flatten() })
-    const { pay, encloud, envo } = parsed.data
-    const touchesSecrets = [pay?.secretKey, pay?.webhookSecret, encloud?.apiKey, encloud?.webhookSecret, envo?.webhookSecret].some(v => given(v) && v)
+    const { pay, encloud, envo, ncom } = parsed.data
+    const productPatches = PRODUCT_LIST.map(p => [p, parsed.data[p.key]]).filter(([, patch]) => patch)
+    const touchesSecrets = [pay?.secretKey, pay?.webhookSecret, encloud?.apiKey, encloud?.webhookSecret, envo?.webhookSecret, ncom?.webhookSecret].some(v => given(v) && v)
     if (touchesSecrets && (process.env.ENCRYPTION_MASTER_KEY ?? '').length < 64) {
       return fail('Keys are stored encrypted: set ENCRYPTION_MASTER_KEY on the server first', 409)
     }
@@ -176,42 +213,22 @@ export async function PUT(request) {
       }
     }
 
-    if (envo) {
-      if (given(envo.webhookSecret) && envo.webhookSecret && !/^whsec_[A-Za-z0-9_-]{24,}$/.test(envo.webhookSecret)) {
-        return fail('The secret starts with whsec_ and has at least 24 more characters: use Make secret', 422, { field: 'envo.webhookSecret' })
-      }
-      const current = await getEnvoSettings()
-      const nextSecret = given(envo.webhookSecret) ? envo.webhookSecret : current.webhookSecret
-      if ((envo.enabled ?? current.enabled) && !nextSecret) return fail('Make the secret before connecting Envo', 422, { field: 'envo.webhookSecret' })
-
-      const accountIds = [envo.onlineAccountId, ...Object.values(envo.manualAccounts ?? {})].filter(Boolean)
-      if (accountIds.length) {
-        if (accountIds.some(id => !isValidObjectId(id))) return fail('Choose a money account', 422, { field: 'envo.onlineAccountId' })
-        const active = await MoneyAccount.countDocuments({ _id: { $in: [...new Set(accountIds)] }, status: 'ACTIVE', currency: 'BDT' })
-        if (active !== new Set(accountIds).size) return fail('Envo bills in taka: choose active BDT money accounts', 422, { field: 'envo.onlineAccountId' })
-      }
-      if (envo.manualAccounts) envo.manualAccounts = { ...current.manualAccounts, ...envo.manualAccounts }
-
-      const setup = {
-        vatTreatment: envo.vatTreatment !== undefined ? envo.vatTreatment : current.vatTreatment,
-        vatRate:      envo.vatRate !== undefined ? envo.vatRate : current.vatRate,
-        sdRate:       envo.sdRate !== undefined ? envo.sdRate : current.sdRate,
-      }
-      const problem = taxSetupProblem(setup)
-      if (problem) return fail(problem, 422, { field: 'envo.vatRate' })
+    for (const [product, patch] of productPatches) {
+      const refused = await checkProduct(product, patch)
+      if (refused) return refused
     }
 
     if (pay) await savePaySettings(pay)
     if (encloud) await saveEncloudSettings(encloud)
-    if (envo) {
-      await saveEnvoSettings(envo)
-      await ensureEnvoProduct()
+    for (const [product, patch] of productPatches) {
+      await saveProductSettings(product, patch)
+      await ensureProduct(product)
     }
 
     const redact = (o) => o && Object.fromEntries(Object.entries(o).map(([k, v]) => [k, /secret|key/i.test(k) && k !== 'accountId' ? (given(v) ? (v ? 'changed' : 'cleared') : 'kept') : v]))
     logActivity({
       userId: session.user.id, userRole: session.user.role, action: 'UPDATE', entity: 'SETTINGS',
-      entityId: 'integrations', changes: JSON.stringify({ pay: redact(pay), encloud: redact(encloud), envo: redact(envo) }), request,
+      entityId: 'integrations', changes: JSON.stringify({ pay: redact(pay), encloud: redact(encloud), envo: redact(envo), ncom: redact(ncom) }), request,
     })
     return NextResponse.json({ data: await payload() })
   } catch (err) {

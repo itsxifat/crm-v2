@@ -4,6 +4,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Invoice } from '@/models'
+import { OWNER_FIELDS } from '@/lib/products/catalog'
 import { requirePerm, canDo } from '@/lib/rbac'
 import { isValidObjectId } from '@/lib/objectId'
 import { logActivity } from '@/lib/logActivity'
@@ -17,7 +18,7 @@ const fail = (error, status) => NextResponse.json({ error }, { status })
 async function load(id) {
   if (!isValidObjectId(id)) return null
   await connectDB()
-  return Invoice.findById(id).select('invoiceNumber status currency total paidAmount dueDate clientId envoId').lean()
+  return Invoice.findById(id).select(`invoiceNumber status currency total paidAmount dueDate clientId ${OWNER_FIELDS}`).lean()
 }
 
 // GET /api/invoices/:id/payment-link — the invoice's online payment state:

@@ -78,6 +78,7 @@ export { default as OnlinePayment }         from './OnlinePayment.js'
 export { default as EncloudLink }           from './EncloudLink.js'
 export { default as IntegrationEvent }      from './IntegrationEvent.js'
 export { default as EnvoSync }              from './EnvoSync.js'
+export { default as NcomSync }              from './NcomSync.js'
 
 // ── Organizer ──
 export { default as Organizer }             from './Organizer.js'

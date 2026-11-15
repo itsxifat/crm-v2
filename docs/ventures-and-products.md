@@ -31,6 +31,7 @@ CRM fills it in when it knows it, and *Company / shared* is always a valid choic
 |---|---|
 | Invoice payment: manual, project payment, online (Enfinito Pay, encloud), tax withheld | The invoice's unit; else its project's venture; else Company |
 | Credit-note refund | As the invoice |
+| Envo's and NCOM's own sales, pushed by their servers ([envo.md](envo.md), [ncom.md](ncom.md)) | `PRODUCT:ENVO` / `PRODUCT:NCOM`, gateway charges too |
 | Standalone invoice (no project) | Chosen on the invoice form |
 | New expense, reimbursement, My Expenses | Chosen on the form; with a project, that project's venture |
 | Project expense, freelancer or agency payment | The project's venture |

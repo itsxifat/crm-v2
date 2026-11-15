@@ -50,11 +50,14 @@ const ClientSchema = new mongoose.Schema(
 
     parentClientId: { type: mongoose.Schema.Types.ObjectId, ref: 'Client', default: null },
 
-    // Envo customer account this client stands for (lib/envo/sync.js). envoOwned:
+    // Envo customer account this client stands for (lib/products/sync.js). envoOwned:
     // created by the integration, so Envo may keep its name and contacts current;
     // false on a client that existed before and was only linked (never overwritten).
     envoId:    { type: Number, default: undefined },
     envoOwned: { type: Boolean, default: undefined },
+    // The same for an NCOM workspace (its number in NCOM).
+    ncomId:    { type: Number, default: undefined },
+    ncomOwned: { type: Boolean, default: undefined },
 
     // Company-level portal access switch. false → no member can use this
     // company's portal (checked in lib/clientAccess.js). Independent of User.isActive.
@@ -85,6 +88,7 @@ const ClientSchema = new mongoose.Schema(
 ClientSchema.index({ userId: 1 })
 ClientSchema.index({ parentClientId: 1 })
 ClientSchema.index({ envoId: 1 }, { unique: true, partialFilterExpression: { envoId: { $gt: 0 } } })
+ClientSchema.index({ ncomId: 1 }, { unique: true, partialFilterExpression: { ncomId: { $gt: 0 } } })
 
 ClientSchema.pre('save', async function () {
   if (this.clientCode) return

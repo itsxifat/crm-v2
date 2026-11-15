@@ -4,8 +4,9 @@ const ProjectPaymentSchema = new mongoose.Schema(
   {
     projectId:     { type: mongoose.Schema.Types.ObjectId, ref: 'Project',  default: null },
     invoiceId:     { type: mongoose.Schema.Types.ObjectId, ref: 'Invoice',  default: null },
-    // Envo payment this one records (lib/envo/sync.js); a payment is booked once.
+    // Envo / NCOM payment this one records (lib/products/sync.js); a payment is booked once.
     envoId:        { type: Number, default: undefined },
+    ncomId:        { type: Number, default: undefined },
     clientId:      { type: mongoose.Schema.Types.ObjectId, ref: 'Client',   default: null },
     submittedBy:   { type: mongoose.Schema.Types.ObjectId, ref: 'User',     default: null },
 
@@ -75,6 +76,7 @@ const ProjectPaymentSchema = new mongoose.Schema(
 )
 
 ProjectPaymentSchema.index({ envoId: 1 }, { unique: true, partialFilterExpression: { envoId: { $gt: 0 } } })
+ProjectPaymentSchema.index({ ncomId: 1 }, { unique: true, partialFilterExpression: { ncomId: { $gt: 0 } } })
 
 if (mongoose.models.ProjectPayment) delete mongoose.models.ProjectPayment
 export default mongoose.model('ProjectPayment', ProjectPaymentSchema)
