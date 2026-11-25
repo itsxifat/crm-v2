@@ -343,3 +343,10 @@
     }
   }
 }
+
+/* The phone (components/telephony): the caller's avatar pulses while a call rings. */
+@keyframes phone-ring {
+  0%   { box-shadow: 0 0 0 0 rgb(16 185 129 / 0.5); }
+  70%  { box-shadow: 0 0 0 14px rgb(16 185 129 / 0); }
+  100% { box-shadow: 0 0 0 0 rgb(16 185 129 / 0); }
+}

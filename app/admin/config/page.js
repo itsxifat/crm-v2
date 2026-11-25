@@ -8,7 +8,7 @@ import {
   Mail, Plus, Trash2, Pencil, Save, X, Check,
   Eye, EyeOff, Send, ChevronDown, ChevronUp, ShieldCheck,
   MessageCircle, ExternalLink, Building2, Users,
-  CreditCard, ChevronRight, AlertTriangle, Layers, Target, PlugZap, Package,
+  CreditCard, ChevronRight, AlertTriangle, Layers, Target, PlugZap, Package, PhoneCall,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/utils'
@@ -22,6 +22,7 @@ import Badge from '@/components/ui/Badge'
 import EmptyState from '@/components/ui/EmptyState'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
 import IntegrationsSettings from '@/components/admin/integrations/IntegrationsSettings'
+import TelephonySettings from '@/components/admin/telephony/TelephonySettings'
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -677,6 +678,7 @@ const TABS = [
   { id: 'email',        label: 'Email',               icon: Mail },
   { id: 'whatsapp',     label: 'WhatsApp',            icon: MessageCircle },
   { id: 'integrations', label: 'Integrations',        icon: PlugZap },
+  { id: 'calling',      label: 'Calling',             icon: PhoneCall },
 ]
 
 // Tabs that read /api/config.
@@ -1316,7 +1318,7 @@ function ConfigContent() {
   function setTab(id) { router.push(`/admin/config?tab=${id}`, { scroll: false }) }
 
   const configNeedsLoad = CONFIG_TABS.includes(activeTab) && !loadErrors.config && (configLoading || !configLoaded)
-  const visibleTabs     = TABS.filter(t => isSuperAdmin || !['email', 'whatsapp', 'integrations'].includes(t.id))
+  const visibleTabs     = TABS.filter(t => isSuperAdmin || !['email', 'whatsapp', 'integrations', 'calling'].includes(t.id))
 
   function renderLoadError(section, label) {
     return (
@@ -1766,6 +1768,9 @@ function ConfigContent() {
           </Card>
         )
       )}
+
+      {/* ── Calling tab (Envo phone: connection and extensions) ──────────────── */}
+      {activeTab === 'calling' && isSuperAdmin && <TelephonySettings />}
 
     </div>
   )

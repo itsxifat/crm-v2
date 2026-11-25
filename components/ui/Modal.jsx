@@ -4,6 +4,17 @@ import * as Dialog from '@radix-ui/react-dialog'
 import { X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
+// Floating things that live outside a dialog but must stay usable over it: the date
+// picker's popup, and the phone (a call can come in while a form is open).
+const EXEMPT = '[data-datepicker-popup], [data-crm-phone]'
+
+function isExempt(e) {
+  const orig = e.detail?.originalEvent
+  const byTarget = orig?.target?.closest?.(EXEMPT)
+  const byCoords = orig && orig.clientX != null ? document.elementFromPoint(orig.clientX, orig.clientY)?.closest(EXEMPT) : null
+  return !!(byTarget || byCoords || document.querySelector('[data-datepicker-popup]'))
+}
+
 export default function Modal({
   open,
   onOpenChange,
@@ -26,21 +37,11 @@ export default function Modal({
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[2px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
         <Dialog.Content
-          onPointerDownOutside={(e) => {
-            const orig = e.detail?.originalEvent
-            const byTarget = orig?.target?.closest?.('[data-datepicker-popup]')
-            const byCoords = orig ? document.elementFromPoint(orig.clientX, orig.clientY)?.closest('[data-datepicker-popup]') : null
-            if (byTarget || byCoords || document.querySelector('[data-datepicker-popup]')) e.preventDefault()
-          }}
+          onPointerDownOutside={(e) => { if (isExempt(e)) e.preventDefault() }}
           onFocusOutside={(e) => {
-            if (document.querySelector('[data-datepicker-popup]')) e.preventDefault()
+            if (document.querySelector('[data-datepicker-popup]') || e.detail?.originalEvent?.target?.closest?.('[data-crm-phone]')) e.preventDefault()
           }}
-          onInteractOutside={(e) => {
-            const orig = e.detail?.originalEvent
-            const byTarget = orig?.target?.closest?.('[data-datepicker-popup]')
-            const byCoords = orig ? document.elementFromPoint(orig.clientX, orig.clientY)?.closest('[data-datepicker-popup]') : null
-            if (byTarget || byCoords || document.querySelector('[data-datepicker-popup]')) e.preventDefault()
-          }}
+          onInteractOutside={(e) => { if (isExempt(e)) e.preventDefault() }}
           className={cn(
             'fixed left-[50%] top-[50%] z-50 translate-x-[-50%] translate-y-[-50%]',
             'w-[calc(100%-1.5rem)] sm:w-full rounded-2xl border border-gray-200/80 bg-white shadow-2xl outline-none',

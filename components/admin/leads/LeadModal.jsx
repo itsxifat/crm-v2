@@ -58,7 +58,8 @@ const PRIORITIES = [
   { value: 'URGENT', label: 'Urgent', color: 'text-red-600' },
 ]
 
-export default function LeadModal({ open, onClose, lead, onSuccess }) {
+// prefill: values for a NEW lead, e.g. { phone } from the phone's "Add as lead".
+export default function LeadModal({ open, onClose, lead, onSuccess, prefill = null }) {
   const { data: session } = useSession()
   const [employees,     setEmployees]     = useState([])
   const [loading,       setLoading]       = useState(false)
@@ -162,7 +163,7 @@ export default function LeadModal({ open, onClose, lead, onSuccess }) {
       setComments(lead.comments ?? [])
     } else {
       reset({
-        name: '', designation: '', email: '', phone: '', alternativePhone: '',
+        name: '', designation: '', email: '', phone: prefill?.phone ?? '', alternativePhone: '',
         company: '', location: '', status: 'NEW', priority: 'NORMAL',
         businessCategory: '', service: '', category: '', subcategory: '',
         source: '', platform: '', reference: '',
@@ -176,7 +177,7 @@ export default function LeadModal({ open, onClose, lead, onSuccess }) {
     }
     setLinkInput('')
     setCommentText('')
-  }, [open, lead, reset])
+  }, [open, lead, reset, prefill?.phone])
 
   // Venture → category → subcategory cascade: clear dependants only when the
   // user actually changes the parent (done in the Select onChange handlers).

@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { Bell, CheckCheck, Loader2, PanelLeft, Search, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { findActive } from './nav'
+import PhoneButton from '@/components/telephony/PhoneButton'
 
 const fmtAgo = (d) => {
   const diff = Date.now() - new Date(d).getTime()
@@ -226,6 +227,7 @@ export default function Header({ onMenuClick, onToggleSidebar, onSearchClick }) 
         >
           <Search className="size-[18px]" />
         </button>
+        <PhoneButton />
         <Notifications />
       </div>
     </header>

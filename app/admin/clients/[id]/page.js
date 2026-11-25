@@ -23,6 +23,7 @@ import { usePermission } from '@/components/auth/Can'
 import ClientMembersPanel from '@/components/admin/clients/ClientMembersPanel'
 import CustomerCompaniesPanel from '@/components/admin/clients/CustomerCompaniesPanel'
 import ClientFilesCard from '@/components/admin/clients/ClientFilesCard'
+import CallButton from '@/components/telephony/CallButton'
 import { BIN_REGEX, normalizeBin } from '@/lib/tax/catalog'
 import { isVatQuotation } from '@/lib/quotation'
 
@@ -127,12 +128,15 @@ const KYC_STATUS_META = {
 
 const QUOTATION_VARIANT = { ACCEPTED: 'success', REJECTED: 'danger', SENT: 'primary' }
 
-function InfoRow({ label, value }) {
+function InfoRow({ label, value, action = null }) {
   if (!value) return null
   return (
     <div className="grid grid-cols-[120px_1fr] gap-3 py-2.5 text-sm first:pt-0 last:pb-0">
       <dt className="text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 break-words font-medium text-gray-900">{value}</dd>
+      <dd className="flex min-w-0 items-center gap-2 break-words font-medium text-gray-900">
+        <span className="min-w-0 break-words">{value}</span>
+        {action}
+      </dd>
     </div>
   )
 }
@@ -238,6 +242,7 @@ export default function ClientDetailPage() {
   }
 
   const { userId: user, projects = [], invoices = [], documents = [], agreements = [], linkedClients = [], totalRevenue, outstandingBalance, activeProjectCount, kyc } = data
+  const callName = data.clientType === 'COMPANY' && data.company ? data.company : user?.name
   const kycStatus = kyc?.status ?? 'NOT_SUBMITTED'
   const isActive  = data.isActive !== false && user?.isActive !== false
   const kycMeta = KYC_STATUS_META[kycStatus] ?? KYC_STATUS_META.NOT_SUBMITTED
@@ -337,7 +342,12 @@ export default function ClientDetailPage() {
               <CardContent>
                 <dl className="divide-y divide-gray-100">
                   <InfoRow label="Email"    value={user?.email} />
-                  <InfoRow label="Phone"    value={user?.phone} />
+                  <InfoRow label="Phone"    value={user?.phone}
+                    action={<CallButton target={{ type: 'client', id, field: 'phone' }} label={callName} />} />
+                  <InfoRow label="Company phone" value={data.companyPhone}
+                    action={<CallButton target={{ type: 'client', id, field: 'companyPhone' }} label={callName} />} />
+                  <InfoRow label="Alt. phone" value={data.altPhone}
+                    action={<CallButton target={{ type: 'client', id, field: 'altPhone' }} label={callName} />} />
                   <InfoRow label="Client type" value={data.clientType === 'COMPANY' ? 'Company' : 'Individual'} />
                   {data.clientType === 'COMPANY' && <InfoRow label="Contact person" value={data.contactPerson} />}
                   <InfoRow label="Website"  value={data.website} />

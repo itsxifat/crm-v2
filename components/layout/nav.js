@@ -5,6 +5,7 @@ import {
   KeyRound, LineChart, Scale, Calculator, FileSpreadsheet, BookOpen, FileCheck, FileMinus, ListChecks,
   Package, PackageCheck, Laptop, ShoppingCart, Boxes, ClipboardCheck, BarChart3, SlidersHorizontal,
   Mail, MessageCircle, CreditCard, ShieldAlert, Plus, AtSign, PenSquare, CalendarRange,
+  PhoneCall,
 } from 'lucide-react'
 import { canDo } from '@/lib/rbac'
 
@@ -132,6 +133,7 @@ export const COMMAND_EXTRAS = [
   { group: 'Configuration', href: '/admin/config?tab=payment',      label: 'Payment methods',     icon: CreditCard,    permission: 'system.config.view' },
   { group: 'Configuration', href: '/admin/config?tab=email',        label: 'Email accounts',      icon: Mail,          roles: ['SUPER_ADMIN'] },
   { group: 'Configuration', href: '/admin/config?tab=whatsapp',     label: 'WhatsApp',            icon: MessageCircle, roles: ['SUPER_ADMIN'] },
+  { group: 'Configuration', href: '/admin/config?tab=calling',      label: 'Calling (Envo)',      icon: PhoneCall,     roles: ['SUPER_ADMIN'] },
 ]
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

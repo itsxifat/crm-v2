@@ -22,6 +22,7 @@ import { Card, CardHeader, CardTitle, CardAction, CardContent } from '@/componen
 import { Input } from '@/components/ui/Input'
 import LeadModal from '@/components/admin/leads/LeadModal'
 import ConvertLeadModal from '@/components/admin/leads/ConvertLeadModal'
+import CallButton from '@/components/telephony/CallButton'
 import { formatCurrency, formatDate, cn } from '@/lib/utils'
 
 // Value is a masked string ('••••••') for users without pii.financial.view
@@ -266,6 +267,7 @@ export default function LeadDetailPage() {
                   <div className="flex items-center gap-2 text-gray-700">
                     <Phone className="size-4 shrink-0 text-gray-400" />
                     <a href={`tel:${lead.phone}`} className="hover:text-gray-900 hover:underline underline-offset-4">{lead.phone}</a>
+                    <CallButton target={{ type: 'lead', id, field: 'phone' }} label={lead.name} />
                   </div>
                 )}
                 {lead.alternativePhone && (
@@ -273,6 +275,7 @@ export default function LeadDetailPage() {
                     <Phone className="size-4 shrink-0 text-gray-400" />
                     <a href={`tel:${lead.alternativePhone}`} className="hover:text-gray-900 hover:underline underline-offset-4">{lead.alternativePhone}</a>
                     <span className="text-xs text-muted-foreground">(alt)</span>
+                    <CallButton target={{ type: 'lead', id, field: 'alternativePhone' }} label={lead.name} />
                   </div>
                 )}
                 {lead.company && (

@@ -1,6 +1,7 @@
 import { getToken } from 'next-auth/jwt'
 import { NextResponse } from 'next/server'
 import { clientIpFromHeaders } from '@/lib/clientIp'
+import { phoneWsOrigins } from '@/lib/telephony/csp'
 
 // ── Security headers applied to EVERY response ────────────────────────────────
 const SECURITY_HEADERS = {
@@ -10,8 +11,9 @@ const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
   // Stop browser from sending Referer header to other origins
   'Referrer-Policy': 'strict-origin-when-cross-origin',
-  // Disable access to sensitive browser APIs from this origin's scripts
-  'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
+  // Disable access to sensitive browser APIs from this origin's scripts. The microphone
+  // is this origin's only: staff call clients from the browser (components/telephony).
+  'Permissions-Policy': 'camera=(), microphone=(self), geolocation=(), payment=(), usb=()',
   // XSS protection for older browsers
   'X-XSS-Protection': '1; mode=block',
   // Enable HSTS — only served over HTTPS; 1 year; include subdomains
@@ -23,7 +25,8 @@ const SECURITY_HEADERS = {
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob: https:",
     "font-src 'self' data:",
-    "connect-src 'self'",
+    // The browser phone's SIP WebSocket to Envo (lib/telephony/csp.js).
+    ["connect-src 'self'", ...phoneWsOrigins()].join(' '),
     "frame-ancestors 'none'",
     "form-action 'self'",
     "base-uri 'self'",

@@ -4,6 +4,8 @@ Envo (the cloud PBX and Envo Phone) sells packages and recharges and takes the m
 comes to the CRM by itself and counts under the **Envo** product, in the same books as everything else:
 *Accounts → Ventures & products* shows Envo's income, expenses, profit and what is still to be received.
 
+Calling clients and taking calls in the CRM through Envo's PBX is a separate integration: [envo-calling.md](envo-calling.md).
+
 ## What finance sees
 
 | In Envo | In the CRM |

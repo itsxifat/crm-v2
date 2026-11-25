@@ -11,6 +11,7 @@ import ActionMenu from '@/components/ui/ActionMenu'
 import EmptyState from '@/components/ui/EmptyState'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table'
 import ConvertLeadModal from '@/components/admin/leads/ConvertLeadModal'
+import CallButton from '@/components/telephony/CallButton'
 import { formatCurrency, formatDate } from '@/lib/utils'
 
 // Value is a masked string ('••••••') for users without pii.financial.view
@@ -212,14 +213,17 @@ export default function LeadsTable({ leads = [], onEdit, onRefresh, onStatusChan
                     </a>
                   )}
                   {lead.phone && (
-                    <a
-                      href={`tel:${lead.phone}`}
-                      onClick={(e) => e.stopPropagation()}
-                      className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-gray-900"
-                    >
-                      <Phone className="size-3 shrink-0" />
-                      {lead.phone}
-                    </a>
+                    <div className="flex items-center gap-1.5">
+                      <a
+                        href={`tel:${lead.phone}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-gray-900"
+                      >
+                        <Phone className="size-3 shrink-0" />
+                        {lead.phone}
+                      </a>
+                      <CallButton size="xs" target={{ type: 'lead', id: lead.id, field: 'phone' }} label={lead.name} />
+                    </div>
                   )}
                 </div>
               </TableCell>
