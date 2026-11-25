@@ -2,6 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { useSession } from 'next-auth/react'
 import Link from 'next/link'
 import { AlertTriangle, CalendarClock, ShieldCheck, Lock, ChevronDown } from 'lucide-react'
 import { PageLoader } from '@/components/ui/LoadingSpinner'
@@ -41,6 +42,7 @@ export default function TaxSettingsPage() {
 function TaxSettingsContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { data: session } = useSession()
   const tab = TABS.some(t => t.key === searchParams.get('tab')) ? searchParams.get('tab') : 'profile'
 
   const [profile, setProfile] = useState(null)
@@ -70,7 +72,9 @@ function TaxSettingsContent() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Tax settings" />
+      <PageHeader title="Tax settings" actions={session?.user?.role === 'SUPER_ADMIN' && (
+        <Button href="/admin/config?tab=integrations" variant="outline">Envo VAT settings</Button>
+      )} />
 
       <Tabs
         variant="underline"

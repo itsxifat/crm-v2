@@ -1024,7 +1024,7 @@ function ConfigContent() {
   const searchParams = useSearchParams()
   const router       = useRouter()
   const activeTab    = searchParams.get('tab') ?? 'ventures'
-  const { data: session } = useSession()
+  const { data: session, status: sessionStatus } = useSession()
   // Email/WhatsApp/Integrations hold credentials — their APIs are SUPER_ADMIN-only.
   const isSuperAdmin = session?.user?.role === 'SUPER_ADMIN'
 
@@ -1758,8 +1758,14 @@ function ConfigContent() {
         </div>
       )}
 
-      {/* ── Integrations tab (Enfinito Pay & encloud) ───────────────────────── */}
-      {activeTab === 'integrations' && isSuperAdmin && <IntegrationsSettings />}
+      {activeTab === 'integrations' && (
+        isSuperAdmin ? <IntegrationsSettings /> : sessionStatus === 'loading' ? spinner : (
+          <Card>
+            <EmptyState icon={ShieldCheck} title="Integrations require a Super Admin account"
+              description="A CRM Super Admin can open this tab to manage Envo VAT and integration settings." />
+          </Card>
+        )
+      )}
 
     </div>
   )

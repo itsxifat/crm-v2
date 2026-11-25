@@ -14,7 +14,9 @@ client-file drive) in step with clients, projects and unpaid invoices.
   for online payments, with the gateway's transaction id as the ledger Transaction ID. The invoice,
   project paid amount, ledger and VAT split come out exactly as for a bank receipt.
 - **Folders.** Every active client gets `Clients/<name>` in encloud, and every project a folder inside
-  it. Renames follow.
+  it. Renames follow. The CRM sends each project's `projectCode` as `project_code`, so encloud shows
+  the familiar project ID on folders and finds it in drive search, the command palette and Clients.
+  API paths keep using the stable Mongo record ID, preserving existing folders and shared links.
 - **Files lock until paid.** An issued, unpaid taka invoice becomes a *due* in encloud: the client's
   shared links ask them to pay (through Enfinito Pay, on encloud) before the files open — the project's
   folder, or all of the client's folders for an invoice without a project. Paid, cancelled or unlocked

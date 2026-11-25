@@ -13,7 +13,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardAction, CardContent, 
 import { inputClass, selectClass } from '@/components/ui/Input'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
 import EmptyState from '@/components/ui/EmptyState'
-import { PRODUCT_LIST } from '@/lib/products/catalog'
+import { PRODUCTS, PRODUCT_LIST } from '@/lib/products/catalog'
 
 const MASK = '••••••••'
 const lc = 'mb-2 block text-sm font-medium leading-none text-gray-900'
@@ -428,6 +428,111 @@ const PRODUCT_CARD = {
   },
 }
 
+function productTaxPatch(product, form) {
+  return {
+    vatTreatment: form.vatTreatment || null,
+    vatRate: form.vatTreatment ? Number(form.vatRate) || 0 : null,
+    sdRate: Number(form.sdRate) || 0,
+    serviceCode: form.serviceCode || null,
+    pricesIncludeVat: !!form.pricesIncludeVat,
+    ...(product.hasTopups ? { topupVat: form.topupVat } : {}),
+  }
+}
+
+function taxSummary(product, policy) {
+  if (!policy) return 'The current VAT policy is unavailable.'
+  if (policy.vatTreatment === 'NONE') return `No VAT applies to ${product.label} invoices.`
+  const { pricedThing } = PRODUCT_CARD[product.key]
+  const pricing = policy.pricesIncludeVat ? `included in the ${pricedThing}` : `added to the ${pricedThing}`
+  return `${policy.vatRate}% VAT${policy.sdRate ? ` and ${policy.sdRate}% supplementary duty` : ''}, ${pricing}.`
+}
+
+function ProductTaxFields({ product, form, set }) {
+  const { key, label: L } = product
+  const words = PRODUCT_CARD[key]
+  return (
+    <>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div>
+          <label htmlFor={`${key}-treatment`} className={lc}>VAT on {L} invoices</label>
+          <select id={`${key}-treatment`} className={selectClass} value={form.vatTreatment || ''}
+            onChange={e => { const t = e.target.value; set({ vatTreatment: t || null, vatRate: t === 'STANDARD' ? 15 : ['', 'REDUCED'].includes(t) ? form.vatRate : 0 }) }}>
+            {VAT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        </div>
+        {form.vatTreatment === 'REDUCED' && (
+          <div>
+            <label htmlFor={`${key}-rate`} className={lc}>VAT rate (%)</label>
+            <input id={`${key}-rate`} type="number" min="0" max="15" step="0.01" className={inputClass} value={form.vatRate ?? ''} onChange={e => set({ vatRate: e.target.value })} />
+          </div>
+        )}
+        <div>
+          <label htmlFor={`${key}-sd`} className={lc}>Supplementary duty (%)</label>
+          <input id={`${key}-sd`} type="number" min="0" max="500" step="0.01" className={inputClass} value={form.sdRate ?? 0} onChange={e => set({ sdRate: e.target.value })} />
+        </div>
+        <div>
+          <label htmlFor={`${key}-code`} className={lc}>VAT service code</label>
+          <input id={`${key}-code`} className={inputClass} placeholder="Company default" value={form.serviceCode ?? ''} onChange={e => set({ serviceCode: e.target.value })} />
+        </div>
+      </div>
+      <ToggleRow title={words.pricesTitle} description="Turn on to include VAT in the listed price. Turn off to add VAT to that price at checkout."
+        on={form.pricesIncludeVat} onChange={v => set({ pricesIncludeVat: v })} />
+      {product.hasTopups && (
+        <ToggleRow title="VAT inside recharges and top-ups" description="Turn on to include VAT in the recharge amount."
+          on={form.topupVat === 'INCLUDED'} onChange={v => set({ topupVat: v ? 'INCLUDED' : 'NONE' })} />
+      )}
+      <p className={hc}>A customer marked Foreign on their client profile is billed at zero rate.</p>
+    </>
+  )
+}
+
+function EnvoVatCard({ data, onSaved }) {
+  const [draft, setDraft] = useState({})
+  const [saving, setSaving] = useState(false)
+  const form = { ...data.envo, ...draft }
+  const set = patch => setDraft(current => ({ ...current, ...patch }))
+
+  async function save(event) {
+    event.preventDefault()
+    setSaving(true)
+    try {
+      const res = await fetch('/api/settings/integrations', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ envo: productTaxPatch(PRODUCTS.envo, form) }),
+      })
+      const result = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(result.error || 'Could not save Envo VAT settings')
+      onSaved(result.data)
+      setDraft({})
+      toast.success('Envo VAT settings saved')
+    } catch (err) { toast.error(err.message) } finally { setSaving(false) }
+  }
+
+  return (
+    <Card as="section" aria-labelledby="envo-vat-heading">
+      <CardHeader>
+        <CardTitle id="envo-vat-heading">Envo VAT</CardTitle>
+        <CardDescription>{taxSummary(PRODUCTS.envo, data.envoPolicy)} Changes apply to new invoices.</CardDescription>
+      </CardHeader>
+      <form onSubmit={save}>
+        <CardContent className="space-y-4">
+          <fieldset disabled={saving}>
+            <ProductTaxFields product={PRODUCTS.envo} form={form} set={set} />
+          </fieldset>
+          <p className="text-[13px] text-muted-foreground">
+            VAT applies when the company is VAT registered in its{' '}
+            <Link href="/admin/tax/settings" className="font-medium text-gray-900 underline underline-offset-4">tax profile</Link>.
+          </p>
+        </CardContent>
+        <CardFooter className="justify-end">
+          <Button type="submit" loading={saving} disabled={!Object.keys(draft).length}>{!saving && <Save />} Save Envo VAT</Button>
+        </CardFooter>
+      </form>
+    </Card>
+  )
+}
+
 function ProductCard({ product, data, onSaved }) {
   const { key, label: L } = product
   const words = PRODUCT_CARD[key]
@@ -454,12 +559,7 @@ function ProductCard({ product, data, onSaved }) {
             webhookSecret:      secretOut(form.webhookSecret, cleared),
             onlineAccountId:    form.onlineAccountId || null,
             manualAccounts:     form.manualAccounts,
-            vatTreatment:       form.vatTreatment || null,
-            vatRate:            form.vatTreatment ? Number(form.vatRate) || 0 : null,
-            sdRate:             Number(form.sdRate) || 0,
-            serviceCode:        form.serviceCode || null,
-            pricesIncludeVat:   !!form.pricesIncludeVat,
-            ...(product.hasTopups ? { topupVat: form.topupVat } : {}),
+            ...(key === 'envo' ? {} : productTaxPatch(product, form)),
             bookTestPayments:   !!form.bookTestPayments,
             gatewayFeeMode:     form.gatewayFeeMode,
             gatewayFeePercent:  Number(form.gatewayFeePercent) || 0,
@@ -475,10 +575,6 @@ function ProductCard({ product, data, onSaved }) {
     } catch (err) { toast.error(err.message) } finally { setSaving(false) }
   }
 
-  const policy = data[`${key}Policy`]
-  const taxSummary = policy?.vatTreatment === 'NONE'
-    ? `No VAT on ${L} invoices.`
-    : `${policy?.vatTreatment} ${policy?.vatRate}% VAT${policy?.sdRate ? `, ${policy.sdRate}% SD` : ''}, ${policy?.pricesIncludeVat ? `included in the ${words.pricedThing}` : `added on top of the ${words.pricedThing}`}.`
   const accounts = data.accounts ?? []
 
   return (
@@ -514,40 +610,15 @@ function ProductCard({ product, data, onSaved }) {
           </Button>
         </div>
 
-        <div className="border-t border-gray-100 pt-5">
-          <p className="text-sm font-medium text-gray-900">VAT and supplementary duty</p>
-          <p className={hc}>Right now: {taxSummary} A change applies to invoices {L} raises from then on.</p>
-          <div className="mt-3 grid gap-4 sm:grid-cols-2">
-            <div>
-              <label htmlFor={`${key}-treatment`} className={lc}>VAT on {L} invoices</label>
-              <select id={`${key}-treatment`} className={selectClass} value={form.vatTreatment || ''}
-                onChange={e => { const t = e.target.value; set({ vatTreatment: t || null, vatRate: t === 'STANDARD' ? 15 : ['', 'REDUCED'].includes(t) ? form.vatRate : 0 }) }}>
-                {VAT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-            </div>
-            {form.vatTreatment === 'REDUCED' && (
-              <div>
-                <label htmlFor={`${key}-rate`} className={lc}>VAT rate (%)</label>
-                <input id={`${key}-rate`} type="number" min="0" max="15" step="0.01" className={inputClass} value={form.vatRate ?? ''} onChange={e => set({ vatRate: e.target.value })} />
-              </div>
-            )}
-            <div>
-              <label htmlFor={`${key}-sd`} className={lc}>Supplementary duty (%)</label>
-              <input id={`${key}-sd`} type="number" min="0" max="500" step="0.01" className={inputClass} value={form.sdRate ?? 0} onChange={e => set({ sdRate: e.target.value })} />
-            </div>
-            <div>
-              <label htmlFor={`${key}-code`} className={lc}>VAT service code</label>
-              <input id={`${key}-code`} className={inputClass} placeholder="Company default" value={form.serviceCode ?? ''} onChange={e => set({ serviceCode: e.target.value })} />
+        {key !== 'envo' && (
+          <div className="border-t border-gray-100 pt-5">
+            <p className="text-sm font-medium text-gray-900">VAT and supplementary duty</p>
+            <p className={hc}>{taxSummary(product, data[`${key}Policy`])} Changes apply to new invoices.</p>
+            <div className="mt-3">
+              <ProductTaxFields product={product} form={form} set={set} />
             </div>
           </div>
-          <ToggleRow title={words.pricesTitle} description="On: customers pay the price on the pricing page and the VAT is inside it. Off: VAT is added on top at checkout."
-            on={form.pricesIncludeVat} onChange={v => set({ pricesIncludeVat: v })} />
-          {product.hasTopups && (
-            <ToggleRow title="VAT inside recharges and top-ups" description="Envo Phone recharges and number top-ups go on a balance as they stand. On: their VAT is inside the amount. Off: they carry no VAT. Never added on top."
-              on={form.topupVat === 'INCLUDED'} onChange={v => set({ topupVat: v ? 'INCLUDED' : 'NONE' })} />
-          )}
-          <p className={hc}>A customer marked Foreign on their client profile is billed at zero rate.</p>
-        </div>
+        )}
 
         <div className="border-t border-gray-100 pt-5">
           <p className="text-sm font-medium text-gray-900">Costs</p>
@@ -663,6 +734,7 @@ export default function IntegrationsSettings() {
 
   return (
     <div className="space-y-6">
+      <EnvoVatCard data={data} onSaved={setData} />
       {!data.canSaveSecrets && (
         <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
           <AlertTriangle className="mt-0.5 size-4 shrink-0" />

@@ -13,6 +13,8 @@ const ProjectPaymentSchema = new mongoose.Schema(
     // Cash received, in `currency`. May be 0 for a withholding-only settlement
     // (paymentMethod 'WITHHOLDING') — `required` on a Number accepts 0; no `min`.
     amount:        { type: Number, required: true },
+    // The customer charge including a PayStation processing fee, when reported by Envo.
+    customerPaid:  { type: Number, default: null },
     currency:      { type: String, default: 'BDT' },
     amountBDT:     { type: Number, default: null },     // BDT-equivalent; == amount for BDT
     paymentMethod: { type: String, default: 'BANK_TRANSFER' },

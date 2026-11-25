@@ -167,10 +167,15 @@ function renderInvoiceHtml({ inv, payments, cfg, nonce }) {
   const ids = [company.bin && `BIN: ${e(company.bin)}`, company.tin && `TIN: ${e(company.tin)}`].filter(Boolean).join(' &nbsp;·&nbsp; ')
 
   const row = (label, value, cls = '') => `<div class="totals-row ${cls}"><span class="label">${label}</span><span class="amount">${value}</span></div>`
-  // "Cash … · VDS … · TDS …" line under a payment row that had tax withheld.
-  const breakdown = (p) => p.hasWithholding
-    ? `<div class="payment-sub">${settlementParts(p).map(([k, v]) => `${k} ${formatCurrency(v, cur)}`).join(' · ')}</div>`
-    : ''
+  const breakdown = (p) => {
+    const tax = p.hasWithholding
+      ? `<div class="payment-sub">${settlementParts(p).map(([k, v]) => `${k} ${formatCurrency(v, cur)}`).join(' · ')}</div>`
+      : ''
+    const fee = p.customerPaid == null
+      ? ''
+      : `<div class="payment-sub">PayStation fee ${formatCurrency(p.processingFee, cur)} · Total charged ${formatCurrency(p.customerPaid, cur)}</div>`
+    return tax + fee
+  }
 
   const body = `<!DOCTYPE html>
 <html lang="en">

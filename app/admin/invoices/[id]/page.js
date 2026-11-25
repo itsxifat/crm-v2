@@ -430,6 +430,11 @@ function PaymentHistory({ invoiceId, onChanged }) {
                 </p>
               )}
               {p.description && <p className="mt-0.5 text-xs text-gray-600">{p.description}</p>}
+              {num(p.customerPaid) > num(p.amount) && (
+                <p className="mt-0.5 text-xs text-gray-600">
+                  PayStation fee {fmt(num(p.customerPaid) - num(p.amount))} · Total charged {fmt(p.customerPaid)}
+                </p>
+              )}
               <p className="mt-0.5 text-xs text-muted-foreground">
                 {fmtDate(p.paymentDate)}
                 {p.submittedBy?.name && ` · Submitted by ${p.submittedBy.name}`}

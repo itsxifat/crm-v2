@@ -332,6 +332,11 @@ export default function InvoicePrintView({ invoice, payments = [], company = {} 
                           {settlementParts(s).map(([k, v]) => `${k} ${curSymbol} ${fmtNum(v)}`).join(' · ')}
                         </span>
                       )}
+                      {s.customerPaid !== null && (
+                        <span style={{ display: 'block', marginTop: 2, fontSize: 10.5, color: '#64748b' }}>
+                          PayStation fee {curSymbol} {fmtNum(s.processingFee)} · Total charged {curSymbol} {fmtNum(s.customerPaid)}
+                        </span>
+                      )}
                     </td>
                     <td style={TD({ textAlign: 'center', fontFamily: 'monospace', fontSize: 11 })}>{p.transactionId?.txnId ?? p.txnId ?? '—'}</td>
                     <td style={TD({ textAlign: 'right', paddingRight: 0, color: '#16a34a', fontWeight: 600 })}><Sym />&nbsp;{fmtNum(s.settled)}</td>
