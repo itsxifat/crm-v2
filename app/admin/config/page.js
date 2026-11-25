@@ -15,9 +15,8 @@ import { cn } from '@/lib/utils'
 import { invalidateConfigCache, normalizeCategories } from '@/lib/useConfig'
 import Button from '@/components/ui/Button'
 import { Card, CardHeader, CardTitle, CardDescription, CardAction, CardContent, CardFooter } from '@/components/ui/Card'
-import { inputClass } from '@/components/ui/Input'
+import { inputClass, selectClass } from '@/components/ui/Input'
 import PageHeader from '@/components/ui/PageHeader'
-import Tabs from '@/components/ui/Tabs'
 import Badge from '@/components/ui/Badge'
 import EmptyState from '@/components/ui/EmptyState'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
@@ -501,9 +500,12 @@ function VenturePanel({ ventureId, services, config, onChange }) {
   function deleteService(id)      { onChange(services.filter(s => s.id !== id)) }
   return (
     <div className="space-y-2">
-      <h4 className="mb-3 text-sm font-semibold text-gray-900" title={`Services & subcategories for ${venture?.label ?? ventureId}, used by the new project form`}>
-        Services
-      </h4>
+      <div className="mb-3">
+        <h4 className="text-sm font-semibold text-gray-900">Services</h4>
+        <p className="mt-0.5 text-[13px] text-muted-foreground">
+          Offered when creating a project for {venture?.label ?? ventureId}, each with its own subcategories.
+        </p>
+      </div>
       {services.map(svc => <ServiceSection key={svc.id} service={svc} onUpdate={updateService} onDelete={deleteService} />)}
       {services.length === 0 && <p className="py-2 text-xs text-muted-foreground">No services yet</p>}
       <div className="pt-1"><AddInput placeholder="Add service…" onAdd={addService} /></div>
@@ -667,22 +669,68 @@ function DepartmentsSection() {
 
 // ── Tab definitions ────────────────────────────────────────────────────────────
 
-const TABS = [
-  { id: 'ventures',     label: 'Ventures & services', icon: Layers },
-  { id: 'products',     label: 'Products',            icon: Package },
-  { id: 'leads',        label: 'Lead options',        icon: Target },
-  { id: 'departments',  label: 'Departments',         icon: Users },
-  { id: 'company',      label: 'Company info',        icon: Building2 },
-  { id: 'verification', label: 'Verification',        icon: ShieldCheck },
-  { id: 'payment',      label: 'Finance',             icon: CreditCard },
-  { id: 'email',        label: 'Email',               icon: Mail },
-  { id: 'whatsapp',     label: 'WhatsApp',            icon: MessageCircle },
-  { id: 'integrations', label: 'Integrations',        icon: PlugZap },
-  { id: 'calling',      label: 'Calling',             icon: PhoneCall },
+// Sections, grouped as the sidebar shows them. `description` says what the section
+// controls and where it shows up, under its title. Connections hold credentials:
+// their APIs are Super Admin only, so the group is too.
+const SECTION_GROUPS = [
+  {
+    label: 'Organisation',
+    items: [
+      { id: 'company',     label: 'Company info',        icon: Building2,
+        description: 'Your company’s name, address and contacts, printed on invoices and quotations.' },
+      { id: 'departments', label: 'Departments',         icon: Users,
+        description: 'The teams employees belong to. Each department’s short code goes into employee IDs.' },
+      { id: 'ventures',    label: 'Ventures & services', icon: Layers,
+        description: 'Your business lines, the code their projects start with, and the services offered when creating a project.' },
+      { id: 'products',    label: 'Products',            icon: Package,
+        description: 'Products such as Envo and NCOM, reported as business units of their own in finance, beside the ventures.' },
+    ],
+  },
+  {
+    label: 'Sales',
+    items: [
+      { id: 'leads', label: 'Lead options', icon: Target,
+        description: 'The choices offered on the lead form, and the categories for company items given to employees.' },
+    ],
+  },
+  {
+    label: 'Finance',
+    items: [
+      { id: 'payment', label: 'Categories & payments', icon: CreditCard,
+        description: 'Income and expense categories for transactions, and the ways of paying offered in every payment form.' },
+    ],
+  },
+  {
+    label: 'Access',
+    items: [
+      { id: 'verification', label: 'Verification', icon: ShieldCheck,
+        description: 'Whether freelancers, clients and new employees need an admin’s approval before they get in.' },
+    ],
+  },
+  {
+    label: 'Connections',
+    superAdmin: true,
+    items: [
+      { id: 'email',        label: 'Email',          icon: Mail,
+        description: 'The accounts the CRM sends email from: invoices, welcome messages, alerts and password resets.' },
+      { id: 'whatsapp',     label: 'WhatsApp',       icon: MessageCircle,
+        description: 'The WhatsApp numbers the CRM sends messages from, through Enfinito Cloud.' },
+      { id: 'integrations', label: 'Integrations',   icon: PlugZap,
+        description: 'Enfinito Pay, encloud, and the billing of Envo and NCOM.' },
+      { id: 'calling',      label: 'Calling (Envo)', icon: PhoneCall,
+        description: 'Call clients from the CRM and take calls in it, with the caller’s details on screen.' },
+    ],
+  },
 ]
+const SECTIONS = SECTION_GROUPS.flatMap(g => g.items.map(item => ({ ...item, superAdmin: !!g.superAdmin })))
+const DEFAULT_SECTION = SECTIONS[0].id
 
-// Tabs that read /api/config.
+// Sections that read /api/config.
 const CONFIG_TABS = ['ventures', 'products', 'leads', 'verification', 'payment']
+// Sections whose edits wait for the save bar (one config document). The others
+// save on their own: a form's Save button, or at once (switches, payment methods).
+const BATCHED_SECTIONS = ['ventures', 'leads', 'payment']
+const FINANCE_KEYS = ['expenseCategories', 'incomeCategories']
 
 const DEFAULT_PM = [
   { value: 'CASH',          label: 'Cash' },
@@ -701,6 +749,13 @@ const DEFAULT_PM = [
 // unique across ventures and products (both become a finance "unit").
 
 const RESERVED_UNIT_IDS = ['COMPANY', 'UNASSIGNED']
+
+/** What this venture's next project code looks like (models/Project.js: prefix + P + YYMM + serial). */
+function projectCodeExample(v) {
+  const prefix = (v.prefix || String(v.id ?? 'PRJ').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 3) || 'PRJ').toUpperCase()
+  const d = new Date()
+  return `${prefix}P${String(d.getFullYear()).slice(-2)}${String(d.getMonth() + 1).padStart(2, '0')}A01`
+}
 
 function autoUnitId(label) {
   return label.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12)
@@ -965,8 +1020,7 @@ function ProductsPanel({ products, ventureIds, onSave }) {
       <Card className="overflow-hidden">
         <CardHeader className="pb-3">
           <div>
-            <CardTitle>Products</CardTitle>
-            <CardDescription>Business units of their own in finance reports, beside the ventures</CardDescription>
+            <CardTitle>{products.length} product{products.length === 1 ? '' : 's'}</CardTitle>
           </div>
           {products.length > 0 && (
             <CardAction>
@@ -1022,13 +1076,101 @@ function ProductsPanel({ products, ventureIds, onSave }) {
 
 // ── Main content ───────────────────────────────────────────────────────────────
 
+// ── Layout: section navigation, heading, save bar ──────────────────────────────
+
+const sectionHref = (id) => `/admin/config?tab=${id}`
+
+/** Desktop: every section in view, grouped, with a dot where edits are unsaved. */
+function SectionNav({ groups, active, dirty }) {
+  return (
+    <nav aria-label="Configuration sections" className="hidden lg:block">
+      <div className="sticky top-0 space-y-5">
+        {groups.map(g => (
+          <div key={g.label}>
+            <p className="mb-1.5 px-2.5 text-[11px] font-medium uppercase tracking-wide text-gray-400">{g.label}</p>
+            <ul className="space-y-0.5">
+              {g.items.map(item => {
+                const Icon = item.icon
+                const on = item.id === active
+                return (
+                  <li key={item.id}>
+                    <Link href={sectionHref(item.id)} scroll={false} aria-current={on ? 'page' : undefined}
+                      className={cn(
+                        'flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm transition-colors',
+                        on ? 'bg-gray-100 font-medium text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900',
+                      )}>
+                      <Icon className={cn('size-4 shrink-0', on ? 'text-gray-900' : 'text-gray-400')} />
+                      <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                      {dirty.includes(item.id) && <span className="size-1.5 shrink-0 rounded-full bg-amber-500" title="Unsaved changes" />}
+                    </Link>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </nav>
+  )
+}
+
+/** Phones and narrow windows: the same sections in one picker. */
+function SectionPicker({ groups, active, dirty, onSelect }) {
+  return (
+    <div className="lg:hidden">
+      <label htmlFor="config-section" className={lc}>Section</label>
+      <select id="config-section" value={active} onChange={e => onSelect(e.target.value)} className={selectClass}>
+        {groups.map(g => (
+          <optgroup key={g.label} label={g.label}>
+            {g.items.map(i => <option key={i.id} value={i.id}>{i.label}{dirty.includes(i.id) ? ' (unsaved)' : ''}</option>)}
+          </optgroup>
+        ))}
+      </select>
+    </div>
+  )
+}
+
+function SectionHeader({ section, aside }) {
+  return (
+    <div className="flex flex-col gap-3 border-b border-gray-100 pb-5 sm:flex-row sm:items-start sm:justify-between">
+      <div className="min-w-0">
+        <h2 className="text-lg font-semibold tracking-tight text-gray-900">{section.label}</h2>
+        <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{section.description}</p>
+      </div>
+      {aside && <div className="flex shrink-0 items-center gap-2">{aside}</div>}
+    </div>
+  )
+}
+
+/** Edits to ventures, lead options and categories wait here until saved, whichever section is open. */
+function SaveBar({ sections, saving, onSave, onDiscard }) {
+  const names = sections.map(id => SECTIONS.find(x => x.id === id)?.label ?? id)
+  const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0]
+  return (
+    <div role="region" aria-label="Unsaved changes"
+      className="sticky bottom-4 z-20 flex flex-col gap-3 rounded-xl border border-gray-200/80 bg-white/95 px-4 py-3 shadow-lg backdrop-blur sm:flex-row sm:items-center">
+      <p className="flex min-w-0 flex-1 items-center gap-2 text-sm text-gray-700">
+        <span className="size-2 shrink-0 rounded-full bg-amber-500" />
+        <span>Unsaved changes in <span className="font-medium text-gray-900">{list}</span></span>
+      </p>
+      <div className="flex shrink-0 justify-end gap-2">
+        <Button variant="ghost" onClick={onDiscard} disabled={saving}>Discard</Button>
+        <Button onClick={onSave} loading={saving}>{!saving && <Save />} Save changes</Button>
+      </div>
+    </div>
+  )
+}
+
 function ConfigContent() {
   const searchParams = useSearchParams()
   const router       = useRouter()
-  const activeTab    = searchParams.get('tab') ?? 'ventures'
+  const requested    = searchParams.get('tab')
+  const activeTab    = SECTIONS.some(x => x.id === requested) ? requested : DEFAULT_SECTION
   const { data: session, status: sessionStatus } = useSession()
-  // Email/WhatsApp/Integrations hold credentials — their APIs are SUPER_ADMIN-only.
+  // Email/WhatsApp/Integrations/Calling hold credentials — their APIs are SUPER_ADMIN-only.
   const isSuperAdmin = session?.user?.role === 'SUPER_ADMIN'
+  const visibleGroups = SECTION_GROUPS.filter(g => !g.superAdmin || isSuperAdmin)
+  const current       = SECTIONS.find(x => x.id === activeTab)
 
   // Per-section load failures. A failed load must not look like an empty list
   // (a later full-replace save would wipe real data), and must not auto-retry
@@ -1048,7 +1190,10 @@ function ConfigContent() {
   const [configLoaded, setConfigLoaded] = useState(false)
   const [configLoading,setConfigLoading]= useState(false)
   const [saving,       setSaving]       = useState(false)
-  const [dirty,        setDirty]        = useState(false)
+  // Sections with edits waiting for the save bar (BATCHED_SECTIONS).
+  const [dirtySections, setDirtySections] = useState([])
+  const dirty     = dirtySections.length > 0
+  const markDirty = (id) => setDirtySections(d => (d.includes(id) ? d : [...d, id]))
   const [ventureTab,   setVentureTab]   = useState(null)
 
   // ── Venture modal ─────────────────────────────────────────────────────────────
@@ -1149,8 +1294,8 @@ function ConfigContent() {
 
   // ── Config (ventures/leads) handlers ─────────────────────────────────────────
 
-  function updateLeadOption(key, values) { setConfig(c => ({ ...c, [key]: values })); setDirty(true) }
-  function updateServices(ventureId, services) { setConfig(c => ({ ...c, services: { ...c.services, [ventureId]: services } })); setDirty(true) }
+  function updateLeadOption(key, values) { setConfig(c => ({ ...c, [key]: values })); markDirty(FINANCE_KEYS.includes(key) ? 'payment' : 'leads') }
+  function updateServices(ventureId, services) { setConfig(c => ({ ...c, services: { ...c.services, [ventureId]: services } })); markDirty('ventures') }
 
   function openAddVenture() {
     setVentureModalInitial(null)
@@ -1167,14 +1312,14 @@ function ConfigContent() {
     } else {
       setConfig(c => ({ ...c, ventures: c.ventures.map(x => x.id === data.id ? { ...x, label: data.label, prefix: data.prefix, description: data.description } : x) }))
     }
-    setDirty(true)
+    markDirty('ventures')
     setVentureModalMode(null)
   }
   // Ventures are never removed here: projects, employees and money records
   // keep their id. An inactive venture is hidden from pickers but still reports.
   function toggleVentureActive(id) {
     setConfig(c => ({ ...c, ventures: c.ventures.map(x => x.id === id ? { ...x, active: x.active === false } : x) }))
-    setDirty(true)
+    markDirty('ventures')
   }
 
   // Products save at once, on their own key, like payment methods.
@@ -1202,12 +1347,35 @@ function ConfigContent() {
       const { verification: _v, paymentMethods: _pm, ...owned } = config
       const res = await fetch('/api/config', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(owned) })
       if (!res.ok) throw new Error((await res.json()).error)
-      toast.success('Configuration saved')
+      toast.success('Changes saved')
       invalidateConfigCache()
-      setDirty(false)
+      setDirtySections([])
     } catch (err) { toast.error(err.message ?? 'Failed to save') }
     finally { setSaving(false) }
   }
+
+  // Back to what is saved: the next config section opened loads it afresh.
+  function discardConfig() {
+    setConfirmState({
+      title: 'Discard unsaved changes?',
+      message: 'Your edits to ' + dirtySections.map(id => SECTIONS.find(x => x.id === id)?.label ?? id).join(', ') + ' will be lost.',
+      confirmLabel: 'Discard',
+      onConfirm: () => {
+        setConfirmState(null)
+        setDirtySections([])
+        setConfig(null)
+        setConfigLoaded(false)
+      },
+    })
+  }
+
+  // Closing or reloading the page with unsaved edits: the browser asks first.
+  useEffect(() => {
+    if (!dirty) return undefined
+    const warn = (e) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [dirty])
 
   // ── Company ───────────────────────────────────────────────────────────────────
 
@@ -1318,7 +1486,6 @@ function ConfigContent() {
   function setTab(id) { router.push(`/admin/config?tab=${id}`, { scroll: false }) }
 
   const configNeedsLoad = CONFIG_TABS.includes(activeTab) && !loadErrors.config && (configLoading || !configLoaded)
-  const visibleTabs     = TABS.filter(t => isSuperAdmin || !['email', 'whatsapp', 'integrations', 'calling'].includes(t.id))
 
   function renderLoadError(section, label) {
     return (
@@ -1337,15 +1504,22 @@ function ConfigContent() {
 
   // ── Render ────────────────────────────────────────────────────────────────────
 
+  // Beside the section's title: how its changes are kept, where that isn't a form's own button.
+  const sectionAside = activeTab === 'verification'
+    ? (verificationSaving
+      ? <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"><LoadingSpinner size="sm" /> Saving…</span>
+      : <span className="text-xs text-muted-foreground">Each switch saves at once</span>)
+    : null
+
   return (
-    <div className="max-w-4xl space-y-6">
+    <div className="space-y-6">
 
       {/* Shared confirm modal */}
       {confirmState && (
         <ConfirmModal
           title={confirmState.title}
           message={confirmState.message}
-          confirmLabel="Remove"
+          confirmLabel={confirmState.confirmLabel ?? 'Remove'}
           onConfirm={confirmState.onConfirm}
           onCancel={() => setConfirmState(null)}
         />
@@ -1362,26 +1536,15 @@ function ConfigContent() {
         />
       )}
 
-      {/* Header */}
-      <PageHeader
-        title="Configuration"
-        actions={(activeTab === 'ventures' || activeTab === 'leads' || activeTab === 'payment') ? (
-          <>
-            {dirty && <Badge variant="warning" dot>Unsaved changes</Badge>}
-            <Button onClick={saveConfig} loading={saving} disabled={!dirty}>
-              {!saving && <Save />} Save changes
-            </Button>
-          </>
-        ) : null}
-      />
+      <PageHeader title="Configuration" description="Settings that apply across the whole CRM" />
 
-      {/* Tab bar */}
-      <Tabs
-        variant="underline"
-        value={activeTab}
-        onChange={setTab}
-        tabs={visibleTabs.map(t => ({ value: t.id, label: t.label, icon: t.icon }))}
-      />
+      <SectionPicker groups={visibleGroups} active={activeTab} dirty={dirtySections} onSelect={setTab} />
+
+      <div className="lg:grid lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-10">
+      <SectionNav groups={visibleGroups} active={activeTab} dirty={dirtySections} />
+
+      <div className="min-w-0 max-w-4xl space-y-6">
+      <SectionHeader section={current} aside={sectionAside} />
 
       {CONFIG_TABS.includes(activeTab) && loadErrors.config &&
         renderLoadError('config', 'configuration')}
@@ -1392,25 +1555,27 @@ function ConfigContent() {
       {/* ── Ventures tab ────────────────────────────────────────────────────── */}
       {activeTab === 'ventures' && config && (
         <Card className="overflow-hidden">
-          {/* Venture switcher */}
-          <div className="flex flex-wrap items-center gap-2 border-b border-gray-100 p-3">
+          {/* Venture switcher: wraps onto more lines rather than hiding ventures off the edge */}
+          <div className="flex flex-col gap-3 border-b border-gray-100 p-3 sm:flex-row sm:items-start">
             {(config.ventures ?? []).length > 0 && (
-              <Tabs
-                size="sm"
-                value={ventureTab}
-                onChange={setVentureTab}
-                tabs={(config.ventures ?? []).map(v => ({
-                  value: v.id,
-                  label: (
-                    <>
-                      <span className={v.active === false ? 'text-gray-400' : undefined} title={v.active === false ? 'Inactive' : undefined}>{v.label}</span>
-                      {v.prefix && <span className="font-mono text-[11px] text-muted-foreground">{v.prefix}P</span>}
-                    </>
-                  ),
-                }))}
-              />
+              <div role="tablist" aria-label="Ventures" className="flex min-w-0 flex-1 flex-wrap gap-1.5">
+                {(config.ventures ?? []).map(v => {
+                  const on = v.id === ventureTab
+                  return (
+                    <button key={v.id} type="button" role="tab" aria-selected={on} onClick={() => setVentureTab(v.id)}
+                      className={cn(
+                        'inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-[13px] font-medium transition-colors',
+                        on ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200',
+                        v.active === false && !on && 'text-gray-400',
+                      )}>
+                      {v.label}
+                      {v.active === false && <span className={cn('text-[11px] font-normal', on ? 'text-white/70' : 'text-gray-400')}>inactive</span>}
+                    </button>
+                  )
+                })}
+              </div>
             )}
-            <Button variant="ghost" size="sm" onClick={openAddVenture} className="ml-auto">
+            <Button variant="outline" size="sm" onClick={openAddVenture} className="shrink-0 sm:ml-auto">
               <Plus /> Add venture
             </Button>
           </div>
@@ -1433,15 +1598,20 @@ function ConfigContent() {
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="text-sm font-semibold text-gray-900">{v.label}</p>
-                        <Badge variant="outline" className="font-mono">{v.id}</Badge>
-                        {v.prefix ? (
-                          <Badge variant="outline" className="font-mono">{v.prefix}PYYMM</Badge>
-                        ) : (
-                          <Badge variant="warning">No prefix — using fallback</Badge>
-                        )}
                         {v.active === false && <Badge variant="warning">Inactive</Badge>}
                       </div>
-                      <p className="mt-1 text-[13px] text-muted-foreground">{v.description || 'No description'}</p>
+                      {v.description && <p className="mt-1 text-[13px] text-muted-foreground">{v.description}</p>}
+                      <dl className="mt-3 grid gap-x-6 gap-y-1.5 text-[13px] sm:grid-cols-[auto_1fr]">
+                        <dt className="text-muted-foreground">Venture ID</dt>
+                        <dd className="font-mono text-gray-900" title="Set when the venture was created; it never changes">{v.id}</dd>
+                        <dt className="text-muted-foreground">Project codes</dt>
+                        <dd className="text-gray-900">
+                          <span className="font-mono">{projectCodeExample(v)}</span>
+                          {!v.prefix && (
+                            <span className="ml-2 text-xs text-amber-700">No prefix chosen, so codes start with the first letters of the ID. Edit to choose one.</span>
+                          )}
+                        </dd>
+                      </dl>
                       {v.active === false && (
                         <p className="mt-1 text-xs text-muted-foreground">Hidden from pickers. Its projects, people and history still report under it.</p>
                       )}
@@ -1474,14 +1644,14 @@ function ConfigContent() {
       {activeTab === 'leads' && config && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <LeadOptionList label="Sources"             items={config?.leadSources            ?? []} onChange={v => updateLeadOption('leadSources', v)} />
-            <LeadOptionList label="Platforms"           items={config?.leadPlatforms          ?? []} onChange={v => updateLeadOption('leadPlatforms', v)} />
-            <LeadOptionList label="Business categories" items={config?.leadBusinessCategories ?? []} onChange={v => updateLeadOption('leadBusinessCategories', v)} />
+            <LeadOptionList label="Sources"             description="How the lead reached you, e.g. Referral"   items={config?.leadSources            ?? []} onChange={v => updateLeadOption('leadSources', v)} />
+            <LeadOptionList label="Platforms"           description="Where they found you, e.g. Facebook"       items={config?.leadPlatforms          ?? []} onChange={v => updateLeadOption('leadPlatforms', v)} />
+            <LeadOptionList label="Business categories" description="The lead’s line of business, e.g. Retail" items={config?.leadBusinessCategories ?? []} onChange={v => updateLeadOption('leadBusinessCategories', v)} />
           </div>
           <div className="space-y-3">
             <div>
-              <h2 className="text-base font-semibold tracking-tight text-gray-900">Company item categories</h2>
-              <p className="mt-0.5 text-sm text-muted-foreground">Presets for employee asset items</p>
+              <h3 className="text-base font-semibold tracking-tight text-gray-900">Company item categories</h3>
+              <p className="mt-0.5 text-sm text-muted-foreground">Offered when recording equipment given to an employee</p>
             </div>
             <LeadOptionList label="Item categories" items={config?.companyItemCategories ?? []} onChange={v => updateLeadOption('companyItemCategories', v)} />
           </div>
@@ -1499,13 +1669,7 @@ function ConfigContent() {
           spinner
         ) : (
           <Card as="form" onSubmit={saveCompany}>
-            <CardHeader>
-              <div>
-                <CardTitle>Company information</CardTitle>
-                <CardDescription>Shown on invoices and quotations</CardDescription>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-4 pt-6">
               <div className="grid gap-4 sm:grid-cols-2">
                 <div><label className={lc}>Company name</label><input value={company.name}    onChange={e => setCompany(c => ({ ...c, name:    e.target.value }))} placeholder="e.g. Acme Ltd."             className={ic} /></div>
                 <div><label className={lc}>Email</label>       <input type="email" value={company.email}   onChange={e => setCompany(c => ({ ...c, email:   e.target.value }))} placeholder="e.g. info@yourcompany.com" className={ic} /></div>
@@ -1515,7 +1679,7 @@ function ConfigContent() {
               </div>
               <div className="flex flex-col gap-3 rounded-lg bg-gray-50 px-4 py-3 sm:flex-row sm:items-center">
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm text-gray-700">BIN, TIN &amp; VAT are managed in Tax settings.</p>
+                  <p className="text-sm text-gray-700">BIN, TIN and VAT are set in Tax &amp; VAT → Settings.</p>
                   <p className="mt-0.5 break-all font-mono text-xs text-muted-foreground">
                     BIN {companyTax.bin || 'not set'} · TIN {companyTax.tin || 'not set'}
                   </p>
@@ -1539,15 +1703,7 @@ function ConfigContent() {
         <div className="space-y-3">
           {!configNeedsLoad && (
             <Card className="overflow-hidden">
-              <CardHeader className="pb-3">
-                <CardTitle>Verification &amp; access</CardTitle>
-                {verificationSaving && (
-                  <CardAction className="text-xs text-muted-foreground">
-                    <LoadingSpinner size="sm" /> Saving…
-                  </CardAction>
-                )}
-              </CardHeader>
-              <div className="divide-y divide-gray-100 border-t border-gray-100">
+              <div className="divide-y divide-gray-100">
                 {[
                   { key: 'freelancer',         title: 'Freelancer & agency verification',
                     on:  'KYC and admin approval required before portal access.',
@@ -1585,7 +1741,7 @@ function ConfigContent() {
             <CardHeader>
               <div>
                 <CardTitle>Transaction categories</CardTitle>
-                <CardDescription>Subcategory totals roll up to their parent</CardDescription>
+                <CardDescription>Subcategory totals roll up to their parent. Changes wait for Save changes.</CardDescription>
               </div>
             </CardHeader>
             <CardContent>
@@ -1618,7 +1774,7 @@ function ConfigContent() {
               <CardHeader className="pb-3">
                 <div>
                   <CardTitle>Payment methods</CardTitle>
-                  <CardDescription>Shown in every payment dropdown</CardDescription>
+                  <CardDescription>Offered in every payment form. Each change saves at once.</CardDescription>
                 </div>
               </CardHeader>
               <div className="divide-y divide-gray-100 border-t border-gray-100">
@@ -1664,10 +1820,9 @@ function ConfigContent() {
       {activeTab === 'email' && isSuperAdmin && (
         <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="flex items-center gap-2 text-base font-semibold tracking-tight text-gray-900">
-              Email accounts
-              <Badge variant="default" className="tabular-nums">{accounts.length}</Badge>
-            </h2>
+            <p className="text-sm text-muted-foreground">
+              {emailLoaded ? `${accounts.length} account${accounts.length === 1 ? '' : 's'}` : ' '}
+            </p>
             {emailMode === 'list' && emailLoaded && !emailLoading && (
               <Button onClick={() => { setEmailEditing(null); setEmailMode('add') }}>
                 <Plus /> Add account
@@ -1710,10 +1865,9 @@ function ConfigContent() {
       {activeTab === 'whatsapp' && isSuperAdmin && (
         <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="flex items-center gap-2 text-base font-semibold tracking-tight text-gray-900">
-              WhatsApp accounts
-              <Badge variant="default" className="tabular-nums">{waAccounts.length}</Badge>
-            </h2>
+            <p className="text-sm text-muted-foreground">
+              {waLoaded ? `${waAccounts.length} account${waAccounts.length === 1 ? '' : 's'}` : ' '}
+            </p>
             {waMode === 'list' && waLoaded && !waLoading && (
               <Button onClick={() => { setWaEditing(null); setWaMode('add') }}>
                 <Plus /> Add account
@@ -1771,6 +1925,10 @@ function ConfigContent() {
 
       {/* ── Calling tab (Envo phone: connection and extensions) ──────────────── */}
       {activeTab === 'calling' && isSuperAdmin && <TelephonySettings />}
+
+      {dirty && <SaveBar sections={dirtySections} saving={saving} onSave={saveConfig} onDiscard={discardConfig} />}
+      </div>
+      </div>
 
     </div>
   )

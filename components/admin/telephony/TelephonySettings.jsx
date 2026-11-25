@@ -83,8 +83,8 @@ function ConnectionCard({ data, onSaved }) {
             <PhoneCall className="size-4 text-gray-700" />
           </div>
           <div className="min-w-0">
-            <CardTitle>Calling through Envo</CardTitle>
-            <CardDescription>Staff call clients and leads from the CRM, and take calls in it with the caller’s details on screen.</CardDescription>
+            <CardTitle>Connection to Envo</CardTitle>
+            <CardDescription>Envo’s address and the API key the CRM calls through.</CardDescription>
           </div>
         </div>
         <CardAction>{status}</CardAction>

@@ -1,6 +1,69 @@
 'use client'
 
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
+
+/**
+ * A row that scrolls sideways when its tabs don't fit. The scrollbar stays hidden, so
+ * a fade and an arrow show on the side where more tabs are, and the selected tab is
+ * kept in view.
+ */
+function Scroller({ className, outerClassName, activeKey, children }) {
+  const ref = useRef(null)
+  const [edges, setEdges] = useState({ left: false, right: false })
+
+  const update = useCallback(() => {
+    const el = ref.current
+    if (!el) return
+    const left = el.scrollLeft > 2
+    const right = el.scrollLeft + el.clientWidth < el.scrollWidth - 2
+    setEdges(e => (e.left === left && e.right === right ? e : { left, right }))
+  }, [])
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return undefined
+    update()
+    el.addEventListener('scroll', update, { passive: true })
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(update) : null
+    ro?.observe(el)
+    return () => { el.removeEventListener('scroll', update); ro?.disconnect() }
+  }, [update])
+
+  // Sideways only: never move the page to bring the row into view.
+  useEffect(() => {
+    const el = ref.current
+    const tab = el?.querySelector('[data-active="true"]')
+    if (!el || !tab) return
+    const start = tab.offsetLeft
+    const end = start + tab.offsetWidth
+    if (start < el.scrollLeft) el.scrollLeft = Math.max(0, start - 24)
+    else if (end > el.scrollLeft + el.clientWidth) el.scrollLeft = end - el.clientWidth + 24
+    update()
+  }, [activeKey, update])
+
+  const nudge = (dir) => ref.current?.scrollBy({ left: dir * Math.max(120, ref.current.clientWidth * 0.6), behavior: 'smooth' })
+  const edge = 'absolute top-0 bottom-px z-10 flex w-10 items-center text-gray-500 transition-colors hover:text-gray-900'
+
+  return (
+    <div className={cn('relative min-w-0 max-w-full', outerClassName)}>
+      <div ref={ref} className={cn('relative overflow-x-auto scrollbar-none', className)}>{children}</div>
+      {edges.left && (
+        <button type="button" tabIndex={-1} aria-label="Show earlier tabs" onClick={() => nudge(-1)}
+          className={cn(edge, 'left-0 justify-start bg-gradient-to-r from-white via-white/90 to-transparent')}>
+          <ChevronLeft className="size-4" />
+        </button>
+      )}
+      {edges.right && (
+        <button type="button" tabIndex={-1} aria-label="Show more tabs" onClick={() => nudge(1)}
+          className={cn(edge, 'right-0 justify-end bg-gradient-to-l from-white via-white/90 to-transparent')}>
+          <ChevronRight className="size-4" />
+        </button>
+      )}
+    </div>
+  )
+}
 
 /**
  * Segmented tabs (shadcn TabsList look). Controlled.
@@ -12,7 +75,7 @@ export default function Tabs({ tabs = [], value, onChange, variant = 'pill', siz
 
   if (variant === 'underline') {
     return (
-      <div className={cn('-mb-px flex max-w-full items-center gap-5 overflow-x-auto border-b border-gray-200 scrollbar-none', className)}>
+      <Scroller activeKey={value} className={cn('-mb-px flex max-w-full items-center gap-5 border-b border-gray-200', className)}>
         {items.map((t) => {
           const active = t.value === value
           const Icon = t.icon
@@ -20,6 +83,7 @@ export default function Tabs({ tabs = [], value, onChange, variant = 'pill', siz
             <button
               key={t.value}
               type="button"
+              data-active={active}
               disabled={t.disabled}
               onClick={() => onChange?.(t.value)}
               className={cn(
@@ -35,12 +99,13 @@ export default function Tabs({ tabs = [], value, onChange, variant = 'pill', siz
             </button>
           )
         })}
-      </div>
+      </Scroller>
     )
   }
 
   return (
-    <div className={cn('max-w-full overflow-x-auto scrollbar-none', className)}>
+    // Pills sit in toolbars: layout classes (ml-auto, mb-4) belong on the outside.
+    <Scroller activeKey={value} outerClassName={className}>
       <div
         role="tablist"
         className={cn(
@@ -57,6 +122,7 @@ export default function Tabs({ tabs = [], value, onChange, variant = 'pill', siz
               type="button"
               role="tab"
               aria-selected={active}
+              data-active={active}
               disabled={t.disabled}
               onClick={() => onChange?.(t.value)}
               className={cn(
@@ -73,7 +139,7 @@ export default function Tabs({ tabs = [], value, onChange, variant = 'pill', siz
           )
         })}
       </div>
-    </div>
+    </Scroller>
   )
 }
 
